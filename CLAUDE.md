@@ -1,22 +1,25 @@
 # Revolution — 数字生命摩斯 · 作品集项目根
 
 ## 目录约定
-- `docs/` — 需求与决策文档。`docs/portfolio-blueprint.md` 是唯一需求源,所有开发以它为准
-- `prototype/` — 纯静态 UI 原型(零依赖、零构建、file:// 直开)
-- 正式站(Next.js)未来在本根初始化,届时更新本文件
+- `docs/` — 需求与决策文档。`docs/portfolio-blueprint.md` 是唯一需求源,所有开发以它为准;`docs/verify/` 为验收证据
+- `prototype/` — 静态 UI 原型 v0.1(**已冻结,只读参照,不再迭代**)
+- 正式站(Next.js)在本根:`app/`(路由与全局样式)、`components/`(组件)、`public/`(静态资源)、`scripts/`(构建期脚本)、`content/`(站点内容;`content/drafts/` 为待摩斯终审的草稿,未终审不得上线)
 
-## 原型硬约束
-- 禁止包安装、构建步骤、外部网络资源(字体/脚本/图片全部本地或系统内置;代码中不得出现外部 URL,文案与注释除外)
-- 文件所有权三域:`index.html + css/**`(结构与样式)/ `js/lifeform.js`(形体视觉)/ `js/app.js`(交互与 mock 数据)。跨域修改必须先更新接口契约
-- 设计 token 只在 `css/tokens.css` 定义;组件样式禁用裸色值
-- 所有 mock 数据必须带「示例数据」标注,防止日后被当成真实数字
-- 命名:kebab-case 文件名;class 语义化,保持全站一致
+## 正式站约束
+- 技术栈:Next.js(App Router)+ TypeScript;不用 Tailwind,样式用 CSS Modules + 全局 token
+- 设计 token 只在 `app/styles/tokens.css` 定义(源自原型,唯一 token 源);组件样式禁用裸色值
+- 禁外部运行时资源:字体/脚本自托管,无 CDN 引用;文案中的外链(GitHub 等)允许
+- 占位与真实分明:占位内容必须带「示例数据 / 筹备中」标注;真实数字必须可溯源(数据管线产出)
+- `prefers-reduced-motion` 下无持续动画;移动端动画轻量化
+- 数字人区域组件化:视频源为配置项,素材就绪仅替换资源文件
 
 ## 验证标准
-- Edge/Chrome 打开 `prototype/index.html`:控制台零报错
-- 1440 宽与 390 宽各过一轮:速览层不滚动可见、简历模式开关可用、分身抽屉可用、形体动画运行或优雅降级
-- `prefers-reduced-motion` 下无持续动画
+- `npm run build` 必过;`npm run dev` 冒烟
+- 1440 与 390 双宽各过一轮,控制台零报错
+- Lighthouse 性能 ≥ 90(上线前验收)
 
 ## 红线
-- 不自动 git init/commit/push;不部署;不装依赖
-- `E:\Wiki`、`E:\demo2`、`E:\小红书`、`E:\多agent` 为本项目外部资产,禁止写入
+- git:本地 init/commit 已授权(2026-07-08);push 仅跨设备同步且等摩斯指令;不自动部署
+- 依赖安装仅限阶段契约列明的包
+- `E:\Wiki`、`E:\demo2`、`E:\小红书`、`E:\多agent` 为外部资产,只读,禁止写入
+- 密钥、token、密码不进代码
