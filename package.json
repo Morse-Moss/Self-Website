@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "stats": "node scripts/collect-stats.mjs",
+    "test": "node --test \"scripts/*.test.mjs\""
   },
   "dependencies": {
     "@types/node": "^26.1.1",

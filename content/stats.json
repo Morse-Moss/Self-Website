@@ -1,0 +1,18 @@
+{
+  "generatedAt": "2026-07-08T07:53:51.341Z",
+  "methodology": "claudeCode: 扫描本机 Claude Code 会话目录,按项目子目录统计 *.jsonl 会话文件数量与 mtime(sessions=会话文件总数,projects=含至少1个会话的项目目录数,firstSessionDate=最早会话mtime所在日期,activeDaysLast90=近90天内有会话mtime的去重天数;目录不存在则全部为null)。codex: 检查 Codex 会话档案目录与历史文件的存在性(archivedSessions=归档目录下条目数,目录不存在则为0;available=归档目录或历史文件任一存在)。thisRepo: 通过只读 git 查询统计本仓库 commit 总数与首次提交日期;仓库无提交或查询失败则两字段均为 null。所有字段均为聚合数字,不解析任何会话内容。",
+  "claudeCode": {
+    "sessions": 128,
+    "projects": 13,
+    "firstSessionDate": "2026-06-08",
+    "activeDaysLast90": 26
+  },
+  "codex": {
+    "archivedSessions": 111,
+    "available": true
+  },
+  "thisRepo": {
+    "commits": 3,
+    "firstCommitDate": "2026-07-08"
+  }
+}
