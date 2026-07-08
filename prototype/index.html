@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="数字生命摩斯 · 一个人 + 一套 AI 操作系统">
+  <title>数字生命摩斯 · DIGITAL LIFEFORM</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+
+  <!-- ==================== 顶栏 ==================== -->
+  <header id="topbar">
+    <div class="container topbar__inner">
+      <a class="topbar__logo mono" href="#hero" aria-label="MORSE 回到顶部">MORSE <span class="logo__cursor" aria-hidden="true">▮</span></a>
+      <span class="topbar__status mono"><span class="led"></span> SYSTEM ONLINE</span>
+      <nav class="topbar__nav" aria-label="页面导航">
+        <a href="#systems">系统</a>
+        <a href="#os">方法</a>
+        <a href="#ledger">账本</a>
+      </nav>
+      <button id="resume-toggle" class="btn btn--ghost btn--sm" type="button" aria-pressed="false">简历模式</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- ==================== 速览层 · Hero ==================== -->
+    <section id="hero" aria-label="速览">
+      <div class="hero__stage" aria-hidden="true">
+        <canvas id="lifeform-canvas"></canvas>
+      </div>
+      <div class="container hero__content">
+        <p class="hero__eyebrow mono">DIGITAL LIFEFORM · PROTOTYPE v0.1</p>
+        <h1 class="hero__title">数字生命摩斯</h1>
+        <p class="hero__sub">一个人 + 一套 AI 操作系统。把重复 3 遍的事,全部 AI 化。</p>
+
+        <ul class="chips" aria-label="技能方向">
+          <li class="chip">Agent 编排</li>
+          <li class="chip">LLM 应用</li>
+          <li class="chip">自动化流水线</li>
+          <li class="chip">全栈开发</li>
+        </ul>
+
+        <div class="metrics" aria-label="关键指标(示例数据)">
+          <div class="metric">
+            <span class="metric__value"><span class="metric__num" data-count="3">3</span></span>
+            <span class="metric__label">在建系统</span>
+          </div>
+          <div class="metric">
+            <span class="metric__value"><span class="metric__num" data-count="1200">1,200</span><span class="metric__suffix">+</span></span>
+            <span class="metric__label">知识库条目</span>
+          </div>
+          <div class="metric">
+            <span class="metric__value"><span class="metric__num" data-count="480">480</span><span class="metric__suffix">+</span></span>
+            <span class="metric__label">本月 AI 协作会话</span>
+          </div>
+          <span class="mock-tag">示例数据</span>
+        </div>
+
+        <div class="hero__cta">
+          <button class="btn btn--primary" data-open-chat type="button">唤醒数字摩斯</button>
+          <a class="btn btn--ghost" href="#systems">看看他的系统 ↓</a>
+        </div>
+
+        <p class="hero__contact mono" aria-label="联系方式">
+          <a href="#">GitHub</a>
+          <span class="sep" aria-hidden="true">·</span>
+          <a href="#">Email</a>
+          <span class="sep" aria-hidden="true">·</span>
+          <a href="#">WeChat</a>
+        </p>
+      </div>
+    </section>
+
+    <!-- ==================== 系统展厅 ==================== -->
+    <section id="systems" aria-label="系统展厅">
+      <div class="container">
+        <header class="section-head reveal">
+          <span class="section-head__index mono">SEC.01</span>
+          <h2>系统展厅 <span class="section-head__en mono">/ BUILDING IN PUBLIC</span></h2>
+        </header>
+
+        <div class="sys-grid">
+          <article class="card sys-card reveal">
+            <header class="sys-card__head">
+              <span class="badge"><span class="led"></span>已交付 · 内部运行中</span>
+            </header>
+            <h3 class="sys-card__title">内容生成 Agent 系统</h3>
+            <p class="sys-card__desc">一条内容流水线,从选题到成稿无人值守。</p>
+            <p class="sys-card__division"><span class="division__label">人机分工</span><span>我定架构与质检标准,agent 团队产出。</span></p>
+            <div class="sys-card__progress">
+              <div class="progress" role="progressbar" aria-valuenow="82" aria-valuemin="0" aria-valuemax="100" aria-label="交付进度 82%">
+                <div class="progress__bar" style="width:82%"></div>
+              </div>
+              <p class="progress__meta mono"><span>PROGRESS · 82%</span><span class="mock-tag">示例数据</span></p>
+            </div>
+            <footer class="sys-card__foot mono">SYS-01 · 脱敏案例</footer>
+          </article>
+
+          <article class="card sys-card reveal">
+            <header class="sys-card__head">
+              <span class="badge badge--blue"><span class="led"></span>即将上线</span>
+            </header>
+            <h3 class="sys-card__title">运营自动化系统</h3>
+            <p class="sys-card__desc">小红书 / 公众号内容运营的 AI 流水线。</p>
+            <div class="sys-card__progress">
+              <div class="progress" role="progressbar" aria-valuenow="64" aria-valuemin="0" aria-valuemax="100" aria-label="交付进度 64%">
+                <div class="progress__bar" style="width:64%"></div>
+              </div>
+              <p class="progress__meta mono"><span>PROGRESS · 64%</span><span class="mock-tag">示例数据</span></p>
+            </div>
+            <footer class="sys-card__foot mono">SYS-02 · STANDBY</footer>
+          </article>
+
+          <article class="card sys-card reveal">
+            <header class="sys-card__head">
+              <span class="badge badge--amber"><span class="led"></span>开发中 · 试驾间筹备中</span>
+            </header>
+            <h3 class="sys-card__title">深度研究系统 Deep Research</h3>
+            <p class="sys-card__desc">一个问题进去,一份带引用的研究报告出来。</p>
+            <div class="sys-card__progress">
+              <div class="progress" role="progressbar" aria-valuenow="47" aria-valuemin="0" aria-valuemax="100" aria-label="交付进度 47%">
+                <div class="progress__bar" style="width:47%"></div>
+              </div>
+              <p class="progress__meta mono"><span>PROGRESS · 47%</span><span class="mock-tag">示例数据</span></p>
+            </div>
+            <button class="btn btn--ghost btn--sm" type="button" disabled>试驾回放 · 敬请期待</button>
+            <footer class="sys-card__foot mono">SYS-03 · IN DEV</footer>
+          </article>
+
+          <article class="card sys-card sys-card--incubate reveal" aria-label="孵化中的系统">
+            <p><span class="incubate__plus mono" aria-hidden="true">+</span>还有若干系统在孵化中,上线一个,点亮一个。</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== 操作系统 · HOW I WORK ==================== -->
+    <section id="os" aria-label="工作方法">
+      <div class="container">
+        <header class="section-head reveal">
+          <span class="section-head__index mono">SEC.02</span>
+          <h2>操作系统 <span class="section-head__en mono">/ HOW I WORK</span></h2>
+        </header>
+
+        <p class="os__statement reveal">重复 3 遍的事,<em class="os__accent">AI 化</em>。</p>
+
+        <div class="principles">
+          <article class="card principle reveal">
+            <span class="principle__index mono">PRINCIPLE 01</span>
+            <h3>为目标设计,不为功能设计</h3>
+            <p>先问用户要完成什么,再决定造什么。不因为技术上能做,就加功能。</p>
+          </article>
+          <article class="card principle reveal">
+            <span class="principle__index mono">PRINCIPLE 02</span>
+            <h3>系统承担复杂性,用户只碰丝滑</h3>
+            <p>后端可以很复杂,但用户触碰到的每一层,必须不言自明。</p>
+          </article>
+          <article class="card principle reveal">
+            <span class="principle__index mono">PRINCIPLE 03</span>
+            <h3>反馈引导行动,不只报告问题</h3>
+            <p>不说「连接失败」,说「正在重试,预计 5 秒后恢复」。</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== 杠杆账本 ==================== -->
+    <section id="ledger" aria-label="杠杆账本">
+      <div class="container">
+        <header class="section-head reveal">
+          <span class="section-head__index mono">SEC.03</span>
+          <h2>杠杆账本 <span class="section-head__en mono">/ LEVERAGE LEDGER</span></h2>
+        </header>
+
+        <div class="ledger-grid">
+          <article class="card ledger-card reveal">
+            <span class="metric__label">本月人类投入</span>
+            <span class="metric__value"><span class="metric__num" data-count="42">42</span><span class="metric__unit">h</span></span>
+          </article>
+          <article class="card ledger-card reveal">
+            <span class="metric__label">AI 产出代码</span>
+            <span class="metric__value"><span class="metric__num" data-count="31000">31,000</span><span class="metric__suffix">+</span><span class="metric__unit">行</span></span>
+          </article>
+          <article class="card ledger-card reveal">
+            <span class="metric__label">自动化任务</span>
+            <span class="metric__value"><span class="metric__num" data-count="1860">1,860</span><span class="metric__unit">个</span></span>
+          </article>
+          <article class="card ledger-card reveal">
+            <span class="metric__label">等效产能</span>
+            <span class="metric__value"><span class="metric__prefix" aria-hidden="true">≈</span><span class="metric__num" data-count="5">5</span><span class="metric__unit">人</span></span>
+          </article>
+        </div>
+
+        <p class="ledger__note reveal"><span class="mock-tag mock-tag--lg">示例数据 · 正式版接入真实统计</span></p>
+      </div>
+    </section>
+
+    <!-- ==================== 一页纸简历(resume-mode 才显示) ==================== -->
+    <section id="resume" aria-label="一页纸简历">
+      <div class="container">
+        <div class="resume__sheet">
+          <header class="resume__head">
+            <h2 class="resume__name">数字生命摩斯</h2>
+            <p class="resume__role">一个人 + 一套 AI 操作系统 · Agent 编排 / LLM 应用 / 自动化流水线 / 全栈开发</p>
+            <p class="resume__contact">GitHub · github.com/digital-morse(示例) &nbsp;|&nbsp; Email · hello@morse.example(示例) &nbsp;|&nbsp; WeChat · morse_os(示例)</p>
+          </header>
+
+          <section class="resume__block" aria-label="核心能力">
+            <h3>核心能力</h3>
+            <ul class="resume__list">
+              <li><strong>Agent 编排</strong> — 多智能体分工、并行任务调度与质检闭环,把「一个人」放大成「一个团队」。</li>
+              <li><strong>LLM 应用开发</strong> — 提示词系统、RAG 知识库、评估与回归体系,交付可持续迭代的 AI 产品。</li>
+              <li><strong>自动化流水线</strong> — 从触发、执行到交付全链路无人值守,人只出现在定标准与验收两端。</li>
+              <li><strong>全栈开发</strong> — 快速把想法变成可用原型,再把原型演进为可维护的正式系统。</li>
+            </ul>
+          </section>
+
+          <section class="resume__block" aria-label="系统经历">
+            <h3>系统经历</h3>
+            <div class="resume-exp">
+              <div class="resume-exp__head">
+                <span class="resume-exp__title">内容生成 Agent 系统</span>
+                <span class="resume-exp__status">已交付 · 内部运行中</span>
+              </div>
+              <p>一条内容流水线,从选题到成稿无人值守。我定架构与质检标准,agent 团队产出。(脱敏案例)</p>
+            </div>
+            <div class="resume-exp">
+              <div class="resume-exp__head">
+                <span class="resume-exp__title">运营自动化系统</span>
+                <span class="resume-exp__status">即将上线</span>
+              </div>
+              <p>小红书 / 公众号内容运营的 AI 流水线,把重复的运营动作沉淀为可复用的系统能力。</p>
+            </div>
+            <div class="resume-exp">
+              <div class="resume-exp__head">
+                <span class="resume-exp__title">深度研究系统 Deep Research</span>
+                <span class="resume-exp__status">开发中</span>
+              </div>
+              <p>一个问题进去,一份带引用的研究报告出来。多源检索、交叉验证、引用溯源全自动完成。</p>
+            </div>
+          </section>
+
+          <section class="resume__block" aria-label="工作哲学">
+            <h3>工作哲学</h3>
+            <p class="resume__philosophy">把重复 3 遍的事,全部 AI 化;系统承担复杂性,用户只碰丝滑。</p>
+          </section>
+
+          <div class="resume__actions">
+            <button id="resume-print" type="button">打印 / 存 PDF</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ==================== 分身抽屉 ==================== -->
+  <aside id="chat-panel" role="dialog" aria-modal="true" aria-label="数字摩斯对话面板" hidden>
+    <header class="chat__head">
+      <span class="led" aria-hidden="true"></span>
+      <span class="chat__title mono">数字摩斯 · 原型壳</span>
+      <button id="chat-close" class="chat__close" type="button" aria-label="关闭对话面板">✕</button>
+    </header>
+    <div id="chat-log" class="chat__log" role="log" aria-live="polite"></div>
+    <div id="chat-chips" class="chat__chips"></div>
+    <footer class="chat__foot">
+      <input id="chat-input" class="chat__input" type="text" placeholder="问问关于摩斯的事…" aria-label="输入你想问摩斯的问题">
+      <button id="chat-send" class="btn btn--primary btn--sm" type="button">发送</button>
+    </footer>
+  </aside>
+
+  <!-- ==================== 页脚 ==================== -->
+  <footer>
+    <div class="container">
+      <p class="footer__morse mono" title="MORSE">-- --- .-. ... .</p>
+      <p class="footer__note">本站由 AI 协作构建 · 从蓝图到原型只用了一个夜晚</p>
+      <p class="footer__copy mono">© 2026 数字生命摩斯</p>
+    </div>
+  </footer>
+
+  <script src="js/lifeform.js" defer></script>
+  <script src="js/app.js" defer></script>
+</body>
+</html>

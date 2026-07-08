@@ -1,0 +1,135 @@
+/* ============================================================
+   tokens.css · 设计令牌
+   数字生命摩斯 — 作品集原型(深空蓝 · 环境辉光 · 编辑级排版)
+   规则:组件层(main.css)禁止出现裸色值,所有颜色 / 字号 /
+   间距 / 圆角 / 动效参数一律引用本文件的 CSS 变量。
+   ============================================================ */
+
+:root {
+  color-scheme: dark;
+
+  /* ---------- 色板 · 深空基底 ---------- */
+  --bg:       #0A0E1A;
+  --surface:  #0E1526;
+  --elevated: #131C33;
+
+  /* ---------- 色板 · 墨色层级 ---------- */
+  --ink:   #E9EFFB;
+  --muted: #8B98B8;
+  --faint: #4A5570;   /* 仅用于纯装饰性文字,不承载关键信息 */
+
+  /* ---------- 色板 · 系统指示 ---------- */
+  --accent: #5EE6D0;  /* 青色系统指示灯:LED / 徽标 / 强调,可上文字 */
+  --glow:   #2E5BFF;  /* 深蓝辉光:仅用于弥散光与阴影,禁止用于文字 */
+
+  /* ---------- 线 · 面(半透明派生色) ---------- */
+  --line:        rgba(94, 230, 208, .14);   /* 1px 细边框 */
+  --line-strong: rgba(94, 230, 208, .30);
+  --line-faint:  rgba(233, 239, 251, .07);
+  --grid-line:   rgba(233, 239, 251, .022); /* 背景网格,近不可见 */
+
+  --surface-glass:  rgba(14, 21, 38, .58);  /* 卡片玻璃 */
+  --elevated-glass: rgba(19, 28, 51, .70);
+  --panel-glass:    rgba(14, 21, 38, .88);  /* 分身抽屉 */
+  --topbar-glass:   rgba(10, 14, 26, .72);
+  --input-glass:    rgba(19, 28, 51, .55);
+
+  /* ---------- 弥散辉光(背景层,单层 opacity ≤ .16) ---------- */
+  --glow-blue-soft:  rgba(46, 91, 255, .16);
+  --glow-blue-faint: rgba(46, 91, 255, .09);
+  --glow-cyan-soft:  rgba(94, 230, 208, .07);
+
+  /* ---------- 强调色派生 ---------- */
+  --accent-dim:       rgba(94, 230, 208, .09);
+  --accent-glow:      rgba(94, 230, 208, .50);  /* LED 小光晕 */
+  --accent-glow-soft: rgba(94, 230, 208, .22);  /* 按钮 / 文字微光 */
+  --accent-ink:       #052A22;                  /* 主按钮上的深色文字 */
+  --edge-highlight:   rgba(255, 255, 255, .16); /* 玻璃上边缘高光 */
+  --selection:        rgba(94, 230, 208, .25);
+
+  /* ---------- 状态色(徽标 / LED 三态) ---------- */
+  --status-cyan:       var(--accent);
+  --status-cyan-dim:   rgba(94, 230, 208, .09);
+  --status-cyan-line:  rgba(94, 230, 208, .30);
+  --status-cyan-glow:  rgba(94, 230, 208, .50);
+
+  --status-blue:       #8FB0FF;
+  --status-blue-dim:   rgba(143, 176, 255, .09);
+  --status-blue-line:  rgba(143, 176, 255, .30);
+  --status-blue-glow:  rgba(143, 176, 255, .50);
+
+  --status-amber:      #F0BC6A;
+  --status-amber-dim:  rgba(240, 188, 106, .09);
+  --status-amber-line: rgba(240, 188, 106, .30);
+  --status-amber-glow: rgba(240, 188, 106, .50);
+
+  /* ---------- 纸感(简历模式 / 打印) ---------- */
+  --paper-bg:          #ECEAE3;
+  --paper:             #FDFCF9;
+  --paper-ink:         #1C2230;
+  --paper-muted:       #59617A;
+  --paper-faint:       #9AA0B2;
+  --paper-line:        rgba(28, 34, 48, .16);
+  --paper-accent:      #0E7C6B;
+  --paper-accent-glow: rgba(14, 124, 107, .35);
+  --paper-glass:       rgba(253, 252, 249, .82);
+  --paper-shadow:      0 24px 64px rgba(28, 34, 48, .16),
+                       0 2px 8px rgba(28, 34, 48, .08);
+
+  /* ---------- 字体 ---------- */
+  --font-sans:    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono:    "JetBrains Mono", Consolas, Menlo, monospace;
+  --font-display: var(--font-sans); /* 展示型大字:同 sans,配重字重 + 负字距 */
+  --font-serif:   Georgia, "Times New Roman", "Songti SC", "SimSun", serif;
+
+  --tracking-display: -.035em;
+  --tracking-wide:    .18em;
+
+  /* ---------- 字号 scale(clamp 响应式) ---------- */
+  --fs-hero:    clamp(2.75rem, 1.1rem + 5.8vw, 5.25rem);  /* H1 44 → 84 */
+  --fs-display: clamp(2rem, 1.15rem + 3.2vw, 3.5rem);     /* 宣言 32 → 56 */
+  --fs-h2:      clamp(1.5rem, 1.15rem + 1.6vw, 2.25rem);  /* 24 → 36 */
+  --fs-h3:      1.25rem;
+  --fs-num-lg:  clamp(2.25rem, 1.6rem + 2vw, 3.25rem);    /* 账本数字 */
+  --fs-num:     clamp(1.625rem, 1.25rem + 1.1vw, 2rem);   /* 速览指标 */
+  --fs-body:    1rem;
+  --fs-sm:      .875rem;
+  --fs-xs:      .75rem;
+  --fs-2xs:     .6875rem;
+  --fs-3xs:     .625rem;
+
+  /* ---------- 间距 scale ---------- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --space-9: 96px;
+  --space-10: 140px;
+
+  /* ---------- 圆角 ---------- */
+  --radius-sm:   8px;
+  --radius-md:   14px;
+  --radius-lg:   22px;
+  --radius-pill: 999px;
+
+  /* ---------- 阴影 ---------- */
+  --shadow-card:      0 12px 44px rgba(4, 8, 18, .45);
+  --shadow-glow-blue: 0 0 90px rgba(46, 91, 255, .13);
+  --shadow-panel:     -32px 0 90px rgba(4, 8, 18, .55);
+
+  /* ---------- 动效 ---------- */
+  --ease:     cubic-bezier(.22, .8, .26, 1);
+  --dur-fast: .18s;
+  --dur:      .32s;
+  --dur-slow: .6s;
+
+  /* ---------- 布局 ---------- */
+  --container: 1160px;
+  --topbar-h:  64px;
+  --z-topbar:  100;
+  --z-chat:    1000;
+}
