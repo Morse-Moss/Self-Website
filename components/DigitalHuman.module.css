@@ -42,4 +42,11 @@
     width: 100%;
     height: 52%;
   }
+
+  /* 移动端避让底部联系方式行 / 「示例数据」标签:标注移到右上角,桌面位置不变 */
+  .note {
+    top: var(--space-4);
+    right: var(--space-4);
+    bottom: auto;
+  }
 }

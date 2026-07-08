@@ -1,0 +1,7 @@
+<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <!-- 站点图标:深空蓝圆角方块 + 居中两条青色短横线(摩斯电码 M = ——)
+       颜色为 tokens.css --bg / --accent 的字面值(SVG 资产例外,声明于修正任务) -->
+  <rect width="32" height="32" rx="7" fill="#0A0E1A"/>
+  <rect x="8" y="11" width="16" height="3" rx="1.5" fill="#5EE6D0"/>
+  <rect x="8" y="18" width="16" height="3" rx="1.5" fill="#5EE6D0"/>
+</svg>

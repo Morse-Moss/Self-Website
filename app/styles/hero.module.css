@@ -135,7 +135,7 @@
 /* 「示例数据」标注:虚线小签,与真实数字区分(沿用原型 .mock-tag) */
 .mockTag {
   display: inline-block;
-  align-self: flex-end;
+  align-self: center; /* 与卡片行/联系方式行同轴对齐,不再底部悬浮 */
   font-family: var(--font-mono);
   font-size: var(--fs-3xs);
   letter-spacing: 0.08em;
@@ -176,7 +176,7 @@
 @media (max-width: 760px) {
   .hero {
     align-items: flex-end; /* 光球占上部(移动参数 centerY=0.26),文字沉底 */
-    padding: var(--space-9) 0 var(--space-6);
+    padding: var(--space-9) 0 var(--space-8); /* 底部内边距加大,联系方式行远离屏幕边缘 */
   }
   .container {
     width: calc(100% - 40px);
