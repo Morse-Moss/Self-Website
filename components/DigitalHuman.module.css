@@ -1,0 +1,45 @@
+/* ============================================================
+   DigitalHuman.module.css
+   舞台铺满父级定位容器(hero 全幅背景层);
+   占位态 = Lifeform 光球 + 右下角小标注;视频态 = 待机循环视频。
+   零裸色值,全部走 tokens.css 变量。
+   ============================================================ */
+.stage {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none; /* 只当背景,hero 内容层保持可点 */
+}
+
+/* 右下角「数字人筹备中」小标注:纯视觉,不进 aria */
+.note {
+  position: absolute;
+  right: var(--space-5);
+  bottom: var(--space-5);
+  font-family: var(--font-mono);
+  font-size: var(--fs-3xs);
+  letter-spacing: 0.08em;
+  color: var(--faint);
+  border: 1px dashed var(--line-faint);
+  border-radius: 6px;
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+
+/* 待机循环视频:贴右侧、覆盖舞台右半,左缘留给文字区 */
+.video {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 52%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+
+@media (max-width: 760px) {
+  .video {
+    width: 100%;
+    height: 52%;
+  }
+}

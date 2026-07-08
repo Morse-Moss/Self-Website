@@ -1,10 +1,19 @@
 @import "./styles/tokens.css";
 
+/* ============================================================
+   globals.css · 全站基底
+   基底 reset + 深夜屏幕氛围层(弥散辉光 + 近不可见网格),
+   参照 prototype/css/main.css 第 0 节移植。零裸色值。
+   ============================================================ */
+
 html {
   color-scheme: dark;
+  -webkit-text-size-adjust: 100%;
 }
 
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
@@ -15,7 +24,96 @@ body {
 }
 
 body {
+  min-height: 100vh;
   background: var(--bg);
   color: var(--ink);
   font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+h1,
+h2,
+h3,
+p,
+ul,
+figure {
+  margin: 0;
+}
+
+ul {
+  padding: 0;
+  list-style: none;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+canvas {
+  display: block;
+}
+
+::selection {
+  background: var(--selection);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* 深夜屏幕:2-3 层超大弥散辉光(z:-2)+ 近不可见网格(z:-1) */
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+}
+body::before {
+  background:
+    radial-gradient(1100px 780px at 72% -12%, var(--glow-blue-soft) 0%, transparent 62%),
+    radial-gradient(950px 720px at -8% 34%, var(--glow-cyan-soft) 0%, transparent 60%),
+    radial-gradient(1000px 900px at 88% 92%, var(--glow-blue-faint) 0%, transparent 65%);
+}
+body::after {
+  z-index: -1;
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 72px 72px;
+}
+
+/* 滚动条(WebKit)· 控制台质感 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--elevated);
+  border: 2px solid var(--bg);
+  border-radius: var(--radius-pill);
+}
+
+/* 无障碍 · 减少动效:CSS 侧动画全部收敛(canvas 侧由 Lifeform 自行降级) */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+  }
 }

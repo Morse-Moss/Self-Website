@@ -1,0 +1,197 @@
+/* ============================================================
+   hero.module.css · 首屏 · 30 秒速览层
+   参照 prototype/css/main.css 首屏部分移植(hero / chips /
+   metric / mock-tag / contact),零裸色值,全部走 tokens.css。
+
+   布局:
+   - 桌面(>760px)双栏:左侧速览内容列(约 50% 宽,让出右侧
+     给光球,fadeX1=0.48 与之对齐),右侧 DigitalHuman 舞台
+     (绝对定位铺满 hero,烤入参数把光球放在 0.68/0.42)
+   - 移动(≤760px)单列:形体在上(移动参数 0.72/0.26),
+     文字在下(内容底部对齐)
+   - 速览内容在 1440 与 390 都必须不滚动即全部可见
+   ============================================================ */
+
+.hero {
+  position: relative;
+  min-height: 100vh;
+  min-height: 100svh;
+  display: flex;
+  align-items: center;
+  padding: var(--space-6) 0;
+  overflow: hidden;
+}
+
+.container {
+  position: relative;
+  z-index: 1; /* 内容层压在 DigitalHuman 舞台之上 */
+  width: min(var(--container), calc(100% - 48px));
+  margin-inline: auto;
+}
+
+.content {
+  max-width: 50%; /* 左栏:与光球 fadeX1=0.48 渐隐区对齐,特效不挡文字 */
+}
+
+/* ---------------- 眉头行 ---------------- */
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--tracking-wide);
+  color: var(--accent);
+}
+.eyebrow::before {
+  content: "";
+  width: 36px;
+  height: 1px;
+  background: var(--line-strong);
+}
+
+/* ---------------- 名字 / 定位 ---------------- */
+.title {
+  margin-top: var(--space-5);
+  font-family: var(--font-display);
+  font-size: var(--fs-hero);
+  font-weight: 800;
+  letter-spacing: var(--tracking-display);
+  line-height: 1.05;
+}
+
+.sub {
+  margin-top: var(--space-5);
+  max-width: 34em;
+  color: var(--muted);
+  font-size: clamp(1rem, 0.92rem + 0.45vw, 1.1875rem);
+  line-height: 1.85;
+}
+
+/* ---------------- 核心技术栈行 ---------------- */
+.chips {
+  margin-top: var(--space-5);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.chip {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  background: var(--surface-glass);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  padding: 7px 14px;
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+/* ---------------- 3 个硬亮点卡 ---------------- */
+.highlights {
+  margin-top: var(--space-6);
+  display: flex;
+  align-items: stretch;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+.highlightCard {
+  flex: 1 1 0;
+  min-width: 128px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--surface-glass);
+  border: 1px solid var(--line-faint);
+  border-radius: var(--radius-md);
+  padding: var(--space-4) var(--space-5);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+.highlightValue {
+  display: inline-flex;
+  align-items: baseline;
+}
+.highlightNum {
+  font-family: var(--font-display);
+  font-size: var(--fs-num);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.highlightSuffix {
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 1.125rem;
+  margin-left: 2px;
+}
+.highlightLabel {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  letter-spacing: 0.05em;
+}
+
+/* 「示例数据」标注:虚线小签,与真实数字区分(沿用原型 .mock-tag) */
+.mockTag {
+  display: inline-block;
+  align-self: flex-end;
+  font-family: var(--font-mono);
+  font-size: var(--fs-3xs);
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  border: 1px dashed var(--line-strong);
+  border-radius: 6px;
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+
+/* ---------------- 联系方式行 ---------------- */
+.contact {
+  margin-top: var(--space-6);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.contact a {
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 2px;
+  transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.contact a:hover {
+  color: var(--accent);
+  border-color: var(--line-strong);
+}
+.sep {
+  color: var(--faint);
+}
+
+/* ---------------- 移动 · 单列(形体在上,文字在下) ---------------- */
+@media (max-width: 760px) {
+  .hero {
+    align-items: flex-end; /* 光球占上部(移动参数 centerY=0.26),文字沉底 */
+    padding: var(--space-9) 0 var(--space-6);
+  }
+  .container {
+    width: calc(100% - 40px);
+  }
+  .content {
+    max-width: 100%;
+  }
+  /* 390 不滚动可见:压缩纵向节奏 */
+  .title { margin-top: var(--space-4); }
+  .sub { margin-top: var(--space-3); line-height: 1.7; }
+  .chips { margin-top: var(--space-4); gap: 8px; }
+  .highlights { margin-top: var(--space-5); gap: var(--space-3); }
+  .highlightCard {
+    min-width: 96px;
+    padding: var(--space-3) var(--space-4);
+  }
+  .contact { margin-top: var(--space-5); }
+}
