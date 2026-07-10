@@ -7,12 +7,14 @@
     "build": "next build",
     "start": "next start",
     "stats": "node scripts/collect-stats.mjs",
-    "test": "node --test \"scripts/*.test.mjs\""
+    "test": "node --test \"scripts/*.test.mjs\"",
+    "visual:s3": "node scripts/s3-visual-smoke.mjs http://localhost:3000"
   },
   "dependencies": {
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
+    "gsap": "^3.15.0",
     "next": "^16.2.10",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",

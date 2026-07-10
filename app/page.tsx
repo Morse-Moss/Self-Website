@@ -1,4 +1,9 @@
 import DigitalHuman from '@/components/DigitalHuman';
+import { ResumeModeToggle } from '@/components/ResumeMode';
+import ScrollEffects from '@/components/ScrollEffects';
+import { ResumeSection, StandardS3Sections } from '@/components/S3Sections';
+import s3Content from '@/content/s3-content.json';
+import stats from '@/content/stats.json';
 import styles from './styles/hero.module.css';
 
 /* ============================================================
@@ -9,58 +14,69 @@ import styles from './styles/hero.module.css';
 
 export default function Home() {
   return (
-    <main>
-      <section className={styles.hero} aria-label="速览">
-        <DigitalHuman />
+    <>
+      <ResumeModeToggle config={s3Content.resumeMode} />
+      <ScrollEffects />
 
-        <div className={styles.container}>
-          <div className={styles.content}>
-            <p className={styles.eyebrow}>DIGITAL LIFEFORM · FORMAL v1</p>
-            <h1 className={styles.title}>数字生命摩斯</h1>
-            <p className={styles.sub}>一个人 + 一套 AI 操作系统。把重复 3 遍的事,全部 AI 化。</p>
+      <main>
+        <div data-standard-content>
+          <section className={styles.hero} aria-label="速览">
+            <DigitalHuman />
 
-            <ul className={styles.chips} aria-label="核心技术栈">
-              <li className={styles.chip}>Agent 编排</li>
-              <li className={styles.chip}>LLM 应用</li>
-              <li className={styles.chip}>自动化流水线</li>
-              <li className={styles.chip}>全栈开发</li>
-            </ul>
+            <div className={styles.container}>
+              <div className={styles.content}>
+                <p className={styles.eyebrow}>DIGITAL LIFEFORM · FORMAL v1</p>
+                <h1 className={styles.title}>数字生命摩斯</h1>
+                <p className={styles.sub}>一个人 + 一套 AI 操作系统。把重复 3 遍的事,全部 AI 化。</p>
 
-            <div className={styles.highlights} aria-label="核心亮点(示例数据)">
-              <div className={styles.highlightCard}>
-                <span className={styles.highlightValue}>
-                  <span className={styles.highlightNum}>3</span>
-                </span>
-                <span className={styles.highlightLabel}>在建系统</span>
+                <ul className={styles.chips} aria-label="核心技术栈">
+                  <li className={styles.chip}>Agent 编排</li>
+                  <li className={styles.chip}>LLM 应用</li>
+                  <li className={styles.chip}>自动化流水线</li>
+                  <li className={styles.chip}>全栈开发</li>
+                </ul>
+
+                <div className={styles.highlights} aria-label="核心亮点(示例数据)">
+                  <div className={styles.highlightCard}>
+                    <span className={styles.highlightValue}>
+                      <span className={styles.highlightNum}>3</span>
+                    </span>
+                    <span className={styles.highlightLabel}>在建系统</span>
+                  </div>
+                  <div className={styles.highlightCard}>
+                    <span className={styles.highlightValue}>
+                      <span className={styles.highlightNum}>1,200</span>
+                      <span className={styles.highlightSuffix}>+</span>
+                    </span>
+                    <span className={styles.highlightLabel}>知识库条目</span>
+                  </div>
+                  <div className={styles.highlightCard}>
+                    <span className={styles.highlightValue}>
+                      <span className={styles.highlightNum}>480</span>
+                      <span className={styles.highlightSuffix}>+</span>
+                    </span>
+                    <span className={styles.highlightLabel}>本月 AI 协作会话</span>
+                  </div>
+                  <span className={styles.mockTag}>示例数据</span>
+                </div>
+
+                <p className={styles.contact} aria-label="联系方式">
+                  <a href="#">GitHub</a>
+                  <span className={styles.sep} aria-hidden="true">·</span>
+                  <a href="#">Email</a>
+                  <span className={styles.sep} aria-hidden="true">·</span>
+                  <a href="#">WeChat</a>
+                  <span className={styles.mockTag}>示例数据</span>
+                </p>
               </div>
-              <div className={styles.highlightCard}>
-                <span className={styles.highlightValue}>
-                  <span className={styles.highlightNum}>1,200</span>
-                  <span className={styles.highlightSuffix}>+</span>
-                </span>
-                <span className={styles.highlightLabel}>知识库条目</span>
-              </div>
-              <div className={styles.highlightCard}>
-                <span className={styles.highlightValue}>
-                  <span className={styles.highlightNum}>480</span>
-                  <span className={styles.highlightSuffix}>+</span>
-                </span>
-                <span className={styles.highlightLabel}>本月 AI 协作会话</span>
-              </div>
-              <span className={styles.mockTag}>示例数据</span>
             </div>
+          </section>
 
-            <p className={styles.contact} aria-label="联系方式">
-              <a href="#">GitHub</a>
-              <span className={styles.sep} aria-hidden="true">·</span>
-              <a href="#">Email</a>
-              <span className={styles.sep} aria-hidden="true">·</span>
-              <a href="#">WeChat</a>
-              <span className={styles.mockTag}>示例数据</span>
-            </p>
-          </div>
+          <StandardS3Sections content={s3Content} stats={stats} />
         </div>
-      </section>
-    </main>
+
+        <ResumeSection content={s3Content} stats={stats} />
+      </main>
+    </>
   );
 }

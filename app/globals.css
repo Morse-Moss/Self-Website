@@ -53,6 +53,10 @@ a {
   text-decoration: none;
 }
 
+button {
+  font: inherit;
+}
+
 canvas {
   display: block;
 }
@@ -64,6 +68,30 @@ canvas {
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
+}
+
+html.resume-mode body {
+  color-scheme: light;
+  background: var(--paper-bg);
+  color: var(--paper-ink);
+}
+
+html.resume-mode body::before,
+html.resume-mode body::after {
+  display: none;
+}
+
+html.resume-mode [data-standard-content],
+html.resume-mode [data-site-footer] {
+  display: none;
+}
+
+html.resume-mode [data-resume-section] {
+  display: block;
+}
+
+html.resume-mode :focus-visible {
+  outline-color: var(--paper-accent);
 }
 
 /* 深夜屏幕:2-3 层超大弥散辉光(z:-2)+ 近不可见网格(z:-1) */
@@ -115,5 +143,27 @@ body::after {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     transition-delay: 0ms !important;
+  }
+}
+
+@media print {
+  @page {
+    margin: 14mm;
+  }
+
+  body {
+    background: var(--paper) !important;
+    color: var(--paper-ink) !important;
+  }
+
+  body::before,
+  body::after,
+  [data-standard-content],
+  [data-site-footer] {
+    display: none !important;
+  }
+
+  [data-resume-section] {
+    display: block !important;
   }
 }

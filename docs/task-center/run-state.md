@@ -4,10 +4,10 @@
 > 启动:2026-07-08 · 授权:装依赖(契约内)/ 本地 git init+commit / 只读四外部资产 · 模式:Morse 开发模式 + morse-goal 自动化运行
 
 ## current_pointer
-**HANDOFF → Codex**(S3 起由 Codex 侧 morse-development-mode 执行,见 handoff-to-codex.md)
+**Codex S3 COMPLETE → S5 gated / S6 pre-closeout**(S5 仍等 content/drafts/ 摩斯终审;若未终审,按 handoff 交回)
 
 ## next_allowed_pointer
-Codex:S3 → (S5 若终审完成) → S6 自检 → 交回 Claude Code 侧最终验收
+Codex:(S5 若终审完成) → S6 自检 → 交回 Claude Code 侧最终验收
 
 ## 本轮收尾状态(2026-07-08,Claude Code 侧停机点)
 - S2 终态评审 PASS(参数逐字段零漂移/降级链完整/边界干净/一条非阻塞:WEBGL_lose_context 兼容性记录)
@@ -18,9 +18,9 @@ Codex:S3 → (S5 若终审完成) → S6 自检 → 交回 Claude Code 侧最终
 ## Stage Package
 - [x] S0 盘点:环境全绿(Node24/npm11/registry 通),e:\Revolution 原非 git 仓库已 init
 - [x] S1 骨架:Next.js@16 + TS + token 迁移 + CLAUDE.md v2 + 2 commits —— 评审进行中
-- [ ] S2 首屏:速览层 + 数字人占位组件(视频源可配)+ 光球氛围层移植(React 化)
-- [ ] S3 滚动叙事框架 + 展厅 + 账本 + 简历模式(GSAP 契约内新增依赖)
-- [ ] S4 数据管线:scripts/collect-stats.mjs(git log + CC/Codex 本地记录 → JSON;TDD 适用)
+- [x] S2 首屏:速览层 + 数字人占位组件(视频源可配)+ 光球氛围层移植(React 化)
+- [x] S3 滚动叙事框架 + 展厅 + 账本 + 简历模式(GSAP 契约内新增依赖)
+- [x] S4 数据管线:scripts/collect-stats.mjs(git log + CC/Codex 本地记录 → JSON;TDD 适用)
 - [ ] S5 内容注入 + 数字摩斯口吻统一(依赖 M1 终审产出;未终审内容一律占位)
 - [ ] S6 终验收:build + 1440/390 CDP 截图视觉门(硬规则15)+ Lighthouse + reduced-motion + closeout
 - 并行 M1 内容线:知识库/简历/口播稿草稿 → content/drafts/(产出只进终审队列,不自动上线)
@@ -77,6 +77,15 @@ Codex:S3 → (S5 若终审完成) → S6 自检 → 交回 Claude Code 侧最终
 - 2026-07-08 M1 内容 agent API timeout 一次 → 已续跑(SendMessage 复活)
 
 ## Evidence Ledger
+### S3(2026-07-10,Codex)
+- Stage contract:滚动叙事 + 系统展厅 + 方法论/杠杆账本 + 联系/页脚 + 简历模式;唯一新增依赖 `gsap`;S5 正式内容未终审前只上线结构占位与「示例数据 / 筹备中」标注。
+- Changed:app/page.tsx,app/layout.tsx,app/globals.css,components/{ScrollEffects,ResumeMode,S3Sections}.*,content/s3-content.json,scripts/{site-content.test.mjs,s3-visual-smoke.mjs},package.json,package-lock.json。
+- Implementation:首屏 S2 JSX 仅包裹后挂载 S3 区块;Lifeform/DigitalHuman/hero.module.css/tokens.css/content/stats.json 未改。展厅 4 卡按 L1「痛点→方案→人机分工→状态」;深度研究保留「试驾间回放 · 筹备中」。账本消费 content/stats.json 的真实 128 会话/13 项目/近90天 26 活跃天,其余仍标「示例数据」。简历模式右上角开关,localStorage key `morse.resumeMode`,预水合脚本防首帧闪烁,打印样式就位。
+- Verification:`npm test` PASS(21/21);`npm run build` PASS(Next.js static prerender / TypeScript PASS);`npm run visual:s3` PASS(1440 + 390 + 390 reduced-motion,控制台零错误,无横向溢出,简历模式持久化/打印入口,移动 reduced-motion 双帧一致=true);`git diff --check` PASS(仅 CRLF 工作区提示,无 whitespace error)。
+- Review:独立只读评审 PASS。FOLLOW-UP 1-3 已修(简历模式预水合 guard;visual:s3 npm 入口;reduced-motion 双帧一致;CDP target close)。FOLLOW-UP 4 本条记账已完成。
+- Boundaries:未引用 content/drafts/;未改 prototype/** 或 docs/verify/**;未 push/部署/建远程;未调用 Provider;除 `gsap` 外零新增依赖;新增视觉截图只写系统临时目录 `revolution-s3-smoke`,不覆盖既有验收证据。
+- Next:S5 仍由摩斯终审 drafts 后再注入;若终审未完成,进入 S6 自检/交回流程。
+
 ### S1(2026-07-08)
 - Changed:package.json/tsconfig/next.config.mjs/.gitignore/app/{layout,page,globals}/app/styles/tokens.css/CLAUDE.md
 - Verify:`npm run build` PASS(Turbopack);dev 冒烟 GET / 200;`diff tokens` 逐字节一致(CEO 亲验);git log 2 commits(CEO 亲验)

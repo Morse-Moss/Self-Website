@@ -1,0 +1,106 @@
+.toggle {
+  position: fixed;
+  top: var(--space-4);
+  right: var(--space-4);
+  z-index: var(--z-topbar);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 40px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill);
+  background: var(--topbar-glass);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.toggle:hover {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+}
+
+.toggle:active {
+  transform: translateY(1px);
+}
+
+.toggle[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+}
+
+.signal {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+
+.toggle[aria-pressed="true"] .signal {
+  background: var(--accent-ink);
+  box-shadow: none;
+}
+
+.printButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 var(--space-5);
+  border: 1px solid var(--paper-ink);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--paper-ink);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.printButton:hover {
+  background: var(--paper-ink);
+  color: var(--paper);
+}
+
+:global(html.resume-mode) .toggle {
+  background: var(--paper-glass);
+  color: var(--paper-ink);
+  border-color: var(--paper-line);
+}
+
+:global(html.resume-mode) .toggle[aria-pressed="true"] {
+  background: var(--paper-ink);
+  color: var(--paper);
+  border-color: var(--paper-ink);
+}
+
+@media (max-width: 560px) {
+  .toggle {
+    top: var(--space-3);
+    right: var(--space-3);
+    min-height: 36px;
+    padding: 0 var(--space-3);
+    font-size: var(--fs-2xs);
+  }
+}
+
+@media print {
+  .toggle,
+  .printButton {
+    display: none !important;
+  }
+}

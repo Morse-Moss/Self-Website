@@ -1,0 +1,134 @@
+{
+  "resumeMode": {
+    "storageKey": "morse.resumeMode",
+    "bodyClass": "resume-mode",
+    "toggleLabel": "简历模式",
+    "printLabel": "打印 / 存 PDF"
+  },
+  "narrative": {
+    "galleryIntro": "我是数字摩斯。真人摩斯把重复劳动拆成系统,我在这里把它们讲给你听。",
+    "methodIntro": "他的工作方法很简单:重复 3 遍的事,就不该继续靠手工撑着。",
+    "contactIntro": "如果你只想快速判断他值不值得聊,简历模式在右上角。想看系统,继续往下。"
+  },
+  "gallery": {
+    "cards": [
+      {
+        "id": "content-agent",
+        "kicker": "SYS-01",
+        "title": "内容生成 Agent 系统",
+        "state": "已交付 · 内部运行中",
+        "problem": "内容生产链路里,选题、资料整理、初稿和质检重复度高,人容易被流程拖住。",
+        "solution": "把流程拆成可监督的 agent 队列,让系统先产出,人只保留方向、标准和最后验收。",
+        "humanAiSplit": "人定策略与验收线,AI 执行资料整理、结构生成、版本改写和格式交付。",
+        "status": "脱敏案例占位,真实效果与边界等待 S5 内容终审后注入。",
+        "sampleLabel": "示例数据",
+        "progress": 82
+      },
+      {
+        "id": "operations-pipeline",
+        "kicker": "SYS-02",
+        "title": "运营流水线系统",
+        "state": "即将上线",
+        "problem": "运营动作跨平台、跨素材、跨节奏,人工维护容易漏、慢、不可复盘。",
+        "solution": "把内容准备、排期、发布检查和反馈整理收束成一条 AI 内容生产流水线。",
+        "humanAiSplit": "人决定口径、合规边界和节奏,AI 承担素材整理、草稿生成与检查清单。",
+        "status": "公开叙事仅保留方法和系统设计,真实平台口径等待人工终审。",
+        "sampleLabel": "示例数据",
+        "progress": 64
+      },
+      {
+        "id": "deep-research",
+        "kicker": "SYS-03",
+        "title": "深度研究系统",
+        "state": "开发中",
+        "problem": "复杂问题需要跨来源检索、交叉验证、引用沉淀,手工做慢且容易漏证据。",
+        "solution": "让 agent 分层检索、筛证、写作和复核,输出带引用链的研究报告。",
+        "humanAiSplit": "人给研究目标和验收标准,AI 负责搜索路径、证据整理、草稿与反查。",
+        "status": "试驾间回放入口预留,真实案例等待录制与审核。",
+        "sampleLabel": "示例数据",
+        "progress": 47,
+        "cta": {
+          "label": "试驾间回放 · 筹备中"
+        }
+      },
+      {
+        "id": "incubator",
+        "kicker": "SYS-04",
+        "title": "孵化位",
+        "state": "筹备中",
+        "problem": "还有一些重复 3 遍以上的工作,正在被拆解成可产品化的系统。",
+        "solution": "不上线前不装完成,只保留占位和路线图,上线一个点亮一个。",
+        "humanAiSplit": "人负责判断是否值得系统化,AI 负责把可复用步骤沉淀成工具链。",
+        "status": "孵化中,不展示未验证数字。",
+        "sampleLabel": "示例数据",
+        "progress": 18
+      }
+    ]
+  },
+  "ledger": {
+    "metrics": [
+      {
+        "id": "sessions",
+        "label": "AI 协作会话",
+        "sourcePath": "claudeCode.sessions",
+        "suffix": "",
+        "dataLabel": "真实统计",
+        "methodologyLabel": "本机 Claude Code 会话文件元数据"
+      },
+      {
+        "id": "projects",
+        "label": "项目覆盖",
+        "sourcePath": "claudeCode.projects",
+        "suffix": "",
+        "dataLabel": "真实统计",
+        "methodologyLabel": "含会话记录的项目目录数"
+      },
+      {
+        "id": "active-days",
+        "label": "近 90 天活跃",
+        "sourcePath": "claudeCode.activeDaysLast90",
+        "suffix": "天",
+        "dataLabel": "真实统计",
+        "methodologyLabel": "按自然日去重的活跃天数"
+      }
+    ],
+    "sampleItems": [
+      {
+        "label": "自动化任务等效节省",
+        "value": "整理中",
+        "sampleLabel": "示例数据"
+      },
+      {
+        "label": "系统上线后导流",
+        "value": "筹备中",
+        "sampleLabel": "示例数据"
+      }
+    ]
+  },
+  "principles": [
+    {
+      "index": "01",
+      "title": "先改工作流,再谈工具",
+      "body": "AI native 不是堆工具 logo,而是让流程围绕 AI 重新分工。"
+    },
+    {
+      "index": "02",
+      "title": "系统承担复杂性",
+      "body": "后台可以复杂,但用户触碰到的每一步必须清楚、可恢复、知道下一步。"
+    },
+    {
+      "index": "03",
+      "title": "证据比口号重要",
+      "body": "真实数字来自管线,未终审内容明确标示示例数据或筹备中。"
+    }
+  ],
+  "contact": {
+    "title": "继续聊",
+    "body": "我可以把系统、方法和简历切成不同阅读速度。正式联系方式等待 S5 终审后替换。",
+    "links": [
+      { "label": "GitHub", "href": "#", "sampleLabel": "示例数据" },
+      { "label": "Email", "href": "#", "sampleLabel": "示例数据" },
+      { "label": "WeChat", "href": "#", "sampleLabel": "示例数据" }
+    ]
+  }
+}
