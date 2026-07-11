@@ -4,10 +4,10 @@
 > 启动:2026-07-08 · 授权:装依赖(契约内)/ 本地 git init+commit / 只读四外部资产 · 模式:Morse 开发模式 + morse-goal 自动化运行
 
 ## current_pointer
-**Codex S3 COMPLETE → S5 gated / S6 pre-closeout**(S5 仍等 content/drafts/ 摩斯终审;若未终审,按 handoff 交回)
+**Codex S5 SAFE COMPLETE → S6 final acceptance**(安全内容基线已落库;content/drafts/ 仍待摩斯终审且未注入)
 
 ## next_allowed_pointer
-Codex:(S5 若终审完成) → S6 自检 → 交回 Claude Code 侧最终验收
+Codex:S6 上线前自检 → 交回 Claude Code 侧最终验收;终审内容增量另行处理,不阻塞 S6
 
 ## 本轮收尾状态(2026-07-08,Claude Code 侧停机点)
 - S2 终态评审 PASS(参数逐字段零漂移/降级链完整/边界干净/一条非阻塞:WEBGL_lose_context 兼容性记录)
@@ -21,7 +21,8 @@ Codex:(S5 若终审完成) → S6 自检 → 交回 Claude Code 侧最终验收
 - [x] S2 首屏:速览层 + 数字人占位组件(视频源可配)+ 光球氛围层移植(React 化)
 - [x] S3 滚动叙事框架 + 展厅 + 账本 + 简历模式(GSAP 契约内新增依赖)
 - [x] S4 数据管线:scripts/collect-stats.mjs(git log + CC/Codex 本地记录 → JSON;TDD 适用)
-- [ ] S5 内容注入 + 数字摩斯口吻统一(依赖 M1 终审产出;未终审内容一律占位)
+- [x] S5 安全内容基线:公开安全文案 + 关于/FAQ/内容缺口台账 + 联系占位;未读取或注入 content/drafts/
+- [ ] M1 终审内容增量:摩斯终审通过后再替换对应占位,不阻塞 S6
 - [ ] S6 终验收:build + 1440/390 CDP 截图视觉门(硬规则15)+ Lighthouse + reduced-motion + closeout
 - 并行 M1 内容线:知识库/简历/口播稿草稿 → content/drafts/(产出只进终审队列,不自动上线)
 - Research lane:置信 <96% 的阶段先研究出 Decision Note;Parking:阻塞则记档并切独立安全阶段
@@ -46,7 +47,7 @@ Codex:(S5 若终审完成) → S6 自检 → 交回 Claude Code 侧最终验收
 - State source:本文件 current_pointer
 - 每轮:读 pointer → 执行该阶段(派 Sonnet)→ 评审 → 更新 pointer/证据 → 下一阶段
 - Research fallback:置信不足转研究巷道,产 Decision Note 再继续
-- Stop/escalate:预授权外动作、BLOCKER 修复两轮仍不过、M1 终审阻塞 S5(则完成 S6 前置项后停)、破坏性操作需求
+- Stop/escalate:预授权外动作、BLOCKER 修复两轮仍不过、试图把未终审 drafts 注入线上内容、破坏性操作需求
 - 摩斯不在场时:低噪声推进,阶段 PASS 只落盘,聊天仅报里程碑/阻塞/收尾
 
 ### M1 内容线(2026-07-08)完成,进入摩斯终审队列
@@ -77,6 +78,15 @@ Codex:(S5 若终审完成) → S6 自检 → 交回 Claude Code 侧最终验收
 - 2026-07-08 M1 内容 agent API timeout 一次 → 已续跑(SendMessage 复活)
 
 ## Evidence Ledger
+### S5 安全内容基线(2026-07-11,Codex)
+- Scope:仅更新 `content/s3-content.json`、`components/S3Sections.tsx`、`components/S3Sections.module.css`、`scripts/site-content.test.mjs`;未读取 drafts 作为线上内容源。
+- Content safety:live JSON 禁止草稿/终审标记、本地绝对路径、内部来源名和高风险运营措辞;缺失身份、联系方式、量化效果、系统关系口径和数字人素材统一进入“内容缺口台账”,不编造事实。
+- UI:新增关于、FAQ、内容缺口台账;`href="#"` 的联系方式渲染为不可点击占位;新增样式全部消费既有 token,桌面与移动端分别采用三列/两列和单列布局。
+- Verification:`npm test` PASS(24/24);`npm run build` PASS(Next.js static prerender / TypeScript PASS);Playwright 1440 + 390 + 390 reduced-motion PASS(控制台/页面错误 0,横向溢出 0,S5 区块全部可见,3 个联系占位均无假链接);`git diff --check` PASS。
+- Commit:`0bbbdfc feat: add safe S5 portfolio content`。
+- Boundaries:`content/drafts/` 仍待摩斯终审且未注入;`prototype/**`、`docs/verify/**`、外部资产、依赖、Provider、远程仓库和部署均未改动。
+- Next:S6 上线前验收;Lighthouse >=90、最终视觉门和部署仍待执行。
+
 ### S3(2026-07-10,Codex)
 - Stage contract:滚动叙事 + 系统展厅 + 方法论/杠杆账本 + 联系/页脚 + 简历模式;唯一新增依赖 `gsap`;S5 正式内容未终审前只上线结构占位与「示例数据 / 筹备中」标注。
 - Changed:app/page.tsx,app/layout.tsx,app/globals.css,components/{ScrollEffects,ResumeMode,S3Sections}.*,content/s3-content.json,scripts/{site-content.test.mjs,s3-visual-smoke.mjs},package.json,package-lock.json。
@@ -93,6 +103,6 @@ Codex:(S5 若终审完成) → S6 自检 → 交回 Claude Code 侧最终验收
 - FOLLOW-UP:npm audit 2 moderate(间接依赖,契约外未处理,S6 收尾统一决定)
 
 ## 摩斯的人工队列(不阻塞工程线)
-1. content/drafts/ 终审(阻塞 S5 真实内容注入)
+1. content/drafts/ 终审(阻塞终审内容增量,不阻塞 S6;S5 安全基线已完成)
 2. 录数字人素材 + 可灵/豆包训练(阻塞占位点亮,不阻塞 v1)
 3. Vercel 部署(S6 后)
