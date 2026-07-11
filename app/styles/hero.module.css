@@ -158,15 +158,11 @@
   letter-spacing: 0.05em;
   color: var(--muted);
 }
-.contact a {
+.contactPlaceholder {
   color: var(--muted);
   border-bottom: 1px solid var(--line);
   padding-bottom: 2px;
-  transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
-}
-.contact a:hover {
-  color: var(--accent);
-  border-color: var(--line-strong);
+  cursor: default;
 }
 .sep {
   color: var(--faint);

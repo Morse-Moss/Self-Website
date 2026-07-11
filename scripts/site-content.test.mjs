@@ -12,6 +12,7 @@ const repoRoot = path.resolve(path.dirname(__filename), '..');
 const contentPath = path.join(repoRoot, 'content', 's3-content.json');
 const statsPath = path.join(repoRoot, 'content', 'stats.json');
 const layoutPath = path.join(repoRoot, 'app', 'layout.tsx');
+const pagePath = path.join(repoRoot, 'app', 'page.tsx');
 const s3SectionsPath = path.join(repoRoot, 'components', 'S3Sections.tsx');
 const packagePath = path.join(repoRoot, 'package.json');
 const visualSmokePath = path.join(repoRoot, 'scripts', 's3-visual-smoke.mjs');
@@ -177,4 +178,16 @@ test('S5 safe sections are data-driven and rendered by the S3 section component'
   assert.match(component, /content\.contentGaps\.items\.map/);
   assert.match(component, /link\.href === '#'/);
   assert.match(component, /没有证据链的数字,我会明确标注状态/);
+});
+
+test('S6 first-viewport contact placeholders are inert instead of fake links', () => {
+  const page = fs.readFileSync(pagePath, 'utf8');
+
+  assert.doesNotMatch(page, /<a href="#">/);
+  for (const label of ['GitHub', 'Email', 'WeChat']) {
+    assert.match(
+      page,
+      new RegExp(`<span className=\\{styles\\.contactPlaceholder\\} aria-disabled="true">${label}</span>`),
+    );
+  }
 });

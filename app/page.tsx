@@ -61,11 +61,11 @@ export default function Home() {
                 </div>
 
                 <p className={styles.contact} aria-label="联系方式">
-                  <a href="#">GitHub</a>
+                  <span className={styles.contactPlaceholder} aria-disabled="true">GitHub</span>
                   <span className={styles.sep} aria-hidden="true">·</span>
-                  <a href="#">Email</a>
+                  <span className={styles.contactPlaceholder} aria-disabled="true">Email</span>
                   <span className={styles.sep} aria-hidden="true">·</span>
-                  <a href="#">WeChat</a>
+                  <span className={styles.contactPlaceholder} aria-disabled="true">WeChat</span>
                   <span className={styles.mockTag}>示例数据</span>
                 </p>
               </div>
