@@ -9,8 +9,9 @@
 
 - S3 已由 commit `c978193` 完成:滚动叙事、系统展厅、杠杆账本、联系/页脚和简历模式。
 - S5 安全内容基线已由 commit `0bbbdfc` 完成:关于、FAQ、内容缺口台账、保守公开文案和不可点击联系占位。
+- S6 上线前终验收已由 commit `6cdf1a0` 完成:25/25 tests、生产构建、1440/390、触控、减弱动画、简历打印与 Lighthouse 100 全部通过。
 - `content/drafts/` 未通过摩斯终审,仍未注入线上内容;后续终审增量不阻塞 S6。
-- 当前允许指针:S6 上线前自检与交回验收;Lighthouse、最终视觉门、部署和域名仍未执行。
+- 当前允许指针:Claude Code 侧可复核 `docs/verify/v1/s6-*`;部署、域名与终审内容增量等待摩斯另行授权。
 
 ## 已完成(勿重做,证据见 run-state.md)
 
@@ -21,9 +22,10 @@
 | S4 | scripts/collect-stats.mjs 数据管线(16 tests 全绿,隐私审计 PASS)→ content/stats.json | 评审 PASS |
 | S3 | 滚动叙事、展厅、账本、联系/页脚、简历模式 | 已完成(`c978193`) |
 | S5 | 安全公开内容、关于/FAQ/内容缺口台账、联系占位 | 已完成(`0bbbdfc`) |
+| S6 | 上线前终验收、首屏假链接修复、统计刷新与验收证据 | 已完成(`6cdf1a0`,Lighthouse 100) |
 | M1 | content/drafts/ 9 份公开知识库草稿 | 待摩斯终审(仅阻塞终审内容增量) |
 
-git:本地 `master` 已包含 S3/S5 回执所列 commits,**禁止 push/建远程/部署**。
+git:本地 `master` 已包含 S3/S5/S6 回执所列 commits,**禁止 push/建远程/部署**。
 
 ## 原阶段契约与当前状态(每阶段:契约→实现→独立评审→证据入账)
 
@@ -42,7 +44,9 @@ git:本地 `master` 已包含 S3/S5 回执所列 commits,**禁止 push/建远程
 - 若终审暂未完成,保留安全基线并继续 S6;终审内容增量留给后续独立阶段。
 
 ### S6 收尾自检(Codex 侧完成后交回)
-- `npm run build` + `npm test` 全绿;`git diff --check`;控制台零报错;1440/390 双宽自检;评审记录齐全写入 run-state.md;产出 Handoff 回执(变更文件/验证输出/遗留项)
+- 已完成:`npm run build` + `npm test`(25/25)全绿;`git diff --check`;控制台零报错;1440/390 双宽与触控自检;reduced-motion 真静止;简历模式与打印契约通过;桌面 Lighthouse 100。
+- 证据:`docs/verify/v1/s6-{desktop-1440,mobile-390,mobile-390-reduced,resume-1440}.png` 与 `s6-lighthouse-desktop.json`。
+- 遗留:部署/域名待摩斯指令;`content/drafts/` 终审增量独立排队;Next.js 间接 PostCSS 的 2 个 moderate 已按静态站威胁模型记录为残余风险,不采用自动建议的 Next 9 降级。
 
 ## 红线(与 CLAUDE.md 一致,逐条生效)
 - 不 push、不部署、不建远程仓库;依赖仅限契约列明(S3=gsap)
