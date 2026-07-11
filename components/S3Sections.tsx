@@ -32,15 +32,32 @@ interface S3Content {
     contactIntro: string;
   };
   gallery: { cards: GalleryCard[] };
+  about: {
+    title: string;
+    caption: string;
+    intro: string;
+    points: Array<{ title: string; body: string }>;
+  };
   ledger: {
     metrics: LedgerMetric[];
     sampleItems: Array<{ label: string; value: string; sampleLabel: string }>;
   };
   principles: Array<{ index: string; title: string; body: string }>;
+  faq: {
+    title: string;
+    caption: string;
+    items: Array<{ question: string; answer: string }>;
+  };
+  contentGaps: {
+    title: string;
+    caption: string;
+    intro: string;
+    items: Array<{ label: string; status: string; body: string }>;
+  };
   contact: {
     title: string;
     body: string;
-    links: Array<{ label: string; href: string; sampleLabel: string }>;
+    links: Array<{ label: string; href: string; sampleLabel?: string }>;
   };
 }
 
@@ -171,10 +188,32 @@ export function StandardS3Sections({
 
       <MorseDivider label="---" />
 
-      <section className={styles.section} id="method" aria-label="方法论">
+      <section className={styles.section} id="about" aria-label="关于摩斯">
         <div className={styles.container}>
           <SectionHeader
             index="SEC.02"
+            title={content.about.title}
+            caption={content.about.caption}
+            intro={content.about.intro}
+          />
+
+          <div className={styles.aboutGrid}>
+            {content.about.points.map((point) => (
+              <article className={styles.aboutPoint} key={point.title} data-reveal>
+                <h3>{point.title}</h3>
+                <p>{point.body}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <MorseDivider label=".-" />
+
+      <section className={styles.section} id="method" aria-label="方法论">
+        <div className={styles.container}>
+          <SectionHeader
+            index="SEC.03"
             title="方法论"
             caption="REPEAT THREE TIMES, THEN SYSTEMIZE"
             intro={content.narrative.methodIntro}
@@ -195,10 +234,10 @@ export function StandardS3Sections({
       <section className={styles.section} id="ledger" aria-label="杠杆账本">
         <div className={styles.container}>
           <SectionHeader
-            index="SEC.03"
+            index="SEC.04"
             title="杠杆账本"
             caption="REAL NUMBERS FIRST"
-            intro="这里先接入已经产出的真实统计。没有证据链的数字,我会明确标成示例数据。"
+            intro="这里先接入已经产出的真实统计。没有证据链的数字,我会明确标注状态。"
           />
 
           <div className={styles.ledgerGrid}>
@@ -234,6 +273,51 @@ export function StandardS3Sections({
         </div>
       </section>
 
+      <section className={styles.section} id="faq" aria-label="高频问题">
+        <div className={styles.container}>
+          <SectionHeader
+            index="SEC.05"
+            title={content.faq.title}
+            caption={content.faq.caption}
+            intro="我先回答最容易影响判断的问题。缺少事实的地方,我会直接说还缺什么。"
+          />
+
+          <div className={styles.faqGrid}>
+            {content.faq.items.map((item) => (
+              <article className={styles.faqItem} key={item.question} data-reveal>
+                <h3>{item.question}</h3>
+                <p>{item.answer}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className={styles.section} id="content-gaps" aria-label="内容缺口台账">
+        <div className={styles.container}>
+          <div className={styles.gapPanel} data-reveal>
+            <SectionHeader
+              index="SEC.06"
+              title={content.contentGaps.title}
+              caption={content.contentGaps.caption}
+              intro={content.contentGaps.intro}
+            />
+
+            <div className={styles.gapList}>
+              {content.contentGaps.items.map((item) => (
+                <article className={styles.gapItem} key={item.label}>
+                  <div>
+                    <h3>{item.label}</h3>
+                    <span className={styles.gapStatus}>{item.status}</span>
+                  </div>
+                  <p>{item.body}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
       <MorseDivider label="." />
 
       <section className={styles.contactSection} id="contact" aria-label="联系">
@@ -243,12 +327,19 @@ export function StandardS3Sections({
             <h2>{content.contact.title}</h2>
             <p>{content.contact.body}</p>
             <div className={styles.contactLinks}>
-              {content.contact.links.map((link) => (
-                <a href={link.href} key={link.label}>
-                  {link.label}
-                  <span>{link.sampleLabel}</span>
-                </a>
-              ))}
+              {content.contact.links.map((link) =>
+                link.href === '#' ? (
+                  <span className={styles.contactLinkPlaceholder} key={link.label} aria-disabled="true">
+                    {link.label}
+                    {link.sampleLabel ? <span>{link.sampleLabel}</span> : null}
+                  </span>
+                ) : (
+                  <a href={link.href} key={link.label}>
+                    {link.label}
+                    {link.sampleLabel ? <span>{link.sampleLabel}</span> : null}
+                  </a>
+                ),
+              )}
             </div>
           </div>
         </div>
