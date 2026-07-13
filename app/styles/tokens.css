@@ -132,6 +132,7 @@
   /* ---------- 布局 ---------- */
   --container: 1160px;
   --topbar-h:  64px;
-  --z-topbar:  100;
-  --z-chat:    1000;
+  --z-topbar:       100;
+  --z-resume-toggle: 110;
+  --z-chat:         1000;
 }

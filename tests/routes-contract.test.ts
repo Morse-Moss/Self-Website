@@ -81,6 +81,8 @@ test('CaseStudy keeps the six evidence sections in exact order and leads with ho
   assert.match(source, /role=['"]img['"]/);
   assert.match(source, /aria-label=\{`\$\{project\.name\}暂无可公开截图`\}/);
   assert.match(source, />截图待补<\/div>/);
+  assert.match(source, /project\.actions\.filter\(\(action\) => action\.kind !== ['"]case['"]\)/);
+  assert.match(source, /<Image[\s\S]*unoptimized/);
 });
 
 test('home page uses approved profile copy, the real featured workbench, and all four projects', () => {

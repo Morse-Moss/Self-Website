@@ -1,5 +1,4 @@
 import Image from 'next/image';
-import Link from 'next/link';
 
 import type { Project } from '@/lib/site-content';
 
@@ -10,6 +9,8 @@ type CaseStudyProps = {
 };
 
 export default function CaseStudy({ project }: CaseStudyProps) {
+  const externalActions = project.actions.filter((action) => action.kind !== 'case');
+
   return (
     <article className={styles.caseStudy}>
       <header className={styles.header}>
@@ -18,13 +19,9 @@ export default function CaseStudy({ project }: CaseStudyProps) {
         <p className={styles.status}>{project.status}</p>
         <p className={styles.summary}>{project.summary}</p>
 
-        <div className={styles.actions} aria-label={`${project.name}操作`}>
-          {project.actions.map((action) =>
-            action.kind === 'case' ? (
-              <Link key={action.href} className={styles.action} href={action.href}>
-                {action.label}
-              </Link>
-            ) : (
+        {externalActions.length ? (
+          <div className={styles.actions} aria-label={`${project.name}操作`}>
+            {externalActions.map((action) => (
               <a
                 key={action.href}
                 className={styles.action}
@@ -34,9 +31,9 @@ export default function CaseStudy({ project }: CaseStudyProps) {
               >
                 {action.label}
               </a>
-            ),
-          )}
-        </div>
+            ))}
+          </div>
+        ) : null}
       </header>
 
       {project.media ? (
@@ -48,6 +45,7 @@ export default function CaseStudy({ project }: CaseStudyProps) {
               height={project.media.height}
               alt={project.media.alt}
               sizes="(max-width: 640px) 100vw, 510px"
+              unoptimized
               priority
             />
           </div>
