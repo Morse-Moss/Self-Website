@@ -117,3 +117,40 @@ test('run-state points to S7 ACTIVE while retaining M3 closeout evidence', () =>
     'Task Center run-state',
   );
 });
+
+test('S7 has a repeatable multipage visual acceptance command', () => {
+  const packageJson = JSON.parse(readUtf8('package.json'));
+  const harness = readUtf8('scripts/s7-visual-smoke.mjs');
+
+  assert.equal(
+    packageJson.scripts['visual:s3'],
+    'node scripts/s3-visual-smoke.mjs http://localhost:3000',
+  );
+  assert.equal(
+    packageJson.scripts['visual:s7'],
+    'node scripts/s7-visual-smoke.mjs http://127.0.0.1:3010',
+  );
+
+  assertIncludesAll(
+    harness,
+    [
+      "'/'",
+      "'/works'",
+      "'/works/content-agent'",
+      "'/works/auto-operations'",
+      "'/works/deep-research'",
+      "'/works/digital-morse'",
+      'Page.captureScreenshot',
+      'Runtime.consoleAPICalled',
+      'Runtime.exceptionThrown',
+      'prefers-reduced-motion',
+      'document.getAnimations',
+      'Emulation.setScrollbarsHidden',
+      'naturalWidth',
+      'horizontalOverflow',
+      'Page.close',
+    ],
+    'S7 visual harness',
+  );
+  assert.doesNotMatch(harness, /maxTouchPoints:\s*mobile\s*\?\s*5\s*:\s*0/);
+});
