@@ -50,7 +50,7 @@ test('blueprint defines the S7 multipage public experience', () => {
   );
 });
 
-test('stage contract contains the complete active-stage governance sections', () => {
+test('stage contract contains the complete closed-stage governance sections', () => {
   const contract = readUtf8('docs/task-center/s7-multipage-portfolio.md');
 
   assertIncludesAll(
@@ -65,7 +65,9 @@ test('stage contract contains the complete active-stage governance sections', ()
       '## Review',
       '## Approvals',
       '## Current Result',
-      'ACTIVE; implementation not started',
+      '## Current Result\n\nPASS',
+      '90 total / 84 pass / 6 PostgreSQL SKIP / 0 fail',
+      'Independent review:PASS',
     ],
     'S7 stage contract',
   );
@@ -101,14 +103,15 @@ test('blueprint and stage contract pin exact sources, CTAs, and safety boundarie
   );
 });
 
-test('run-state points to S7 ACTIVE while retaining M3 closeout evidence', () => {
+test('run-state points to S7 PASS while retaining M3 closeout evidence', () => {
   const runState = readUtf8('docs/task-center/run-state.md');
 
   assertIncludesAll(
     runState,
     [
       '## current_pointer',
-      '**S7 MULTIPAGE VERTICAL SLICE ACTIVE**',
+      '**S7 MULTIPAGE VERTICAL SLICE PASS**',
+      '## S7 multipage closeout evidence(2026-07-13)',
       '## S7 multipage scope amendment(2026-07-13)',
       'docs/task-center/s7-multipage-portfolio.md',
       '## M3-RAG local closeout evidence(2026-07-13)',

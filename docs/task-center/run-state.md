@@ -4,10 +4,10 @@
 > 启动:2026-07-08 · M3-RAG 启动:2026-07-12 · 授权:装依赖(契约内)/ 本地 Docker pgvector / 最多 3 次 OpenAI 冒烟 / 本地 git commit / 只读四外部资产 · 模式:Morse 开发模式 + morse-goal 自动化运行
 
 ## current_pointer
-**S7 MULTIPAGE VERTICAL SLICE ACTIVE**
+**S7 MULTIPAGE VERTICAL SLICE PASS**
 
 ## next_allowed_pointer
-执行 `docs/task-center/s7-multipage-portfolio.md`:先完成需求源与内容契约,再实现首页、作品目录、自动运营案例页和全站数字摩斯入口。部署、域名、push、联网搜索、语音和数字人口型不自动推进。
+S7 已本地验收收尾;等待摩斯定义下一阶段。部署、域名、push、联网搜索、语音、数字人口型、知识库重摄取和数据库变更均不自动推进。
 
 ## S7 multipage scope amendment(2026-07-13)
 - Git baseline:`master` 已通过 `d1ebd88` 吸收 M3-RAG;S7 在 `codex/s7-multipage-portfolio` 开发,不重复合并历史功能分支。
@@ -17,6 +17,18 @@
 - Dependencies:零新增依赖;继续使用 Next.js App Router、TypeScript、CSS Modules 和 `app/styles/tokens.css`。
 - External boundary:`E:\\Wiki`、`E:\\demo2`、`E:\\小红书`、`E:\\多agent` 只读;本阶段不调用 Provider、不修改数据库 schema、不部署、不 push。
 - Stage contract:`docs/task-center/s7-multipage-portfolio.md`;implementation plan:`docs/superpowers/plans/2026-07-13-s7-multipage-portfolio.md`。
+
+## S7 multipage closeout evidence(2026-07-13)
+- Scope PASS:基于 `master@a4eba23` 在 `codex/s7-multipage-portfolio` 完成 `c72493c..961de7f`;53 个 tracked 文件覆盖 S7 需求、真实内容、六路由、共享站点壳、公开 RAG 内容源、脱敏素材、测试与证据。
+- Product PASS:`/`、`/works`、`/works/content-agent`、`/works/auto-operations`、`/works/deep-research`、`/works/digital-morse` 最终生产构建均 HTTP 200;首页首屏为“数字生命摩斯 / Agent 系统开发者”,四个案例结构与 CTA 精确,详情页不再链接自身。
+- Content PASS:`content/site-content.json` 是 live 页面与 RAG 的唯一新公开源;公开页面无假数字、假联系方式、内容缺口台账、生成 UI 或内部路径;旧 S3 内容/组件保留但退出 live 路径。
+- Asset PASS:自动运营公开证据为 510x580 真实登录工作台脱敏裁剪;原图、品牌、账号、任务、业务数据和 Provider 配置未进入 `public/` 或 Git。
+- Verification PASS:`DATABASE_URL` 未设置时 `npm test` 为 90 total / 84 pass / 6 PostgreSQL SKIP / 0 fail;RAG 纯提取/分块/eval 9/9;`npm run build` PASS;`git diff --check` PASS。
+- Browser PASS:`visual:s7` 在 1440x900/390x844 检查六路由均 `failures: []`;全局 Header/Footer/简历/聊天、精确 CTA、510x580 图片、诚实缺图状态、0 横向溢出、0 console/page error、0 外部运行时请求;reduced-motion 无无限动画且双帧一致。证据为 `docs/verify/s7/s7-*.png`。
+- Performance PASS:Lighthouse 13.4.0 desktop performance 1.00(FCP 247ms,LCP 468ms,TBT 0ms,CLS 0);报告 `docs/verify/s7/s7-lighthouse-desktop.json`。
+- Review PASS:STANDARD combined independent reviewer 无 blocker、follow-up 或 scope/profile mismatch;controller 已逐张检查 7 份桌面/移动/reduced-motion 证据图。
+- Safety PASS:未执行知识库 ingest、PostgreSQL 写入、Provider、schema/API/检索算法变更、依赖安装、部署、push 或 PR;四外部资产保持只读。
+- Git boundary:S7 仅在本地分支提交;`AGENTS.md`、两份用户研究文档、`docs/verify/concepts/**`、`output/**` 和旧临时脚本未 stage;等待摩斯决定后续集成与远程同步。
 
 ## M3-RAG MVP scope amendment(2026-07-12)
 - Product boundary:首页、关于与项目公开;短期邀请码只解锁数字摩斯对话和面试官模式。
