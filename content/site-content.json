@@ -1,0 +1,247 @@
+{
+  "site": {
+    "name": "数字生命摩斯",
+    "description": "摩斯的多页 AI 原生作品集与数字分身。",
+    "nav": [
+      { "label": "首页", "href": "/" },
+      { "label": "作品", "href": "/works" }
+    ],
+    "resumeMode": {
+      "storageKey": "morse.resumeMode",
+      "bodyClass": "resume-mode",
+      "toggleLabel": "简历模式",
+      "printLabel": "打印 / 存 PDF"
+    },
+    "footer": {
+      "morse": "-- --- .-. ... .",
+      "statement": "数字摩斯在场，真人摩斯验收。",
+      "copyright": "© 2026 数字生命摩斯"
+    }
+  },
+  "profile": {
+    "kicker": "AGENT SYSTEM DEVELOPER",
+    "title": "数字生命摩斯",
+    "role": "Agent 系统开发者",
+    "summary": "我把研究、内容生产、运营协作和个人知识入口做成可验证、可恢复、有人负责最终判断的系统。",
+    "principles": [
+      "先定义事实与安全边界，再让 AI 加速。",
+      "把重复工作沉淀为可检查、可恢复的流程。",
+      "用测试、运行证据和人工验收约束完成状态。"
+    ]
+  },
+  "home": {
+    "worksIntro": "四个系统，分别处理内容生产、运营协作、深度研究和公开知识对话。",
+    "featuredSlugs": ["auto-operations"]
+  },
+  "works": {
+    "title": "作品",
+    "intro": "这里展示真实状态、可公开证据和当前边界；没有证据的能力不会被包装成成果。"
+  },
+  "projects": [
+    {
+      "slug": "content-agent",
+      "name": "内容创作 Agent 系统",
+      "type": "电商内容生产工作台",
+      "status": "内网已部署",
+      "summary": "把商品素材、提示词、Provider 任务、生成结果与审核收进可追踪的电商内容生产工作台。",
+      "featured": false,
+      "media": null,
+      "actions": [
+        {
+          "kind": "case",
+          "label": "查看案例",
+          "href": "/works/content-agent"
+        }
+      ],
+      "caseStudy": {
+        "problem": "电商内容生产同时涉及商品素材、参考图、提示词、模型参数、异步任务和多版本结果，人工切换成本高。",
+        "role": "摩斯是项目开发负责人，负责整个项目的开发。",
+        "decisions": [
+          "以素材包和 OperationRun 作为生产主线。",
+          "用对话式入口衔接生成确认、任务创建与结果回挂。",
+          "按模型能力约束多参考图与提示词组合。"
+        ],
+        "structure": [
+          "React 与 TypeScript 构成内容生产工作台。",
+          "FastAPI 与 SQLAlchemy 承载项目、版本、任务和结果管理。",
+          "Provider 适配与异步任务治理处理任务状态、失败恢复和结果归档。"
+        ],
+        "evidence": [
+          "商品素材包承载商品图、参考素材、提示词版本、OperationRun 和生成结果。",
+          "对话式创作路径已有文本判断、生成确认、任务创建、结果回挂和失败状态处理的代码与验证记录。",
+          "系统已部署到内网；该部署状态由摩斯确认。"
+        ],
+        "boundaries": [
+          "部分 Provider 路径有真实联调记录，不代表所有模型与生成链路都已稳定。",
+          "不公开客户、雇主、品牌、内网地址、账号、密钥、工作流 ID、业务数据或源码。",
+          "不把系统表述为全自动电商运营、自主发布或通用 Agent 平台，也不展示未经核验的效果数字。"
+        ]
+      }
+    },
+    {
+      "slug": "auto-operations",
+      "name": "自动运营 Agent 系统",
+      "type": "受控运营工作流",
+      "status": "生产环境运行中",
+      "summary": "围绕已授权账号，把内容沉淀、草稿处理、素材、发布校验和人工确认连接成受控运营工作流。",
+      "featured": true,
+      "media": {
+        "src": "/works/auto-operations/login-workbench-2026-07-13.png",
+        "width": 510,
+        "height": 580,
+        "alt": "自动运营 Agent 系统经裁剪后的生产登录工作台",
+        "caption": "生产登录页只读截取，2026-07-13；未登录、未执行业务操作，已裁去品牌区域。",
+        "evidence": {
+          "capturedAt": "2026-07-13",
+          "commit": "16f16ba",
+          "runMode": "Railway 生产登录页，只读",
+          "sanitization": "裁去品牌区域；画面不含账号、任务、业务数据或 Provider 配置"
+        }
+      },
+      "actions": [
+        {
+          "kind": "case",
+          "label": "查看案例",
+          "href": "/works/auto-operations"
+        },
+        {
+          "kind": "external",
+          "label": "访问系统",
+          "href": "https://aitavix.com"
+        }
+      ],
+      "caseStudy": {
+        "problem": "运营资料分散在采集结果、内容库、草稿、素材和发布任务中，状态难追踪。",
+        "role": "摩斯是项目开发负责人，负责整个项目的开发。",
+        "decisions": [
+          "以内容资产和任务状态串联数据沉淀、草稿编辑、素材处理、发布校验和人工确认。",
+          "把发布前校验、失败原因和人工确认保留在发布中心。",
+          "将系统限定在已授权账号与合规业务场景。"
+        ],
+        "structure": [
+          "Web 工作台覆盖账号与权限、数据获取、内容库、草稿工坊、图片工坊、发布中心和任务中心。",
+          "数据获取支持关键词、链接和批量任务入口，并把结果沉淀到内容库。",
+          "任务状态、素材本地化、失败原因和人工发布闸门组成受控运营链路。"
+        ],
+        "evidence": [
+          "Railway 生产服务在 2026-07-13 的只读核验中为 RUNNING。",
+          "生产部署 commit 为 16f16ba，公开自定义域名为 https://aitavix.com。",
+          "生产登录页以只读方式截取，未登录且未执行任何业务操作。"
+        ],
+        "boundaries": [
+          "不公开公司、客户、账号、Cookie、Token、平台签名、生产数据库、运营数据或发布实录。",
+          "不把真实发布、自动运营或高频操作写成已上线的常规能力。",
+          "不使用规避平台限制或无人值守发布的叙事，也不展示未经核验的运营效果。"
+        ]
+      }
+    },
+    {
+      "slug": "deep-research",
+      "name": "深度研究 Agent 系统",
+      "type": "深度研究与报告生成系统",
+      "status": "已接受能力持续扩展中",
+      "summary": "用可观察工件、证据覆盖、受限缺口修复和人工发布审批约束深度研究报告。",
+      "featured": false,
+      "media": null,
+      "actions": [
+        {
+          "kind": "case",
+          "label": "查看案例",
+          "href": "/works/deep-research"
+        },
+        {
+          "kind": "external",
+          "label": "GitHub",
+          "href": "https://github.com/Morse-Moss/Deep-research-sys"
+        }
+      ],
+      "caseStudy": {
+        "problem": "长链路研究容易把“报告写得完整”误当作“证据足够”。",
+        "role": "摩斯是项目发起人和开发负责人，负责整个项目的开发与整体架构。",
+        "decisions": [
+          "把研究拆成可观察工件、质量门和人工发布审批。",
+          "关键证据不足时明确失败，并允许最多两轮受限缺口修复。",
+          "失败时保留诊断结果，不把未完成状态包装成成功。"
+        ],
+        "structure": [
+          "固定 hv_analysis 报告链包含检索与抓取、来源台账、证据笔记、缺口报告和关键论断支持检查。",
+          "正式报告经过 evidence reviewer、chief editor 和人工 publication approval。",
+          "本地运行时提供队列、节点状态、暂停与恢复、事件和工件。"
+        ],
+        "evidence": [
+          "固定 hv_analysis 报告生产运行时已作为 P1 接受能力。",
+          "报告链可产出证据工件、Markdown 报告、评估结果和 Dashboard trace。",
+          "系统支持 Markdown 预览和 DOCX 下载。"
+        ],
+        "boundaries": [
+          "已接受的是固定报告链，不代表整个 Agent OS 已完成。",
+          "Agent OS、分布式运行时和部分运行路径仍为实验性或开发中。",
+          "Production Memory 当前完成的是设计与实施计划，不是产品实现，也不宣称已实现长期记忆或语义事实核验。"
+        ]
+      }
+    },
+    {
+      "slug": "digital-morse",
+      "name": "数字摩斯",
+      "type": "个人作品集 × AI 分身",
+      "status": "本地闭环已验证 · 尚未部署",
+      "summary": "让个人作品集与 AI 分身共用同一份审核公开知识、来源展示和受控对话入口。",
+      "featured": false,
+      "media": null,
+      "actions": [
+        {
+          "kind": "case",
+          "label": "查看案例",
+          "href": "/works/digital-morse"
+        },
+        {
+          "kind": "external",
+          "label": "GitHub",
+          "href": "https://github.com/Morse-Moss/Self-Website"
+        }
+      ],
+      "caseStudy": {
+        "problem": "个人作品内容、公开知识与 AI 对话需要共享同一事实来源，同时保留访问、费用和发布边界。",
+        "role": "摩斯是项目发起人和开发负责人，负责整个项目的开发，包括整体架构、网站与数字摩斯能力。",
+        "decisions": [
+          "让公开作品内容无需邀请码即可访问，短期邀请码只解锁普通对话和面试官模式。",
+          "用 PostgreSQL 与 pgvector 保存公开知识、向量、访问会话、短期消息和用量。",
+          "为对话 API 保留来源、流式事件、模式提示词和费用门。"
+        ],
+        "structure": [
+          "Next.js 正式站承载作品集与受控对话入口。",
+          "PostgreSQL 与 pgvector 组成公开知识和语义检索层。",
+          "API 使用 meta、delta、done、error 流式事件，并区分普通与面试官模式。"
+        ],
+        "evidence": [
+          "正式站 v1 已通过本地测试、生产构建、1440 与 390 双宽、reduced motion、简历打印和 Lighthouse 验收。",
+          "本地 PostgreSQL 集成、62 项测试、生产构建和双宽浏览器验证已通过。",
+          "本地 BAAI/bge-small-zh-v1.5 语义向量 gold set 已跑通，top-1 为 7/8、top-3 为 8/8，运行环境为 CPU。"
+        ],
+        "boundaries": [
+          "网站尚未部署，因此不显示“访问系统”。",
+          "真实 Provider 仅部分通过，不能把本地浏览器验收表述为真实模型端到端证据。",
+          "未经终审的草稿不属于公开知识；不公开私有知识、密钥、访问凭据或内部运行材料。"
+        ]
+      }
+    }
+  ],
+  "faq": [
+    {
+      "question": "摩斯的技术栈是什么？",
+      "answer": "项目证据覆盖 Python、FastAPI、TypeScript、React、Next.js，以及 SQLAlchemy、PostgreSQL 和 pgvector 等具体实现；不同项目按各自证据展示，不把跨项目能力推断为每个项目都具备。"
+    },
+    {
+      "question": "这里所说的 AI native 是什么？",
+      "answer": "在这些项目里，AI 进入研究、内容生产和公开知识对话流程，同时受任务状态、工程证据、人工审核与发布权限约束，而不是只作为页面上的对话装饰。"
+    },
+    {
+      "question": "摩斯在这些项目中承担什么职责？",
+      "answer": "摩斯负责四个项目的整个项目开发；在深度研究 Agent 系统和数字摩斯中还明确负责整体架构。该表述只说明开发责任，不推断公司归属、产品所有权或团队构成。"
+    },
+    {
+      "question": "如何快速了解这些作品？",
+      "answer": "先从作品页查看四个系统的真实状态，再进入案例页阅读问题、决策、结构、工程证据和公开边界；证据矩阵没有确认的信息不会被推断。"
+    }
+  ]
+}
