@@ -10,14 +10,15 @@ test('RAG gold set covers every approved public document', () => {
     expectedDocumentId: string;
   }>;
 
-  assert.equal(cases.length, 8);
+  assert.equal(cases.length, 9);
   assert.deepEqual(
     new Set(cases.map((item) => item.expectedDocumentId)),
     new Set([
       'about',
       'project-content-agent',
-      'project-operations-pipeline',
+      'project-auto-operations',
       'project-deep-research',
+      'project-digital-morse',
       'faq-1',
       'faq-2',
       'faq-3',
@@ -25,6 +26,12 @@ test('RAG gold set covers every approved public document', () => {
     ]),
   );
   assert.ok(cases.every((item) => item.query.trim().length > 0));
+  assert.equal(
+    cases.find((item) => item.query === '数字摩斯为什么还没有访问系统按钮?')
+      ?.expectedDocumentId,
+    'project-digital-morse',
+  );
+  assert.ok(cases.some((item) => item.expectedDocumentId === 'project-auto-operations'));
 });
 
 test('RAG evaluator reports top-1/top-3 metrics and fails missed top-3 cases', () => {

@@ -1,34 +1,38 @@
 [
   {
-    "query": "深度研究系统如何确保报告可信?",
+    "query": "深度研究系统如何确保报告可信？",
     "expectedDocumentId": "project-deep-research"
   },
   {
-    "query": "内容生成 Agent 如何分工?",
+    "query": "内容创作 Agent 如何管理素材和生成任务？",
     "expectedDocumentId": "project-content-agent"
   },
   {
-    "query": "运营流水线解决什么问题?",
-    "expectedDocumentId": "project-operations-pipeline"
+    "query": "自动运营 Agent 系统如何保持发布受控？",
+    "expectedDocumentId": "project-auto-operations"
   },
   {
-    "query": "AI native 和会用工具有什么区别?",
+    "query": "数字摩斯为什么还没有访问系统按钮?",
+    "expectedDocumentId": "project-digital-morse"
+  },
+  {
+    "query": "AI native 和会用工具有什么区别？",
     "expectedDocumentId": "faq-2"
   },
   {
-    "query": "摩斯的技术栈是什么?",
+    "query": "摩斯的技术栈是什么？",
     "expectedDocumentId": "faq-1"
   },
   {
-    "query": "项目是不是一个人做的?",
+    "query": "摩斯在这些项目中承担什么职责？",
     "expectedDocumentId": "faq-3"
   },
   {
-    "query": "怎么快速判断是否值得聊?",
+    "query": "如何快速了解这些作品？",
     "expectedDocumentId": "faq-4"
   },
   {
-    "query": "摩斯的工作方式是什么?",
+    "query": "摩斯的工作原则是什么？",
     "expectedDocumentId": "about"
   }
 ]

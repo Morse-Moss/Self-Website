@@ -55,7 +55,7 @@ async function embed(inputs) {
 }
 
 const liveContent = JSON.parse(
-  await fs.readFile(path.join(repoRoot, 'content', 's3-content.json'), 'utf8'),
+  await fs.readFile(path.join(repoRoot, 'content', 'site-content.json'), 'utf8'),
 );
 const documents = extractPublicKnowledge(liveContent);
 const client = new Client({ connectionString });
