@@ -4,10 +4,10 @@
 > 启动:2026-07-08 · M3-RAG 启动:2026-07-12 · 授权:装依赖(契约内)/ 本地 Docker pgvector / 最多 3 次 OpenAI 冒烟 / 本地 git commit / 只读四外部资产 · 模式:Morse 开发模式 + morse-goal 自动化运行
 
 ## current_pointer
-**M3-RAG MVP LOCAL COMPLETE**
+**M3-RAG MVP MAINLINE COMPLETE**
 
 ## next_allowed_pointer
-等待摩斯选择下一产品阶段。功能分支已按指令同步远端;部署、mainline 合并、域名、联网搜索、语音和数字人口型不自动推进。
+等待摩斯选择下一产品阶段。M3 已通过 merge commit `d1ebd88` 吸收到本地与远端 `master`;部署、域名、联网搜索、语音和数字人口型不自动推进。
 
 ## M3-RAG MVP scope amendment(2026-07-12)
 - Product boundary:首页、关于与项目公开;短期邀请码只解锁数字摩斯对话和面试官模式。
@@ -34,7 +34,7 @@
 - Real Provider PARTIAL PASS:直连 `api.openai.com:443` 因 DNS 污染/连接超时不可用;现有受信 Sub2API `http://127.0.0.1:8080/v1` 可达。真实 `gpt-5.4-mini` Responses 调用 PASS(输入 4393/output 7 tokens,正文未记录);`gpt-5.6-mini` 一次 502;`text-embedding-3-small` 一次 404 `model_not_found`;按 3 次上限停止 Provider 调用。
 - Local semantic embedding PASS:`BAAI/bge-small-zh-v1.5` 通过 OpenAI-compatible loopback `127.0.0.1:18091` 返回归一化 512 维向量并零填充到 pgvector 1536 维;8 文档/8 分块重建后重复摄取 8/8 跳过;gold eval top-1 7/8、top-3 8/8。当前 `torch 2.11.0+cpu` 使实际设备为 CPU,GTX 1070/CUDA 加速未在本轮声称通过。
 - Residual audit:依赖审计仍为既有 Next.js 间接 PostCSS 的 2 个 moderate;自动修复会破坏性降级到 Next 9,继续沿用 S6 处置。
-- Git boundary:M3 实现与收尾提交已同步至 `origin/codex/m3-rag-mvp`(`https://github.com/Morse-Moss/Self-Website.git`);本地/远端 `master` 未吸收,未 deploy;`AGENTS.md`、研究报告、`output/` 和旧临时脚本均未进入提交。
+- Git boundary:M3 已通过 merge commit `d1ebd88` 吸收到本地与远端 `master`(`https://github.com/Morse-Moss/Self-Website.git`);功能分支保留为历史,未 deploy;`AGENTS.md`、研究报告、`output/` 和旧临时脚本均未进入提交。
 
 ## 本轮收尾状态(2026-07-08,Claude Code 侧停机点)
 - S2 终态评审 PASS(参数逐字段零漂移/降级链完整/边界干净/一条非阻塞:WEBGL_lose_context 兼容性记录)
@@ -59,7 +59,7 @@
 |---|---|
 | npm install | allowed,仅各阶段契约列明包(S3:gsap) |
 | git commit(本地) | allowed,英文 message+Co-Authored-By |
-| git push / 部署 / 远程仓库 | feature-branch push allowed and completed(2026-07-13);deploy/mainline merge still forbidden without new instruction |
+| git push / 部署 / 远程仓库 | feature and mainline push allowed and completed(2026-07-13);deploy still forbidden without new instruction |
 | Browser CDP | allowed,仅本地视觉验收(临时 profile,截图入 docs/verify/v1/) |
 | Provider(OpenAI/TTS 真调用) | forbidden(v1 无分身) |
 | Public Web | 仅 CEO 决策研究可用;实现 agent forbidden |
