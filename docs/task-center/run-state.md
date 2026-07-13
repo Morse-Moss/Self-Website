@@ -1,13 +1,22 @@
 # 正式站 v1 · Task Center(唯一运行事实源)
 
-> Goal:Next.js 正式站 v1 上线就绪;当前增量为数字摩斯 M3-RAG MVP。聊天仅报节点,本文件为准。
+> Goal:Next.js 多页作品集垂直切片可验收;当前增量为 S7 多页作品集重构。聊天仅报节点,本文件为准。
 > 启动:2026-07-08 · M3-RAG 启动:2026-07-12 · 授权:装依赖(契约内)/ 本地 Docker pgvector / 最多 3 次 OpenAI 冒烟 / 本地 git commit / 只读四外部资产 · 模式:Morse 开发模式 + morse-goal 自动化运行
 
 ## current_pointer
-**M3-RAG MVP MAINLINE COMPLETE**
+**S7 MULTIPAGE VERTICAL SLICE ACTIVE**
 
 ## next_allowed_pointer
-等待摩斯选择下一产品阶段。M3 已通过 merge commit `d1ebd88` 吸收到本地与远端 `master`;部署、域名、联网搜索、语音和数字人口型不自动推进。
+执行 `docs/task-center/s7-multipage-portfolio.md`:先完成需求源与内容契约,再实现首页、作品目录、自动运营案例页和全站数字摩斯入口。部署、域名、push、联网搜索、语音和数字人口型不自动推进。
+
+## S7 multipage scope amendment(2026-07-13)
+- Git baseline:`master` 已通过 `d1ebd88` 吸收 M3-RAG;S7 在 `codex/s7-multipage-portfolio` 开发,不重复合并历史功能分支。
+- Product boundary:多页作品集负责介绍摩斯与四个真实项目;数字摩斯继续复用现有短期码、RAG、SSE、来源和预算门。
+- First slice:`/`、`/works`、`/works/auto-operations`、共享导航/页脚/简历入口/数字摩斯;其余项目先建立真实内容与路由契约。
+- Evidence boundary:只使用经核验的公开事实与脱敏真实截图;生成图、蓝图、示例数字、假联系方式和未终审草稿禁止进入作品证据位。
+- Dependencies:零新增依赖;继续使用 Next.js App Router、TypeScript、CSS Modules 和 `app/styles/tokens.css`。
+- External boundary:`E:\\Wiki`、`E:\\demo2`、`E:\\小红书`、`E:\\多agent` 只读;本阶段不调用 Provider、不修改数据库 schema、不部署、不 push。
+- Stage contract:`docs/task-center/s7-multipage-portfolio.md`;implementation plan:`docs/superpowers/plans/2026-07-13-s7-multipage-portfolio.md`。
 
 ## M3-RAG MVP scope amendment(2026-07-12)
 - Product boundary:首页、关于与项目公开;短期邀请码只解锁数字摩斯对话和面试官模式。
