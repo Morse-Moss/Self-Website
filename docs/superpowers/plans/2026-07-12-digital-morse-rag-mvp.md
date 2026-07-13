@@ -98,3 +98,25 @@
 - [x] Use a disposable local invite for 1440/390 loopback browser verification; confirm console errors are zero.
 - [x] If OpenAI network is reachable, perform at most three real calls and label them `real Provider`; otherwise record the exact connectivity blocker.
 - [x] Run `git diff --check`, review the scoped diff, update Task Center, and stage/commit only after all required local gates pass.
+
+### Task 7: Real local semantic embeddings
+
+**Files:**
+- Create: `scripts/local-embedding-server.py`
+- Create: `content/rag-eval.json`
+- Create: `scripts/rag-eval.mjs`
+- Modify: `lib/server/config.ts`
+- Modify: `lib/server/provider.ts`
+- Modify: `lib/server/openai-provider.ts`
+- Modify: `scripts/ingest-knowledge.mjs`
+- Modify: `.env.example`
+- Modify: `docs/portfolio-blueprint.md`
+- Test: `tests/openai-provider.test.ts`
+- Test: `tests/config.test.ts`
+- Test: `tests/local-embedding-contract.test.ts`
+
+- [x] Keep chat Responses and Embeddings on separately configurable base URLs/credentials.
+- [x] Serve normalized `BAAI/bge-small-zh-v1.5` vectors from `127.0.0.1:18091`, padded from 512 to the existing 1536 dimensions. Current installed PyTorch is CPU-only, so GPU acceleration remains explicitly unproven.
+- [x] Re-index all approved public knowledge with the real local model and prove second ingestion is idempotent.
+- [x] Run the gold retrieval set and record top-1/top-3 evidence without treating test embeddings as semantic proof.
+- [x] Record why pgvector stays in-process for the controlled MVP and the benchmark/capability triggers for considering Milvus/Qdrant later.

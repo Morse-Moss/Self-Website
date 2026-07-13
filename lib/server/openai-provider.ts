@@ -13,12 +13,15 @@ type OpenAIStreamEvent =
   | { type: 'response.failed'; response?: { error?: { message?: string } | null } }
   | { type: 'error'; message?: string };
 
-export interface OpenAIClientLike {
-  embeddings: {
-    create(body: Record<string, unknown>): Promise<EmbeddingResponse>;
-  };
+export interface OpenAIResponseClientLike {
   responses: {
     create(body: Record<string, unknown>): Promise<AsyncIterable<OpenAIStreamEvent>>;
+  };
+}
+
+export interface OpenAIEmbeddingClientLike {
+  embeddings: {
+    create(body: Record<string, unknown>): Promise<EmbeddingResponse>;
   };
 }
 
@@ -30,16 +33,22 @@ export interface OpenAIProviderConfig {
 }
 
 export class OpenAIProvider implements AiProvider {
-  private readonly client: OpenAIClientLike;
+  private readonly responseClient: OpenAIResponseClientLike;
+  private readonly embeddingClient: OpenAIEmbeddingClientLike;
   private readonly config: OpenAIProviderConfig;
 
-  constructor(client: OpenAIClientLike, config: OpenAIProviderConfig) {
-    this.client = client;
+  constructor(
+    responseClient: OpenAIResponseClientLike,
+    embeddingClient: OpenAIEmbeddingClientLike,
+    config: OpenAIProviderConfig,
+  ) {
+    this.responseClient = responseClient;
+    this.embeddingClient = embeddingClient;
     this.config = config;
   }
 
   async embed(inputs: string[]): Promise<number[][]> {
-    const response = await this.client.embeddings.create({
+    const response = await this.embeddingClient.embeddings.create({
       model: this.config.embeddingModel,
       input: inputs,
       dimensions: this.config.embeddingDimensions,
@@ -49,7 +58,7 @@ export class OpenAIProvider implements AiProvider {
   }
 
   async *streamAnswer(request: AnswerRequest): AsyncIterable<AnswerEvent> {
-    const stream = await this.client.responses.create({
+    const stream = await this.responseClient.responses.create({
       model: this.config.chatModel,
       instructions: request.instructions,
       input: request.messages,

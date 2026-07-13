@@ -12,15 +12,17 @@ async function* fakeResponseStream() {
   };
 }
 
-test('OpenAIProvider maps embeddings and Responses stream events to the internal contract', async () => {
+test('OpenAIProvider routes embeddings and Responses through separate clients', async () => {
   const calls: Array<{ kind: string; body: unknown }> = [];
-  const client = {
+  const embeddingClient = {
     embeddings: {
       create: async (body: unknown) => {
         calls.push({ kind: 'embedding', body });
         return { data: [{ embedding: [0.1, 0.2] }] };
       },
     },
+  };
+  const responseClient = {
     responses: {
       create: async (body: unknown) => {
         calls.push({ kind: 'response', body });
@@ -28,7 +30,7 @@ test('OpenAIProvider maps embeddings and Responses stream events to the internal
       },
     },
   };
-  const provider = new OpenAIProvider(client, {
+  const provider = new OpenAIProvider(responseClient, embeddingClient, {
     chatModel: 'test-chat-model',
     embeddingModel: 'test-embedding-model',
     embeddingDimensions: 2,

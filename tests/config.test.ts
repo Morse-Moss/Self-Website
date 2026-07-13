@@ -6,7 +6,10 @@ import { loadServerConfig } from '../lib/server/config.ts';
 const completeEnv = {
   DATABASE_URL: 'postgresql://localhost/revolution',
   OPENAI_API_KEY: 'test-key',
+  OPENAI_BASE_URL: 'http://127.0.0.1:8080/v1',
   OPENAI_CHAT_MODEL: 'test-chat',
+  OPENAI_EMBEDDING_API_KEY: 'embedding-key',
+  OPENAI_EMBEDDING_BASE_URL: 'http://127.0.0.1:18091/v1',
   OPENAI_EMBEDDING_MODEL: 'test-embedding',
   MORSE_MAX_MESSAGES_PER_SESSION: '30',
   MORSE_SESSION_HOURS: '12',
@@ -23,10 +26,24 @@ test('loadServerConfig parses access, provider, and budget settings', () => {
   assert.equal(config.sessionHours, 12);
   assert.equal(config.maxMessagesPerSession, 30);
   assert.equal(config.chatModel, 'test-chat');
+  assert.equal(config.openaiBaseUrl, 'http://127.0.0.1:8080/v1');
+  assert.equal(config.embeddingApiKey, 'embedding-key');
+  assert.equal(config.embeddingBaseUrl, 'http://127.0.0.1:18091/v1');
   assert.deepEqual(config.tokenRates, {
     inputUsdPerMillion: 1.25,
     outputUsdPerMillion: 10,
   });
+});
+
+test('loadServerConfig falls back to chat credentials for embeddings', () => {
+  const env = { ...completeEnv };
+  delete env.OPENAI_EMBEDDING_API_KEY;
+  delete env.OPENAI_EMBEDDING_BASE_URL;
+
+  const config = loadServerConfig(env);
+
+  assert.equal(config.embeddingApiKey, 'test-key');
+  assert.equal(config.embeddingBaseUrl, 'http://127.0.0.1:8080/v1');
 });
 
 test('loadServerConfig fails closed for missing secrets, model IDs, or pricing', () => {

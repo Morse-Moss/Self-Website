@@ -3,7 +3,6 @@ import { after, test } from 'node:test';
 
 import pg from 'pg';
 
-import { createDeterministicTestEmbedding } from '../lib/server/embedding.ts';
 import { retrieveKnowledge } from '../lib/server/rag.ts';
 
 const { Pool } = pg;
@@ -17,7 +16,14 @@ after(async () => {
 test('retrieveKnowledge returns citable pgvector evidence ordered by cosine score', {
   skip: !pool,
 }, async () => {
-  const query = createDeterministicTestEmbedding('深度研究系统如何保证证据可追溯?');
+  const stored = await pool!.query<{ embedding: string }>(
+    `SELECT embedding::text AS embedding
+       FROM knowledge_chunks
+      WHERE document_id = 'project-deep-research'
+      ORDER BY ordinal
+      LIMIT 1`,
+  );
+  const query = JSON.parse(stored.rows[0].embedding) as number[];
   const sources = await retrieveKnowledge(pool!, query, 3);
 
   assert.equal(sources.length, 3);

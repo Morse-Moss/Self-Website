@@ -7,7 +7,6 @@ import pg from 'pg';
 import type { AiMessage, AiProvider, AnswerEvent, AnswerRequest } from '../lib/server/ai-provider.ts';
 import { redeemInvite } from '../lib/server/access.ts';
 import { ChatServiceError, runChat } from '../lib/server/chat-service.ts';
-import { createDeterministicTestEmbedding } from '../lib/server/embedding.ts';
 import { hashSecret } from '../lib/server/security.ts';
 
 const { Pool } = pg;
@@ -17,12 +16,13 @@ const inviteId = randomUUID();
 const inviteCode = 'm3-chat-service-invite';
 const now = new Date('2026-07-13T03:00:00.000Z');
 let accessSessionId = '';
+let queryEmbedding: number[] = [];
 
 class FakeProvider implements AiProvider {
   requests: AnswerRequest[] = [];
 
   async embed(inputs: string[]): Promise<number[][]> {
-    return inputs.map(createDeterministicTestEmbedding);
+    return inputs.map(() => queryEmbedding);
   }
 
   async *streamAnswer(request: AnswerRequest): AsyncIterable<AnswerEvent> {
@@ -44,6 +44,14 @@ const config = {
 
 before(async () => {
   if (!pool) return;
+  const stored = await pool.query<{ embedding: string }>(
+    `SELECT embedding::text AS embedding
+       FROM knowledge_chunks
+      WHERE document_id = 'project-deep-research'
+      ORDER BY ordinal
+      LIMIT 1`,
+  );
+  queryEmbedding = JSON.parse(stored.rows[0].embedding) as number[];
   await pool.query(
     `INSERT INTO invite_codes
       (id, code_hash, label, active, expires_at, max_sessions, session_count)

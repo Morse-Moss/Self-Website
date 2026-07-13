@@ -69,7 +69,7 @@ export function extractPublicKnowledge(content: PublicContent): PublicKnowledgeD
       id: `faq-${index + 1}`,
       title: item.question,
       sourcePath: `content/s3-content.json#faq.${index + 1}`,
-      content: item.answer,
+      content: joinParts([item.question, item.answer]),
     });
   }
 

@@ -18,6 +18,8 @@ const { Client } = pg;
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const connectionString = process.env.DATABASE_URL;
 const allowTestEmbeddings = process.env.MORSE_ALLOW_TEST_EMBEDDINGS === 'true';
+const embeddingApiKey = process.env.OPENAI_EMBEDDING_API_KEY || process.env.OPENAI_API_KEY;
+const embeddingBaseUrl = process.env.OPENAI_EMBEDDING_BASE_URL || process.env.OPENAI_BASE_URL;
 const embeddingSignature = allowTestEmbeddings
   ? `deterministic-test:v1:${EMBEDDING_DIMENSIONS}`
   : `openai:${process.env.OPENAI_EMBEDDING_MODEL || 'missing'}:${EMBEDDING_DIMENSIONS}`;
@@ -33,13 +35,15 @@ async function embed(inputs) {
   }
 
   const model = process.env.OPENAI_EMBEDDING_MODEL;
-  if (!process.env.OPENAI_API_KEY || !model) {
-    throw new Error('OPENAI_API_KEY and OPENAI_EMBEDDING_MODEL are required.');
+  if (!embeddingApiKey || !model) {
+    throw new Error(
+      'OPENAI_EMBEDDING_API_KEY (or OPENAI_API_KEY) and OPENAI_EMBEDDING_MODEL are required.',
+    );
   }
 
   const client = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-    baseURL: process.env.OPENAI_BASE_URL || undefined,
+    apiKey: embeddingApiKey,
+    baseURL: embeddingBaseUrl || undefined,
   });
   const response = await client.embeddings.create({
     model,

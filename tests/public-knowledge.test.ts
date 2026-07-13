@@ -30,3 +30,12 @@ test('extractPublicKnowledge does not publish content-gap placeholders as facts'
 
   assert.doesNotMatch(serialized, /待摩斯补齐|待补证据|待人工定稿|待素材/);
 });
+
+test('extractPublicKnowledge includes FAQ questions in the embedded content', () => {
+  const content = JSON.parse(fs.readFileSync(contentPath, 'utf8'));
+  const documents = extractPublicKnowledge(content);
+  const faq = documents.find((document) => document.id === 'faq-3');
+
+  assert.ok(faq);
+  assert.match(faq.content, /项目都是一个人做的吗/);
+});

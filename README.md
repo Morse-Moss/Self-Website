@@ -9,7 +9,7 @@
 - S5 安全内容基线已完成：关于、FAQ、内容缺口台账和联系占位已经上线到站点内容。
 - `content/drafts/` 仍是待摩斯终审的草稿，未终审内容不得导入线上内容。
 - S6 上线前验收已完成：测试、生产构建、1440/390 双宽、触控、减弱动画、简历打印与 Lighthouse 均已通过。
-- M3-RAG MVP 本地闭环已通过：短期邀请码、PostgreSQL + pgvector、GPT 适配层、流式对话、来源、短期会话和费用门已进入正式站代码；真实 OpenAI 冒烟仍需可达的 API/base URL。
+- M3-RAG MVP 本地闭环已通过：短期邀请码、PostgreSQL + pgvector、GPT 适配层、流式对话、来源、短期会话和费用门已进入正式站代码；GPT Responses 已通过本地受信网关冒烟，本地 BGE 语义向量已接入。
 - 部署和域名操作尚未执行，仍由摩斯决定并操作。
 
 ## 本地运行
@@ -25,11 +25,21 @@ npm run dev
 
 先按 `.env.example` 准备 `.env.local`。`OPENAI_CHAT_MODEL` 使用 API 项目实际可用的模型 ID；费用单价必须按所选模型当前价格填写，不能把 ChatGPT/Codex 订阅当作 API 额度。
 
+Chat 与 Embeddings 可使用不同的 base URL 和密钥。本地 Embeddings 服务复用现有 Python 环境中的 `torch`、`sentence-transformers` 和 `numpy`，首次启动只下载 `BAAI/bge-small-zh-v1.5`：
+
+```powershell
+$env:MORSE_EMBEDDING_DEVICE = 'auto'
+E:\AI\Python\python.exe scripts\local-embedding-server.py
+```
+
+服务只监听 `127.0.0.1:18091`。`auto` 仅在当前 PyTorch 支持 CUDA 时使用显卡，否则明确降级为 CPU；可通过 `http://127.0.0.1:18091/health` 核对实际设备。若本机无法直连 Hugging Face，首次下载可临时设置 `HF_ENDPOINT=https://hf-mirror.com`，模型进入本地缓存后不再依赖镜像运行。
+
 ```powershell
 npm run db:up
 $env:DATABASE_URL = 'postgresql://revolution@127.0.0.1:55432/revolution'
 npm run db:migrate
 npm run knowledge:ingest
+npm run rag:eval
 npm run dev
 ```
 
@@ -48,6 +58,8 @@ npm run session:cleanup
 ```
 
 `MORSE_ALLOW_TEST_EMBEDDINGS=true` 只用于本地 pgvector 集成验证，生产环境禁止开启。它能验证迁移、摄取、幂等和 top-k 查询，但不能作为语义召回质量证据。
+
+当前受控访问、低并发和小规模知识库继续使用 PostgreSQL + pgvector，不额外部署 Milvus/Qdrant。只有基准测试证明检索延迟或写入吞吐不达标，或出现独立扩缩容、多租户强隔离、专用混合检索需求时，才评估外置向量库。
 
 ## 验证
 

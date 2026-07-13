@@ -1,20 +1,32 @@
 import OpenAI from 'openai';
 
-import { OpenAIProvider, type OpenAIClientLike } from './openai-provider.ts';
+import {
+  OpenAIProvider,
+  type OpenAIEmbeddingClientLike,
+  type OpenAIResponseClientLike,
+} from './openai-provider.ts';
 import type { loadServerConfig } from './config.ts';
 
 type ServerConfig = ReturnType<typeof loadServerConfig>;
 
 export function createProvider(config: ServerConfig): OpenAIProvider {
-  const client = new OpenAI({
+  const responseClient = new OpenAI({
     apiKey: config.openaiApiKey,
     baseURL: config.openaiBaseUrl,
   });
-
-  return new OpenAIProvider(client as unknown as OpenAIClientLike, {
-    chatModel: config.chatModel,
-    embeddingModel: config.embeddingModel,
-    embeddingDimensions: config.embeddingDimensions,
-    maxOutputTokens: config.maxOutputTokens,
+  const embeddingClient = new OpenAI({
+    apiKey: config.embeddingApiKey,
+    baseURL: config.embeddingBaseUrl,
   });
+
+  return new OpenAIProvider(
+    responseClient as unknown as OpenAIResponseClientLike,
+    embeddingClient as unknown as OpenAIEmbeddingClientLike,
+    {
+      chatModel: config.chatModel,
+      embeddingModel: config.embeddingModel,
+      embeddingDimensions: config.embeddingDimensions,
+      maxOutputTokens: config.maxOutputTokens,
+    },
+  );
 }

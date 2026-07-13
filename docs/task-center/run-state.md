@@ -4,18 +4,20 @@
 > 启动:2026-07-08 · M3-RAG 启动:2026-07-12 · 授权:装依赖(契约内)/ 本地 Docker pgvector / 最多 3 次 OpenAI 冒烟 / 本地 git commit / 只读四外部资产 · 模式:Morse 开发模式 + morse-goal 自动化运行
 
 ## current_pointer
-**M3-RAG-6 LOCAL CLOSEOUT PASS → M3-RAG-5 REAL PROVIDER RETRY**(等待可达的 OpenAI API/base URL)
+**M3-RAG MVP LOCAL COMPLETE**
 
 ## next_allowed_pointer
-配置可达的 OpenAI API/base URL 后执行最多 3 次真实 Provider 冒烟,再决定本阶段最终 closeout。部署、push、域名、联网搜索、语音和数字人口型仍不在本阶段。
+等待摩斯选择下一产品阶段。部署、push、mainline 合并、域名、联网搜索、语音和数字人口型不自动推进。
 
 ## M3-RAG MVP scope amendment(2026-07-12)
 - Product boundary:首页、关于与项目公开;短期邀请码只解锁数字摩斯对话和面试官模式。
 - Knowledge boundary:只摄取 `content/s3-content.json` 的已公开内容;`content/drafts/**` 与四个外部资产禁止进入索引。
 - Retrieval:PostgreSQL 16 + pgvector;同库保存知识文档、分块、向量、邀请码会话、短期消息和用量。
+- Vector-store boundary:当前受控低并发、小规模公开语料不单独部署 Milvus/Qdrant,以复用 PostgreSQL 事务、备份和访问控制并减少故障面;仅在基准证明检索/写入瓶颈,或出现独立扩缩容、多租户强隔离、专用混合检索需求时再评估外置。
 - Provider:OpenAI Responses API + Embeddings API;模型和 base URL 由环境变量配置;真实冒烟最多 3 次,同类失败 2 次即停。
 - Dependencies allowed:`openai`,`pg`,`@types/pg`;不得引入向量数据库第二套服务或 UI 框架。
 - Docker:仅允许本机 `127.0.0.1:55432` 的项目专用 pgvector 容器;不得改动现有容器或远程数据库。
+- Local embedding:允许复用现有 `torch/transformers/sentence-transformers` 与 GTX 1070;仅下载 `BAAI/bge-small-zh-v1.5`;服务只绑定 `127.0.0.1:18091`;禁止新增 Python 包。
 - Cost gate:按环境变量配置的单价估算月度费用;50/75/90/100% 分级,100% 拒绝普通会话。
 - Secrets:API key、邀请码明文、cookie token、原始 provider payload 不进入代码、测试证据、文档或日志。
 - Verification labels:local tests / local pgvector / loopback browser / real Provider;Mock 不得称为真实 GPT 验证。
@@ -26,10 +28,11 @@
 - Data PASS:本地 `pgvector/pgvector:pg16` 健康;schema 迁移成功;8 个公开文档/8 个向量分块;重复摄取 8/8 跳过;模型签名变化会强制重建。
 - Access/memory PASS:邀请码、token 哈希、HttpOnly cookie、会话上限、过期拒绝、服务器端短期历史和退出清理均由真实 PostgreSQL 集成测试覆盖。
 - Chat PASS:OpenAI SDK Responses/Embeddings adapter、SSE `meta/delta/done/error`、来源、普通/面试官 prompt、费用入账和 50/75/90/100% 预算门已覆盖。
-- Verification PASS:`npm test` 57/57;`npm run build` PASS;`git diff --check` PASS;敏感值扫描 0 命中。
+- Verification PASS:`DATABASE_URL=local npm test` 62/62(含 6 个 PostgreSQL 集成用例);`npm run build` PASS;`git diff --check` PASS;`sk-*` 敏感值扫描 0 命中,环境变量扫描仅有变量名、测试假值与 `local-embedding` 占位。
 - Browser PASS:loopback Mock Provider 下 1440/390 解锁、流式回答、来源、面试官模式、无效码、退出和 50% 费用预警通过;控制台 error/warn 0;证据 `docs/verify/m3-rag-{desktop-1440,mobile-390}.png`。
 - Cleanup PASS:验收后测试邀请码 0、Mock/预算测试用量 0;项目 pgvector 容器保留用于后续真实 Provider 验证。
-- Real Provider BLOCKED:`api.openai.com:443` 在本机连接超时;官方文档页面同环境返回 403。未将 Mock 称为真实 GPT,也未产生真实生成调用费用。
+- Real Provider PARTIAL PASS:直连 `api.openai.com:443` 因 DNS 污染/连接超时不可用;现有受信 Sub2API `http://127.0.0.1:8080/v1` 可达。真实 `gpt-5.4-mini` Responses 调用 PASS(输入 4393/output 7 tokens,正文未记录);`gpt-5.6-mini` 一次 502;`text-embedding-3-small` 一次 404 `model_not_found`;按 3 次上限停止 Provider 调用。
+- Local semantic embedding PASS:`BAAI/bge-small-zh-v1.5` 通过 OpenAI-compatible loopback `127.0.0.1:18091` 返回归一化 512 维向量并零填充到 pgvector 1536 维;8 文档/8 分块重建后重复摄取 8/8 跳过;gold eval top-1 7/8、top-3 8/8。当前 `torch 2.11.0+cpu` 使实际设备为 CPU,GTX 1070/CUDA 加速未在本轮声称通过。
 - Residual audit:依赖审计仍为既有 Next.js 间接 PostCSS 的 2 个 moderate;自动修复会破坏性降级到 Next 9,继续沿用 S6 处置。
 - Git boundary:实现提交 `5bdbd92 feat: add M3 RAG chat MVP`;未 push/deploy;`AGENTS.md`、研究报告、`output/` 和旧临时脚本均未进入提交。
 

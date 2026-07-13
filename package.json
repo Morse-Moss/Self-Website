@@ -12,6 +12,7 @@
     "invite:create": "node scripts/create-invite.mjs",
     "knowledge:ingest": "node scripts/ingest-knowledge.mjs",
     "mock:openai": "node scripts/mock-openai.mjs",
+    "rag:eval": "node scripts/rag-eval.mjs",
     "rag:smoke": "node scripts/rag-smoke.mjs",
     "session:cleanup": "node scripts/cleanup-expired.mjs",
     "stats": "node scripts/collect-stats.mjs",

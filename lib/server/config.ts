@@ -30,12 +30,16 @@ export function loadAccessConfig(env: Env = process.env) {
 
 export function loadServerConfig(env: Env = process.env) {
   const access = loadAccessConfig(env);
+  const openaiApiKey = required(env, 'OPENAI_API_KEY');
+  const openaiBaseUrl = env.OPENAI_BASE_URL?.trim() || undefined;
 
   return {
     ...access,
-    openaiApiKey: required(env, 'OPENAI_API_KEY'),
-    openaiBaseUrl: env.OPENAI_BASE_URL?.trim() || undefined,
+    openaiApiKey,
+    openaiBaseUrl,
     chatModel: required(env, 'OPENAI_CHAT_MODEL'),
+    embeddingApiKey: env.OPENAI_EMBEDDING_API_KEY?.trim() || openaiApiKey,
+    embeddingBaseUrl: env.OPENAI_EMBEDDING_BASE_URL?.trim() || openaiBaseUrl,
     embeddingModel: required(env, 'OPENAI_EMBEDDING_MODEL'),
     embeddingDimensions: EMBEDDING_DIMENSIONS,
     maxOutputTokens: positiveNumber(env, 'MORSE_MAX_OUTPUT_TOKENS', 600),
