@@ -1,0 +1,20 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: revolution-pgvector
+    environment:
+      POSTGRES_DB: revolution
+      POSTGRES_USER: revolution
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - revolution_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U revolution -d revolution"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  revolution_pgdata:

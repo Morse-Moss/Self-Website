@@ -1,0 +1,434 @@
+.root {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  z-index: var(--z-chat);
+  letter-spacing: 0;
+}
+
+.launcher,
+.closeButton,
+.primaryButton,
+.modeSwitch button,
+.starters button,
+.composer button,
+.sessionFooter button {
+  border: 0;
+  font: inherit;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.launcher {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-width: 76px;
+  height: 44px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel-glass);
+  color: var(--ink);
+  box-shadow: var(--shadow-card);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+}
+
+.signal {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  width: min(430px, calc(100vw - var(--space-6)));
+  height: min(700px, calc(100dvh - var(--space-6)));
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel-glass);
+  color: var(--ink);
+  box-shadow: var(--shadow-panel);
+  -webkit-backdrop-filter: blur(22px);
+  backdrop-filter: blur(22px);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 72px;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--line-faint);
+}
+
+.kicker {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--fs-3xs);
+  letter-spacing: 0;
+}
+
+.title {
+  margin-top: var(--space-1);
+  font-size: var(--fs-h3);
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.closeButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--line-faint);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--fs-h3);
+}
+
+.closeButton:hover,
+.starters button:hover,
+.sessionFooter button:hover {
+  color: var(--accent);
+  border-color: var(--line-strong);
+}
+
+.centerState,
+.unlock {
+  flex: 1;
+  min-height: 0;
+}
+
+.centerState {
+  display: grid;
+  place-items: center;
+  padding: var(--space-6);
+  color: var(--muted);
+}
+
+.unlock {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-6);
+}
+
+.sectionTitle {
+  margin-top: var(--space-2);
+  font-size: var(--fs-h3);
+  line-height: 1.35;
+}
+
+.supporting {
+  margin-top: var(--space-2);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.fieldLabel {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
+.input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  outline: 0;
+  background: var(--input-glass);
+  color: var(--ink);
+  font: inherit;
+}
+
+.input:focus {
+  border-color: var(--accent);
+}
+
+.errorText {
+  color: var(--status-amber);
+  font-size: var(--fs-xs);
+}
+
+.primaryButton {
+  min-height: 44px;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+
+.controlBar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--line-faint);
+}
+
+.modeSwitch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-1);
+  border: 1px solid var(--line-faint);
+  border-radius: var(--radius-sm);
+  background: var(--input-glass);
+}
+
+.modeSwitch button {
+  min-height: 34px;
+  border-radius: calc(var(--radius-sm) - var(--space-1));
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
+.modeSwitch button[aria-pressed="true"] {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.quota {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+}
+
+.budgetNotice {
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--status-amber-line);
+  background: var(--status-amber-dim);
+  color: var(--status-amber);
+  font-size: var(--fs-xs);
+}
+
+.messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-4);
+}
+
+.emptyState {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-4);
+  color: var(--muted);
+}
+
+.starters {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.starters button {
+  width: 100%;
+  min-height: 42px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line-faint);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+
+.userMessage,
+.assistantMessage {
+  min-width: 0;
+  margin-bottom: var(--space-4);
+  overflow-wrap: anywhere;
+}
+
+.userMessage {
+  margin-left: var(--space-7);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--accent-dim);
+}
+
+.assistantMessage {
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--line-strong);
+}
+
+.assistantMessage[data-error="true"] {
+  border-left-color: var(--status-amber);
+}
+
+.messageRole {
+  display: block;
+  margin-bottom: var(--space-1);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--fs-3xs);
+}
+
+.userMessage p,
+.assistantMessage p {
+  white-space: pre-wrap;
+}
+
+.sources {
+  display: grid;
+  gap: var(--space-1);
+  margin-top: var(--space-3);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
+.sources span {
+  color: var(--accent);
+  font-family: var(--font-mono);
+}
+
+.composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--line-faint);
+}
+
+.composer textarea {
+  width: 100%;
+  min-height: 48px;
+  max-height: 120px;
+  resize: vertical;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line-faint);
+  border-radius: var(--radius-sm);
+  outline: 0;
+  background: var(--input-glass);
+  color: var(--ink);
+  font: inherit;
+  line-height: 1.5;
+}
+
+.composer textarea:focus {
+  border-color: var(--accent);
+}
+
+.composer button {
+  align-self: stretch;
+  min-width: 62px;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+
+.composer button:disabled {
+  background: var(--elevated);
+  color: var(--faint);
+  cursor: not-allowed;
+}
+
+.sessionFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 0 var(--space-4) var(--space-3);
+  color: var(--faint);
+  font-size: var(--fs-3xs);
+}
+
+.sessionFooter span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sessionFooter button {
+  flex: 0 0 auto;
+  background: transparent;
+  color: var(--muted);
+  font-size: inherit;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+:global(html.resume-mode) .root {
+  display: none;
+}
+
+:global(html.morse-chat-open) {
+  overflow: hidden;
+}
+
+@media (max-width: 640px) {
+  .root {
+    right: var(--space-3);
+    bottom: var(--space-3);
+  }
+
+  .panel {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100dvh;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .header {
+    padding-right: var(--space-3);
+    padding-left: var(--space-3);
+  }
+
+  .controlBar,
+  .messages,
+  .composer {
+    padding-right: var(--space-3);
+    padding-left: var(--space-3);
+  }
+
+  .unlock {
+    padding: var(--space-5);
+  }
+
+  .userMessage {
+    margin-left: var(--space-5);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel,
+  .launcher {
+    transition: none;
+  }
+}
+
+@media print {
+  .root {
+    display: none !important;
+  }
+}

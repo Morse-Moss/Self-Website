@@ -1,4 +1,5 @@
 import DigitalHuman from '@/components/DigitalHuman';
+import MorseChat from '@/components/MorseChat';
 import { ResumeModeToggle } from '@/components/ResumeMode';
 import ScrollEffects from '@/components/ScrollEffects';
 import { ResumeSection, StandardS3Sections } from '@/components/S3Sections';
@@ -77,6 +78,8 @@ export default function Home() {
 
         <ResumeSection content={s3Content} stats={stats} />
       </main>
+
+      <MorseChat />
     </>
   );
 }

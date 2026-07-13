@@ -1,13 +1,37 @@
 # 正式站 v1 · Task Center(唯一运行事实源)
 
-> Goal:Next.js 正式站 v1 上线就绪(vercel.app 部署由摩斯执行)。聊天仅报节点,本文件为准。
-> 启动:2026-07-08 · 授权:装依赖(契约内)/ 本地 git init+commit / 只读四外部资产 · 模式:Morse 开发模式 + morse-goal 自动化运行
+> Goal:Next.js 正式站 v1 上线就绪;当前增量为数字摩斯 M3-RAG MVP。聊天仅报节点,本文件为准。
+> 启动:2026-07-08 · M3-RAG 启动:2026-07-12 · 授权:装依赖(契约内)/ 本地 Docker pgvector / 最多 3 次 OpenAI 冒烟 / 本地 git commit / 只读四外部资产 · 模式:Morse 开发模式 + morse-goal 自动化运行
 
 ## current_pointer
-**Codex S6 COMPLETE → Claude Code final review / Morse deploy decision**(v1 上线前门禁已通过;尚未部署)
+**M3-RAG-6 LOCAL CLOSEOUT PASS → M3-RAG-5 REAL PROVIDER RETRY**(等待可达的 OpenAI API/base URL)
 
 ## next_allowed_pointer
-Claude Code 侧可复核 S6 证据;部署、域名与终审内容增量均需摩斯另行授权
+配置可达的 OpenAI API/base URL 后执行最多 3 次真实 Provider 冒烟,再决定本阶段最终 closeout。部署、push、域名、联网搜索、语音和数字人口型仍不在本阶段。
+
+## M3-RAG MVP scope amendment(2026-07-12)
+- Product boundary:首页、关于与项目公开;短期邀请码只解锁数字摩斯对话和面试官模式。
+- Knowledge boundary:只摄取 `content/s3-content.json` 的已公开内容;`content/drafts/**` 与四个外部资产禁止进入索引。
+- Retrieval:PostgreSQL 16 + pgvector;同库保存知识文档、分块、向量、邀请码会话、短期消息和用量。
+- Provider:OpenAI Responses API + Embeddings API;模型和 base URL 由环境变量配置;真实冒烟最多 3 次,同类失败 2 次即停。
+- Dependencies allowed:`openai`,`pg`,`@types/pg`;不得引入向量数据库第二套服务或 UI 框架。
+- Docker:仅允许本机 `127.0.0.1:55432` 的项目专用 pgvector 容器;不得改动现有容器或远程数据库。
+- Cost gate:按环境变量配置的单价估算月度费用;50/75/90/100% 分级,100% 拒绝普通会话。
+- Secrets:API key、邀请码明文、cookie token、原始 provider payload 不进入代码、测试证据、文档或日志。
+- Verification labels:local tests / local pgvector / loopback browser / real Provider;Mock 不得称为真实 GPT 验证。
+- Stage contract:`docs/task-center/m3-rag-mvp.md`;implementation plan:`docs/superpowers/plans/2026-07-12-digital-morse-rag-mvp.md`。
+
+## M3-RAG local closeout evidence(2026-07-13)
+- Scope PASS:公开作品集保持可访问;短期码只解锁普通对话/面试官模式;`content/drafts/**` 和四个外部资产未进入索引。
+- Data PASS:本地 `pgvector/pgvector:pg16` 健康;schema 迁移成功;8 个公开文档/8 个向量分块;重复摄取 8/8 跳过;模型签名变化会强制重建。
+- Access/memory PASS:邀请码、token 哈希、HttpOnly cookie、会话上限、过期拒绝、服务器端短期历史和退出清理均由真实 PostgreSQL 集成测试覆盖。
+- Chat PASS:OpenAI SDK Responses/Embeddings adapter、SSE `meta/delta/done/error`、来源、普通/面试官 prompt、费用入账和 50/75/90/100% 预算门已覆盖。
+- Verification PASS:`npm test` 57/57;`npm run build` PASS;`git diff --check` PASS;敏感值扫描 0 命中。
+- Browser PASS:loopback Mock Provider 下 1440/390 解锁、流式回答、来源、面试官模式、无效码、退出和 50% 费用预警通过;控制台 error/warn 0;证据 `docs/verify/m3-rag-{desktop-1440,mobile-390}.png`。
+- Cleanup PASS:验收后测试邀请码 0、Mock/预算测试用量 0;项目 pgvector 容器保留用于后续真实 Provider 验证。
+- Real Provider BLOCKED:`api.openai.com:443` 在本机连接超时;官方文档页面同环境返回 403。未将 Mock 称为真实 GPT,也未产生真实生成调用费用。
+- Residual audit:依赖审计仍为既有 Next.js 间接 PostCSS 的 2 个 moderate;自动修复会破坏性降级到 Next 9,继续沿用 S6 处置。
+- Git boundary:工作位于 `codex/m3-rag-mvp`;未 stage/commit/push/deploy;`AGENTS.md`、研究报告、`output/` 和旧临时脚本不在本阶段提交范围。
 
 ## 本轮收尾状态(2026-07-08,Claude Code 侧停机点)
 - S2 终态评审 PASS(参数逐字段零漂移/降级链完整/边界干净/一条非阻塞:WEBGL_lose_context 兼容性记录)
