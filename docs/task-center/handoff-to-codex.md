@@ -13,7 +13,7 @@
 - `content/drafts/` 未通过摩斯终审,仍未注入线上内容;后续终审增量不阻塞 S6。
 - M3-RAG MVP 已在分支 `codex/m3-rag-mvp` 完成本地闭环:短期邀请码、pgvector、GPT Responses、流式来源、短期记忆和预算门由 `5bdbd92` 实现;本地 BGE 语义向量、独立 Chat/Embedding 配置与 gold eval 由 `3a9cba2` 完成。
 - M3 最终证据:`npm test` 62/62(含 PostgreSQL 集成)、生产构建 PASS、`BAAI/bge-small-zh-v1.5` 真实向量 8/8 幂等、gold top-1 7/8 与 top-3 8/8。当前 PyTorch 是 CPU build,未把 GTX 1070 记成已验证设备。
-- 当前允许指针:M3-RAG 本地阶段已结束,等待摩斯决定下一阶段。`master` 尚未吸收 `codex/m3-rag-mvp`;部署、push、mainline 合并、域名与终审内容增量均不自动推进。
+- 当前允许指针:M3-RAG 本地阶段已结束,`codex/m3-rag-mvp` 已同步至 `https://github.com/Morse-Moss/Self-Website.git`;`master` 尚未吸收该分支。部署、mainline 合并、域名与终审内容增量均不自动推进。
 
 ## 已完成(勿重做,证据见 run-state.md)
 
@@ -27,7 +27,7 @@
 | S6 | 上线前终验收、首屏假链接修复、统计刷新与验收证据 | 已完成(`6cdf1a0`,Lighthouse 100) |
 | M1 | content/drafts/ 9 份公开知识库草稿 | 待摩斯终审(仅阻塞终审内容增量) |
 
-git:本地 `master` 已包含 S3/S5/S6 回执所列 commits,但尚未包含 M3-RAG 分支 commits;**禁止自动 push/建远程/部署/合并**。
+git:远端 `origin/codex/m3-rag-mvp` 已包含 M3-RAG 分支 commits;本地/远端 `master` 尚未吸收该分支;**禁止自动部署或合并**。
 
 ## 原阶段契约与当前状态(每阶段:契约→实现→独立评审→证据入账)
 
@@ -51,7 +51,7 @@ git:本地 `master` 已包含 S3/S5/S6 回执所列 commits,但尚未包含 M3-R
 - 遗留:部署/域名待摩斯指令;`content/drafts/` 终审增量独立排队;Next.js 间接 PostCSS 的 2 个 moderate 已按静态站威胁模型记录为残余风险,不采用自动建议的 Next 9 降级。
 
 ## 红线(与 CLAUDE.md 一致,逐条生效)
-- 不 push、不部署、不建远程仓库;依赖仅限契约列明(S3=gsap)
+- push 仅在摩斯明确指令下执行(本轮功能分支同步已完成);不自动部署或合并;依赖仅限契约列明(S3=gsap)
 - `prototype/**` 冻结只读;`docs/verify/**` 证据不动;`E:\Wiki`、`E:\demo2`、`E:\小红书`、`E:\多agent` 只读禁写
 - token 只在 app/styles/tokens.css;密钥不进代码;commit 英文、语义清晰
 - 不动 S2 已验收的首屏视觉(Lifeform 参数、布局)——需要改动先在 run-state.md 记决策理由
