@@ -1,8 +1,6 @@
 import DigitalHuman from '@/components/DigitalHuman';
-import MorseChat from '@/components/MorseChat';
-import { ResumeModeToggle } from '@/components/ResumeMode';
 import ScrollEffects from '@/components/ScrollEffects';
-import { ResumeSection, StandardS3Sections } from '@/components/S3Sections';
+import { StandardS3Sections } from '@/components/S3Sections';
 import s3Content from '@/content/s3-content.json';
 import stats from '@/content/stats.json';
 import styles from './styles/hero.module.css';
@@ -16,7 +14,6 @@ import styles from './styles/hero.module.css';
 export default function Home() {
   return (
     <>
-      <ResumeModeToggle config={s3Content.resumeMode} />
       <ScrollEffects />
 
       <main>
@@ -75,11 +72,7 @@ export default function Home() {
 
           <StandardS3Sections content={s3Content} stats={stats} />
         </div>
-
-        <ResumeSection content={s3Content} stats={stats} />
       </main>
-
-      <MorseChat />
     </>
   );
 }

@@ -31,10 +31,22 @@ interface StreamPayload {
   budgetLevel?: BudgetLevel;
 }
 
-const starterQuestions = [
-  '介绍一下最有代表性的项目',
-  '深度研究系统怎么保证证据可靠?',
-  '你在项目里负责哪些判断?',
+const starterIntents: Array<{ label: string; mode: ChatMode; prompt: string }> = [
+  {
+    label: '招人的',
+    mode: 'interviewer',
+    prompt: '请从招聘方视角介绍最匹配的项目、能力证据和仍需补充的信息。',
+  },
+  {
+    label: '找人做事的',
+    mode: 'general',
+    prompt: '我想了解摩斯会如何分析并推进一个 AI 系统需求。',
+  },
+  {
+    label: '同行交流',
+    mode: 'general',
+    prompt: '请介绍摩斯在 Agent、RAG 和多 Agent 系统上的关键工程判断。',
+  },
 ];
 
 function publicErrorMessage(code?: string): string {
@@ -96,6 +108,12 @@ export default function MorseChat() {
   const [streaming, setStreaming] = useState(false);
   const [budgetLevel, setBudgetLevel] = useState<BudgetLevel>('normal');
   const messageEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleOpen = () => setOpen(true);
+    window.addEventListener('morse-chat:open', handleOpen);
+    return () => window.removeEventListener('morse-chat:open', handleOpen);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -307,9 +325,16 @@ export default function MorseChat() {
                   <div className={styles.emptyState}>
                     <p>{mode === 'interviewer' ? '可以直接追问项目决策与复盘。' : '想先了解哪一部分?'}</p>
                     <div className={styles.starters}>
-                      {starterQuestions.map((question) => (
-                        <button key={question} type="button" onClick={() => void sendMessage(question)}>
-                          {question}
+                      {starterIntents.map((intent) => (
+                        <button
+                          key={intent.label}
+                          type="button"
+                          onClick={() => {
+                            setMode(intent.mode);
+                            setDraft(intent.prompt);
+                          }}
+                        >
+                          {intent.label}
                         </button>
                       ))}
                     </div>
