@@ -97,6 +97,8 @@
   --fs-xs:      .75rem;
   --fs-2xs:     .6875rem;
   --fs-3xs:     .625rem;
+  --fs-portfolio-hero: 4rem;
+  --fs-portfolio-hero-mobile: 2.75rem;
 
   /* ---------- 间距 scale ---------- */
   --space-1: 4px;
