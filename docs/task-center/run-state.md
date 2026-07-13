@@ -31,7 +31,7 @@
 - Cleanup PASS:验收后测试邀请码 0、Mock/预算测试用量 0;项目 pgvector 容器保留用于后续真实 Provider 验证。
 - Real Provider BLOCKED:`api.openai.com:443` 在本机连接超时;官方文档页面同环境返回 403。未将 Mock 称为真实 GPT,也未产生真实生成调用费用。
 - Residual audit:依赖审计仍为既有 Next.js 间接 PostCSS 的 2 个 moderate;自动修复会破坏性降级到 Next 9,继续沿用 S6 处置。
-- Git boundary:工作位于 `codex/m3-rag-mvp`;未 stage/commit/push/deploy;`AGENTS.md`、研究报告、`output/` 和旧临时脚本不在本阶段提交范围。
+- Git boundary:实现提交 `5bdbd92 feat: add M3 RAG chat MVP`;未 push/deploy;`AGENTS.md`、研究报告、`output/` 和旧临时脚本均未进入提交。
 
 ## 本轮收尾状态(2026-07-08,Claude Code 侧停机点)
 - S2 终态评审 PASS(参数逐字段零漂移/降级链完整/边界干净/一条非阻塞:WEBGL_lose_context 兼容性记录)

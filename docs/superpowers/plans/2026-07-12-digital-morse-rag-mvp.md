@@ -97,4 +97,4 @@
 - [x] Run `npm test`, `npm run build`, migration, double ingestion and local retrieval smoke.
 - [x] Use a disposable local invite for 1440/390 loopback browser verification; confirm console errors are zero.
 - [x] If OpenAI network is reachable, perform at most three real calls and label them `real Provider`; otherwise record the exact connectivity blocker.
-- [ ] Run `git diff --check`, review the scoped diff, update Task Center, and stage/commit only after all required local gates pass.
+- [x] Run `git diff --check`, review the scoped diff, update Task Center, and stage/commit only after all required local gates pass.
