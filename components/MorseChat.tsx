@@ -7,6 +7,7 @@ import {
   normalizeChatErrorCode,
   publicErrorMessage,
 } from '@/lib/client/chat-errors';
+import { isNearChatBottom } from '@/lib/client/chat-scroll';
 import { readChatSse, type ChatSsePayload } from '@/lib/client/chat-sse';
 
 import styles from './MorseChat.module.css';
@@ -86,6 +87,15 @@ function budgetMessage(level: BudgetLevel): string {
   return '';
 }
 
+function scrollMessagesToBottom(container: HTMLDivElement | null): boolean {
+  if (!container) return false;
+  container.scrollTo({
+    top: container.scrollHeight,
+    behavior: 'auto',
+  });
+  return true;
+}
+
 export default function MorseChat({ variant = 'overlay' }: MorseChatProps) {
   const embedded = variant === 'embedded';
   const [open, setOpen] = useState(embedded);
@@ -104,13 +114,36 @@ export default function MorseChat({ variant = 'overlay' }: MorseChatProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const inviteInputRef = useRef<HTMLInputElement>(null);
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
-  const messageEndRef = useRef<HTMLDivElement>(null);
+  const messagesRef = useRef<HTMLDivElement>(null);
+  const autoFollowRef = useRef(true);
+  const forceAutoFollowRef = useRef(true);
+  const pendingFocusRef = useRef(false);
+
+  function followMessages() {
+    if (!scrollMessagesToBottom(messagesRef.current)) return;
+    autoFollowRef.current = true;
+    forceAutoFollowRef.current = false;
+  }
+
+  function focusPendingInput() {
+    if (!pendingFocusRef.current || accessState === 'checking') return;
+    const focusTarget = accessState === 'authorized'
+      ? messageInputRef.current
+      : inviteInputRef.current;
+    if (!focusTarget) return;
+    focusTarget.focus({ preventScroll: true });
+    pendingFocusRef.current = false;
+  }
 
   useEffect(() => {
     let focusFrame = 0;
     const handleOpen = () => {
+      pendingFocusRef.current = true;
+      forceAutoFollowRef.current = true;
       if (!embedded) {
         setOpen(true);
+        followMessages();
+        focusFrame = window.requestAnimationFrame(focusPendingInput);
         return;
       }
 
@@ -119,12 +152,8 @@ export default function MorseChat({ variant = 'overlay' }: MorseChatProps) {
         behavior: reducedMotion ? 'auto' : 'smooth',
         block: 'center',
       });
-      focusFrame = window.requestAnimationFrame(() => {
-        const focusTarget = accessState === 'authorized'
-          ? messageInputRef.current
-          : inviteInputRef.current;
-        focusTarget?.focus({ preventScroll: true });
-      });
+      followMessages();
+      focusFrame = window.requestAnimationFrame(focusPendingInput);
     };
     window.addEventListener('morse-chat:open', handleOpen);
     return () => {
@@ -132,6 +161,12 @@ export default function MorseChat({ variant = 'overlay' }: MorseChatProps) {
       window.cancelAnimationFrame(focusFrame);
     };
   }, [accessState, embedded]);
+
+  useEffect(() => {
+    if (!open || !pendingFocusRef.current || accessState === 'checking') return;
+    const focusFrame = window.requestAnimationFrame(focusPendingInput);
+    return () => window.cancelAnimationFrame(focusFrame);
+  }, [accessState, open]);
 
   useEffect(() => {
     let active = true;
@@ -148,8 +183,9 @@ export default function MorseChat({ variant = 'overlay' }: MorseChatProps) {
   }, []);
 
   useEffect(() => {
-    messageEndRef.current?.scrollIntoView({ block: 'nearest' });
-  }, [messages]);
+    if (!open || (!forceAutoFollowRef.current && !autoFollowRef.current)) return;
+    followMessages();
+  }, [accessState, messages, open]);
 
   useEffect(() => {
     if (!open || embedded) return;
@@ -200,6 +236,7 @@ export default function MorseChat({ variant = 'overlay' }: MorseChatProps) {
   ) {
     const message = (retrySnapshot?.message ?? text).trim();
     if (!message || streaming) return;
+    forceAutoFollowRef.current = true;
 
     const requestSnapshot: ChatRequestSnapshot = retrySnapshot ?? {
       message,
@@ -405,7 +442,14 @@ export default function MorseChat({ variant = 'overlay' }: MorseChatProps) {
                 <p className={styles.budgetNotice} role="status">{budgetMessage(budgetLevel)}</p>
               ) : null}
 
-              <div className={styles.messages} aria-live="polite">
+              <div
+                ref={messagesRef}
+                className={styles.messages}
+                aria-live="polite"
+                onScroll={(event) => {
+                  autoFollowRef.current = isNearChatBottom(event.currentTarget);
+                }}
+              >
                 {messages.length === 0 ? (
                   <div className={styles.emptyState}>
                     <p>{mode === 'interviewer' ? '可以直接追问项目决策与复盘。' : '想先了解哪一部分?'}</p>
@@ -463,7 +507,6 @@ export default function MorseChat({ variant = 'overlay' }: MorseChatProps) {
                     ) : null}
                   </article>
                 ))}
-                <div ref={messageEndRef} />
               </div>
 
               <form className={styles.composer} onSubmit={submitMessage}>

@@ -132,8 +132,17 @@ test('home sections render exactly two public projects, linked capabilities, and
   assert.match(sections, /projectHashHref/);
   assert.match(sections, /能力矩阵/);
   assert.match(sections, /开发事实/);
-  assert.match(sections, /projectHashHref\('deep-research'\)/);
-  assert.match(sections, /projectHashHref\('digital-morse'\)/);
+  assert.match(
+    sections,
+    /const capabilityMatrix = featuredProjects\.flatMap\(\(project\) =>\s*project\.capabilities\.map\(\(capability\) => \(\{ project, capability \}\)\),?\s*\)/s,
+  );
+  assert.match(sections, /projectHashHref\(project\.slug\)/);
+  assert.match(sections, /project\.name/);
+  assert.match(sections, /\{capability\}/);
+  assert.doesNotMatch(
+    sections,
+    /const deepResearchHref|const digitalMorseHref|content\.profile\.capabilities|可观察工件、质量门与可恢复运行|审核公开知识、语义检索与来源展示|受限研究链与人工发布审批|前端、服务端、数据层与验证链闭环/,
+  );
   assert.match(sections, /\.flatMap\(\(metric\) => metric\.value === null \? \[\] : \[\{ \.\.\.metric, value: metric\.value \}\]\)/);
   assert.match(sections, /activity\.allTime !== null \|\| activity\.last30Days !== null/);
   assert.match(sections, /Intl\.NumberFormat\('zh-CN', \{\s*notation: 'compact',\s*maximumFractionDigits: 1,?\s*\}\)/);

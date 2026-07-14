@@ -33,7 +33,6 @@ function TokenValue({ value }: { value: number }) {
 }
 
 export default function MorseHomeSections({
-  content,
   featuredProjects,
   stats,
 }: {
@@ -41,40 +40,9 @@ export default function MorseHomeSections({
   featuredProjects: Project[];
   stats: DevelopmentStats;
 }) {
-  const [
-    agentSystems = 'Agent 系统',
-    rag = 'RAG',
-    multiAgent = '多 Agent',
-    fullStack = '全栈开发',
-  ] = content.profile.capabilities;
-  const deepResearchHref = projectHashHref('deep-research');
-  const digitalMorseHref = projectHashHref('digital-morse');
-  const capabilityMatrix = [
-    {
-      label: agentSystems,
-      evidence: '可观察工件、质量门与可恢复运行',
-      href: deepResearchHref,
-      project: '深度研究 Agent 系统',
-    },
-    {
-      label: rag,
-      evidence: '审核公开知识、语义检索与来源展示',
-      href: digitalMorseHref,
-      project: '数字摩斯',
-    },
-    {
-      label: multiAgent,
-      evidence: '受限研究链与人工发布审批',
-      href: deepResearchHref,
-      project: '深度研究 Agent 系统',
-    },
-    {
-      label: fullStack,
-      evidence: '前端、服务端、数据层与验证链闭环',
-      href: digitalMorseHref,
-      project: '数字摩斯',
-    },
-  ];
+  const capabilityMatrix = featuredProjects.flatMap((project) =>
+    project.capabilities.map((capability) => ({ project, capability })),
+  );
   const metrics = [
     { label: 'AI 协作会话', value: stats.totals.sessions },
     { label: '项目覆盖', value: stats.totals.projects },
@@ -129,13 +97,12 @@ export default function MorseHomeSections({
           </header>
 
           <ul className={styles.matrix}>
-            {capabilityMatrix.map((item, index) => (
-              <li key={item.label} data-reveal>
-                <Link href={item.href}>
+            {capabilityMatrix.map(({ project, capability }, index) => (
+              <li key={`${project.slug}-${capability}`} data-reveal>
+                <Link href={projectHashHref(project.slug)}>
                   <span className={styles.matrixIndex}>0{index + 1}</span>
-                  <strong>{item.label}</strong>
-                  <span>{item.evidence}</span>
-                  <span className={styles.matrixProject}>{item.project}</span>
+                  <strong>{capability}</strong>
+                  <span className={styles.matrixProject}>{project.name}</span>
                 </Link>
               </li>
             ))}

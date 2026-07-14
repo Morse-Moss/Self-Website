@@ -168,7 +168,7 @@
 
 .matrix a {
   display: grid;
-  grid-template-columns: 52px minmax(130px, 0.45fr) minmax(0, 1fr) minmax(150px, 0.5fr);
+  grid-template-columns: 52px minmax(0, 1fr) minmax(150px, 0.5fr);
   gap: var(--space-5);
   align-items: center;
   min-height: 76px;
@@ -194,7 +194,6 @@
   letter-spacing: 0;
 }
 
-.matrix a > span:nth-child(3),
 .matrixProject {
   color: var(--muted);
 }
@@ -383,7 +382,6 @@
     padding: var(--space-4) 0;
   }
 
-  .matrix a > span:nth-child(3),
   .matrixProject {
     grid-column: 2;
     text-align: left;

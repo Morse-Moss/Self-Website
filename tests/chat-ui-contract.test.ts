@@ -9,6 +9,7 @@ const layoutPath = path.resolve('app/layout.tsx');
 const worksLayoutPath = path.resolve('app/works/layout.tsx');
 const pagePath = path.resolve('app/page.tsx');
 const ssePath = path.resolve('lib/client/chat-sse.ts');
+const scrollPath = path.resolve('lib/client/chat-scroll.ts');
 
 test('MorseChat exposes invite, mode, stream, source, error, and logout states', () => {
   const component = fs.readFileSync(componentPath, 'utf8');
@@ -88,6 +89,34 @@ test('MorseChat supports an embedded section without launcher, close, or dialog 
   assert.match(component, /prefers-reduced-motion: reduce/);
   assert.match(component, /\.focus\(\{ preventScroll: true \}\)/);
   assert.doesNotMatch(component, /video|audio|speech|tts|lipSync/i);
+});
+
+test('MorseChat keeps auto-follow inside the messages viewport and respects upward reading', () => {
+  const component = fs.readFileSync(componentPath, 'utf8');
+
+  assert.ok(fs.existsSync(scrollPath), 'missing chat scroll helper');
+  assert.match(component, /from ['"]@\/lib\/client\/chat-scroll['"]/);
+  assert.match(component, /const messagesRef = useRef<HTMLDivElement>\(null\)/);
+  assert.match(component, /const autoFollowRef = useRef\(true\)/);
+  assert.match(component, /const forceAutoFollowRef = useRef\(true\)/);
+  assert.match(component, /ref=\{messagesRef\}/);
+  assert.match(component, /isNearChatBottom\(event\.currentTarget\)/);
+  assert.match(component, /scrollTo\(\{\s*top:\s*container\.scrollHeight,\s*behavior:\s*'auto',?\s*\}\)/s);
+  assert.doesNotMatch(component, /messageEndRef/);
+  assert.equal((component.match(/scrollIntoView/g) ?? []).length, 1);
+});
+
+test('MorseChat preserves an open-event focus request until access checking resolves', () => {
+  const component = fs.readFileSync(componentPath, 'utf8');
+
+  assert.match(component, /const pendingFocusRef = useRef\(false\)/);
+  assert.match(component, /pendingFocusRef\.current = true/);
+  assert.match(
+    component,
+    /if \(!open \|\| !pendingFocusRef\.current \|\| accessState === 'checking'\) return/,
+  );
+  assert.match(component, /accessState === 'authorized'[\s\S]*messageInputRef\.current[\s\S]*inviteInputRef\.current/);
+  assert.match(component, /focusTarget\.focus\(\{ preventScroll: true \}\)[\s\S]*pendingFocusRef\.current = false/);
 });
 
 test('MorseChat retries a recoverable turn without appending a second user bubble', () => {
