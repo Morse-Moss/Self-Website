@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Script from "next/script";
-import SiteShell from "@/components/site/SiteShell";
 import { siteContent } from "@/lib/site-content";
 import "./globals.css";
 
@@ -35,9 +34,7 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: resumeModeBootScript }}
         />
       </head>
-      <body>
-        <SiteShell>{children}</SiteShell>
-      </body>
+      <body>{children}</body>
     </html>
   );
 }
