@@ -189,17 +189,67 @@ test('gallery keeps a single expanded project synchronized with valid URL hashes
   assert.match(gallery, /document\.getElementById\(next\)/);
   assert.match(gallery, /prefers-reduced-motion: reduce/);
   assert.match(gallery, /behavior: reducedMotion\.matches \? ['"]auto['"] : ['"]smooth['"]/);
-  assert.match(
-    gallery,
-    /useEffect\(\(\) => \{[\s\S]*if \(!openSlug\)[\s\S]*requestAnimationFrame\(\(\) => scrollToProject\(openSlug\)\)[\s\S]*cancelAnimationFrame\(scrollFrame\)[\s\S]*window\.scrollTo\(\{[\s\S]*top: window\.scrollY,[\s\S]*behavior: ['"]auto['"][\s\S]*\}\);[\s\S]*\}, \[openSlug\]\);/,
-  );
-  assert.equal((gallery.match(/scrollToProject\(/g) ?? []).length, 2);
+  assert.match(gallery, /requestAnimationFrame/);
+  assert.match(gallery, /cancelAnimationFrame/);
+  assert.match(gallery, /window\.scrollTo\(\{[\s\S]*top: window\.scrollY,[\s\S]*behavior: ['"]auto['"]/);
   assert.match(gallery, /getBoundingClientRect\(\)\.top/);
   assert.match(gallery, /getComputedStyle\(target\)\.scrollMarginTop/);
   assert.match(
     gallery,
     /useLayoutEffect\(\(\) => \{[\s\S]*const currentTop[\s\S]*const preservedTop[\s\S]*window\.scrollBy\(\{[\s\S]*top: currentTop - preservedTop,[\s\S]*behavior: ['"]auto['"][\s\S]*\}\);[\s\S]*\}, \[openSlug\]\);/,
   );
+});
+
+test('gallery settles generation-safe scrolling after stale project presence exits', () => {
+  const card = readSource(files.projectCard);
+  const gallery = readSource(files.projectGallery);
+
+  assert.match(card, /onPresenceChange:\s*\(slug: ProjectSlug, mounted: boolean\) => void/);
+  assert.match(
+    card,
+    /useEffect\(\(\) => \{\s*onPresenceChange\(project\.slug, detailsMounted\);\s*\}, \[detailsMounted, onPresenceChange, project\.slug\]\);/,
+  );
+  assert.match(
+    card,
+    /useEffect\(\(\) => \(\) => \{\s*onPresenceChange\(project\.slug, false\);\s*\}, \[onPresenceChange, project\.slug\]\);/,
+  );
+  assert.match(gallery, /useCallback/);
+  assert.match(gallery, /useRef<Set<ProjectSlug>>\(new Set\(\)\)/);
+  assert.match(gallery, /navigationGeneration\s*=\s*useRef\(0\)/);
+  assert.match(gallery, /pendingFinalTarget\s*=\s*useRef/);
+  assert.match(gallery, /const handlePresenceChange = useCallback/);
+  assert.match(gallery, /onPresenceChange=\{handlePresenceChange\}/);
+  assert.match(gallery, /slug !== pending\.slug/);
+  assert.match(gallery, /pending\.generation !== navigationGeneration\.current/);
+  assert.match(gallery, /pending\.slug !== openSlugRef\.current/);
+  assert.match(gallery, /presenceSlugs\.current\.has\(pending\.slug\)/);
+  assert.match(
+    gallery,
+    /hasStalePresence \|\| !presenceSlugs\.current\.has\(openSlug\)/,
+  );
+  assert.match(
+    gallery,
+    /requestAnimationFrame\(\(\) => \{\s*finalScrollFrame\.current = requestAnimationFrame\(\(\) => \{[\s\S]*scrollToProject\(latest\.slug\)/,
+  );
+  assert.doesNotMatch(gallery, /setTimeout|setInterval/);
+});
+
+test('pending gallery correction is cancelled by subsequent user scroll intent only', () => {
+  const gallery = readSource(files.projectGallery);
+
+  for (const eventName of ['wheel', 'touchstart', 'pointerdown', 'keydown']) {
+    assert.match(gallery, new RegExp(`addEventListener\\(['"]${eventName}['"]`));
+    assert.match(gallery, new RegExp(`removeEventListener\\(['"]${eventName}['"]`));
+  }
+  for (const key of ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ']) {
+    assert.match(gallery, new RegExp(`['"]${key.replace(' ', '\\s')}['"]`));
+  }
+  assert.match(gallery, /cancelPendingFinalScroll/);
+  assert.match(
+    gallery,
+    /pendingFinalTarget\.current = \{[\s\S]*removeIntentListeners\.current = listenForScrollIntent/,
+  );
+  assert.doesNotMatch(gallery, /addEventListener\(['"]scroll['"]/);
 });
 
 test('controlled project cards expose real hash targets and accessible embedded details', () => {

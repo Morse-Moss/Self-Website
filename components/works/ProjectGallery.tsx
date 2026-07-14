@@ -1,6 +1,12 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 
 import {
   projectSlugs,
@@ -15,6 +21,21 @@ type ProjectGalleryProps = {
   projects: Project[];
 };
 
+type PendingFinalTarget = {
+  slug: ProjectSlug;
+  generation: number;
+};
+
+const SCROLL_INTENT_KEYS = new Set([
+  'ArrowUp',
+  'ArrowDown',
+  'PageUp',
+  'PageDown',
+  'Home',
+  'End',
+  ' ',
+]);
+
 function scrollToProject(next: ProjectSlug) {
   const target = document.getElementById(next);
   if (!target) {
@@ -28,9 +49,106 @@ function scrollToProject(next: ProjectSlug) {
   });
 }
 
+function listenForScrollIntent(onIntent: () => void) {
+  const handleIntent = () => onIntent();
+  const handleKeyDown = (event: KeyboardEvent) => {
+    if (SCROLL_INTENT_KEYS.has(event.key)) {
+      onIntent();
+    }
+  };
+
+  window.addEventListener('wheel', handleIntent, { passive: true });
+  window.addEventListener('touchstart', handleIntent, { passive: true });
+  window.addEventListener('pointerdown', handleIntent, { passive: true });
+  window.addEventListener('keydown', handleKeyDown);
+
+  return () => {
+    window.removeEventListener('wheel', handleIntent);
+    window.removeEventListener('touchstart', handleIntent);
+    window.removeEventListener('pointerdown', handleIntent);
+    window.removeEventListener('keydown', handleKeyDown);
+  };
+}
+
 export default function ProjectGallery({ projects }: ProjectGalleryProps) {
   const [openSlug, setOpenSlug] = useState<ProjectSlug | null>(null);
   const pendingTargetTop = useRef<number | null>(null);
+  const presenceSlugs = useRef<Set<ProjectSlug>>(new Set());
+  const openSlugRef = useRef<ProjectSlug | null>(null);
+  const navigationGeneration = useRef(0);
+  const pendingFinalTarget = useRef<PendingFinalTarget | null>(null);
+  const finalScrollFrame = useRef<number | null>(null);
+  const removeIntentListeners = useRef<(() => void) | null>(null);
+
+  const cancelPendingFinalScroll = useCallback(() => {
+    if (finalScrollFrame.current !== null) {
+      cancelAnimationFrame(finalScrollFrame.current);
+      finalScrollFrame.current = null;
+    }
+    removeIntentListeners.current?.();
+    removeIntentListeners.current = null;
+    pendingFinalTarget.current = null;
+  }, []);
+
+  const settlePendingFinalScroll = useCallback(() => {
+    const pending = pendingFinalTarget.current;
+    if (!pending) {
+      return;
+    }
+    if (
+      pending.generation !== navigationGeneration.current
+      || pending.slug !== openSlugRef.current
+    ) {
+      cancelPendingFinalScroll();
+      return;
+    }
+
+    const hasStalePresence = [...presenceSlugs.current].some(
+      (slug) => slug !== pending.slug,
+    );
+    const targetMounted = presenceSlugs.current.has(pending.slug);
+    if (hasStalePresence || !targetMounted || finalScrollFrame.current !== null) {
+      return;
+    }
+
+    finalScrollFrame.current = requestAnimationFrame(() => {
+      finalScrollFrame.current = requestAnimationFrame(() => {
+        finalScrollFrame.current = null;
+        const latest = pendingFinalTarget.current;
+        if (!latest) {
+          return;
+        }
+        if (
+          latest.generation !== navigationGeneration.current
+          || latest.slug !== openSlugRef.current
+        ) {
+          cancelPendingFinalScroll();
+          return;
+        }
+        const stalePresenceReturned = [...presenceSlugs.current].some(
+          (slug) => slug !== latest.slug,
+        );
+        const targetStillMounted = presenceSlugs.current.has(latest.slug);
+        if (stalePresenceReturned || !targetStillMounted) {
+          return;
+        }
+
+        pendingFinalTarget.current = null;
+        removeIntentListeners.current?.();
+        removeIntentListeners.current = null;
+        scrollToProject(latest.slug);
+      });
+    });
+  }, [cancelPendingFinalScroll]);
+
+  const handlePresenceChange = useCallback((slug: ProjectSlug, mounted: boolean) => {
+    if (mounted) {
+      presenceSlugs.current.add(slug);
+    } else {
+      presenceSlugs.current.delete(slug);
+    }
+    settlePendingFinalScroll();
+  }, [settlePendingFinalScroll]);
 
   function rememberProjectPosition(slug: ProjectSlug | null) {
     pendingTargetTop.current = slug
@@ -54,6 +172,7 @@ export default function ProjectGallery({ projects }: ProjectGalleryProps) {
   }, []);
 
   useLayoutEffect(() => {
+    openSlugRef.current = openSlug;
     if (!openSlug) {
       pendingTargetTop.current = null;
       return;
@@ -77,19 +196,49 @@ export default function ProjectGallery({ projects }: ProjectGalleryProps) {
   }, [openSlug]);
 
   useEffect(() => {
+    const generation = ++navigationGeneration.current;
+    cancelPendingFinalScroll();
     if (!openSlug) {
       return;
     }
 
-    const scrollFrame = requestAnimationFrame(() => scrollToProject(openSlug));
+    let immediateScrollFrame: number | null = null;
+    const hasStalePresence = [...presenceSlugs.current].some(
+      (slug) => slug !== openSlug,
+    );
+    if (hasStalePresence || !presenceSlugs.current.has(openSlug)) {
+      pendingFinalTarget.current = { slug: openSlug, generation };
+      removeIntentListeners.current = listenForScrollIntent(() => {
+        if (pendingFinalTarget.current?.generation === generation) {
+          cancelPendingFinalScroll();
+        }
+      });
+      settlePendingFinalScroll();
+    } else {
+      immediateScrollFrame = requestAnimationFrame(() => {
+        immediateScrollFrame = null;
+        if (
+          generation === navigationGeneration.current
+          && openSlug === openSlugRef.current
+        ) {
+          scrollToProject(openSlug);
+        }
+      });
+    }
+
     return () => {
-      cancelAnimationFrame(scrollFrame);
+      if (immediateScrollFrame !== null) {
+        cancelAnimationFrame(immediateScrollFrame);
+      }
+      if (pendingFinalTarget.current?.generation === generation) {
+        cancelPendingFinalScroll();
+      }
       window.scrollTo({
         top: window.scrollY,
         behavior: 'auto',
       });
     };
-  }, [openSlug]);
+  }, [cancelPendingFinalScroll, openSlug, settlePendingFinalScroll]);
 
   function toggle(slug: ProjectSlug) {
     const next = openSlug === slug ? null : slug;
@@ -107,6 +256,7 @@ export default function ProjectGallery({ projects }: ProjectGalleryProps) {
           project={project}
           expanded={openSlug === project.slug}
           onToggle={() => toggle(project.slug)}
+          onPresenceChange={handlePresenceChange}
         />
       ))}
     </div>

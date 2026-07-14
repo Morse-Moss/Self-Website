@@ -2,7 +2,7 @@ import Image from 'next/image';
 import { useEffect, useRef, useState } from 'react';
 import type { MouseEvent, TransitionEvent } from 'react';
 
-import type { Project } from '@/lib/site-content';
+import type { Project, ProjectSlug } from '@/lib/site-content';
 
 import CaseStudy from './CaseStudy';
 import styles from './ProjectCard.module.css';
@@ -13,12 +13,14 @@ type ProjectCardProps = {
   project: Project;
   expanded: boolean;
   onToggle: () => void;
+  onPresenceChange: (slug: ProjectSlug, mounted: boolean) => void;
 };
 
 export default function ProjectCard({
   project,
   expanded,
   onToggle,
+  onPresenceChange,
 }: ProjectCardProps) {
   const titleId = `project-title-${project.slug}`;
   const detailsId = `project-details-${project.slug}`;
@@ -81,6 +83,14 @@ export default function ProjectCard({
       }
     };
   }, [expanded]);
+
+  useEffect(() => {
+    onPresenceChange(project.slug, detailsMounted);
+  }, [detailsMounted, onPresenceChange, project.slug]);
+
+  useEffect(() => () => {
+    onPresenceChange(project.slug, false);
+  }, [onPresenceChange, project.slug]);
 
   function handleCardClick(event: MouseEvent<HTMLElement>) {
     const target = event.target;
