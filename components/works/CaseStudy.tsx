@@ -6,14 +6,26 @@ import styles from './CaseStudy.module.css';
 
 type CaseStudyProps = {
   project: Project;
+  detailsId: string;
+  labelledBy: string;
 };
 
-export default function CaseStudy({ project }: CaseStudyProps) {
+export default function CaseStudy({
+  project,
+  detailsId,
+  labelledBy,
+}: CaseStudyProps) {
   return (
-    <article className={styles.caseStudy}>
+    <section
+      id={detailsId}
+      data-project-details
+      className={styles.caseStudy}
+      role="region"
+      aria-labelledby={labelledBy}
+    >
       <header className={styles.header}>
         <p className={styles.eyebrow}>{project.type}</p>
-        <h1>{project.name}</h1>
+        <h2>{project.name}</h2>
         <p className={styles.status}>{project.status}</p>
         <p className={styles.summary}>{project.summary}</p>
 
@@ -26,6 +38,7 @@ export default function CaseStudy({ project }: CaseStudyProps) {
                 href={action.href}
                 target="_blank"
                 rel="noreferrer"
+                onClick={(event) => event.stopPropagation()}
               >
                 {action.label}
               </a>
@@ -81,7 +94,7 @@ export default function CaseStudy({ project }: CaseStudyProps) {
         <section>
           <p className={styles.sectionIndex}>01</p>
           <div>
-            <h2>问题</h2>
+            <h3>问题</h3>
             <p>{project.caseStudy.problem}</p>
           </div>
         </section>
@@ -89,7 +102,7 @@ export default function CaseStudy({ project }: CaseStudyProps) {
         <section>
           <p className={styles.sectionIndex}>02</p>
           <div>
-            <h2>我的角色</h2>
+            <h3>我的角色</h3>
             <p>{project.caseStudy.role}</p>
           </div>
         </section>
@@ -97,7 +110,26 @@ export default function CaseStudy({ project }: CaseStudyProps) {
         <section>
           <p className={styles.sectionIndex}>03</p>
           <div>
-            <h2>关键判断</h2>
+            <h3>技术栈</h3>
+            <dl className={styles.stackGroups}>
+              {project.techStack.map((group) => (
+                <div key={group.label}>
+                  <dt>{group.label}</dt>
+                  <dd>
+                    <ul>
+                      {group.items.map((item) => <li key={item}>{item}</li>)}
+                    </ul>
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        </section>
+
+        <section>
+          <p className={styles.sectionIndex}>04</p>
+          <div>
+            <h3>关键判断</h3>
             <ul>
               {project.caseStudy.decisions.map((item) => <li key={item}>{item}</li>)}
             </ul>
@@ -105,9 +137,9 @@ export default function CaseStudy({ project }: CaseStudyProps) {
         </section>
 
         <section>
-          <p className={styles.sectionIndex}>04</p>
+          <p className={styles.sectionIndex}>05</p>
           <div>
-            <h2>真实结构</h2>
+            <h3>真实结构</h3>
             <ul>
               {project.caseStudy.structure.map((item) => <li key={item}>{item}</li>)}
             </ul>
@@ -115,9 +147,9 @@ export default function CaseStudy({ project }: CaseStudyProps) {
         </section>
 
         <section>
-          <p className={styles.sectionIndex}>05</p>
+          <p className={styles.sectionIndex}>06</p>
           <div>
-            <h2>验证证据</h2>
+            <h3>验证证据</h3>
             <ul>
               {project.caseStudy.evidence.map((item) => <li key={item}>{item}</li>)}
             </ul>
@@ -125,15 +157,15 @@ export default function CaseStudy({ project }: CaseStudyProps) {
         </section>
 
         <section>
-          <p className={styles.sectionIndex}>06</p>
+          <p className={styles.sectionIndex}>07</p>
           <div>
-            <h2>当前边界</h2>
+            <h3>当前边界</h3>
             <ul>
               {project.caseStudy.boundaries.map((item) => <li key={item}>{item}</li>)}
             </ul>
           </div>
         </section>
       </div>
-    </article>
+    </section>
   );
 }

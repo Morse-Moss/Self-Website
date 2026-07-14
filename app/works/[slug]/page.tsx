@@ -1,14 +1,11 @@
 import type { Metadata } from 'next';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 
-import CaseStudy from '@/components/works/CaseStudy';
 import {
   getProjectBySlug,
   getProjectStaticParams,
   siteContent,
 } from '@/lib/site-content';
-
-import styles from './page.module.css';
 
 type WorkCasePageProps = {
   params: Promise<{ slug: string }>;
@@ -40,11 +37,7 @@ export async function generateMetadata({
 
 export default async function WorkCasePage({ params }: WorkCasePageProps) {
   const { slug } = await params;
-  const project = requireProject(slug);
+  requireProject(slug);
 
-  return (
-    <main className={styles.main}>
-      <CaseStudy project={project} />
-    </main>
-  );
+  redirect(`/works#${slug}`);
 }

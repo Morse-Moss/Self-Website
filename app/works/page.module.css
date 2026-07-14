@@ -32,19 +32,6 @@
   overflow-wrap: anywhere;
 }
 
-.projectGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: var(--space-7);
-  min-width: 0;
-}
-
-@media (max-width: 900px) {
-  .projectGrid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
 @media (max-width: 640px) {
   .main {
     padding-top: var(--space-7);

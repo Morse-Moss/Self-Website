@@ -19,6 +19,8 @@ const files = {
   works: path.resolve('app/works/page.tsx'),
   worksLayout: path.resolve('app/works/layout.tsx'),
   worksStyles: path.resolve('app/works/page.module.css'),
+  projectGallery: path.resolve('components/works/ProjectGallery.tsx'),
+  projectGalleryStyles: path.resolve('components/works/ProjectGallery.module.css'),
   caseRoute: path.resolve('app/works/[slug]/page.tsx'),
   caseRouteStyles: path.resolve('app/works/[slug]/page.module.css'),
 } as const;
@@ -151,17 +153,86 @@ test('home sections render exactly two public projects, linked capabilities, and
   assert.doesNotMatch(sections, /\?\?\s*0|\|\|\s*0|职业|时间线|FAQ|高频问题/);
 });
 
-test('works index is an unfiltered four-project catalog driven by the public content helper', () => {
+test('works index is an unfiltered four-project gallery driven by the public content helper', () => {
   const source = readSource(files.works);
+  const content = JSON.parse(readSource(files.siteContent)) as {
+    projects: Array<{ slug: string }>;
+  };
 
   assert.match(source, /siteContent\.works\.title/);
   assert.match(source, /siteContent\.works\.intro/);
   assert.match(source, /getAllProjects\(\)/);
-  assert.match(source, /projects\.map[\s\S]*<ProjectCard/);
+  assert.match(source, /<ProjectGallery\s+projects=\{projects\}\s*\/>/);
   assert.doesNotMatch(source, /filter|search|sort/i);
+  assert.deepEqual(
+    content.projects.map((project) => project.slug),
+    ['content-agent', 'auto-operations', 'deep-research', 'digital-morse'],
+  );
 });
 
-test('dynamic case route uses Next 16 async params, exact helper params, metadata, notFound, and CaseStudy', () => {
+test('gallery keeps a single expanded project synchronized with valid URL hashes', () => {
+  const gallery = readSource(files.projectGallery);
+
+  assert.match(gallery, /useState<ProjectSlug \| null>/);
+  assert.match(gallery, /useLayoutEffect/);
+  assert.match(gallery, /useRef<number \| null>\(null\)/);
+  assert.match(gallery, /window\.location\.hash/);
+  assert.match(gallery, /projectSlugs\.includes\(slug as ProjectSlug\)/);
+  assert.match(gallery, /\? \(slug as ProjectSlug\) : null/);
+  assert.match(gallery, /window\.addEventListener\(['"]hashchange['"], syncFromHash\)/);
+  assert.match(gallery, /window\.removeEventListener\(['"]hashchange['"], syncFromHash\)/);
+  assert.match(gallery, /const next = openSlug === slug \? null : slug/);
+  assert.match(gallery, /expanded=\{openSlug === project\.slug\}/);
+  assert.match(gallery, /history\.replaceState/);
+  assert.match(gallery, /next \? `\/works#\$\{next\}` : ['"]\/works['"]/);
+  assert.match(gallery, /document\.getElementById\(next\)/);
+  assert.match(gallery, /prefers-reduced-motion: reduce/);
+  assert.match(gallery, /behavior: reducedMotion\.matches \? ['"]auto['"] : ['"]smooth['"]/);
+  assert.match(
+    gallery,
+    /useEffect\(\(\) => \{[\s\S]*if \(!openSlug\)[\s\S]*requestAnimationFrame\(\(\) => scrollToProject\(openSlug\)\)[\s\S]*cancelAnimationFrame\(scrollFrame\)[\s\S]*window\.scrollTo\(\{[\s\S]*top: window\.scrollY,[\s\S]*behavior: ['"]auto['"][\s\S]*\}\);[\s\S]*\}, \[openSlug\]\);/,
+  );
+  assert.equal((gallery.match(/scrollToProject\(/g) ?? []).length, 2);
+  assert.match(gallery, /getBoundingClientRect\(\)\.top/);
+  assert.match(gallery, /getComputedStyle\(target\)\.scrollMarginTop/);
+  assert.match(
+    gallery,
+    /useLayoutEffect\(\(\) => \{[\s\S]*const currentTop[\s\S]*const preservedTop[\s\S]*window\.scrollBy\(\{[\s\S]*top: currentTop - preservedTop,[\s\S]*behavior: ['"]auto['"][\s\S]*\}\);[\s\S]*\}, \[openSlug\]\);/,
+  );
+});
+
+test('controlled project cards expose real hash targets and accessible embedded details', () => {
+  const card = readSource(files.projectCard);
+  const caseStudy = readSource(files.caseStudy);
+  const problemPosition = positionOf(caseStudy, '问题');
+  const rolePosition = positionOf(caseStudy, '我的角色');
+  const stackPosition = positionOf(caseStudy, '技术栈');
+  const decisionsPosition = positionOf(caseStudy, '关键判断');
+  const structurePosition = positionOf(caseStudy, '真实结构');
+  const evidencePosition = positionOf(caseStudy, '验证证据');
+  const boundariesPosition = positionOf(caseStudy, '当前边界');
+
+  assert.match(card, /<article[\s\S]*id=\{project\.slug\}[\s\S]*data-project-slug=\{project\.slug\}/);
+  assert.match(card, /aria-expanded=\{expanded\}/);
+  assert.match(card, /aria-controls=\{detailsId\}/);
+  assert.match(card, /event\.stopPropagation\(\)/);
+  assert.match(card, /project\.capabilities\.map/);
+  assert.match(card, /project\.actions\.map[\s\S]*<a/);
+  assert.match(card, /expanded \? \(\s*<CaseStudy[\s\S]*detailsId=\{detailsId\}/);
+  assert.match(caseStudy, /id=\{detailsId\}/);
+  assert.match(caseStudy, /role=['"]region['"]/);
+  assert.match(caseStudy, /aria-labelledby=\{labelledBy\}/);
+  assert.match(caseStudy, /<h2>\{project\.name\}<\/h2>/);
+  assert.match(caseStudy, /project\.techStack\.map/);
+  assert.ok(problemPosition < rolePosition);
+  assert.ok(rolePosition < stackPosition);
+  assert.ok(stackPosition < decisionsPosition);
+  assert.ok(decisionsPosition < structurePosition);
+  assert.ok(structurePosition < evidencePosition);
+  assert.ok(evidencePosition < boundariesPosition);
+});
+
+test('legacy case routes validate slugs and redirect without rendering independent details', () => {
   const source = readSource(files.caseRoute);
 
   assert.match(source, /params:\s*Promise<\{\s*slug:\s*string;?\s*\}>/);
@@ -170,17 +241,19 @@ test('dynamic case route uses Next 16 async params, exact helper params, metadat
   assert.match(source, /export async function generateMetadata/);
   assert.match(source, /getProjectBySlug\(slug\)/);
   assert.match(source, /notFound\(\)/);
-  assert.match(source, /<CaseStudy\s+project=\{project\}/);
+  assert.match(source, /redirect\(`\/works#\$\{slug\}`\)/);
+  assert.doesNotMatch(source, /CaseStudy|<main|<article/);
+  assert.equal(fs.existsSync(files.caseRouteStyles), false);
 });
 
 test('new route styles are tokenized, compact, and include mobile overflow safeguards', () => {
   const styleSources = [
     files.projectCardStyles,
     files.caseStudyStyles,
+    files.projectGalleryStyles,
     files.homeStyles,
     files.homeSectionStyles,
     files.worksStyles,
-    files.caseRouteStyles,
   ].map(readSource);
   const combined = styleSources.join('\n');
 
@@ -204,6 +277,7 @@ test('new route TSX stays inside the approved evidence-only product surface', ()
     files.home,
     files.homeSections,
     files.works,
+    files.projectGallery,
     files.caseRoute,
   ].map(readSource);
   const combined = sources.join('\n');
