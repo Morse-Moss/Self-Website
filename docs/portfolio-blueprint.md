@@ -1,8 +1,8 @@
 # 个人作品集网站 · 需求与创意蓝图
 
 > 项目代号:数字生命摩斯个人独立站
-> 状态:正式站 v1 上线就绪(S6 验收已完成,尚未部署)
-> 记录日期:2026-07-07 · 状态同步:2026-07-11
+> 状态:正式站 v1 本地就绪(S6 视觉已恢复,S7 多页与 S8 对话保留,尚未部署)
+> 记录日期:2026-07-07 · 状态同步:2026-07-14
 > 角色分工:Claude 负责对清需求、创造想法、设计框架;开发由摩斯本人 + AI 完成
 
 ---
@@ -230,3 +230,12 @@
 - **真实验证**：先通过 loopback Mock 的 1440/390 闭环，再做 recruiter/collaboration/peer 各 1 问、总计最多 3 次真实 GPT smoke；Mock、本地 pgvector 和真实 Provider 证据必须分层标注。
 - **技术边界**：继续使用 PostgreSQL + pgvector，不部署 Milvus/Qdrant；零新增依赖。数字人、语音/TTS/口型、联网搜索、工具调用 Agent、长期访客画像、管理后台、通知渠道、部署和 push 均不进入 S8。
 - **阶段合同**：`docs/task-center/s8-customer-service-conversation.md`；唯一指针：`docs/task-center/run-state.md`。
+
+## 13. S6 视觉语言恢复修订(2026-07-14)
+
+- **首页恢复**：`/` 恢复 S6 深色单页视觉语言与身份首屏，保留光球氛围、系统展厅、关于摩斯、真实统计、高频问题和下一步入口；1440x900 与 390x844 首屏均真实露出完整“系统展厅”标题，不以隐藏 reveal 元素冒充可见。
+- **能力保留**：`/works` 与四个案例详情继续使用 S7 多页结构；短期邀请码、RAG、SSE、来源、短期记忆、预算门、失败重试和 turn 幂等继续使用 S8 实现，本次不回滚聊天行为。
+- **事实边界**：主页、作品、资料与 FAQ 继续由 `content/site-content.json` 驱动；不恢复旧示例数字、假联系方式、未终审草稿、生成 UI 或虚构作品证据。
+- **验收结果**：本地 `npm test` 114/114，生产构建生成 12 条路由；1440/600/390 多宽度浏览器门覆盖六条公开路由的主文档 200、聊天开关、launcher 与内容零交叠、外链、横向溢出、控制台/页面错误、外部运行时请求与 reduced-motion，CDP 断连会有界失败并输出明确诊断，最终 `failures: []`。
+- **运行边界**：本地 PostgreSQL + pgvector 为 ready，公开知识为 9 个分块；Provider 仍为 `configured:false` / BLOCKED，本次未调用真实 GPT，未部署、未 push、未修改数据库 schema 或外部只读资产。
+- **证据**：`docs/verify/s6-restore/home-desktop-1440x900.png`、`docs/verify/s6-restore/home-mobile-390x844.png`；可重复命令为 `npm run visual:s6-restore`。

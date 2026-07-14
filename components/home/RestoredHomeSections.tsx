@@ -32,7 +32,7 @@ export default function RestoredHomeSections({
     <>
       <section className={styles.section} id="systems" aria-labelledby="systems-title">
         <div className={styles.container}>
-          <header className={styles.sectionHeader} data-reveal>
+          <header className={styles.sectionHeader}>
             <span className={styles.sectionIndex}>SEC.01</span>
             <div>
               <p className={styles.sectionCaption}>SELECTED SYSTEMS</p>
