@@ -28,8 +28,8 @@ test('retrieveKnowledge returns citable pgvector evidence ordered by cosine scor
 
   assert.equal(sources.length, 3);
   assert.equal(sources[0].documentId, 'project-deep-research');
-  assert.equal(sources[0].title, '深度研究系统');
-  assert.match(sources[0].sourcePath, /^content\/s3-content\.json#/);
+  assert.equal(sources[0].title, '深度研究 Agent 系统');
+  assert.match(sources[0].sourcePath, /^content\/site-content\.json#/);
   assert.ok(sources[0].score >= sources[1].score);
   assert.doesNotMatch(JSON.stringify(sources), /content[\\/]drafts|E:\\/i);
 });

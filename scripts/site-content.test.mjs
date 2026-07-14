@@ -86,14 +86,15 @@ test('S3 resume mode exposes stable persistence and print contract labels', () =
   assert.match(content.resumeMode.printLabel, /打印/);
 });
 
-test('S3 resume mode has a pre-hydration body-class guard', () => {
+test('S7 resume mode keeps the pre-hydration body-class guard on the public content source', () => {
   const layout = fs.readFileSync(layoutPath, 'utf8');
 
   assert.match(layout, /suppressHydrationWarning/);
   assert.match(layout, /next\/script/);
   assert.match(layout, /strategy="beforeInteractive"/);
-  assert.match(layout, /s3Content\.resumeMode\.storageKey/);
-  assert.match(layout, /s3Content\.resumeMode\.bodyClass/);
+  assert.match(layout, /siteContent\.site\.resumeMode\.storageKey/);
+  assert.match(layout, /siteContent\.site\.resumeMode\.bodyClass/);
+  assert.doesNotMatch(layout, /s3Content/);
   assert.match(layout, /localStorage\.getItem/);
   assert.match(layout, /document\.documentElement\.classList\.add/);
 });
@@ -180,14 +181,10 @@ test('S5 safe sections are data-driven and rendered by the S3 section component'
   assert.match(component, /没有证据链的数字,我会明确标注状态/);
 });
 
-test('S6 first-viewport contact placeholders are inert instead of fake links', () => {
+test('S7 homepage omits retired contact placeholders and fake links', () => {
   const page = fs.readFileSync(pagePath, 'utf8');
 
   assert.doesNotMatch(page, /<a href="#">/);
-  for (const label of ['GitHub', 'Email', 'WeChat']) {
-    assert.match(
-      page,
-      new RegExp(`<span className=\\{styles\\.contactPlaceholder\\} aria-disabled="true">${label}</span>`),
-    );
-  }
+  assert.doesNotMatch(page, /contactPlaceholder/);
+  assert.doesNotMatch(page, />(?:GitHub|Email|WeChat)<\/span>/);
 });

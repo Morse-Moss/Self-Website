@@ -2,17 +2,32 @@
 
 import { FormEvent, useEffect, useRef, useState } from 'react';
 
+import {
+  isRecoverableChatError,
+  normalizeChatErrorCode,
+  publicErrorMessage,
+} from '@/lib/client/chat-errors';
+import { readChatSse, type ChatSsePayload } from '@/lib/client/chat-sse';
+
 import styles from './MorseChat.module.css';
 
 type AccessState = 'checking' | 'locked' | 'authorized';
 type ChatMode = 'general' | 'interviewer';
+type ChatAudienceIntent = 'general' | 'recruiter' | 'collaboration' | 'peer';
 type BudgetLevel = 'normal' | 'notice' | 'warning' | 'critical' | 'exhausted';
 
 interface ChatSource {
   documentId: string;
   title: string;
-  sourcePath: string;
+  href: string;
   score: number;
+}
+
+interface ChatRequestSnapshot {
+  message: string;
+  mode: ChatMode;
+  audienceIntent: ChatAudienceIntent;
+  turnId: string;
 }
 
 interface ChatMessage {
@@ -21,30 +36,46 @@ interface ChatMessage {
   text: string;
   sources?: ChatSource[];
   error?: boolean;
+  retry?: ChatRequestSnapshot;
+  pendingLabel?: string;
+  complete?: boolean;
 }
 
-interface StreamPayload {
+interface StreamPayload extends ChatSsePayload {
   conversationId?: string;
   sources?: ChatSource[];
   text?: string;
   code?: string;
   budgetLevel?: BudgetLevel;
+  consumed?: boolean;
+  remainingMessages?: number;
 }
 
-const starterQuestions = [
-  '介绍一下最有代表性的项目',
-  '深度研究系统怎么保证证据可靠?',
-  '你在项目里负责哪些判断?',
+const starterIntents: Array<{
+  label: string;
+  mode: ChatMode;
+  audienceIntent: ChatAudienceIntent;
+  prompt: string;
+}> = [
+  {
+    label: '招人的',
+    mode: 'interviewer',
+    audienceIntent: 'recruiter',
+    prompt: '请从招聘方视角介绍最匹配的项目、能力证据和仍需补充的信息。',
+  },
+  {
+    label: '找人做事的',
+    mode: 'general',
+    audienceIntent: 'collaboration',
+    prompt: '我想了解摩斯会如何分析并推进一个 AI 系统需求。',
+  },
+  {
+    label: '同行交流',
+    mode: 'general',
+    audienceIntent: 'peer',
+    prompt: '请介绍摩斯在 Agent、RAG 和多 Agent 系统上的关键工程判断。',
+  },
 ];
-
-function publicErrorMessage(code?: string): string {
-  if (code === 'MESSAGE_LIMIT') return '本次邀请码的对话额度已用完,请联系摩斯获取新码。';
-  if (code === 'BUDGET_EXHAUSTED') return '数字摩斯本月额度已用完,作品集仍可正常浏览。';
-  if (code === 'SESSION_INVALID' || code === 'ACCESS_REQUIRED') {
-    return '本次访问已过期,请重新输入有效邀请码。';
-  }
-  return '这次回答没有完成,可以稍后重试。';
-}
 
 function budgetMessage(level: BudgetLevel): string {
   if (level === 'notice') return '本月对话额度已使用过半。';
@@ -52,34 +83,6 @@ function budgetMessage(level: BudgetLevel): string {
   if (level === 'critical') return '本月对话额度即将用完。';
   if (level === 'exhausted') return '本月对话额度已用完。';
   return '';
-}
-
-async function readSse(
-  response: Response,
-  onEvent: (event: string, payload: StreamPayload) => void,
-) {
-  if (!response.body) throw new Error('CHAT_UNAVAILABLE');
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    buffer += decoder.decode(value, { stream: !done });
-
-    let boundary = buffer.indexOf('\n\n');
-    while (boundary >= 0) {
-      const frame = buffer.slice(0, boundary);
-      buffer = buffer.slice(boundary + 2);
-      const event = frame.split('\n').find((line) => line.startsWith('event: '))?.slice(7) ?? '';
-      const data = frame.split('\n').find((line) => line.startsWith('data: '))?.slice(6) ?? '{}';
-      onEvent(event, JSON.parse(data) as StreamPayload);
-      boundary = buffer.indexOf('\n\n');
-    }
-
-    if (done) break;
-  }
 }
 
 export default function MorseChat() {
@@ -90,12 +93,19 @@ export default function MorseChat() {
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [remainingMessages, setRemainingMessages] = useState(0);
   const [mode, setMode] = useState<ChatMode>('general');
+  const [audienceIntent, setAudienceIntent] = useState<ChatAudienceIntent>('general');
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [budgetLevel, setBudgetLevel] = useState<BudgetLevel>('normal');
   const messageEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleOpen = () => setOpen(true);
+    window.addEventListener('morse-chat:open', handleOpen);
+    return () => window.removeEventListener('morse-chat:open', handleOpen);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -157,25 +167,52 @@ export default function MorseChat() {
     )));
   }
 
-  async function sendMessage(text: string) {
-    const message = text.trim();
+  async function sendMessage(
+    text: string,
+    retryAssistantId?: string,
+    retrySnapshot?: ChatRequestSnapshot,
+  ) {
+    const message = (retrySnapshot?.message ?? text).trim();
     if (!message || streaming) return;
 
-    const userId = crypto.randomUUID();
-    const assistantId = crypto.randomUUID();
-    setMessages((current) => [
-      ...current,
-      { id: userId, role: 'user', text: message },
-      { id: assistantId, role: 'assistant', text: '' },
-    ]);
-    setDraft('');
+    const requestSnapshot: ChatRequestSnapshot = retrySnapshot ?? {
+      message,
+      mode,
+      audienceIntent,
+      turnId: crypto.randomUUID(),
+    };
+    const assistantId = retryAssistantId ? retryAssistantId : crypto.randomUUID();
+    if (retryAssistantId) {
+      updateAssistant(assistantId, (assistant) => ({
+        ...assistant,
+        text: '',
+        sources: [],
+        error: false,
+        retry: undefined,
+        pendingLabel: '正在检索公开知识...',
+        complete: false,
+      }));
+    } else {
+      const userId = crypto.randomUUID();
+      setMessages((current) => [
+        ...current,
+        { id: userId, role: 'user', text: message },
+        {
+          id: assistantId,
+          role: 'assistant',
+          text: '',
+          pendingLabel: '正在检索公开知识...',
+        },
+      ]);
+      setDraft('');
+    }
     setStreaming(true);
 
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, mode, conversationId }),
+        body: JSON.stringify({ ...requestSnapshot, conversationId }),
       });
       if (response.status === 401) {
         setAccessState('locked');
@@ -183,32 +220,55 @@ export default function MorseChat() {
       }
       if (!response.ok) throw new Error('CHAT_UNAVAILABLE');
 
-      await readSse(response, (event, payload) => {
+      await readChatSse<StreamPayload>(response, (event, payload) => {
         if (event === 'meta') {
           setConversationId(payload.conversationId ?? null);
           if (payload.budgetLevel) setBudgetLevel(payload.budgetLevel);
           updateAssistant(assistantId, (assistant) => ({
             ...assistant,
             sources: payload.sources ?? [],
+            pendingLabel: '正在组织回答...',
           }));
         } else if (event === 'delta') {
           updateAssistant(assistantId, (assistant) => ({
             ...assistant,
             text: assistant.text + (payload.text ?? ''),
+            pendingLabel: undefined,
           }));
         } else if (event === 'done') {
           if (payload.budgetLevel) setBudgetLevel(payload.budgetLevel);
-          setRemainingMessages((remaining) => Math.max(0, remaining - 1));
-        } else if (event === 'error') {
-          throw new Error(payload.code ?? 'CHAT_UNAVAILABLE');
+          if (typeof payload.remainingMessages === 'number') {
+            setRemainingMessages(payload.remainingMessages);
+          }
+          updateAssistant(assistantId, (assistant) => ({
+            ...assistant,
+            pendingLabel: undefined,
+            retry: undefined,
+            complete: true,
+          }));
         }
       });
     } catch (error) {
-      const code = error instanceof Error ? error.message : undefined;
+      const code = normalizeChatErrorCode(error);
+      if (code === 'SESSION_INVALID' || code === 'ACCESS_REQUIRED') {
+        setAccessState('locked');
+        setConversationId(null);
+        setMessages([]);
+        setRemainingMessages(0);
+        setMode('general');
+        setAudienceIntent('general');
+        setBudgetLevel('normal');
+      } else if (code === 'CONVERSATION_INVALID' || code === 'CONVERSATION_MODE_MISMATCH') {
+        setConversationId(null);
+      }
       updateAssistant(assistantId, (assistant) => ({
         ...assistant,
         error: true,
+        sources: [],
         text: publicErrorMessage(code),
+        pendingLabel: undefined,
+        retry: isRecoverableChatError(code) ? requestSnapshot : undefined,
+        complete: false,
       }));
     } finally {
       setStreaming(false);
@@ -221,8 +281,10 @@ export default function MorseChat() {
   }
 
   function changeMode(nextMode: ChatMode) {
-    if (streaming || mode === nextMode) return;
+    const nextIntent: ChatAudienceIntent = nextMode === 'interviewer' ? 'recruiter' : 'general';
+    if (streaming || (mode === nextMode && audienceIntent === nextIntent)) return;
     setMode(nextMode);
+    setAudienceIntent(nextIntent);
     setConversationId(null);
     setMessages([]);
   }
@@ -233,6 +295,8 @@ export default function MorseChat() {
     setConversationId(null);
     setMessages([]);
     setRemainingMessages(0);
+    setMode('general');
+    setAudienceIntent('general');
     setBudgetLevel('normal');
   }
 
@@ -296,7 +360,7 @@ export default function MorseChat() {
                     面试官模式
                   </button>
                 </div>
-                <span className={styles.quota}>{remainingMessages} 次</span>
+                <span className={styles.quota} data-testid="morse-quota">{remainingMessages} 次</span>
               </div>
               {budgetMessage(budgetLevel) ? (
                 <p className={styles.budgetNotice} role="status">{budgetMessage(budgetLevel)}</p>
@@ -307,9 +371,17 @@ export default function MorseChat() {
                   <div className={styles.emptyState}>
                     <p>{mode === 'interviewer' ? '可以直接追问项目决策与复盘。' : '想先了解哪一部分?'}</p>
                     <div className={styles.starters}>
-                      {starterQuestions.map((question) => (
-                        <button key={question} type="button" onClick={() => void sendMessage(question)}>
-                          {question}
+                      {starterIntents.map((intent) => (
+                        <button
+                          key={intent.label}
+                          type="button"
+                          onClick={() => {
+                            setMode(intent.mode);
+                            setAudienceIntent(intent.audienceIntent);
+                            setDraft(intent.prompt);
+                          }}
+                        >
+                          {intent.label}
                         </button>
                       ))}
                     </div>
@@ -319,17 +391,36 @@ export default function MorseChat() {
                     key={message.id}
                     className={message.role === 'user' ? styles.userMessage : styles.assistantMessage}
                     data-error={message.error || undefined}
+                    data-stream-state={message.role === 'assistant'
+                      ? (message.complete ? 'done' : message.error ? 'error' : 'pending')
+                      : undefined}
                   >
                     <span className={styles.messageRole}>{message.role === 'user' ? '你' : '数字摩斯'}</span>
-                    <p>{message.text || (streaming ? '正在检索公开知识...' : '')}</p>
+                    <p>{message.text || message.pendingLabel || ''}</p>
                     {message.sources?.length ? (
                       <ol className={styles.sources} aria-label="回答来源">
                         {message.sources.map((source, index) => (
-                          <li key={`${message.id}-${source.documentId}`}>
-                            <span>[{index + 1}]</span> {source.title}
+                          <li key={`${message.id}-${source.documentId}-${index}`}>
+                            <a href={source.href}>
+                              <span>[{index + 1}]</span> {source.title}
+                            </a>
                           </li>
                         ))}
                       </ol>
+                    ) : null}
+                    {message.error && message.retry ? (
+                      <button
+                        className={styles.retryButton}
+                        type="button"
+                        disabled={streaming}
+                        onClick={() => {
+                          if (message.retry) {
+                            void sendMessage(message.retry.message, message.id, message.retry);
+                          }
+                        }}
+                      >
+                        重试本次问题
+                      </button>
                     ) : null}
                   </article>
                 ))}

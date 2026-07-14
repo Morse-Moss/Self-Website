@@ -5,37 +5,122 @@ import { test } from 'node:test';
 
 import { extractPublicKnowledge } from '../lib/server/public-knowledge.ts';
 
-const contentPath = path.resolve('content/s3-content.json');
+const contentPath = path.resolve('content/site-content.json');
 
-test('extractPublicKnowledge produces citable documents only from live public content', () => {
-  const content = JSON.parse(fs.readFileSync(contentPath, 'utf8'));
+function loadSiteContent() {
+  return JSON.parse(fs.readFileSync(contentPath, 'utf8'));
+}
+
+test('extractPublicKnowledge produces the nine approved site-content documents', () => {
+  const documents = extractPublicKnowledge(loadSiteContent());
+
+  assert.deepEqual(
+    documents.map(({ id, sourcePath, href }) => ({ id, sourcePath, href })),
+    [
+      { id: 'about', sourcePath: 'content/site-content.json#profile', href: '/' },
+      {
+        id: 'project-content-agent',
+        sourcePath: 'content/site-content.json#projects.content-agent',
+        href: '/works/content-agent',
+      },
+      {
+        id: 'project-auto-operations',
+        sourcePath: 'content/site-content.json#projects.auto-operations',
+        href: '/works/auto-operations',
+      },
+      {
+        id: 'project-deep-research',
+        sourcePath: 'content/site-content.json#projects.deep-research',
+        href: '/works/deep-research',
+      },
+      {
+        id: 'project-digital-morse',
+        sourcePath: 'content/site-content.json#projects.digital-morse',
+        href: '/works/digital-morse',
+      },
+      { id: 'faq-1', sourcePath: 'content/site-content.json#faq.1', href: '/works/digital-morse' },
+      { id: 'faq-2', sourcePath: 'content/site-content.json#faq.2', href: '/works/digital-morse' },
+      { id: 'faq-3', sourcePath: 'content/site-content.json#faq.3', href: '/works/digital-morse' },
+      { id: 'faq-4', sourcePath: 'content/site-content.json#faq.4', href: '/works/digital-morse' },
+    ],
+  );
+  assert.ok(documents.every((document) => document.title.length > 0));
+  assert.ok(documents.every((document) => document.content.length > 0));
+});
+
+test('extractPublicKnowledge limits profile and project content to approved fields', () => {
+  const content = loadSiteContent();
   const documents = extractPublicKnowledge(content);
+  const about = documents.find((document) => document.id === 'about');
 
-  assert.ok(documents.length >= 8);
-  assert.ok(documents.some((document) => document.id === 'about'));
-  assert.ok(documents.some((document) => document.id.startsWith('project-')));
-  assert.ok(documents.some((document) => document.id.startsWith('faq-')));
+  assert.ok(about);
+  assert.equal(
+    about.content,
+    [
+      content.profile.title,
+      content.profile.role,
+      content.profile.summary,
+      `工作原则:\n${content.profile.principles.join('\n')}`,
+    ].join('\n\n'),
+  );
 
-  for (const document of documents) {
-    assert.match(document.sourcePath, /^content\/s3-content\.json#/);
-    assert.ok(document.title.length > 0);
-    assert.ok(document.content.length > 0);
-    assert.doesNotMatch(document.sourcePath, /drafts|E:\\/i);
+  for (const project of content.projects) {
+    const document = documents.find((item) => item.id === `project-${project.slug}`);
+
+    assert.ok(document);
+    assert.equal(document.title, project.name);
+    assert.equal(
+      document.content,
+      [
+        project.name,
+        project.status,
+        project.summary,
+        project.caseStudy.problem,
+        project.caseStudy.role,
+        ...project.caseStudy.decisions,
+        ...project.caseStudy.structure,
+        ...project.caseStudy.evidence,
+        ...project.caseStudy.boundaries,
+      ].join('\n\n'),
+    );
   }
 });
 
-test('extractPublicKnowledge does not publish content-gap placeholders as facts', () => {
-  const content = JSON.parse(fs.readFileSync(contentPath, 'utf8'));
+test('extractPublicKnowledge excludes drafts, paths, media, actions, and sanitization metadata', () => {
+  const content = loadSiteContent();
+  content.projects[0].media = {
+    src: 'E:\\content\\drafts\\generated-image.png',
+    caption: '生成图：截图待补',
+    evidence: {
+      sanitization: 'sanitization metadata',
+    },
+  };
+  content.projects[0].actions = [
+    {
+      kind: 'external',
+      label: '无人值守运营',
+      href: 'https://example.com/disabled-operation',
+    },
+  ];
+
   const serialized = JSON.stringify(extractPublicKnowledge(content));
 
-  assert.doesNotMatch(serialized, /待摩斯补齐|待补证据|待人工定稿|待素材/);
+  assert.doesNotMatch(serialized, /content[\\/]drafts|[A-Za-z]:\\/i);
+  assert.doesNotMatch(serialized, /generated-image\.png|生成图|截图待补/i);
+  assert.doesNotMatch(serialized, /sanitization metadata|sanitization/i);
+  assert.doesNotMatch(serialized, /无人值守运营|disabled-operation/i);
+  assert.doesNotMatch(serialized, /\/works\/auto-operations\/login-workbench-2026-07-13\.png/i);
 });
 
-test('extractPublicKnowledge includes FAQ questions in the embedded content', () => {
-  const content = JSON.parse(fs.readFileSync(contentPath, 'utf8'));
+test('extractPublicKnowledge includes all four FAQ questions and answers', () => {
+  const content = loadSiteContent();
   const documents = extractPublicKnowledge(content);
-  const faq = documents.find((document) => document.id === 'faq-3');
 
-  assert.ok(faq);
-  assert.match(faq.content, /项目都是一个人做的吗/);
+  for (const [index, item] of content.faq.entries()) {
+    const faq = documents.find((document) => document.id === `faq-${index + 1}`);
+
+    assert.ok(faq);
+    assert.equal(faq.title, item.question);
+    assert.equal(faq.content, `${item.question}\n\n${item.answer}`);
+  }
 });

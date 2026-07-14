@@ -5,10 +5,13 @@ import { test } from 'node:test';
 
 const componentPath = path.resolve('components/MorseChat.tsx');
 const stylePath = path.resolve('components/MorseChat.module.css');
+const shellPath = path.resolve('components/site/SiteShell.tsx');
 const pagePath = path.resolve('app/page.tsx');
+const ssePath = path.resolve('lib/client/chat-sse.ts');
 
 test('MorseChat exposes invite, mode, stream, source, error, and logout states', () => {
   const component = fs.readFileSync(componentPath, 'utf8');
+  const sse = fs.readFileSync(ssePath, 'utf8');
 
   assert.match(component, /data-testid="morse-chat"/);
   assert.match(component, /\/api\/access/);
@@ -18,23 +21,91 @@ test('MorseChat exposes invite, mode, stream, source, error, and logout states',
   assert.match(component, /event === 'meta'/);
   assert.match(component, /event === 'delta'/);
   assert.match(component, /event === 'done'/);
-  assert.match(component, /event === 'error'/);
+  assert.match(sse, /event === 'error'/);
   assert.match(component, /budgetLevel/);
   assert.match(component, /本月对话额度/);
   assert.match(component, /setRemainingMessages\(data\.remainingMessages/);
   assert.match(component, /sources\.map/);
+  assert.match(component, /href=\{source\.href\}/);
+  assert.doesNotMatch(
+    component.match(/interface ChatSource \{[\s\S]*?\n\}/)?.[0] ?? '',
+    /sourcePath/,
+  );
+  assert.match(component, /audienceIntent/);
+  assert.match(component, /turnId:\s*crypto\.randomUUID\(\)/);
+  assert.match(component, /normalizeChatErrorCode/);
+  assert.match(component, /code === 'SESSION_INVALID'[\s\S]*setAccessState\('locked'\)/);
+  assert.match(component, /code === 'CONVERSATION_INVALID'[\s\S]*setConversationId\(null\)/);
+  assert.match(component, /setRemainingMessages\(payload\.remainingMessages\)/);
+  assert.match(component, /data-stream-state=/);
+  assert.match(component, /data-testid="morse-quota"/);
+  assert.match(component, /正在检索公开知识/);
+  assert.match(component, /正在组织回答/);
+  assert.match(component, /重试本次问题/);
   assert.match(component, /退出会话/);
   assert.match(component, /classList\.add\('morse-chat-open'\)/);
 });
 
-test('MorseChat is mounted once and its styles use tokens with a mobile full-screen mode', () => {
+test('MorseChat opens from the global event and exposes the three structured starter intents', () => {
+  const component = fs.readFileSync(componentPath, 'utf8');
+
+  assert.match(component, /window\.addEventListener\(['"]morse-chat:open['"],\s*\w+\)/);
+  assert.match(component, /window\.removeEventListener\(['"]morse-chat:open['"],\s*\w+\)/);
+  assert.match(
+    component,
+    /label:\s*'招人的',\s*mode:\s*'interviewer',\s*audienceIntent:\s*'recruiter',\s*prompt:\s*'请从招聘方视角介绍最匹配的项目、能力证据和仍需补充的信息。'/s,
+  );
+  assert.match(
+    component,
+    /label:\s*'找人做事的',\s*mode:\s*'general',\s*audienceIntent:\s*'collaboration',\s*prompt:\s*'我想了解摩斯会如何分析并推进一个 AI 系统需求。'/s,
+  );
+  assert.match(
+    component,
+    /label:\s*'同行交流',\s*mode:\s*'general',\s*audienceIntent:\s*'peer',\s*prompt:\s*'请介绍摩斯在 Agent、RAG 和多 Agent 系统上的关键工程判断。'/s,
+  );
+  assert.equal((component.match(/label:\s*'/g) ?? []).length, 3);
+
+  const intentClick = component.match(
+    /onClick=\{\(\)\s*=>\s*\{\s*setMode\(intent\.mode\);\s*setAudienceIntent\(intent\.audienceIntent\);\s*setDraft\(intent\.prompt\);\s*\}\}/s,
+  )?.[0] ?? '';
+  assert.ok(intentClick, 'starter intent click must set mode and draft');
+  assert.doesNotMatch(intentClick, /sendMessage|submit|fetch/);
+});
+
+test('MorseChat retries a recoverable turn without appending a second user bubble', () => {
+  const component = fs.readFileSync(componentPath, 'utf8');
+
+  assert.match(component, /interface ChatRequestSnapshot/);
+  assert.match(component, /retryAssistantId\?:\s*string/);
+  assert.match(component, /retryAssistantId\s*\?\s*retryAssistantId\s*:\s*crypto\.randomUUID\(\)/);
+  assert.match(component, /if\s*\(retryAssistantId\)\s*\{[\s\S]*updateAssistant/);
+  assert.match(component, /else\s*\{[\s\S]*role:\s*'user'/);
+  assert.match(
+    component,
+    /retry:\s*isRecoverableChatError\(code\)\s*\?\s*requestSnapshot\s*:\s*undefined/,
+  );
+  assert.match(
+    component,
+    /catch\s*\(error\)[\s\S]*error:\s*true,[\s\S]*sources:\s*\[\]/,
+  );
+  assert.match(
+    component,
+    /if\s*\(message\.retry\)[\s\S]*sendMessage\(message\.retry\.message,\s*message\.id,\s*message\.retry\)/,
+  );
+});
+
+test('MorseChat is mounted once by SiteShell and its styles preserve tokenized mobile full-screen mode', () => {
+  const shell = fs.readFileSync(shellPath, 'utf8');
   const page = fs.readFileSync(pagePath, 'utf8');
   const styles = fs.readFileSync(stylePath, 'utf8');
 
-  assert.match(page, /import MorseChat/);
-  assert.equal((page.match(/<MorseChat \/>/g) ?? []).length, 1);
+  assert.match(shell, /import MorseChat/);
+  assert.equal((shell.match(/<MorseChat \/>/g) ?? []).length, 1);
+  assert.doesNotMatch(page, /import MorseChat|<MorseChat\b/);
   assert.match(styles, /var\(--z-chat\)/);
   assert.match(styles, /@media \(max-width: 640px\)/);
+  assert.match(styles, /inset:\s*0/);
+  assert.match(styles, /width:\s*100%/);
   assert.match(styles, /100dvh/);
   assert.match(styles, /html\.morse-chat-open/);
   assert.match(styles, /overflow:\s*hidden/);

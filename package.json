@@ -13,11 +13,14 @@
     "knowledge:ingest": "node scripts/ingest-knowledge.mjs",
     "mock:openai": "node scripts/mock-openai.mjs",
     "rag:eval": "node scripts/rag-eval.mjs",
+    "chat:eval": "node scripts/chat-eval.mjs",
     "rag:smoke": "node scripts/rag-smoke.mjs",
     "session:cleanup": "node scripts/cleanup-expired.mjs",
     "stats": "node scripts/collect-stats.mjs",
     "test": "node --test \"scripts/*.test.mjs\" \"tests/*.test.ts\"",
-    "visual:s3": "node scripts/s3-visual-smoke.mjs http://localhost:3000"
+    "visual:s3": "node scripts/s3-visual-smoke.mjs http://localhost:3000",
+    "visual:s7": "node scripts/s7-visual-smoke.mjs http://127.0.0.1:3010",
+    "visual:s8-chat": "node scripts/s8-chat-smoke.mjs http://127.0.0.1:3011"
   },
   "dependencies": {
     "@types/node": "^26.1.1",

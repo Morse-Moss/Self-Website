@@ -2,73 +2,100 @@ export interface PublicKnowledgeDocument {
   id: string;
   title: string;
   sourcePath: string;
+  href: string;
   content: string;
 }
 
-interface PublicContent {
-  about?: {
+interface SiteContent {
+  profile?: {
     title?: string;
-    intro?: string;
-    points?: Array<{ title?: string; body?: string }>;
+    role?: string;
+    summary?: string;
+    principles?: string[];
   };
-  gallery?: {
-    cards?: Array<{
-      id?: string;
-      title?: string;
-      state?: string;
+  projects?: Array<{
+    slug?: string;
+    name?: string;
+    status?: string;
+    summary?: string;
+    caseStudy?: {
       problem?: string;
-      solution?: string;
-      humanAiSplit?: string;
-      sampleLabel?: string;
-    }>;
-  };
-  faq?: {
-    items?: Array<{ question?: string; answer?: string }>;
-  };
+      role?: string;
+      decisions?: string[];
+      structure?: string[];
+      evidence?: string[];
+      boundaries?: string[];
+    };
+  }>;
+  faq?: Array<{ question?: string; answer?: string }>;
 }
 
 function joinParts(parts: Array<string | undefined>): string {
   return parts.filter((part): part is string => Boolean(part?.trim())).join('\n\n');
 }
 
-export function extractPublicKnowledge(content: PublicContent): PublicKnowledgeDocument[] {
+export function publicKnowledgeHref(documentId: string): string {
+  if (documentId === 'about') return '/';
+  if (documentId.startsWith('project-')) {
+    return `/works/${documentId.slice('project-'.length)}`;
+  }
+  return '/works/digital-morse';
+}
+
+export function extractPublicKnowledge(content: SiteContent): PublicKnowledgeDocument[] {
   const documents: PublicKnowledgeDocument[] = [];
 
-  if (content.about?.title && content.about.intro) {
+  if (content.profile?.title) {
+    const profileContent = joinParts([
+      content.profile.title,
+      content.profile.role,
+      content.profile.summary,
+      content.profile.principles?.length
+        ? `工作原则:\n${content.profile.principles.join('\n')}`
+        : undefined,
+    ]);
+
+    if (profileContent) {
+      documents.push({
+        id: 'about',
+        title: content.profile.title,
+        sourcePath: 'content/site-content.json#profile',
+        href: publicKnowledgeHref('about'),
+        content: profileContent,
+      });
+    }
+  }
+
+  for (const project of content.projects ?? []) {
+    if (!project.slug || !project.name) continue;
+
     documents.push({
-      id: 'about',
-      title: content.about.title,
-      sourcePath: 'content/s3-content.json#about',
+      id: `project-${project.slug}`,
+      title: project.name,
+      sourcePath: `content/site-content.json#projects.${project.slug}`,
+      href: publicKnowledgeHref(`project-${project.slug}`),
       content: joinParts([
-        content.about.intro,
-        ...(content.about.points ?? []).flatMap((point) => [point.title, point.body]),
+        project.name,
+        project.status,
+        project.summary,
+        project.caseStudy?.problem,
+        project.caseStudy?.role,
+        ...(project.caseStudy?.decisions ?? []),
+        ...(project.caseStudy?.structure ?? []),
+        ...(project.caseStudy?.evidence ?? []),
+        ...(project.caseStudy?.boundaries ?? []),
       ]),
     });
   }
 
-  for (const card of content.gallery?.cards ?? []) {
-    if (!card.id || !card.title || card.sampleLabel === '示例数据') continue;
-
-    documents.push({
-      id: `project-${card.id}`,
-      title: card.title,
-      sourcePath: `content/s3-content.json#gallery.${card.id}`,
-      content: joinParts([
-        card.state,
-        `问题:${card.problem ?? ''}`,
-        `方案:${card.solution ?? ''}`,
-        `人机分工:${card.humanAiSplit ?? ''}`,
-      ]),
-    });
-  }
-
-  for (const [index, item] of (content.faq?.items ?? []).entries()) {
+  for (const [index, item] of (content.faq ?? []).entries()) {
     if (!item.question || !item.answer) continue;
 
     documents.push({
       id: `faq-${index + 1}`,
       title: item.question,
-      sourcePath: `content/s3-content.json#faq.${index + 1}`,
+      sourcePath: `content/site-content.json#faq.${index + 1}`,
+      href: publicKnowledgeHref(`faq-${index + 1}`),
       content: joinParts([item.question, item.answer]),
     });
   }

@@ -1,34 +1,82 @@
 [
   {
-    "query": "深度研究系统如何确保报告可信?",
+    "query": "深度研究系统如何确保报告可信？",
     "expectedDocumentId": "project-deep-research"
   },
   {
-    "query": "内容生成 Agent 如何分工?",
+    "query": "内容创作 Agent 如何管理素材和生成任务？",
     "expectedDocumentId": "project-content-agent"
   },
   {
-    "query": "运营流水线解决什么问题?",
-    "expectedDocumentId": "project-operations-pipeline"
+    "query": "自动运营 Agent 系统如何保持发布受控？",
+    "expectedDocumentId": "project-auto-operations"
   },
   {
-    "query": "AI native 和会用工具有什么区别?",
+    "query": "数字摩斯为什么还没有访问系统按钮?",
+    "expectedDocumentId": "project-digital-morse"
+  },
+  {
+    "query": "AI native 和会用工具有什么区别？",
     "expectedDocumentId": "faq-2"
   },
   {
-    "query": "摩斯的技术栈是什么?",
+    "query": "摩斯的技术栈是什么？",
     "expectedDocumentId": "faq-1"
   },
   {
-    "query": "项目是不是一个人做的?",
+    "query": "摩斯在这些项目中承担什么职责？",
     "expectedDocumentId": "faq-3"
   },
   {
-    "query": "怎么快速判断是否值得聊?",
+    "query": "如何快速了解这些作品？",
     "expectedDocumentId": "faq-4"
   },
   {
-    "query": "摩斯的工作方式是什么?",
+    "query": "摩斯的工作原则是什么？",
     "expectedDocumentId": "about"
+  },
+  {
+    "query": "报告发布前如何做证据审核和人工审批？",
+    "expectedDocumentId": "project-deep-research"
+  },
+  {
+    "query": "商品参考图、提示词版本和异步生成结果怎么串联？",
+    "expectedDocumentId": "project-content-agent"
+  },
+  {
+    "query": "内容库、草稿工坊和发布中心怎么连接？",
+    "expectedDocumentId": "project-auto-operations"
+  },
+  {
+    "query": "短期邀请码只解锁什么功能？",
+    "expectedDocumentId": "project-digital-morse"
+  },
+  {
+    "query": "摩斯做系统时如何划定事实和安全边界？",
+    "expectedDocumentId": "about"
+  },
+  {
+    "query": "摩斯使用 Python、FastAPI、TypeScript、React 和 Next.js 吗？",
+    "expectedDocumentId": "faq-1"
+  },
+  {
+    "query": "为什么这里的 AI 不是页面上的聊天装饰？",
+    "expectedDocumentId": "faq-2"
+  },
+  {
+    "query": "四个项目都是谁负责完整开发？",
+    "expectedDocumentId": "faq-3"
+  },
+  {
+    "query": "作品案例应该按什么顺序看？",
+    "expectedDocumentId": "faq-4"
+  },
+  {
+    "query": "作品集对话如何同时控制访问、费用和知识来源？",
+    "expectedDocumentId": "project-digital-morse"
+  },
+  {
+    "query": "想做电商内容生产，摩斯有哪些系统经验？",
+    "expectedDocumentId": "project-content-agent"
   }
 ]

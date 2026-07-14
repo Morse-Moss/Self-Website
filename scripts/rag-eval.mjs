@@ -28,6 +28,7 @@ const cases = JSON.parse(
 const embeddingClient = new OpenAI({
   apiKey: embeddingApiKey,
   baseURL: embeddingBaseUrl || undefined,
+  maxRetries: 0,
 });
 const db = new Client({ connectionString });
 const results = [];

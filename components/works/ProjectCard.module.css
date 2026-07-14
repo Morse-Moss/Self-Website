@@ -1,0 +1,127 @@
+.card {
+  display: grid;
+  grid-template-columns: minmax(0, 13.75rem) minmax(0, 1fr);
+  gap: var(--space-5);
+  min-width: 0;
+  padding: var(--space-5) 0;
+  border-top: 1px solid var(--line-faint);
+}
+
+.media {
+  min-width: 0;
+  aspect-ratio: 51 / 58;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+}
+
+.mediaPlaceholder {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  border: 1px solid var(--line-faint);
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: 0;
+}
+
+.content {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+.status {
+  color: var(--status-amber);
+}
+
+.content h3 {
+  margin-top: var(--space-3);
+  font-size: var(--fs-h3);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.summary {
+  margin-top: var(--space-3);
+  color: var(--muted);
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: auto;
+  padding-top: var(--space-5);
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--accent);
+  font-size: var(--fs-sm);
+}
+
+.action:hover {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+@media (max-width: 640px) {
+  .card {
+    grid-template-columns: minmax(0, 7rem) minmax(0, 1fr);
+    gap: var(--space-4);
+  }
+
+  .content h3 {
+    margin-top: var(--space-2);
+    font-size: var(--fs-body);
+  }
+
+  .summary {
+    font-size: var(--fs-sm);
+    line-height: 1.65;
+  }
+
+  .actions {
+    padding-top: var(--space-4);
+  }
+}
+
+@media (max-width: 420px) {
+  .card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .media {
+    width: 42%;
+  }
+}

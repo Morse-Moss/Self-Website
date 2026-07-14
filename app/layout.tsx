@@ -1,18 +1,19 @@
 import type { Metadata } from "next";
 import Script from "next/script";
-import s3Content from "@/content/s3-content.json";
+import SiteShell from "@/components/site/SiteShell";
+import { siteContent } from "@/lib/site-content";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "数字生命摩斯",
-  description: "一个人 + 一套 AI 操作系统",
+  title: siteContent.site.name,
+  description: siteContent.site.description,
 };
 
 const resumeModeBootScript = `
 (() => {
   try {
-    const key = ${JSON.stringify(s3Content.resumeMode.storageKey)};
-    const rootClass = ${JSON.stringify(s3Content.resumeMode.bodyClass)};
+    const key = ${JSON.stringify(siteContent.site.resumeMode.storageKey)};
+    const rootClass = ${JSON.stringify(siteContent.site.resumeMode.bodyClass)};
     if (window.localStorage && window.localStorage.getItem(key) === 'true') {
       document.documentElement.classList.add(rootClass);
     }
@@ -27,13 +28,15 @@ export default function RootLayout({
 }) {
   return (
     <html lang="zh-CN" suppressHydrationWarning>
-      <body>
+      <head>
         <Script
           id="resume-mode-boot"
           strategy="beforeInteractive"
           dangerouslySetInnerHTML={{ __html: resumeModeBootScript }}
         />
-        {children}
+      </head>
+      <body>
+        <SiteShell>{children}</SiteShell>
       </body>
     </html>
   );
