@@ -6,10 +6,12 @@
 
 - S3 滚动叙事、系统展厅、杠杆账本与简历模式已完成。
 - S4 本地统计管线已完成，真实数字来自 `content/stats.json`。
-- S5 安全内容基线已完成：关于、FAQ、内容缺口台账和联系占位已经上线到站点内容。
+- S5 安全内容基线已完成；S7 已将内容缺口和联系占位退出 live 页面。
 - `content/drafts/` 仍是待摩斯终审的草稿，未终审内容不得导入线上内容。
 - S6 上线前验收已完成：测试、生产构建、1440/390 双宽、触控、减弱动画、简历打印与 Lighthouse 均已通过。
-- M3-RAG MVP 本地闭环已通过：短期邀请码、PostgreSQL + pgvector、GPT 适配层、流式对话、来源、短期会话和费用门已进入正式站代码；GPT Responses 已通过本地受信网关冒烟，本地 BGE 语义向量已接入。
+- S7 多页作品集已完成：首页、作品索引、四个项目案例、共享导航/页脚/简历入口和唯一公开内容源均已进入正式站。
+- S8 智能客服文字对话闭环已完成并进入 `origin/master`：三类访客意图、失败补偿、幂等重放、公开来源、可恢复重试、双宽浏览器验证和分层评测均已通过。
+- M3-RAG 基础能力继续复用短期邀请码、PostgreSQL + pgvector、OpenAI 适配层、SSE、短期会话和费用门；本地 BGE 语义向量已接入。S8 的 3 次正式 `runChat` 未完成，真实 Provider 证据保持 `BLOCKED`，不能由 Mock 替代。
 - 部署和域名操作尚未执行，仍由摩斯决定并操作。
 
 ## 本地运行
@@ -65,18 +67,21 @@ npm run session:cleanup
 
 ```powershell
 npm test
+npm run chat:eval
+npm run rag:eval
 npm run build
 ```
 
 UI 改动还需检查 1440 与 390 双宽、浏览器控制台、横向溢出和 `prefers-reduced-motion`。Lighthouse 性能分数需在上线前达到 90 以上。
 
 S6 最终验收证据位于 `docs/verify/v1/s6-*`；桌面 Lighthouse 性能分数为 100。
+S8 最终验收与真实/Mock 证据边界位于 `docs/verify/s8/s8-closeout.md`。
 
 ## 目录
 
 - `app/`：路由、页面入口与全局样式
 - `components/`：正式站组件与 CSS Modules
-- `content/s3-content.json`：当前站点公开内容
+- `content/site-content.json`：当前页面与 RAG 的唯一公开内容源
 - `content/drafts/`：待人工终审内容，不直接上线
 - `scripts/`：统计、测试与视觉冒烟脚本
 - `db/migrations/`：M3-RAG PostgreSQL + pgvector schema

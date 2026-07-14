@@ -1,9 +1,9 @@
 # S8 智能客服文字对话闭环 · Closeout
 
 > 日期:2026-07-14
-> 分支:`codex/s7-multipage-portfolio`
+> 主线:`master@9ca4895`
 > Profile:`CRITICAL`
-> 结论:`LOCAL PASS · REAL PROVIDER BLOCKED`
+> 结论:`MAINLINE PASS · REAL PROVIDER BLOCKED`
 
 ## Outcome
 
@@ -57,8 +57,8 @@ Evidence:
 - 临时 `3011/18090/18091/9222` 均已关闭;smoke invite 残留 0;临时 Edge profile 已清理。
 - 用户原 `3010` 服务 PID 40648 在 browser smoke 前后未变化。
 - 项目 pgvector 保留在 `127.0.0.1:55432`,供后续本地验证。
-- 未安装依赖、未改 schema、未写外部资产、未 merge、未 push、未部署。
-- 本地 S8 closeout commit 已创建;当前分支按既定选项原样保留。
+- 未安装依赖、未改 schema、未写外部资产、未部署。
+- S8 commit `71a6213` 已通过双父 merge commit `9ca4895` 吸收到本地与远端 `master`。
 - `AGENTS.md`、用户研究稿、概念图、`output/**`、旧临时脚本和非最终截图排除在提交外。
 
 ## Residuals
@@ -66,4 +66,4 @@ Evidence:
 - Real Provider 完整三类对话仍需未来新预算与新授权重新验证。
 - Retrieval top-1 为 17/20;top-3 20/20 达到本阶段门槛,未为刷分改写公开事实。
 - 更深 Agent/Memory 面试题仍受公开知识覆盖约束;回答必须保持诚实边界。
-- 当前结果只在本地分支;并入 `master`、push 与部署等待摩斯显式决策。
+- 当前结果已进入 `origin/master`;部署仍等待摩斯显式决策。

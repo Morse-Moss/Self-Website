@@ -3,8 +3,8 @@
 > 准备日期:2026-07-13
 > 分支基线:`codex/s7-multipage-portfolio@91fca44`
 > Profile:`CRITICAL`
-> 状态:`EXECUTION COMPLETE · LOCAL PASS`
-> 依赖:M3-RAG 已被 `master@a4eba23` 吸收;S7 多页作品集在当前本地分支 PASS
+> 状态:`EXECUTION COMPLETE · MAINLINE PASS`
+> 主线:S8 commit `71a6213` 已通过 merge commit `9ca4895` 吸收到本地与远端 `master`
 > Implementation plan:`docs/superpowers/plans/2026-07-14-s8-customer-service-conversation.md`
 
 ## Outcome
@@ -186,7 +186,7 @@ stale_pointer_scan: rg -n "S7 MULTIPAGE VERTICAL SLICE PASS|S8-CS-" docs/task-ce
 - 不做长期访客画像、长期自主记忆、知识自动发布、管理后台或通知渠道集成。
 - 不读取或上线 `content/drafts/**`;不写 `E:\Wiki`、`E:\demo2`、`E:\小红书`、`E:\多agent`。
 - 零新增 npm/Python 依赖;不修改外部或远程数据库;不部署、不绑定域名、不 push、不创建 PR。
-- 不创建新的功能分支或 worktree;S8 先沿当前本地集成分支推进,最终如何并入 `master` 另行授权。
+- S8 实现阶段不创建新的功能分支或 worktree;阶段完成后摩斯于 2026-07-14 显式授权 merge 与 push,主线吸收已完成。
 - 不 stage `AGENTS.md`、现有 `docs/research/**` 用户文件、`docs/verify/concepts/**`、`output/**` 或旧临时脚本。
 
 ## Preauthorization Matrix
@@ -218,7 +218,7 @@ stale_pointer_scan: rg -n "S7 MULTIPAGE VERTICAL SLICE PASS|S8-CS-" docs/task-ce
 | `S8-F3` | CLOSED:`site-content.json` 已幂等重摄取 | 9 documents/9 chunks;invalid source 0 |
 | `S8-F4` | PARKED:公开知识仍不覆盖全部 Agent/Memory 面试深度 | 保持诚实边界;不得从草稿或外部仓库自动补写 |
 | `S8-F5` | BLOCKED:3 次正式 `runChat` 未完成,调用预算耗尽 | 禁止第 4 次;不伪造 `ChatServiceError` 之外的根因 |
-| `S8-F6` | DEFERRED:当前分支尚未并入 `master` 或 push | 不阻塞本地 PASS;等待摩斯显式决策 |
+| `S8-F6` | CLOSED:S8 已并入本地与远端 `master` | merge commit `9ca4895`;未部署 |
 
 ## Progress Ledger
 
@@ -231,6 +231,7 @@ stale_pointer_scan: rg -n "S7 MULTIPAGE VERTICAL SLICE PASS|S8-CS-" docs/task-ce
 - 2026-07-14:`S8-CS-4` PASS / `S8-CS-5` START;公开知识仅从 `content/site-content.json` 重摄取,final second ingest 9/9 skip。local BGE + pgvector 20-case semantic eval 为 top-1 17/20、top-3 20/20;DB 为 9 documents/9 chunks,invalid source 0,missing public href 0。
 - 2026-07-14:`S8-CS-5` PASS / `S8-CS-6` START;隔离 production + fail-first Mock 在 1440x900/390x844 均 `failures: []`,quota 30→29,非预期 console/page error 0,来源分别导航到 `/works/digital-morse` 与 `/`。真实 Provider 3 次 `runChat` 未完成,按上限停止并标 BLOCKED。
 - 2026-07-14:`S8-CS-6` PASS;local PostgreSQL `npm test` 113/113,chat eval 24/24,RAG top-1 17/20/top-3 20/20,build/diff/secret/source scan PASS;CRITICAL compliance 与 quality/safety review 均 PASS,BLOCKER 0。证据:`docs/verify/s8/s8-closeout.md`。
+- 2026-07-14:摩斯显式授权 closeout merge + push;S8 commit `71a6213` 经双父 merge commit `9ca4895` 吸收到本地与远端 `master`,合并树与已验证 S8 tree 完全一致;未部署。
 - 后续每个 stage 只追加 `START/PASS/BLOCKED`,证据类型和下一指针;聊天摘要不更新状态。
 
 ## Minimal LOOP Contract
@@ -250,4 +251,4 @@ stale_pointer_scan: rg -n "S7 MULTIPAGE VERTICAL SLICE PASS|S8-CS-" docs/task-ce
 - `git diff --check` 与精确 staged-file 审计是提交前硬门。
 - S8 完成只表示本地智能客服文字对话闭环可用,不表示已经部署、公开上线、具备联网搜索或数字人能力。
 - 任何未通过的 real Provider 证据必须保留为 BLOCKED/PARTIAL,不能被 Mock 或本地测试覆盖。
-- 最终证据索引:`docs/verify/s8/s8-closeout.md`;merge、push、部署和下一阶段需要新授权。
+- 最终证据索引:`docs/verify/s8/s8-closeout.md`;merge/push 已完成,部署和下一阶段仍需要新授权。

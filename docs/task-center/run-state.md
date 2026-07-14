@@ -4,10 +4,10 @@
 > 启动:2026-07-08 · M3-RAG 启动:2026-07-12 · S8 合同准备:2026-07-13 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**S8 CUSTOMER SERVICE CONVERSATION LOCAL PASS**
+**S8 CUSTOMER SERVICE CONVERSATION MAINLINE PASS**
 
 ## next_allowed_pointer
-`S8-CS-6 CLOSEOUT` 已完成并停在本地分支。下一指针只能由摩斯显式选择:并入 `master`、push/部署,或另开 S9;不得自动推进。真实 Provider 证据保持 BLOCKED,3 次 smoke 上限已耗尽,禁止第 4 次调用;联网搜索、语音、数字人、远程数据库和外置向量库仍不在本轮授权内。
+`S8-CS-6 CLOSEOUT` 已完成并吸收到本地与远端 `master`。下一指针只能由摩斯显式选择部署或另开 S9;不得自动推进。真实 Provider 证据保持 BLOCKED,3 次 smoke 上限已耗尽,禁止第 4 次调用;联网搜索、语音、数字人、远程数据库和外置向量库仍不在本轮授权内。
 
 ## S8 customer-service scope amendment(2026-07-13)
 - Stage contract:`docs/task-center/s8-customer-service-conversation.md`;本文件只保存唯一指针,详细阶段、授权、失败登记和 LOOP 以阶段合同为准。
@@ -16,7 +16,7 @@
 - First closure:显式访客意图、结构化回答、公开来源链接、失败补偿与重试、20-case 评测、loopback Mock 双宽和最多 3 次真实 GPT smoke。
 - Knowledge boundary:唯一 live source 仍是 `content/site-content.json`;知识不足进入 coverage gap,不得读取草稿或外部仓库编造答案。
 - Non-goals:数字人形象、语音/TTS/口型、联网搜索、工具 Agent、Milvus/Qdrant、长期访客画像、管理后台、通知渠道、部署。
-- Execution boundary:S8 已在 `codex/s7-multipage-portfolio` 本地收口;未 merge、push 或部署。后续动作不继承本轮执行授权。
+- Execution boundary:S8 已通过 merge commit `9ca4895` 吸收到本地与远端 `master`;未部署。后续动作不继承本轮执行授权。
 
 ## S8 customer-service closeout evidence(2026-07-14)
 - Scope PASS:在既有短期码、SSE、OpenAI adapter、PostgreSQL + pgvector 和预算门上完成三类访客意图、公开来源、恢复 UX、幂等 turn 与评测闭环;零新增依赖、零 schema migration。
@@ -26,7 +26,7 @@
 - Build/Safety PASS:`npm run build`、`git diff --check`、secret scan 通过;`3010` 用户服务 PID 未改变,临时 3011/18090/18091/9222、smoke 邀请和 profile 已清理;项目 pgvector 保留。
 - Review PASS:CRITICAL compliance 与 quality/safety 两个独立 review 均 PASS,BLOCKER 0。
 - Real Provider BLOCKED:受信 OpenAI-compatible endpoint 与 `gpt-5.4-mini` 可用,但 3 次正式 `runChat` 均未完成;smoke 预算已耗尽,未做第 4 次调用。只记录稳定 `ChatServiceError`,不伪造更具体根因。
-- Git boundary:本地 S8 closeout commit 已完成;未 merge、push、PR 或部署。`AGENTS.md`、研究稿、概念图、`output/**`、旧临时脚本和非最终截图未进入提交。
+- Git boundary:S8 commit `71a6213` 已通过 merge commit `9ca4895` 吸收到本地与远端 `master`;未 PR 或部署。`AGENTS.md`、研究稿、概念图、`output/**`、旧临时脚本和非最终截图未进入提交。
 
 ## S7 multipage scope amendment(2026-07-13)
 - Git baseline:`master` 已通过 `d1ebd88` 吸收 M3-RAG;S7 在 `codex/s7-multipage-portfolio` 开发,不重复合并历史功能分支。
@@ -47,7 +47,7 @@
 - Performance PASS:Lighthouse 13.4.0 desktop performance 1.00(FCP 247ms,LCP 468ms,TBT 0ms,CLS 0);报告 `docs/verify/s7/s7-lighthouse-desktop.json`。
 - Review PASS:STANDARD combined independent reviewer 无 blocker、follow-up 或 scope/profile mismatch;controller 已逐张检查 7 份桌面/移动/reduced-motion 证据图。
 - Safety PASS:未执行知识库 ingest、PostgreSQL 写入、Provider、schema/API/检索算法变更、依赖安装、部署、push 或 PR;四外部资产保持只读。
-- Git boundary:S7 仅在本地分支提交;`AGENTS.md`、两份用户研究文档、`docs/verify/concepts/**`、`output/**` 和旧临时脚本未 stage;等待摩斯决定后续集成与远程同步。
+- Git boundary:S7 已随 merge commit `9ca4895` 吸收到本地与远端 `master`;`AGENTS.md`、两份用户研究文档、`docs/verify/concepts/**`、`output/**` 和旧临时脚本未进入提交。
 
 ## M3-RAG MVP scope amendment(2026-07-12)
 - Product boundary:首页、关于与项目公开;短期邀请码只解锁数字摩斯对话和面试官模式。
