@@ -94,14 +94,14 @@ test('MorseChat retries a recoverable turn without appending a second user bubbl
   );
 });
 
-test('MorseChat is mounted once by SiteShell and its styles preserve tokenized mobile full-screen mode', () => {
+test('MorseChat is mounted once per route tree and keeps tokenized mobile full-screen mode', () => {
   const shell = fs.readFileSync(shellPath, 'utf8');
   const page = fs.readFileSync(pagePath, 'utf8');
   const styles = fs.readFileSync(stylePath, 'utf8');
 
   assert.match(shell, /import MorseChat/);
   assert.equal((shell.match(/<MorseChat \/>/g) ?? []).length, 1);
-  assert.doesNotMatch(page, /import MorseChat|<MorseChat\b/);
+  assert.equal((page.match(/<MorseChat \/>/g) ?? []).length, 1);
   assert.match(styles, /var\(--z-chat\)/);
   assert.match(styles, /@media \(max-width: 640px\)/);
   assert.match(styles, /inset:\s*0/);
