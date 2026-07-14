@@ -10,6 +10,7 @@ const files = {
   caseStudyStyles: path.resolve('components/works/CaseStudy.module.css'),
   openChatButton: path.resolve('components/site/OpenChatButton.tsx'),
   home: path.resolve('app/page.tsx'),
+  restoredHomeSections: path.resolve('components/home/RestoredHomeSections.tsx'),
   homeStyles: path.resolve('app/styles/hero.module.css'),
   homeSectionStyles: path.resolve('components/S3Sections.module.css'),
   works: path.resolve('app/works/page.tsx'),
@@ -50,7 +51,7 @@ test('ProjectCard renders real media, an honest empty state, and at most the con
   const source = readSource(files.projectCard);
 
   assert.match(source, /import Image from ['"]next\/image['"]/);
-  assert.match(source, /import Link from ['"]next\/link['"]/);
+  assert.doesNotMatch(source, /import Link from ['"]next\/link['"]/);
   assert.match(source, /project\.status/);
   assert.match(source, /project\.name/);
   assert.match(source, /project\.type/);
@@ -61,7 +62,8 @@ test('ProjectCard renders real media, an honest empty state, and at most the con
   assert.match(source, /aria-label=\{`\$\{project\.name\}暂无可公开截图`\}/);
   assert.match(source, />截图待补<\/div>/);
   assert.match(source, /project\.actions\.map/);
-  assert.match(source, /action\.kind === ['"]case['"][\s\S]*<Link/);
+  assert.doesNotMatch(source, /action\.kind\s*===\s*['"]case['"]|<Link/);
+  assert.match(source, /project\.actions\.map\(\(action\) =>\s*\(\s*<a/);
   assert.match(source, /<a[\s\S]*target=['"]_blank['"][\s\S]*rel=['"]noreferrer['"]/);
   assert.doesNotMatch(source, /slice\s*\(/);
 });
@@ -82,8 +84,18 @@ test('CaseStudy keeps the six evidence sections in exact order and leads with ho
   assert.match(source, /role=['"]img['"]/);
   assert.match(source, /aria-label=\{`\$\{project\.name\}暂无可公开截图`\}/);
   assert.match(source, />截图待补<\/div>/);
-  assert.match(source, /project\.actions\.filter\(\(action\) => action\.kind !== ['"]case['"]\)/);
+  assert.doesNotMatch(source, /action\.kind\s*!==\s*['"]case['"]|externalActions/);
+  assert.match(source, /project\.actions\.length/);
+  assert.match(source, /project\.actions\.map/);
   assert.match(source, /<Image[\s\S]*unoptimized/);
+});
+
+test('restored home renders content-owned project actions as external links only', () => {
+  const source = readSource(files.restoredHomeSections);
+
+  assert.match(source, /project\.actions\.map/);
+  assert.doesNotMatch(source, /action\.kind\s*===\s*['"]case['"]/);
+  assert.match(source, /<a[\s\S]*target=['"]_blank['"][\s\S]*rel=['"]noreferrer['"]/);
 });
 
 test('home restores the S6 identity surface while retaining verified projects and S8 chat', () => {

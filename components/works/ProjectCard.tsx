@@ -1,5 +1,4 @@
 import Image from 'next/image';
-import Link from 'next/link';
 
 import type { Project } from '@/lib/site-content';
 
@@ -43,23 +42,17 @@ export default function ProjectCard({ project }: ProjectCardProps) {
         <p className={styles.summary}>{project.summary}</p>
 
         <div className={styles.actions} aria-label={`${project.name}操作`}>
-          {project.actions.map((action) =>
-            action.kind === 'case' ? (
-              <Link key={action.href} className={styles.action} href={action.href}>
-                {action.label}
-              </Link>
-            ) : (
-              <a
-                key={action.href}
-                className={styles.action}
-                href={action.href}
-                target="_blank"
-                rel="noreferrer"
-              >
-                {action.label}
-              </a>
-            ),
-          )}
+          {project.actions.map((action) => (
+            <a
+              key={action.href}
+              className={styles.action}
+              href={action.href}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {action.label}
+            </a>
+          ))}
         </div>
       </div>
     </article>

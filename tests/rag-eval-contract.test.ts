@@ -60,6 +60,8 @@ test('S8 chat evaluation covers answer safety, runtime errors, and source naviga
       category: string;
       query: string;
       expectedBehavior: string;
+      documentId?: string;
+      expectedHref?: string;
     }>;
   };
   assert.ok(data.cases.length >= 20, 'chat evaluation must contain at least 20 cases');
@@ -81,6 +83,18 @@ test('S8 chat evaluation covers answer safety, runtime errors, and source naviga
   ]) {
     assert.ok(categories.has(category), `chat evaluation category is missing: ${category}`);
   }
+  assert.deepEqual(
+    data.cases
+      .filter((item) => item.expectedBehavior === 'navigate')
+      .map(({ documentId, expectedHref }) => ({ documentId, expectedHref })),
+    [
+      {
+        documentId: 'project-deep-research',
+        expectedHref: '/works#deep-research',
+      },
+      { documentId: 'faq-1', expectedHref: '/' },
+    ],
+  );
 
   const runner = fs.readFileSync(runnerPath, 'utf8');
   assert.match(runner, /deterministic adversarial prompt\/provider/);
@@ -88,7 +102,20 @@ test('S8 chat evaluation covers answer safety, runtime errors, and source naviga
   assert.match(runner, /AdversarialDeterministicProvider/);
   assert.match(runner, /buildSystemInstructions/);
   assert.match(runner, /publicKnowledgeHref/);
+  assert.match(runner, /projectSlugs\.includes\(projectSlug\)/);
+  assert.match(runner, /href === item\.expectedHref/);
   assert.match(runner, /raw prompts and answers are intentionally omitted/);
   const packageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'));
   assert.equal(packageJson.scripts['chat:eval'], 'node scripts/chat-eval.mjs');
+});
+
+test('chat evaluation source fixtures use exact S9 project Hash hrefs', () => {
+  const runner = fs.readFileSync(
+    path.join(process.cwd(), 'scripts', 'chat-eval.mjs'),
+    'utf8',
+  );
+
+  assert.match(runner, /href:\s*['"]\/works#deep-research['"]/);
+  assert.match(runner, /href:\s*['"]\/works#digital-morse['"]/);
+  assert.doesNotMatch(runner, /href:\s*['"]\/works\//);
 });

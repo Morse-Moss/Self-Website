@@ -108,7 +108,11 @@ test('S8 has a repeatable dual-width customer-service recovery smoke', () => {
     'Number.parseInt',
     'quotaPresent',
     'pageErrorCount',
-    "sourcePath !== '/'",
+    'projectSlugs',
+    "sourceUrl.pathname === '/works'",
+    'projectSlugs.includes(sourceSlug)',
+    'location.pathname ===',
+    'location.hash ===',
     'Promise.race',
   ]) {
     assert.ok(harness.includes(value), `S8 browser smoke must include: ${value}`);
@@ -116,4 +120,6 @@ test('S8 has a repeatable dual-width customer-service recovery smoke', () => {
   assert.doesNotMatch(harness, /Network\.clearBrowserCookies/);
   assert.doesNotMatch(harness, /consoleErrors:\s*client\.consoleErrors/);
   assert.doesNotMatch(harness, /pageErrors:\s*client\.pageErrors/);
+  assert.doesNotMatch(harness, /\.startsWith\(['"]\/works\//);
+  assert.doesNotMatch(harness, /new URL\(source\.href, location\.href\)\.pathname/);
 });

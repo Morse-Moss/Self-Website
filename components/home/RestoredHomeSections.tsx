@@ -63,21 +63,15 @@ export default function RestoredHomeSections({
                 </dl>
                 <div className={styles.projectActions} aria-label={`${project.name}操作`}>
                   {project.actions.map((action) => (
-                    action.kind === 'case' ? (
-                      <Link className={styles.projectAction} href={action.href} key={action.href}>
-                        {action.label}
-                      </Link>
-                    ) : (
-                      <a
-                        className={styles.projectAction}
-                        href={action.href}
-                        key={action.href}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {action.label}
-                      </a>
-                    )
+                    <a
+                      className={styles.projectAction}
+                      href={action.href}
+                      key={action.href}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {action.label}
+                    </a>
                   ))}
                 </div>
               </article>

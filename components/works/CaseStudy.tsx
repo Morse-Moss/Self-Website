@@ -9,8 +9,6 @@ type CaseStudyProps = {
 };
 
 export default function CaseStudy({ project }: CaseStudyProps) {
-  const externalActions = project.actions.filter((action) => action.kind !== 'case');
-
   return (
     <article className={styles.caseStudy}>
       <header className={styles.header}>
@@ -19,9 +17,9 @@ export default function CaseStudy({ project }: CaseStudyProps) {
         <p className={styles.status}>{project.status}</p>
         <p className={styles.summary}>{project.summary}</p>
 
-        {externalActions.length ? (
+        {project.actions.length ? (
           <div className={styles.actions} aria-label={`${project.name}操作`}>
-            {externalActions.map((action) => (
+            {project.actions.map((action) => (
               <a
                 key={action.href}
                 className={styles.action}
