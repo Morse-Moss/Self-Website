@@ -40,7 +40,7 @@
   gap: 12px;
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
-  letter-spacing: var(--tracking-wide);
+  letter-spacing: 0;
   color: var(--accent);
 }
 .eyebrow::before {
@@ -56,7 +56,7 @@
   font-family: var(--font-display);
   font-size: var(--fs-hero);
   font-weight: 800;
-  letter-spacing: var(--tracking-display);
+  letter-spacing: 0;
   line-height: 1.05;
 }
 
@@ -66,6 +66,14 @@
   color: var(--muted);
   font-size: clamp(1rem, 0.92rem + 0.45vw, 1.1875rem);
   line-height: 1.85;
+}
+
+.role {
+  margin-top: var(--space-3);
+  color: var(--status-amber);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  letter-spacing: 0;
 }
 
 /* ---------------- 核心技术栈行 ---------------- */
@@ -81,7 +89,7 @@
   color: var(--muted);
   background: var(--surface-glass);
   border: 1px solid var(--line);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-sm);
   padding: 7px 14px;
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
@@ -103,7 +111,7 @@
   gap: 6px;
   background: var(--surface-glass);
   border: 1px solid var(--line-faint);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   padding: var(--space-4) var(--space-5);
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
@@ -116,7 +124,7 @@
   font-family: var(--font-display);
   font-size: var(--fs-num);
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
@@ -129,7 +137,7 @@
 .highlightLabel {
   font-size: var(--fs-xs);
   color: var(--muted);
-  letter-spacing: 0.05em;
+  letter-spacing: 0;
 }
 
 /* 「示例数据」标注:虚线小签,与真实数字区分(沿用原型 .mock-tag) */
@@ -138,7 +146,7 @@
   align-self: center; /* 与卡片行/联系方式行同轴对齐,不再底部悬浮 */
   font-family: var(--font-mono);
   font-size: var(--fs-3xs);
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   color: var(--muted);
   border: 1px dashed var(--line-strong);
   border-radius: 6px;
@@ -155,7 +163,7 @@
   gap: var(--space-4);
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
-  letter-spacing: 0.05em;
+  letter-spacing: 0;
   color: var(--muted);
 }
 .contactPlaceholder {
@@ -166,6 +174,43 @@
 }
 .sep {
   color: var(--faint);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+}
+
+.primaryAction,
+.secondaryAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 var(--space-5);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.primaryAction {
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+
+.secondaryAction {
+  background: var(--surface-glass);
+  color: var(--ink);
+}
+
+.primaryAction:hover,
+.secondaryAction:hover {
+  border-color: var(--accent);
 }
 
 /* ---------------- 移动 · 单列(形体在上,文字在下) ---------------- */
