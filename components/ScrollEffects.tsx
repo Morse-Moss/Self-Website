@@ -1,10 +1,13 @@
 'use client';
 
 import { useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 
 export default function ScrollEffects() {
+  const pathname = usePathname();
+
   useEffect(() => {
     const revealNodes = Array.from(document.querySelectorAll<HTMLElement>('[data-reveal]'));
     const morseNodes = Array.from(document.querySelectorAll<HTMLElement>('[data-morse-pulse]'));
@@ -65,7 +68,7 @@ export default function ScrollEffects() {
     });
 
     return () => ctx.revert();
-  }, []);
+  }, [pathname]);
 
   return null;
 }

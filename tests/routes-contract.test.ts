@@ -117,6 +117,7 @@ test('home keeps the S6 identity while the shared shell owns controls and works 
   assert.match(source, /href=['"]#systems['"]/);
   assert.doesNotMatch(source, /import MorseChat|<MorseChat\b/);
   assert.match(rootLayout, /<SiteHeader\s+site=\{siteContent\.site\}\s*\/>/);
+  assert.match(siteHeader, /site\.nav\.map/);
   assert.match(siteHeader, /<OpenChatButton\b/);
   assert.match(siteHeader, /<ResumeModeToggle\b/);
   assert.equal((worksLayout.match(/<MorseChat\s*\/>/g) ?? []).length, 1);

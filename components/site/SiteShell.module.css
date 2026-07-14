@@ -2,13 +2,28 @@
   position: relative;
   z-index: 1;
   min-height: 100vh;
+  padding-top: var(--topbar-h);
 }
 
 .siteHeader {
-  position: sticky;
+  position: fixed;
   top: 0;
+  right: 0;
+  left: 0;
   z-index: var(--z-topbar);
-  border-bottom: 1px solid var(--line-faint);
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    -webkit-backdrop-filter var(--dur-fast) var(--ease),
+    backdrop-filter var(--dur-fast) var(--ease);
+}
+
+.siteHeader[data-scrolled='true'] {
+  border-bottom-color: var(--line-faint);
   background: var(--topbar-glass);
   -webkit-backdrop-filter: blur(16px);
   backdrop-filter: blur(16px);
@@ -45,10 +60,24 @@
 }
 
 .navLink {
+  position: relative;
   padding: 0 var(--space-3);
-  border-bottom: 1px solid transparent;
   color: var(--muted);
   font-size: var(--fs-sm);
+  transition: color var(--dur-fast) var(--ease);
+}
+
+.navLink::after {
+  position: absolute;
+  right: var(--space-3);
+  bottom: 0;
+  left: var(--space-3);
+  height: 1px;
+  background: var(--accent);
+  content: '';
+  transform: scaleX(0);
+  transform-origin: center;
+  transition: transform var(--dur-fast) var(--ease);
 }
 
 .navLink:hover {
@@ -56,8 +85,11 @@
 }
 
 .navLink[aria-current='page'] {
-  border-bottom-color: var(--accent);
   color: var(--accent);
+}
+
+.navLink[aria-current='page']::after {
+  transform: scaleX(1);
 }
 
 .headerControl {

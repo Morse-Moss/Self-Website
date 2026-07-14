@@ -11,6 +11,7 @@ const headerPath = path.resolve('components/site/SiteHeader.tsx');
 const footerPath = path.resolve('components/site/SiteFooter.tsx');
 const resumePath = path.resolve('components/site/ResumeSheet.tsx');
 const resumeModePath = path.resolve('components/ResumeMode.tsx');
+const scrollEffectsPath = path.resolve('components/ScrollEffects.tsx');
 const canvasPath = path.resolve('components/site/MorseSignalCanvas.tsx');
 const siteStylePath = path.resolve('components/site/SiteShell.module.css');
 const resumeStylePath = path.resolve('components/ResumeMode.module.css');
@@ -69,18 +70,36 @@ test('route trees do not duplicate the global shell and works keeps only its cha
   assert.match(worksLayout, /<>\s*\{children\}\s*<MorseChat\s*\/>\s*<\/>/s);
 });
 
-test('SiteHeader is a compact two-link navigation with inline chat and resume controls', () => {
+test('persistent ScrollEffects rebuilds for each pathname and cleans its GSAP context', () => {
+  const scrollEffects = readSource(scrollEffectsPath);
+
+  assert.match(scrollEffects, /import\s+\{\s*usePathname\s*\}\s+from\s+['"]next\/navigation['"]/);
+  assert.match(scrollEffects, /const pathname = usePathname\(\)/);
+  assert.match(scrollEffects, /return \(\) => ctx\.revert\(\)/);
+  assert.match(scrollEffects, /\}, \[pathname\]\);/);
+});
+
+test('SiteHeader uses configured nav items and a passive scroll state with cleanup', () => {
   const header = readSource(headerPath);
 
   assert.match(header, /^['"]use client['"];?/);
   assert.match(header, /from\s+['"]next\/link['"]/);
   assert.match(header, /usePathname/);
-  assert.match(header, /首页/);
-  assert.match(header, /作品集/);
+  assert.match(header, /useEffect/);
+  assert.match(header, /useState/);
+  assert.match(header, /site\.nav\.map/);
+  assert.match(header, /href=\{item\.href\}/);
+  assert.match(header, /\{item\.label\}/);
+  assert.match(header, /isCurrentPath\(pathname,\s*item\.href\)/);
+  assert.match(header, /data-scrolled=\{scrolled\s*\?\s*['"]true['"]\s*:\s*['"]false['"]\}/);
+  assert.match(header, /window\.scrollY\s*>\s*\d+/);
+  assert.match(header, /addEventListener\(['"]scroll['"],\s*\w+,\s*\{\s*passive:\s*true\s*\}\)/);
+  assert.match(header, /removeEventListener\(['"]scroll['"],\s*\w+\)/);
   assert.match(header, /<OpenChatButton\b/);
   assert.match(header, /<ResumeModeToggle\b/);
   assert.match(header, /<ResumeModeToggle\s+config=\{site\.resumeMode\}\s+inline\s*\/>/);
   assert.match(header, /aria-current=\{[^}]*\?\s*['"]page['"]\s*:\s*undefined\}/);
+  assert.doesNotMatch(header, />\s*(?:首页|作品集)\s*</);
   assert.doesNotMatch(header, /className=\{styles\.brand\}|site\.name/);
   assert.doesNotMatch(header, /hamburger|menuOpen|菜单/i);
 });
@@ -174,8 +193,31 @@ test('shell and canvas styles keep interaction above a tokenized non-blocking ba
   assert.match(siteStyles, /white-space:\s*nowrap/);
   assert.match(resumeStyles, /min-height:\s*44px/);
   assert.match(readRule(resumeStyles, '.inline'), /position:\s*static/);
-  assert.match(readRule(siteStyles, '.standardContent'), /position:\s*relative/);
-  assert.match(readRule(siteStyles, '.standardContent'), /z-index:\s*1/);
+  const contentRule = readRule(siteStyles, '.standardContent');
+  assert.match(contentRule, /position:\s*relative/);
+  assert.match(contentRule, /z-index:\s*1/);
+  assert.match(contentRule, /padding-top:\s*var\(--topbar-h\)/);
+
+  const headerRule = readRule(siteStyles, '.siteHeader');
+  assert.match(headerRule, /position:\s*fixed/);
+  assert.match(headerRule, /top:\s*0/);
+  assert.match(headerRule, /right:\s*0/);
+  assert.match(headerRule, /left:\s*0/);
+  assert.match(headerRule, /background:\s*transparent/);
+  assert.match(headerRule, /backdrop-filter:\s*none/);
+
+  const scrolledHeaderRule = readRule(siteStyles, ".siteHeader[data-scrolled='true']");
+  assert.match(scrolledHeaderRule, /background:\s*var\(--topbar-glass\)/);
+  assert.match(scrolledHeaderRule, /border-bottom-color:\s*var\(--line-faint\)/);
+  assert.match(scrolledHeaderRule, /backdrop-filter:\s*blur\(/);
+
+  const underlineRule = readRule(siteStyles, '.navLink::after');
+  assert.match(underlineRule, /transform:\s*scaleX\(0\)/);
+  assert.match(underlineRule, /transition:\s*transform\s+var\(--dur-fast\)\s+var\(--ease\)/);
+  assert.match(
+    readRule(siteStyles, ".navLink[aria-current='page']::after"),
+    /transform:\s*scaleX\(1\)/,
+  );
 
   const canvasRule = readRule(canvasStyles, '.canvas');
   assert.match(canvasRule, /position:\s*fixed/);
