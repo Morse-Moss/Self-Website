@@ -160,6 +160,12 @@ test("keeps the approved global copy and four FAQ topics", () => {
       copyright: "© 2026 数字生命摩斯",
     },
   });
+  assert.deepEqual(siteContent.profile.capabilities, [
+    "Agent 系统",
+    "RAG",
+    "多 Agent",
+    "全栈开发",
+  ]);
   assert.equal(siteContent.faq.length, 4);
   assert.match(siteContent.faq[0].question, /技术栈/);
   assert.match(siteContent.faq[1].question, /AI native/i);

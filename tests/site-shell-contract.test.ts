@@ -4,6 +4,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 
 const layoutPath = path.resolve('app/layout.tsx');
+const worksLayoutPath = path.resolve('app/works/layout.tsx');
 const pagePath = path.resolve('app/page.tsx');
 const shellPath = path.resolve('components/site/SiteShell.tsx');
 const headerPath = path.resolve('components/site/SiteHeader.tsx');
@@ -28,40 +29,32 @@ function readRule(source: string, selector: string): string {
   return rule;
 }
 
-test('root layout reads metadata and resume boot config from siteContent and only wraps the body with SiteShell', () => {
+test('root layout is minimal and the works layout owns SiteShell', () => {
   const layout = readSource(layoutPath);
+  const worksLayout = readSource(worksLayoutPath);
 
   assert.match(layout, /import\s+\{\s*siteContent\s*\}\s+from\s+["']@\/lib\/site-content["']/);
-  assert.match(layout, /import\s+SiteShell\s+from\s+["']@\/components\/site\/SiteShell["']/);
   assert.match(layout, /title:\s*siteContent\.site\.name/);
   assert.match(layout, /description:\s*siteContent\.site\.description/);
   assert.match(layout, /siteContent\.site\.resumeMode\.storageKey/);
   assert.match(layout, /siteContent\.site\.resumeMode\.bodyClass/);
   assert.doesNotMatch(layout, /s3-content/);
+  assert.doesNotMatch(layout, /import\s+SiteShell|<SiteShell/);
+  assert.match(layout, /<body>\s*\{children\}\s*<\/body>/s);
 
-  const body = layout.match(/<body>([\s\S]*?)<\/body>/)?.[1] ?? '';
-  assert.match(body, /^\s*<SiteShell>\s*\{children\}\s*<\/SiteShell>\s*$/);
+  assert.match(worksLayout, /import SiteShell/);
+  assert.match(worksLayout, /<SiteShell>\s*\{children\}\s*<\/SiteShell>/s);
 });
 
-test('SiteShell owns each global surface exactly once and the home page owns none of them', () => {
+test('home and works trees each mount resume and chat surfaces exactly once', () => {
   const shell = readSource(shellPath);
   const page = readSource(pagePath);
 
-  assert.equal(count(shell, /<ResumeModeToggle\b/g), 1);
-  assert.equal(count(shell, /<SiteHeader\b/g), 1);
-  assert.equal(count(shell, /<SiteFooter\b/g), 1);
-  assert.equal(count(shell, /<ResumeSheet\b/g), 1);
-  assert.equal(count(shell, /<MorseChat\b/g), 1);
-  assert.equal(count(shell, /data-standard-content/g), 1);
-  assert.match(
-    shell,
-    /data-standard-content[\s\S]*<SiteHeader\b[\s\S]*\{children\}[\s\S]*<SiteFooter\b/,
-  );
-  assert.match(shell, /<ResumeSheet\b[^>]*data|<ResumeSheet\b/);
-
-  assert.doesNotMatch(page, /import\s+MorseChat|<MorseChat\b/);
-  assert.doesNotMatch(page, /import\s+\{[^}]*ResumeModeToggle|<ResumeModeToggle\b/);
-  assert.doesNotMatch(page, /import\s+\{[^}]*ResumeSection|<ResumeSection\b/);
+  assert.equal(count(shell, /<MorseChat\s*\/>/g), 1);
+  assert.equal(count(page, /<MorseChat\s*\/>/g), 1);
+  assert.equal(count(page, /<ResumeModeToggle\b/g), 1);
+  assert.equal(count(page, /<ResumeSheet\b/g), 1);
+  assert.equal(count(page, /data-standard-content/g), 1);
 });
 
 test('SiteHeader is a compact pathname-aware two-link navigation without a hamburger', () => {

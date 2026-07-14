@@ -94,16 +94,24 @@ test('MorseChat retries a recoverable turn without appending a second user bubbl
   );
 });
 
-test('MorseChat is mounted once by SiteShell and its styles preserve tokenized mobile full-screen mode', () => {
+test('MorseChat is mounted once per route tree and keeps tokenized mobile full-screen mode', () => {
   const shell = fs.readFileSync(shellPath, 'utf8');
   const page = fs.readFileSync(pagePath, 'utf8');
   const styles = fs.readFileSync(stylePath, 'utf8');
 
   assert.match(shell, /import MorseChat/);
   assert.equal((shell.match(/<MorseChat \/>/g) ?? []).length, 1);
-  assert.doesNotMatch(page, /import MorseChat|<MorseChat\b/);
+  assert.equal((page.match(/<MorseChat \/>/g) ?? []).length, 1);
   assert.match(styles, /var\(--z-chat\)/);
   assert.match(styles, /@media \(max-width: 640px\)/);
+  assert.match(
+    styles,
+    /@media \(max-width: 640px\)[\s\S]*?\.root\s*{[\s\S]*?top:\s*var\(--space-4\)[\s\S]*?right:\s*calc\(var\(--space-4\) \+ 104px\)[\s\S]*?bottom:\s*auto/,
+  );
+  assert.match(
+    styles,
+    /@media \(max-width: 560px\)[\s\S]*?\.root\s*{[\s\S]*?top:\s*var\(--space-3\)[\s\S]*?right:\s*calc\(var\(--space-3\) \+ 92px\)/,
+  );
   assert.match(styles, /inset:\s*0/);
   assert.match(styles, /width:\s*100%/);
   assert.match(styles, /100dvh/);

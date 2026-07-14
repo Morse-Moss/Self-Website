@@ -419,8 +419,9 @@
 
 @media (max-width: 640px) {
   .root {
-    right: var(--space-3);
-    bottom: var(--space-3);
+    top: var(--space-4);
+    right: calc(var(--space-4) + 104px);
+    bottom: auto;
   }
 
   .panel {
@@ -450,6 +451,13 @@
 
   .userMessage {
     margin-left: var(--space-5);
+  }
+}
+
+@media (max-width: 560px) {
+  .root {
+    top: var(--space-3);
+    right: calc(var(--space-3) + 92px);
   }
 }
 

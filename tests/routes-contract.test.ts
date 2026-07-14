@@ -10,7 +10,8 @@ const files = {
   caseStudyStyles: path.resolve('components/works/CaseStudy.module.css'),
   openChatButton: path.resolve('components/site/OpenChatButton.tsx'),
   home: path.resolve('app/page.tsx'),
-  homeStyles: path.resolve('app/page.module.css'),
+  homeStyles: path.resolve('app/styles/hero.module.css'),
+  homeSectionStyles: path.resolve('components/S3Sections.module.css'),
   works: path.resolve('app/works/page.tsx'),
   worksStyles: path.resolve('app/works/page.module.css'),
   caseRoute: path.resolve('app/works/[slug]/page.tsx'),
@@ -85,26 +86,21 @@ test('CaseStudy keeps the six evidence sections in exact order and leads with ho
   assert.match(source, /<Image[\s\S]*unoptimized/);
 });
 
-test('home page uses approved profile copy, the real featured workbench, and all four projects', () => {
+test('home restores the S6 identity surface while retaining verified projects and S8 chat', () => {
   const source = readSource(files.home);
-  const chatButton = readSource(files.openChatButton);
 
-  assert.match(source, /import Image from ['"]next\/image['"]/);
-  assert.match(source, /import Link from ['"]next\/link['"]/);
-  assert.match(source, /getAllProjects/);
-  assert.match(source, /getFeaturedProjects/);
+  assert.match(source, /import DigitalHuman from ['"]@\/components\/DigitalHuman['"]/);
+  assert.match(source, /import MorseChat from ['"]@\/components\/MorseChat['"]/);
+  assert.match(source, /import RestoredHomeSections/);
   assert.match(source, /siteContent\.profile\.title/);
   assert.match(source, /siteContent\.profile\.role/);
   assert.match(source, /siteContent\.profile\.summary/);
-  assert.match(source, /href=['"]\/works['"][\s\S]*查看作品/);
-  assert.match(source, /<OpenChatButton[\s\S]*问数字摩斯/);
-  assert.match(source, /<Image[\s\S]*featured\.media\.src[\s\S]*featured\.media\.width[\s\S]*featured\.media\.height/);
-  assert.match(source, /projects\.map[\s\S]*<ProjectCard/);
-  assert.doesNotMatch(source, retiredSurfacePattern);
-
-  assert.match(chatButton, /^['"]use client['"];?/);
-  assert.match(chatButton, /window\.dispatchEvent\(new Event\(['"]morse-chat:open['"]\)\)/);
-  assert.match(chatButton, /type=['"]button['"]/);
+  assert.match(source, /siteContent\.profile\.capabilities\.map/);
+  assert.match(source, /<DigitalHuman\s*\/>/);
+  assert.match(source, /<MorseChat\s*\/>/);
+  assert.match(source, /href=['"]#systems['"]/);
+  assert.doesNotMatch(source, /getFeaturedProjects|featured\.media|<ProjectCard/);
+  assert.doesNotMatch(source, /1,200|480|示例数据|Email|WeChat/);
 });
 
 test('works index is an unfiltered four-project catalog driven by the public content helper', () => {
@@ -134,6 +130,7 @@ test('new route styles are tokenized, compact, and include mobile overflow safeg
     files.projectCardStyles,
     files.caseStudyStyles,
     files.homeStyles,
+    files.homeSectionStyles,
     files.worksStyles,
     files.caseRouteStyles,
   ].map(readSource);
@@ -156,7 +153,6 @@ test('new route TSX stays inside the approved evidence-only product surface', ()
     files.projectCard,
     files.caseStudy,
     files.openChatButton,
-    files.home,
     files.works,
     files.caseRoute,
   ].map(readSource);

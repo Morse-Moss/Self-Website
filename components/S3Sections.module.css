@@ -38,16 +38,16 @@
   min-height: 30px;
   padding: 0 var(--space-3);
   border: 1px solid var(--line);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-sm);
   color: var(--accent);
   font-size: var(--fs-2xs);
-  letter-spacing: var(--tracking-wide);
+  letter-spacing: 0;
 }
 
 .sectionCaption {
   color: var(--accent);
   font-size: var(--fs-xs);
-  letter-spacing: var(--tracking-wide);
+  letter-spacing: 0;
 }
 
 .sectionHeader h2,
@@ -80,7 +80,7 @@
 .morseLabel {
   color: var(--accent);
   font-size: var(--fs-2xs);
-  letter-spacing: var(--tracking-wide);
+  letter-spacing: 0;
 }
 
 .morseTrack {
@@ -94,7 +94,7 @@
 .dash {
   display: block;
   height: 2px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-sm);
   background: var(--line-strong);
   transform-origin: left center;
 }
@@ -123,6 +123,8 @@
 .gapPanel {
   border: 1px solid var(--line);
   background: var(--surface-glass);
+  min-width: 0;
+  overflow-wrap: anywhere;
   -webkit-backdrop-filter: blur(14px);
   backdrop-filter: blur(14px);
   box-shadow: var(--shadow-card);
@@ -134,7 +136,7 @@
   flex-direction: column;
   gap: var(--space-5);
   padding: var(--space-6);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   transition:
     border-color var(--dur) var(--ease),
     transform var(--dur) var(--ease),
@@ -157,7 +159,7 @@
 .cardKicker {
   color: var(--accent);
   font-size: var(--fs-2xs);
-  letter-spacing: var(--tracking-wide);
+  letter-spacing: 0;
 }
 
 .stateBadge,
@@ -166,7 +168,7 @@
   display: inline-flex;
   align-items: center;
   width: fit-content;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-sm);
   white-space: nowrap;
 }
 
@@ -176,7 +178,7 @@
   background: var(--accent-dim);
   color: var(--muted);
   font-size: var(--fs-2xs);
-  letter-spacing: 0.06em;
+  letter-spacing: 0;
 }
 
 .systemCard h3,
@@ -204,7 +206,7 @@
   color: var(--accent);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
-  letter-spacing: 0.12em;
+  letter-spacing: 0;
 }
 
 .cardFacts dd {
@@ -227,7 +229,7 @@
   flex: 1;
   min-width: 0;
   height: 4px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-sm);
   background: var(--line-faint);
   overflow: hidden;
 }
@@ -245,14 +247,14 @@
   border: 1px dashed var(--line-strong);
   color: var(--muted);
   font-size: var(--fs-3xs);
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
 }
 
 .ghostButton {
   width: fit-content;
   padding: 9px var(--space-4);
   border: 1px solid var(--line);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--muted);
   font: inherit;
@@ -263,6 +265,40 @@
 .ghostButton:disabled {
   cursor: not-allowed;
   opacity: 0.68;
+}
+
+.projectActions,
+.contactActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: auto;
+  padding-top: var(--space-4);
+}
+
+.contactActions {
+  margin-top: 0;
+  padding-top: 0;
+}
+
+.projectAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.projectAction:hover {
+  border-color: var(--accent);
+  color: var(--ink);
 }
 
 .principleGrid {
@@ -280,7 +316,7 @@
 .aboutPoint {
   min-width: 0;
   padding: var(--space-6);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
 }
 
 .aboutPoint h3,
@@ -303,14 +339,14 @@
 
 .principle {
   padding: var(--space-6);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
 }
 
 .principle > span {
   color: var(--accent);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
-  letter-spacing: var(--tracking-wide);
+  letter-spacing: 0;
 }
 
 .principle h3 {
@@ -336,7 +372,7 @@
   flex-direction: column;
   gap: var(--space-3);
   padding: var(--space-6);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
 }
 
 .realTag {
@@ -345,7 +381,7 @@
   background: var(--status-cyan-dim);
   color: var(--accent);
   font-size: var(--fs-2xs);
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
 }
 
 .ledgerMetric strong {
@@ -379,7 +415,7 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-4);
   padding: var(--space-5);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
 }
 
 .sampleLedger div {
@@ -401,7 +437,7 @@
   width: fit-content;
   font-style: normal;
   border: 1px dashed var(--line-strong);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-sm);
   padding: 3px var(--space-2);
   color: var(--muted);
   font-family: var(--font-mono);
@@ -422,12 +458,12 @@
 .faqItem {
   min-width: 0;
   padding: var(--space-6);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
 }
 
 .gapPanel {
   padding: var(--space-7);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
 }
 
 .gapPanel .sectionHeader {
@@ -444,7 +480,7 @@
   min-width: 0;
   padding: var(--space-5);
   border: 1px solid var(--line-faint);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   background: var(--accent-dim);
 }
 
@@ -460,11 +496,11 @@
   width: fit-content;
   padding: 4px var(--space-2);
   border: 1px solid var(--status-amber-line);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-sm);
   color: var(--status-amber);
   font-family: var(--font-mono);
   font-size: var(--fs-3xs);
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   white-space: nowrap;
 }
 
@@ -472,7 +508,7 @@
   display: grid;
   gap: var(--space-4);
   padding: var(--space-7);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
 }
 
 .contactPanel > p:not(.sectionCaption) {
@@ -493,7 +529,7 @@
   gap: var(--space-2);
   padding: 10px var(--space-4);
   border: 1px solid var(--line);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-sm);
   color: var(--ink);
   transition:
     border-color var(--dur-fast) var(--ease),
@@ -506,7 +542,7 @@
   gap: var(--space-2);
   padding: 10px var(--space-4);
   border: 1px dashed var(--line);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-sm);
   color: var(--muted);
   cursor: not-allowed;
 }
@@ -532,7 +568,7 @@
 
 .footerMorse {
   color: var(--accent);
-  letter-spacing: 0.42em;
+  letter-spacing: 0;
 }
 
 .footer small {
@@ -566,7 +602,7 @@
   color: var(--paper-accent);
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
-  letter-spacing: var(--tracking-wide);
+  letter-spacing: 0;
 }
 
 .resumeHead h2 {
@@ -619,7 +655,7 @@
   gap: var(--space-3);
   font-family: var(--font-serif);
   font-size: 1.0625rem;
-  letter-spacing: 0.12em;
+  letter-spacing: 0;
 }
 
 .resumeBlock h3::after {
@@ -648,7 +684,7 @@
   top: 0.85em;
   width: 5px;
   height: 5px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-sm);
   background: var(--paper-accent);
 }
 
@@ -671,7 +707,7 @@
   color: var(--paper-accent);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
-  letter-spacing: 0.06em;
+  letter-spacing: 0;
 }
 
 .resumeExperience p,
@@ -762,6 +798,10 @@
 
   .resumeSheet {
     padding: var(--space-6);
+  }
+
+  .contactActions .projectAction {
+    width: 100%;
   }
 }
 

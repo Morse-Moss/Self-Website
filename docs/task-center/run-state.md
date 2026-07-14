@@ -28,6 +28,15 @@
 - Real Provider BLOCKED:受信 OpenAI-compatible endpoint 与 `gpt-5.4-mini` 可用,但 3 次正式 `runChat` 均未完成;smoke 预算已耗尽,未做第 4 次调用。只记录稳定 `ChatServiceError`,不伪造更具体根因。
 - Git boundary:S8 commit `71a6213` 已通过 merge commit `9ca4895` 吸收到本地与远端 `master`;未 PR 或部署。`AGENTS.md`、研究稿、概念图、`output/**`、旧临时脚本和非最终截图未进入提交。
 
+## S6 visual restoration amendment(2026-07-14)
+- Pointer boundary:本修订只恢复展示层,不推进阶段指针;`current_pointer` 继续保持 `S8 CUSTOMER SERVICE CONVERSATION MAINLINE PASS`。
+- Product PASS:首页恢复 S6 深色身份首屏、光球氛围、系统展厅、关于、真实统计、FAQ 与 CTA;S7 `/works` 和四个案例路由、S8 短期码/RAG/SSE/来源/短期记忆/预算/重试/幂等全部保留。
+- Visibility PASS:hero 从 100svh 收敛为 70svh;首个系统标题取消滚动 reveal 依赖;移动 launcher 按 640/560 两级断点移入顶部控制行。浏览器门要求标题完整入屏且真实可见,并对 launcher 与视口内文字/图片/控件做相交检查,1440x900、600x900 与 390x844 最终均为 0 overlap。
+- Verification PASS:`DATABASE_URL=local npm test` 114/114;`npm run build` 生成 12 条路由;`visual:s6-restore` 覆盖六路由 1440/600/390 主文档 200、聊天开关、外链、overflow、console/page error、外部请求和 reduced-motion;CDP 连接、命令与关闭均有界失败并输出结构化诊断,最终 `failures: []`。
+- Data/Provider:本地健康接口为 database ready、9 indexed chunks、Provider `configured:false`;未调用真实 GPT,未 ingest、未改 schema。
+- Evidence:`docs/verify/s6-restore/home-{desktop-1440x900,mobile-390x844}.png`;人工复核确认首屏身份、光球与下一节标题无重叠。
+- Git boundary:本次只在 `codex/s7-multipage-portfolio` 本地恢复与验证;未合并 `master`、未 push、未部署。`AGENTS.md`、两份研究稿、概念图、`output/**`、临时脚本和非最终 S8 截图继续排除。
+
 ## S7 multipage scope amendment(2026-07-13)
 - Git baseline:`master` 已通过 `d1ebd88` 吸收 M3-RAG;S7 在 `codex/s7-multipage-portfolio` 开发,不重复合并历史功能分支。
 - Product boundary:多页作品集负责介绍摩斯与四个真实项目;数字摩斯继续复用现有短期码、RAG、SSE、来源和预算门。
