@@ -1,15 +1,20 @@
-import { ResumePrintButton } from '@/components/ResumeMode';
+import {
+  ResumeModeExitButton,
+  ResumePrintButton,
+  type ResumeModeConfig,
+} from '@/components/ResumeMode';
 import type { SiteContent } from '@/lib/site-content';
 
 import styles from './SiteShell.module.css';
 
 type ResumeSheetProps = {
   printLabel: string;
+  resumeMode: ResumeModeConfig;
   profile: SiteContent['profile'];
   projects: SiteContent['projects'];
 };
 
-export default function ResumeSheet({ printLabel, profile, projects }: ResumeSheetProps) {
+export default function ResumeSheet({ printLabel, resumeMode, profile, projects }: ResumeSheetProps) {
   return (
     <section className={styles.resumeSheet} data-resume-section aria-label="一页纸简历">
       <div className={styles.resumePaper}>
@@ -18,7 +23,10 @@ export default function ResumeSheet({ printLabel, profile, projects }: ResumeShe
             <p className={styles.resumeKicker}>{profile.title}</p>
             <h1>{profile.role}</h1>
           </div>
-          <ResumePrintButton label={printLabel} />
+          <div className={styles.resumeActions}>
+            <ResumePrintButton label={printLabel} />
+            <ResumeModeExitButton config={resumeMode} />
+          </div>
         </header>
 
         <p className={styles.resumeSummary}>{profile.summary}</p>

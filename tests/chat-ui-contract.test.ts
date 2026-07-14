@@ -5,7 +5,8 @@ import { test } from 'node:test';
 
 const componentPath = path.resolve('components/MorseChat.tsx');
 const stylePath = path.resolve('components/MorseChat.module.css');
-const shellPath = path.resolve('components/site/SiteShell.tsx');
+const layoutPath = path.resolve('app/layout.tsx');
+const worksLayoutPath = path.resolve('app/works/layout.tsx');
 const pagePath = path.resolve('app/page.tsx');
 const ssePath = path.resolve('lib/client/chat-sse.ts');
 
@@ -94,14 +95,19 @@ test('MorseChat retries a recoverable turn without appending a second user bubbl
   );
 });
 
-test('MorseChat is mounted once per route tree and keeps tokenized mobile full-screen mode', () => {
-  const shell = fs.readFileSync(shellPath, 'utf8');
+test('MorseChat is mounted only by the works overlay and keeps tokenized mobile full-screen mode', () => {
+  const layout = fs.readFileSync(layoutPath, 'utf8');
+  const worksLayout = fs.readFileSync(worksLayoutPath, 'utf8');
   const page = fs.readFileSync(pagePath, 'utf8');
   const styles = fs.readFileSync(stylePath, 'utf8');
 
-  assert.match(shell, /import MorseChat/);
-  assert.equal((shell.match(/<MorseChat \/>/g) ?? []).length, 1);
-  assert.equal((page.match(/<MorseChat \/>/g) ?? []).length, 1);
+  assert.doesNotMatch(layout, /import MorseChat|<MorseChat\b/);
+  assert.doesNotMatch(page, /import MorseChat|<MorseChat\b/);
+  assert.match(worksLayout, /import MorseChat/);
+  assert.equal((worksLayout.match(/<MorseChat\s*\/>/g) ?? []).length, 1);
+  const launcherRule = styles.match(/\.launcher\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.match(launcherRule, /display:\s*none/);
+  assert.match(launcherRule, /pointer-events:\s*none/);
   assert.match(styles, /var\(--z-chat\)/);
   assert.match(styles, /@media \(max-width: 640px\)/);
   assert.match(

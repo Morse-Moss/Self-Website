@@ -40,6 +40,12 @@
   border-color: var(--accent);
 }
 
+.inline {
+  position: static;
+  z-index: auto;
+  flex: 0 0 auto;
+}
+
 .signal {
   width: 7px;
   height: 7px;
@@ -53,7 +59,8 @@
   box-shadow: none;
 }
 
-.printButton {
+.printButton,
+.exitButton {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -71,7 +78,8 @@
     color var(--dur-fast) var(--ease);
 }
 
-.printButton:hover {
+.printButton:hover,
+.exitButton:hover {
   background: var(--paper-ink);
   color: var(--paper);
 }
@@ -100,6 +108,7 @@
 
 @media print {
   .toggle,
+  .exitButton,
   .printButton {
     display: none !important;
   }

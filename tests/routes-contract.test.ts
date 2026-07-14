@@ -9,11 +9,14 @@ const files = {
   caseStudy: path.resolve('components/works/CaseStudy.tsx'),
   caseStudyStyles: path.resolve('components/works/CaseStudy.module.css'),
   openChatButton: path.resolve('components/site/OpenChatButton.tsx'),
+  siteHeader: path.resolve('components/site/SiteHeader.tsx'),
+  rootLayout: path.resolve('app/layout.tsx'),
   home: path.resolve('app/page.tsx'),
   restoredHomeSections: path.resolve('components/home/RestoredHomeSections.tsx'),
   homeStyles: path.resolve('app/styles/hero.module.css'),
   homeSectionStyles: path.resolve('components/S3Sections.module.css'),
   works: path.resolve('app/works/page.tsx'),
+  worksLayout: path.resolve('app/works/layout.tsx'),
   worksStyles: path.resolve('app/works/page.module.css'),
   caseRoute: path.resolve('app/works/[slug]/page.tsx'),
   caseRouteStyles: path.resolve('app/works/[slug]/page.module.css'),
@@ -98,19 +101,25 @@ test('restored home renders content-owned project actions as external links only
   assert.match(source, /<a[\s\S]*target=['"]_blank['"][\s\S]*rel=['"]noreferrer['"]/);
 });
 
-test('home restores the S6 identity surface while retaining verified projects and S8 chat', () => {
+test('home keeps the S6 identity while the shared shell owns controls and works owns chat', () => {
   const source = readSource(files.home);
+  const rootLayout = readSource(files.rootLayout);
+  const siteHeader = readSource(files.siteHeader);
+  const worksLayout = readSource(files.worksLayout);
 
   assert.match(source, /import DigitalHuman from ['"]@\/components\/DigitalHuman['"]/);
-  assert.match(source, /import MorseChat from ['"]@\/components\/MorseChat['"]/);
   assert.match(source, /import RestoredHomeSections/);
   assert.match(source, /siteContent\.profile\.title/);
   assert.match(source, /siteContent\.profile\.role/);
   assert.match(source, /siteContent\.profile\.summary/);
   assert.match(source, /siteContent\.profile\.capabilities\.map/);
   assert.match(source, /<DigitalHuman\s*\/>/);
-  assert.match(source, /<MorseChat\s*\/>/);
   assert.match(source, /href=['"]#systems['"]/);
+  assert.doesNotMatch(source, /import MorseChat|<MorseChat\b/);
+  assert.match(rootLayout, /<SiteHeader\s+site=\{siteContent\.site\}\s*\/>/);
+  assert.match(siteHeader, /<OpenChatButton\b/);
+  assert.match(siteHeader, /<ResumeModeToggle\b/);
+  assert.equal((worksLayout.match(/<MorseChat\s*\/>/g) ?? []).length, 1);
   assert.doesNotMatch(source, /getFeaturedProjects|featured\.media|<ProjectCard/);
   assert.doesNotMatch(source, /1,200|480|示例数据|Email|WeChat/);
 });
