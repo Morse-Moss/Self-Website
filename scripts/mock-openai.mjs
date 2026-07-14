@@ -3,6 +3,8 @@ import http from 'node:http';
 import { createDeterministicTestEmbedding } from '../lib/server/embedding.ts';
 
 const port = Number(process.env.MORSE_MOCK_OPENAI_PORT || 18090);
+const failFirstResponse = process.env.MORSE_MOCK_FAIL_FIRST_RESPONSE === 'true';
+let responseRequests = 0;
 
 function readJson(request) {
   return new Promise((resolve, reject) => {
@@ -45,6 +47,11 @@ const server = http.createServer(async (request, response) => {
 
     if (request.method === 'POST' && request.url === '/v1/responses') {
       await readJson(request);
+      responseRequests += 1;
+      if (failFirstResponse && responseRequests === 1) {
+        sendJson(response, 503, { error: { message: 'temporary_unavailable' } });
+        return;
+      }
       response.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',

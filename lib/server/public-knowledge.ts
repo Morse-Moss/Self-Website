@@ -2,6 +2,7 @@ export interface PublicKnowledgeDocument {
   id: string;
   title: string;
   sourcePath: string;
+  href: string;
   content: string;
 }
 
@@ -33,14 +34,25 @@ function joinParts(parts: Array<string | undefined>): string {
   return parts.filter((part): part is string => Boolean(part?.trim())).join('\n\n');
 }
 
+export function publicKnowledgeHref(documentId: string): string {
+  if (documentId === 'about') return '/';
+  if (documentId.startsWith('project-')) {
+    return `/works/${documentId.slice('project-'.length)}`;
+  }
+  return '/works/digital-morse';
+}
+
 export function extractPublicKnowledge(content: SiteContent): PublicKnowledgeDocument[] {
   const documents: PublicKnowledgeDocument[] = [];
 
   if (content.profile?.title) {
     const profileContent = joinParts([
+      content.profile.title,
       content.profile.role,
       content.profile.summary,
-      ...(content.profile.principles ?? []),
+      content.profile.principles?.length
+        ? `工作原则:\n${content.profile.principles.join('\n')}`
+        : undefined,
     ]);
 
     if (profileContent) {
@@ -48,6 +60,7 @@ export function extractPublicKnowledge(content: SiteContent): PublicKnowledgeDoc
         id: 'about',
         title: content.profile.title,
         sourcePath: 'content/site-content.json#profile',
+        href: publicKnowledgeHref('about'),
         content: profileContent,
       });
     }
@@ -60,7 +73,9 @@ export function extractPublicKnowledge(content: SiteContent): PublicKnowledgeDoc
       id: `project-${project.slug}`,
       title: project.name,
       sourcePath: `content/site-content.json#projects.${project.slug}`,
+      href: publicKnowledgeHref(`project-${project.slug}`),
       content: joinParts([
+        project.name,
         project.status,
         project.summary,
         project.caseStudy?.problem,
@@ -80,6 +95,7 @@ export function extractPublicKnowledge(content: SiteContent): PublicKnowledgeDoc
       id: `faq-${index + 1}`,
       title: item.question,
       sourcePath: `content/site-content.json#faq.${index + 1}`,
+      href: publicKnowledgeHref(`faq-${index + 1}`),
       content: joinParts([item.question, item.answer]),
     });
   }

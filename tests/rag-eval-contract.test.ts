@@ -10,7 +10,7 @@ test('RAG gold set covers every approved public document', () => {
     expectedDocumentId: string;
   }>;
 
-  assert.equal(cases.length, 9);
+  assert.ok(cases.length >= 20, 'S8 retrieval evaluation must contain at least 20 cases');
   assert.deepEqual(
     new Set(cases.map((item) => item.expectedDocumentId)),
     new Set([
@@ -46,4 +46,49 @@ test('RAG evaluator reports top-1/top-3 metrics and fails missed top-3 cases', (
   assert.match(source, /loopbackHosts\.has\(embeddingUrl\.hostname\)/);
   assert.match(source, /configured semantic embeddings/);
   assert.match(source, /process\.exitCode\s*=\s*1/);
+});
+
+test('S8 chat evaluation covers answer safety, runtime errors, and source navigation', () => {
+  const dataPath = path.join(process.cwd(), 'content', 'chat-eval.json');
+  const runnerPath = path.join(process.cwd(), 'scripts', 'chat-eval.mjs');
+  assert.ok(fs.existsSync(dataPath), 'content/chat-eval.json must exist');
+  assert.ok(fs.existsSync(runnerPath), 'scripts/chat-eval.mjs must exist');
+
+  const data = JSON.parse(fs.readFileSync(dataPath, 'utf8')) as {
+    cases: Array<{
+      id: string;
+      category: string;
+      query: string;
+      expectedBehavior: string;
+    }>;
+  };
+  assert.ok(data.cases.length >= 20, 'chat evaluation must contain at least 20 cases');
+  assert.ok(data.cases.every((item) => item.query.trim() && item.expectedBehavior.trim()));
+  const categories = new Set(data.cases.map((item) => item.category));
+  for (const category of [
+    'recruiter',
+    'collaboration',
+    'peer',
+    'cross-project',
+    'insufficient-evidence',
+    'prompt-injection',
+    'off-topic',
+    'access-error',
+    'budget-error',
+    'provider-error',
+    'retrieval-error',
+    'source-navigation',
+  ]) {
+    assert.ok(categories.has(category), `chat evaluation category is missing: ${category}`);
+  }
+
+  const runner = fs.readFileSync(runnerPath, 'utf8');
+  assert.match(runner, /deterministic adversarial prompt\/provider/);
+  assert.match(runner, /normalizeChatRequest/);
+  assert.match(runner, /AdversarialDeterministicProvider/);
+  assert.match(runner, /buildSystemInstructions/);
+  assert.match(runner, /publicKnowledgeHref/);
+  assert.match(runner, /raw prompts and answers are intentionally omitted/);
+  const packageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'));
+  assert.equal(packageJson.scripts['chat:eval'], 'node scripts/chat-eval.mjs');
 });

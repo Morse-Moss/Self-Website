@@ -103,14 +103,12 @@ test('blueprint and stage contract pin exact sources, CTAs, and safety boundarie
   );
 });
 
-test('run-state points to S7 PASS while retaining M3 closeout evidence', () => {
+test('run-state retains S7 and M3 closeout evidence after pointer advancement', () => {
   const runState = readUtf8('docs/task-center/run-state.md');
 
   assertIncludesAll(
     runState,
     [
-      '## current_pointer',
-      '**S7 MULTIPAGE VERTICAL SLICE PASS**',
       '## S7 multipage closeout evidence(2026-07-13)',
       '## S7 multipage scope amendment(2026-07-13)',
       'docs/task-center/s7-multipage-portfolio.md',

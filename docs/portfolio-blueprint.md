@@ -217,3 +217,16 @@
 - **唯一公开内容源**：新增 `content/site-content.json`，作为 S7 页面与 RAG 的唯一新运行时公开源。旧 `content/s3-content.json` 只保留、不删除，S7 页面、RAG 与知识摄取入口均不再引用；`content/drafts/**` 和四个外部资产不进入公开内容。
 - **真实截图边界**：本轮只有经核验的自动运营真实截图可以裁剪、脱敏后进入 `public/works/auto-operations/`；原始截图、品牌、账号、任务、客户或业务数据不得进入 `public/`。其余项目没有合格真实图时明确显示“截图待补”，不使用生成 UI、概念图、蓝图或数字人图冒充证据。
 - **技术与操作边界**：零新增依赖；不调用 Provider，不修改数据库 schema，不执行知识库重摄取，不删除旧文件，不部署，不 push；`E:\Wiki`、`E:\demo2`、`E:\小红书`、`E:\多agent` 始终只读。
+
+## 12. S8 智能客服对话可用性闭环(2026-07-13)
+
+- **阶段命名**：本轮使用 S8，不占用 §9 已存在的“M4 试驾”名称；S8 建立在 M3-RAG 与 S7 之上，不重做短期码、SSE、Provider、RAG、短期记忆和预算门。
+- **产品目标**：受控访客输入短期码后，可按“招人的 / 找人做事的 / 同行交流”选择来访目的或直接提问，获得基于审核公开知识的实时文字回答、可进入站内案例的来源和明确下一步。
+- **显式意图**：使用 `recruiter / collaboration / peer / general` 四种 allow-list intent；快捷入口只预填问题，不自动调用 Provider；本阶段不增加第二次模型调用做意图分类。
+- **回答契约**：先直接回答，再给证据；证据不足时诚实说明边界；最后给一个可执行下一步。不得编造履历、数字、客户、联系方式或未公开能力。
+- **来源契约**：浏览器只接收公开文档 ID、标题和站内 `href`；不得暴露内部 JSON path、本地路径、原始 Provider 数据或密钥。
+- **可靠性契约**：Embedding、检索、Provider 或流中断在完成前失败时，不得留下孤立 user history 或永久扣减本次消息额度；可恢复错误必须有重试动作和稳定公开错误码。
+- **知识与评测**：只把 `content/site-content.json` 幂等重摄取到本地项目数据库；至少 20 个用例覆盖三类访客、跨项目问题、证据不足拒答、prompt injection、off-topic、错误恢复和来源导航。缺失知识进入 coverage gap，不从草稿或外部仓库自动补写。
+- **真实验证**：先通过 loopback Mock 的 1440/390 闭环，再做 recruiter/collaboration/peer 各 1 问、总计最多 3 次真实 GPT smoke；Mock、本地 pgvector 和真实 Provider 证据必须分层标注。
+- **技术边界**：继续使用 PostgreSQL + pgvector，不部署 Milvus/Qdrant；零新增依赖。数字人、语音/TTS/口型、联网搜索、工具调用 Agent、长期访客画像、管理后台、通知渠道、部署和 push 均不进入 S8。
+- **阶段合同**：`docs/task-center/s8-customer-service-conversation.md`；唯一指针：`docs/task-center/run-state.md`。

@@ -27,6 +27,7 @@ test('knowledgeChecksum forces re-indexing when the embedding model or source ch
   const base = {
     title: '深度研究系统',
     sourcePath: 'content/s3-content.json#gallery.deep-research',
+    href: '/works/deep-research',
     content: '证据链是出厂闸门。',
   };
 
@@ -34,4 +35,5 @@ test('knowledgeChecksum forces re-indexing when the embedding model or source ch
   assert.equal(first, knowledgeChecksum(base, 'openai:model-a:1536'));
   assert.notEqual(first, knowledgeChecksum(base, 'openai:model-b:1536'));
   assert.notEqual(first, knowledgeChecksum({ ...base, sourcePath: `${base.sourcePath}.v2` }, 'openai:model-a:1536'));
+  assert.notEqual(first, knowledgeChecksum({ ...base, href: '/works' }, 'openai:model-a:1536'));
 });

@@ -1,12 +1,14 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 
 import { EMBEDDING_DIMENSIONS, serializeVector } from './embedding.ts';
+import { publicKnowledgeHref } from './public-knowledge.ts';
 
 export interface KnowledgeSource {
   chunkId: string;
   documentId: string;
   title: string;
   sourcePath: string;
+  href: string;
   content: string;
   score: number;
 }
@@ -16,12 +18,13 @@ interface KnowledgeRow {
   document_id: string;
   title: string;
   source_path: string;
+  href: string | null;
   content: string;
   score: number;
 }
 
 export async function retrieveKnowledge(
-  pool: Pool,
+  pool: Pool | PoolClient,
   queryEmbedding: number[],
   requestedLimit = 5,
 ): Promise<KnowledgeSource[]> {
@@ -35,6 +38,7 @@ export async function retrieveKnowledge(
             chunk.document_id,
             chunk.metadata->>'title' AS title,
             chunk.metadata->>'sourcePath' AS source_path,
+            chunk.metadata->>'href' AS href,
             chunk.content,
             1 - (chunk.embedding <=> $1::vector) AS score
        FROM knowledge_chunks AS chunk
@@ -48,6 +52,7 @@ export async function retrieveKnowledge(
     documentId: row.document_id,
     title: row.title,
     sourcePath: row.source_path,
+    href: row.href || publicKnowledgeHref(row.document_id),
     content: row.content,
     score: Number(row.score),
   }));

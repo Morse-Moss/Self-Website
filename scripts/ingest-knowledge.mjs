@@ -44,6 +44,7 @@ async function embed(inputs) {
   const client = new OpenAI({
     apiKey: embeddingApiKey,
     baseURL: embeddingBaseUrl || undefined,
+    maxRetries: 0,
   });
   const response = await client.embeddings.create({
     model,
@@ -106,7 +107,11 @@ try {
           ordinal,
           chunk,
           serializeVector(embeddings[ordinal]),
-          JSON.stringify({ title: document.title, sourcePath: document.sourcePath }),
+          JSON.stringify({
+            title: document.title,
+            sourcePath: document.sourcePath,
+            href: document.href,
+          }),
         ],
       );
     }

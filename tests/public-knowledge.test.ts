@@ -15,29 +15,33 @@ test('extractPublicKnowledge produces the nine approved site-content documents',
   const documents = extractPublicKnowledge(loadSiteContent());
 
   assert.deepEqual(
-    documents.map(({ id, sourcePath }) => ({ id, sourcePath })),
+    documents.map(({ id, sourcePath, href }) => ({ id, sourcePath, href })),
     [
-      { id: 'about', sourcePath: 'content/site-content.json#profile' },
+      { id: 'about', sourcePath: 'content/site-content.json#profile', href: '/' },
       {
         id: 'project-content-agent',
         sourcePath: 'content/site-content.json#projects.content-agent',
+        href: '/works/content-agent',
       },
       {
         id: 'project-auto-operations',
         sourcePath: 'content/site-content.json#projects.auto-operations',
+        href: '/works/auto-operations',
       },
       {
         id: 'project-deep-research',
         sourcePath: 'content/site-content.json#projects.deep-research',
+        href: '/works/deep-research',
       },
       {
         id: 'project-digital-morse',
         sourcePath: 'content/site-content.json#projects.digital-morse',
+        href: '/works/digital-morse',
       },
-      { id: 'faq-1', sourcePath: 'content/site-content.json#faq.1' },
-      { id: 'faq-2', sourcePath: 'content/site-content.json#faq.2' },
-      { id: 'faq-3', sourcePath: 'content/site-content.json#faq.3' },
-      { id: 'faq-4', sourcePath: 'content/site-content.json#faq.4' },
+      { id: 'faq-1', sourcePath: 'content/site-content.json#faq.1', href: '/works/digital-morse' },
+      { id: 'faq-2', sourcePath: 'content/site-content.json#faq.2', href: '/works/digital-morse' },
+      { id: 'faq-3', sourcePath: 'content/site-content.json#faq.3', href: '/works/digital-morse' },
+      { id: 'faq-4', sourcePath: 'content/site-content.json#faq.4', href: '/works/digital-morse' },
     ],
   );
   assert.ok(documents.every((document) => document.title.length > 0));
@@ -52,7 +56,12 @@ test('extractPublicKnowledge limits profile and project content to approved fiel
   assert.ok(about);
   assert.equal(
     about.content,
-    [content.profile.role, content.profile.summary, ...content.profile.principles].join('\n\n'),
+    [
+      content.profile.title,
+      content.profile.role,
+      content.profile.summary,
+      `工作原则:\n${content.profile.principles.join('\n')}`,
+    ].join('\n\n'),
   );
 
   for (const project of content.projects) {
@@ -63,6 +72,7 @@ test('extractPublicKnowledge limits profile and project content to approved fiel
     assert.equal(
       document.content,
       [
+        project.name,
         project.status,
         project.summary,
         project.caseStudy.problem,

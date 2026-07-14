@@ -6,6 +6,7 @@ import { test } from 'node:test';
 const accessRoutePath = path.resolve('app/api/access/route.ts');
 const chatRoutePath = path.resolve('app/api/chat/route.ts');
 const healthRoutePath = path.resolve('app/api/health/route.ts');
+const providerFactoryPath = path.resolve('lib/server/provider.ts');
 
 test('access API uses an HttpOnly short-lived cookie and supports logout', () => {
   const source = fs.readFileSync(accessRoutePath, 'utf8');
@@ -40,4 +41,17 @@ test('health API reports database and knowledge readiness without provider secre
   assert.match(source, /OPENAI_EMBEDDING_MODEL/);
   assert.match(source, /MORSE_INPUT_USD_PER_MILLION/);
   assert.doesNotMatch(source, /OPENAI_API_KEY.*value|apiKey:/i);
+});
+
+test('every S8 OpenAI client disables hidden SDK retries', () => {
+  const sources = [
+    [providerFactoryPath, 2],
+    [path.resolve('scripts/ingest-knowledge.mjs'), 1],
+    [path.resolve('scripts/rag-eval.mjs'), 1],
+  ] as const;
+
+  for (const [sourcePath, expected] of sources) {
+    const source = fs.readFileSync(sourcePath, 'utf8');
+    assert.equal((source.match(/maxRetries:\s*0/g) ?? []).length, expected, sourcePath);
+  }
 });

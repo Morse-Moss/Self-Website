@@ -55,7 +55,7 @@ export function stableChunkId(documentId: string, ordinal: number, content: stri
 }
 
 export function knowledgeChecksum(
-  document: { title: string; sourcePath: string; content: string },
+  document: { title: string; sourcePath: string; href: string; content: string },
   embeddingSignature: string,
 ): string {
   return createHash('sha256')
@@ -63,6 +63,7 @@ export function knowledgeChecksum(
       embeddingSignature,
       document.title,
       document.sourcePath,
+      document.href,
       document.content,
     ]), 'utf8')
     .digest('hex');

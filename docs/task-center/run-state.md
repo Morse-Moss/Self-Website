@@ -1,13 +1,32 @@
 # 正式站 v1 · Task Center(唯一运行事实源)
 
-> Goal:Next.js 多页作品集垂直切片可验收;当前增量为 S7 多页作品集重构。聊天仅报节点,本文件为准。
-> 启动:2026-07-08 · M3-RAG 启动:2026-07-12 · 授权:装依赖(契约内)/ 本地 Docker pgvector / 最多 3 次 OpenAI 冒烟 / 本地 git commit / 只读四外部资产 · 模式:Morse 开发模式 + morse-goal 自动化运行
+> Goal:在已通过的 M3-RAG 与 S7 多页作品集上完成智能客服文字对话可用性闭环;当前增量为 S8。
+> 启动:2026-07-08 · M3-RAG 启动:2026-07-12 · S8 合同准备:2026-07-13 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**S7 MULTIPAGE VERTICAL SLICE PASS**
+**S8 CUSTOMER SERVICE CONVERSATION LOCAL PASS**
 
 ## next_allowed_pointer
-S7 已本地验收收尾;等待摩斯定义下一阶段。部署、域名、push、联网搜索、语音、数字人口型、知识库重摄取和数据库变更均不自动推进。
+`S8-CS-6 CLOSEOUT` 已完成并停在本地分支。下一指针只能由摩斯显式选择:并入 `master`、push/部署,或另开 S9;不得自动推进。真实 Provider 证据保持 BLOCKED,3 次 smoke 上限已耗尽,禁止第 4 次调用;联网搜索、语音、数字人、远程数据库和外置向量库仍不在本轮授权内。
+
+## S8 customer-service scope amendment(2026-07-13)
+- Stage contract:`docs/task-center/s8-customer-service-conversation.md`;本文件只保存唯一指针,详细阶段、授权、失败登记和 LOOP 以阶段合同为准。
+- Product boundary:产品仍是受控访问的个人作品集;S8 把现有数字摩斯从技术 MVP 补成招聘方、合作方和同行可真实使用的文字智能客服,不是独立客服 SaaS。
+- Reuse boundary:复用 M3 的短期码、HttpOnly session、OpenAI Provider、SSE、PostgreSQL + pgvector、短期记忆、来源和预算门;不重复建设底层。
+- First closure:显式访客意图、结构化回答、公开来源链接、失败补偿与重试、20-case 评测、loopback Mock 双宽和最多 3 次真实 GPT smoke。
+- Knowledge boundary:唯一 live source 仍是 `content/site-content.json`;知识不足进入 coverage gap,不得读取草稿或外部仓库编造答案。
+- Non-goals:数字人形象、语音/TTS/口型、联网搜索、工具 Agent、Milvus/Qdrant、长期访客画像、管理后台、通知渠道、部署。
+- Execution boundary:S8 已在 `codex/s7-multipage-portfolio` 本地收口;未 merge、push 或部署。后续动作不继承本轮执行授权。
+
+## S8 customer-service closeout evidence(2026-07-14)
+- Scope PASS:在既有短期码、SSE、OpenAI adapter、PostgreSQL + pgvector 和预算门上完成三类访客意图、公开来源、恢复 UX、幂等 turn 与评测闭环;零新增依赖、零 schema migration。
+- Reliability PASS:Provider/Embedding/空白完成/持久化失败精确补偿;turn + conversation advisory try-lock;客户端 `turnId` 支持完成事件丢失后的幂等重放,不重复消息、usage、额度或来源。
+- Evaluation PASS:`DATABASE_URL=local npm test` 113/113;`chat:eval` 24/24;BGE + pgvector 20-case top-1 17/20、top-3 20/20;9 documents/9 chunks,invalid source 0,missing href 0,draft/local source 0。
+- Browser PASS:隔离 production server + fail-first Mock 在 1440x900/390x844 均 `failures: []`;过期码、会话过期、三类 intent、同 turn retry、stream、source navigation、logout、quota 30→29、overflow 和移动全屏通过;非预期 console/page error 0。证据:`docs/verify/s8/s8-chat-{desktop-1440x900,mobile-390x844}.png`。
+- Build/Safety PASS:`npm run build`、`git diff --check`、secret scan 通过;`3010` 用户服务 PID 未改变,临时 3011/18090/18091/9222、smoke 邀请和 profile 已清理;项目 pgvector 保留。
+- Review PASS:CRITICAL compliance 与 quality/safety 两个独立 review 均 PASS,BLOCKER 0。
+- Real Provider BLOCKED:受信 OpenAI-compatible endpoint 与 `gpt-5.4-mini` 可用,但 3 次正式 `runChat` 均未完成;smoke 预算已耗尽,未做第 4 次调用。只记录稳定 `ChatServiceError`,不伪造更具体根因。
+- Git boundary:本地 S8 closeout commit 已完成;未 merge、push、PR 或部署。`AGENTS.md`、研究稿、概念图、`output/**`、旧临时脚本和非最终截图未进入提交。
 
 ## S7 multipage scope amendment(2026-07-13)
 - Git baseline:`master` 已通过 `d1ebd88` 吸收 M3-RAG;S7 在 `codex/s7-multipage-portfolio` 开发,不重复合并历史功能分支。

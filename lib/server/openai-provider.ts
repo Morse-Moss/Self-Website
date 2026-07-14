@@ -78,6 +78,7 @@ export class OpenAIProvider implements AiProvider {
             outputTokens: usage?.output_tokens ?? 0,
           },
         };
+        return;
       } else if (event.type === 'response.failed') {
         throw new Error(event.response?.error?.message || 'OpenAI response failed.');
       } else if (event.type === 'error') {
