@@ -15,6 +15,7 @@ const files = {
   homeSections: path.resolve('components/home/MorseHomeSections.tsx'),
   homeStyles: path.resolve('app/styles/hero.module.css'),
   homeSectionStyles: path.resolve('components/home/MorseHomeSections.module.css'),
+  tokens: path.resolve('app/styles/tokens.css'),
   siteContent: path.resolve('content/site-content.json'),
   works: path.resolve('app/works/page.tsx'),
   worksLayout: path.resolve('app/works/layout.tsx'),
@@ -267,6 +268,21 @@ test('new route styles are tokenized, compact, and include mobile overflow safeg
   assert.match(combined, /min-width:\s*0/);
   assert.match(combined, /overflow-wrap:\s*anywhere/);
   assert.match(combined, /aspect-ratio/);
+});
+
+test('S9 gallery motion uses exact semantic card and detail duration tokens', () => {
+  const tokens = readSource(files.tokens);
+  const cardStyles = readSource(files.projectCardStyles);
+  const detailStyles = readSource(files.caseStudyStyles);
+
+  assert.match(tokens, /--dur-card:\s*300ms;/);
+  assert.match(tokens, /--dur-detail:\s*450ms;/);
+  assert.match(cardStyles, /var\(--dur-card\)/);
+  assert.doesNotMatch(cardStyles, /var\(--dur\)/);
+  assert.match(detailStyles, /caseStudyEnter var\(--dur-detail\)/);
+  assert.doesNotMatch(detailStyles, /caseStudyEnter var\(--dur-slow\)/);
+  assert.match(cardStyles, /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*transition:\s*none/);
+  assert.match(detailStyles, /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*animation:\s*none/);
 });
 
 test('new route TSX stays inside the approved evidence-only product surface', () => {

@@ -5,7 +5,7 @@
   padding-top: var(--space-6);
   border-top: 1px solid var(--line-faint);
   cursor: default;
-  animation: caseStudyEnter var(--dur-slow) var(--ease) both;
+  animation: caseStudyEnter var(--dur-detail) var(--ease) both;
 }
 
 .header {
