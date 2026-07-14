@@ -259,6 +259,28 @@ test('project details keep a cancellable presence until the row transition finis
   assert.match(card, /if \(expanded \|\| event\.propertyName !== ['"]grid-template-rows['"]\)/);
 });
 
+test('project card layout stays expanded through detail exit without a grid row gap', () => {
+  const card = readSource(files.projectCard);
+  const cardStyles = readSource(files.projectCardStyles);
+  const desktopCardRule = cardStyles.match(/\.card\s*\{([\s\S]*?)\n\}/);
+  const mobileCardRule = cardStyles.match(
+    /@media\s*\(max-width:\s*640px\)[\s\S]*?\.card\s*\{([\s\S]*?)\n\s{2}\}/,
+  );
+
+  assert.match(card, /const layoutExpanded = expanded \|\| detailsMounted;/);
+  assert.match(card, /data-expanded=\{layoutExpanded\}/);
+  assert.match(card, /aria-expanded=\{expanded\}/);
+  assert.match(card, /\{expanded \? ['"]收起详情['"] : ['"]展开详情['"]\}/);
+  assert.ok(desktopCardRule, 'missing desktop project-card layout rule');
+  assert.ok(mobileCardRule, 'missing mobile project-card layout rule');
+  assert.match(desktopCardRule[1], /column-gap:\s*var\(--space-5\)/);
+  assert.match(desktopCardRule[1], /row-gap:\s*0/);
+  assert.doesNotMatch(desktopCardRule[1], /(?:^|\s)gap:/);
+  assert.match(mobileCardRule[1], /column-gap:\s*var\(--space-4\)/);
+  assert.match(mobileCardRule[1], /row-gap:\s*0/);
+  assert.doesNotMatch(mobileCardRule[1], /(?:^|\s)gap:/);
+});
+
 test('legacy case routes validate slugs and redirect without rendering independent details', () => {
   const source = readSource(files.caseRoute);
 

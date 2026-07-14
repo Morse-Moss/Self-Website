@@ -2,7 +2,8 @@
   display: grid;
   grid-template-columns: minmax(0, 13.75rem) minmax(0, 1fr);
   align-content: start;
-  gap: var(--space-5);
+  column-gap: var(--space-5);
+  row-gap: 0;
   min-width: 0;
   padding: var(--space-5) 0;
   border-top: 1px solid var(--line-faint);
@@ -183,7 +184,8 @@
 @media (max-width: 640px) {
   .card {
     grid-template-columns: minmax(0, 7rem) minmax(0, 1fr);
-    gap: var(--space-4);
+    column-gap: var(--space-4);
+    row-gap: 0;
   }
 
   .content h2 {

@@ -24,6 +24,7 @@ export default function ProjectCard({
   const detailsId = `project-details-${project.slug}`;
   const [detailsMounted, setDetailsMounted] = useState(expanded);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const layoutExpanded = expanded || detailsMounted;
   const detailsMountedRef = useRef(expanded);
   const openFrame = useRef<number | null>(null);
   const closeFallback = useRef<number | null>(null);
@@ -111,7 +112,7 @@ export default function ProjectCard({
     <article
       id={project.slug}
       data-project-slug={project.slug}
-      data-expanded={expanded}
+      data-expanded={layoutExpanded}
       className={styles.card}
       aria-labelledby={titleId}
       onClick={handleCardClick}
