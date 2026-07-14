@@ -1,10 +1,13 @@
 import Image from 'next/image';
-import type { MouseEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { MouseEvent, TransitionEvent } from 'react';
 
 import type { Project } from '@/lib/site-content';
 
 import CaseStudy from './CaseStudy';
 import styles from './ProjectCard.module.css';
+
+const DETAIL_TRANSITION_FALLBACK_MS = 500;
 
 type ProjectCardProps = {
   project: Project;
@@ -19,6 +22,64 @@ export default function ProjectCard({
 }: ProjectCardProps) {
   const titleId = `project-title-${project.slug}`;
   const detailsId = `project-details-${project.slug}`;
+  const [detailsMounted, setDetailsMounted] = useState(expanded);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const detailsMountedRef = useRef(expanded);
+  const openFrame = useRef<number | null>(null);
+  const closeFallback = useRef<number | null>(null);
+  const presenceRun = useRef(0);
+
+  useEffect(() => {
+    const run = ++presenceRun.current;
+
+    if (openFrame.current !== null) {
+      cancelAnimationFrame(openFrame.current);
+      openFrame.current = null;
+    }
+    if (closeFallback.current !== null) {
+      window.clearTimeout(closeFallback.current);
+      closeFallback.current = null;
+    }
+
+    if (expanded) {
+      detailsMountedRef.current = true;
+      setDetailsMounted(true);
+      openFrame.current = requestAnimationFrame(() => {
+        openFrame.current = null;
+        if (presenceRun.current === run) {
+          setDetailsOpen(true);
+        }
+      });
+    } else {
+      setDetailsOpen(false);
+      if (detailsMountedRef.current) {
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          detailsMountedRef.current = false;
+          setDetailsMounted(false);
+        } else {
+          closeFallback.current = window.setTimeout(() => {
+            closeFallback.current = null;
+            if (presenceRun.current === run) {
+              detailsMountedRef.current = false;
+              setDetailsMounted(false);
+            }
+          }, DETAIL_TRANSITION_FALLBACK_MS);
+        }
+      }
+    }
+
+    return () => {
+      presenceRun.current += 1;
+      if (openFrame.current !== null) {
+        cancelAnimationFrame(openFrame.current);
+        openFrame.current = null;
+      }
+      if (closeFallback.current !== null) {
+        window.clearTimeout(closeFallback.current);
+        closeFallback.current = null;
+      }
+    };
+  }, [expanded]);
 
   function handleCardClick(event: MouseEvent<HTMLElement>) {
     const target = event.target;
@@ -27,6 +88,23 @@ export default function ProjectCard({
     }
 
     onToggle();
+  }
+
+  function handleDetailsTransitionEnd(event: TransitionEvent<HTMLDivElement>) {
+    if (expanded || event.propertyName !== 'grid-template-rows') {
+      return;
+    }
+    if (event.target !== event.currentTarget) {
+      return;
+    }
+
+    presenceRun.current += 1;
+    if (closeFallback.current !== null) {
+      window.clearTimeout(closeFallback.current);
+      closeFallback.current = null;
+    }
+    detailsMountedRef.current = false;
+    setDetailsMounted(false);
   }
 
   return (
@@ -98,12 +176,23 @@ export default function ProjectCard({
         </div>
       </div>
 
-      {expanded ? (
-        <CaseStudy
-          project={project}
-          detailsId={detailsId}
-          labelledBy={titleId}
-        />
+      {detailsMounted ? (
+        <div
+          className={styles.details}
+          data-project-details
+          data-open={detailsOpen}
+          aria-hidden={!detailsOpen}
+          inert={!detailsOpen}
+          onTransitionEnd={handleDetailsTransitionEnd}
+        >
+          <div className={styles.detailsInner}>
+            <CaseStudy
+              project={project}
+              detailsId={detailsId}
+              labelledBy={titleId}
+            />
+          </div>
+        </div>
       ) : null}
     </article>
   );

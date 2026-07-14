@@ -219,7 +219,8 @@ test('controlled project cards expose real hash targets and accessible embedded 
   assert.match(card, /event\.stopPropagation\(\)/);
   assert.match(card, /project\.capabilities\.map/);
   assert.match(card, /project\.actions\.map[\s\S]*<a/);
-  assert.match(card, /expanded \? \(\s*<CaseStudy[\s\S]*detailsId=\{detailsId\}/);
+  assert.match(card, /detailsMounted \? \([\s\S]*<CaseStudy[\s\S]*detailsId=\{detailsId\}/);
+  assert.doesNotMatch(card, /expanded \? \(\s*<CaseStudy/);
   assert.match(caseStudy, /id=\{detailsId\}/);
   assert.match(caseStudy, /role=['"]region['"]/);
   assert.match(caseStudy, /aria-labelledby=\{labelledBy\}/);
@@ -231,6 +232,31 @@ test('controlled project cards expose real hash targets and accessible embedded 
   assert.ok(decisionsPosition < structurePosition);
   assert.ok(structurePosition < evidencePosition);
   assert.ok(evidencePosition < boundariesPosition);
+});
+
+test('project details keep a cancellable presence until the row transition finishes', () => {
+  const card = readSource(files.projectCard);
+  const fallback = card.match(/const DETAIL_TRANSITION_FALLBACK_MS = (\d+);/);
+
+  assert.match(card, /useEffect/);
+  assert.match(card, /useRef/);
+  assert.match(card, /useState/);
+  assert.match(card, /const \[detailsMounted, setDetailsMounted\] = useState\(expanded\)/);
+  assert.match(card, /const \[detailsOpen, setDetailsOpen\] = useState\(false\)/);
+  assert.match(card, /requestAnimationFrame/);
+  assert.match(card, /cancelAnimationFrame/);
+  assert.match(card, /window\.setTimeout/);
+  assert.match(card, /window\.clearTimeout/);
+  assert.match(card, /presenceRun\.current/);
+  assert.ok(fallback, 'missing bounded detail-transition fallback');
+  assert.ok(Number(fallback[1]) >= 450 && Number(fallback[1]) <= 1000);
+  assert.match(card, /event\.propertyName !== ['"]grid-template-rows['"]/);
+  assert.match(card, /onTransitionEnd=\{handleDetailsTransitionEnd\}/);
+  assert.match(card, /data-open=\{detailsOpen\}/);
+  assert.match(card, /aria-hidden=\{!detailsOpen\}/);
+  assert.match(card, /inert=\{!detailsOpen\}/);
+  assert.match(card, /prefers-reduced-motion: reduce/);
+  assert.match(card, /if \(expanded \|\| event\.propertyName !== ['"]grid-template-rows['"]\)/);
 });
 
 test('legacy case routes validate slugs and redirect without rendering independent details', () => {
@@ -274,15 +300,27 @@ test('S9 gallery motion uses exact semantic card and detail duration tokens', ()
   const tokens = readSource(files.tokens);
   const cardStyles = readSource(files.projectCardStyles);
   const detailStyles = readSource(files.caseStudyStyles);
+  const detailsRule = cardStyles.match(/\.details\s*\{([\s\S]*?)\n\}/);
+  const detailsOpenRule = cardStyles.match(/\.details\[data-open=['"]true['"]\]\s*\{([\s\S]*?)\n\}/);
+  const detailsInnerRule = cardStyles.match(/\.detailsInner\s*\{([\s\S]*?)\n\}/);
 
   assert.match(tokens, /--dur-card:\s*300ms;/);
   assert.match(tokens, /--dur-detail:\s*450ms;/);
   assert.match(cardStyles, /var\(--dur-card\)/);
   assert.doesNotMatch(cardStyles, /var\(--dur\)/);
-  assert.match(detailStyles, /caseStudyEnter var\(--dur-detail\)/);
-  assert.doesNotMatch(detailStyles, /caseStudyEnter var\(--dur-slow\)/);
+  assert.ok(detailsRule, 'missing collapsed project-detail grid rule');
+  assert.ok(detailsOpenRule, 'missing expanded project-detail grid rule');
+  assert.ok(detailsInnerRule, 'missing project-detail overflow wrapper');
+  assert.match(detailsRule[1], /grid-template-rows:\s*0fr/);
+  assert.match(detailsRule[1], /grid-template-rows var\(--dur-detail\) var\(--ease\)/);
+  assert.match(detailsRule[1], /opacity var\(--dur-detail\) var\(--ease\)/);
+  assert.match(detailsRule[1], /transform var\(--dur-detail\) var\(--ease\)/);
+  assert.equal((detailsRule[1].match(/var\(--dur-detail\)/g) ?? []).length, 3);
+  assert.match(detailsOpenRule[1], /grid-template-rows:\s*1fr/);
+  assert.match(detailsInnerRule[1], /min-height:\s*0/);
+  assert.match(detailsInnerRule[1], /overflow:\s*hidden/);
+  assert.doesNotMatch(detailStyles, /caseStudyEnter|@keyframes/);
   assert.match(cardStyles, /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*transition:\s*none/);
-  assert.match(detailStyles, /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*animation:\s*none/);
 });
 
 test('new route TSX stays inside the approved evidence-only product surface', () => {

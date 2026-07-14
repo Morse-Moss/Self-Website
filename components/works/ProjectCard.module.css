@@ -60,6 +60,30 @@
   flex-direction: column;
 }
 
+.details {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-rows: 0fr;
+  min-width: 0;
+  opacity: 0;
+  transform: translateY(var(--space-3));
+  transition:
+    grid-template-rows var(--dur-detail) var(--ease),
+    opacity var(--dur-detail) var(--ease),
+    transform var(--dur-detail) var(--ease);
+}
+
+.details[data-open='true'] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.detailsInner {
+  min-height: 0;
+  overflow: hidden;
+}
+
 .meta {
   display: flex;
   flex-wrap: wrap;
@@ -190,6 +214,7 @@
 @media (prefers-reduced-motion: reduce) {
   .card,
   .media,
+  .details,
   .toggle,
   .action {
     transition: none;
