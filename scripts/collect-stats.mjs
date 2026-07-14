@@ -7,6 +7,7 @@ import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const dateFormatters = new Map();
 
 function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -147,8 +148,22 @@ export function withinDays(timestamp, nowMs, days) {
   return timestamp <= nowMs && nowMs - timestamp <= days * DAY_MS;
 }
 
-function dateString(timestamp) {
-  return new Date(timestamp).toISOString().slice(0, 10);
+export function dateKey(timestamp, timeZone = 'Asia/Shanghai') {
+  if (!Number.isFinite(timestamp)) return null;
+  let formatter = dateFormatters.get(timeZone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    dateFormatters.set(timeZone, formatter);
+  }
+  const parts = Object.fromEntries(
+    formatter.formatToParts(new Date(timestamp)).map(({ type, value }) => [type, value]),
+  );
+  return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
 function unavailableActivity() {
@@ -163,8 +178,94 @@ function unavailableActivity() {
   };
 }
 
-export function aggregateToolActivity(records, nowMs, { sourceAvailable = true } = {}) {
-  if (!sourceAvailable) {
+function createActivityAccumulator(nowMs, sourceAvailable = true) {
+  return {
+    sourceAvailable,
+    nowMs,
+    sessionIdentities: new Set(),
+    projectIdentities: new Set(),
+    activeDaysLast90: new Set(),
+    allTime: emptyTokenTotals(),
+    last30Days: emptyTokenTotals(),
+    minTimestamp: Number.POSITIVE_INFINITY,
+    maxTimestamp: Number.NEGATIVE_INFINITY,
+    usageMinTimestamp: Number.POSITIVE_INFINITY,
+    usageMaxTimestamp: Number.NEGATIVE_INFINITY,
+    usageTimestampRecords: 0,
+    allTimeUsageRecords: 0,
+    recentUsageRecords: 0,
+    recordsWithoutUsage: 0,
+    missingSessionIdentity: false,
+    missingProjectIdentity: false,
+  };
+}
+
+function addActivityRecord(accumulator, record, { trackIdentity = true } = {}) {
+  if (!record) return false;
+  if (Number.isFinite(record.timestampMs) && record.timestampMs > accumulator.nowMs) return false;
+
+  if (trackIdentity) {
+    if (record.sessionIdentity) accumulator.sessionIdentities.add(record.sessionIdentity);
+    else if (record.kind === 'session' || record.usageExpected) {
+      accumulator.missingSessionIdentity = true;
+    }
+
+    const projectIdentity = normalizeProjectIdentity(record.projectIdentity);
+    if (projectIdentity) accumulator.projectIdentities.add(projectIdentity);
+    else if (record.kind === 'session' || record.usageExpected) {
+      accumulator.missingProjectIdentity = true;
+    }
+  }
+
+  if (Number.isFinite(record.timestampMs)) {
+    accumulator.minTimestamp = Math.min(accumulator.minTimestamp, record.timestampMs);
+    accumulator.maxTimestamp = Math.max(accumulator.maxTimestamp, record.timestampMs);
+    if (withinDays(record.timestampMs, accumulator.nowMs, 90)) {
+      accumulator.activeDaysLast90.add(dateKey(record.timestampMs));
+    }
+  }
+
+  if (record.usageExpected && record.usage === null) accumulator.recordsWithoutUsage += 1;
+  if (record.usage === null) return true;
+
+  addTokenTotals(accumulator.allTime, record.usage);
+  accumulator.allTimeUsageRecords += 1;
+  if (Number.isFinite(record.timestampMs)) {
+    accumulator.usageMinTimestamp = Math.min(accumulator.usageMinTimestamp, record.timestampMs);
+    accumulator.usageMaxTimestamp = Math.max(accumulator.usageMaxTimestamp, record.timestampMs);
+    accumulator.usageTimestampRecords += 1;
+    if (withinDays(record.timestampMs, accumulator.nowMs, 30)) {
+      addTokenTotals(accumulator.last30Days, record.usage);
+      accumulator.recentUsageRecords += 1;
+    }
+  }
+  return true;
+}
+
+function mergeActivityAccumulator(target, source) {
+  for (const sessionIdentity of source.sessionIdentities) {
+    target.sessionIdentities.add(sessionIdentity);
+  }
+  for (const projectIdentity of source.projectIdentities) {
+    target.projectIdentities.add(projectIdentity);
+  }
+  for (const day of source.activeDaysLast90) target.activeDaysLast90.add(day);
+  addTokenTotals(target.allTime, source.allTime);
+  addTokenTotals(target.last30Days, source.last30Days);
+  target.minTimestamp = Math.min(target.minTimestamp, source.minTimestamp);
+  target.maxTimestamp = Math.max(target.maxTimestamp, source.maxTimestamp);
+  target.usageMinTimestamp = Math.min(target.usageMinTimestamp, source.usageMinTimestamp);
+  target.usageMaxTimestamp = Math.max(target.usageMaxTimestamp, source.usageMaxTimestamp);
+  target.usageTimestampRecords += source.usageTimestampRecords;
+  target.allTimeUsageRecords += source.allTimeUsageRecords;
+  target.recentUsageRecords += source.recentUsageRecords;
+  target.recordsWithoutUsage += source.recordsWithoutUsage;
+  target.missingSessionIdentity ||= source.missingSessionIdentity;
+  target.missingProjectIdentity ||= source.missingProjectIdentity;
+}
+
+function finalizeActivityAccumulator(accumulator) {
+  if (!accumulator.sourceAvailable) {
     return {
       activity: unavailableActivity(),
       sessionIdentities: null,
@@ -173,65 +274,32 @@ export function aggregateToolActivity(records, nowMs, { sourceAvailable = true }
     };
   }
 
-  const sessionIdentities = new Set();
-  const projectIdentities = new Set();
-  const activeDaysLast90 = new Set();
-  const allTime = emptyTokenTotals();
-  const last30Days = emptyTokenTotals();
-  let minTimestamp = Number.POSITIVE_INFINITY;
-  let maxTimestamp = Number.NEGATIVE_INFINITY;
-  let allTimeUsageRecords = 0;
-  let recentUsageRecords = 0;
-  let recordsWithoutUsage = 0;
-  let missingSessionIdentity = false;
-  let missingProjectIdentity = false;
-
-  for (const record of records) {
-    if (!record) continue;
-
-    if (record.sessionIdentity) sessionIdentities.add(record.sessionIdentity);
-    else if (record.kind === 'session' || record.usageExpected) missingSessionIdentity = true;
-
-    const projectIdentity = normalizeProjectIdentity(record.projectIdentity);
-    if (projectIdentity) projectIdentities.add(projectIdentity);
-    else if (record.kind === 'session' || record.usageExpected) missingProjectIdentity = true;
-
-    if (Number.isFinite(record.timestampMs)) {
-      minTimestamp = Math.min(minTimestamp, record.timestampMs);
-      maxTimestamp = Math.max(maxTimestamp, record.timestampMs);
-      if (withinDays(record.timestampMs, nowMs, 90)) {
-        activeDaysLast90.add(dateString(record.timestampMs));
-      }
-    }
-
-    if (record.usageExpected && record.usage === null) recordsWithoutUsage += 1;
-    if (record.usage === null) continue;
-
-    addTokenTotals(allTime, record.usage);
-    allTimeUsageRecords += 1;
-    if (Number.isFinite(record.timestampMs) && withinDays(record.timestampMs, nowMs, 30)) {
-      addTokenTotals(last30Days, record.usage);
-      recentUsageRecords += 1;
-    }
-  }
-
-  const coverageStart = Number.isFinite(minTimestamp) ? dateString(minTimestamp) : null;
-  const coverageEnd = Number.isFinite(maxTimestamp) ? dateString(maxTimestamp) : null;
-
+  const coverageStart = Number.isFinite(accumulator.minTimestamp)
+    ? dateKey(accumulator.minTimestamp)
+    : null;
+  const coverageEnd = Number.isFinite(accumulator.maxTimestamp)
+    ? dateKey(accumulator.maxTimestamp)
+    : null;
   return {
     activity: {
-      sessions: missingSessionIdentity ? null : sessionIdentities.size,
-      projects: missingProjectIdentity ? null : projectIdentities.size,
+      sessions: accumulator.missingSessionIdentity ? null : accumulator.sessionIdentities.size,
+      projects: accumulator.missingProjectIdentity ? null : accumulator.projectIdentities.size,
       coverageStart,
       coverageEnd,
-      allTime: allTimeUsageRecords > 0 ? allTime : null,
-      last30Days: recentUsageRecords > 0 ? last30Days : null,
-      recordsWithoutUsage,
+      allTime: accumulator.allTimeUsageRecords > 0 ? accumulator.allTime : null,
+      last30Days: accumulator.recentUsageRecords > 0 ? accumulator.last30Days : null,
+      recordsWithoutUsage: accumulator.recordsWithoutUsage,
     },
-    sessionIdentities: missingSessionIdentity ? null : sessionIdentities,
-    projectIdentities: missingProjectIdentity ? null : projectIdentities,
-    activeDaysLast90,
+    sessionIdentities: accumulator.missingSessionIdentity ? null : accumulator.sessionIdentities,
+    projectIdentities: accumulator.missingProjectIdentity ? null : accumulator.projectIdentities,
+    activeDaysLast90: accumulator.activeDaysLast90,
   };
+}
+
+export function aggregateToolActivity(records, nowMs, { sourceAvailable = true } = {}) {
+  const accumulator = createActivityAccumulator(nowMs, sourceAvailable);
+  for (const record of records) addActivityRecord(accumulator, record);
+  return finalizeActivityAccumulator(accumulator);
 }
 
 export function mergeActivityTotals(...aggregates) {
@@ -301,79 +369,122 @@ async function readJsonl(filePath, onRecord) {
   }
 }
 
-async function scanClaudeRecords(root) {
+async function scanClaudeActivity(root, nowMs) {
   const files = listJsonlFiles(root);
-  if (files === null) return { sourceAvailable: false, records: [] };
+  const accumulator = createActivityAccumulator(nowMs, files !== null);
+  let parsedRecords = 0;
 
-  const records = [];
-  for (const filePath of files) {
+  for (const filePath of files ?? []) {
     await readJsonl(filePath, (record) => {
       const parsed = parseClaudeRecord(record);
-      if (parsed) records.push(parsed);
+      if (!parsed) return;
+      parsedRecords += 1;
+      addActivityRecord(accumulator, parsed);
     });
   }
-  return { sourceAvailable: true, records };
+  return {
+    aggregate: finalizeActivityAccumulator(accumulator),
+    scanSummary: {
+      tool: 'claudeCode',
+      parsedRecords,
+      retainedEventRecords: 0,
+      retainedSessionSummaries: 0,
+    },
+  };
 }
 
-async function readCodexSession(filePath) {
+async function readCodexSession(filePath, nowMs) {
   let metadata = null;
-  const activity = [];
+  let parsedRecords = 0;
+  const accumulator = createActivityAccumulator(nowMs);
   await readJsonl(filePath, (record) => {
     const parsed = parseCodexRecord(record);
     if (!parsed) return;
-    if (parsed.kind === 'session' && parsed.sessionIdentity && metadata === null) metadata = parsed;
-    else if (parsed.kind === 'activity') activity.push(parsed);
-  });
-  if (metadata === null) return null;
-
-  const records = [metadata];
-  for (const record of activity) {
-    records.push({
-      ...record,
-      sessionIdentity: metadata.sessionIdentity,
-      projectIdentity: metadata.projectIdentity,
-    });
-  }
-  let latestTimestamp = Number.NEGATIVE_INFINITY;
-  for (const record of records) {
-    if (Number.isFinite(record.timestampMs)) {
-      latestTimestamp = Math.max(latestTimestamp, record.timestampMs);
+    parsedRecords += 1;
+    if (parsed.kind === 'session') {
+      if (Number.isFinite(parsed.timestampMs) && parsed.timestampMs > nowMs) return;
+      if (parsed.sessionIdentity && metadata === null) metadata = parsed;
+      return;
     }
-  }
+    addActivityRecord(accumulator, parsed, { trackIdentity: false });
+  });
+  if (metadata === null) return { parsedRecords, summary: null };
+
+  addActivityRecord(accumulator, metadata);
   return {
-    sessionIdentity: metadata.sessionIdentity,
-    records,
-    activityRecords: activity.length,
-    latestTimestamp,
+    parsedRecords,
+    summary: {
+      sessionIdentity: metadata.sessionIdentity,
+      metadataCompleteness:
+        1 + Number(metadata.projectIdentity !== null) + Number(Number.isFinite(metadata.timestampMs)),
+      accumulator,
+    },
   };
 }
 
 function isMoreComplete(candidate, existing) {
-  if (candidate.activityRecords !== existing.activityRecords) {
-    return candidate.activityRecords > existing.activityRecords;
+  if (candidate.metadataCompleteness !== existing.metadataCompleteness) {
+    return candidate.metadataCompleteness > existing.metadataCompleteness;
   }
-  return candidate.latestTimestamp > existing.latestTimestamp;
+
+  const candidateState = candidate.accumulator;
+  const existingState = existing.accumulator;
+  if (candidateState.allTimeUsageRecords !== existingState.allTimeUsageRecords) {
+    return candidateState.allTimeUsageRecords > existingState.allTimeUsageRecords;
+  }
+  if (candidateState.usageTimestampRecords !== existingState.usageTimestampRecords) {
+    return candidateState.usageTimestampRecords > existingState.usageTimestampRecords;
+  }
+
+  const candidateSpan = Number.isFinite(candidateState.usageMinTimestamp)
+    ? candidateState.usageMaxTimestamp - candidateState.usageMinTimestamp
+    : Number.NEGATIVE_INFINITY;
+  const existingSpan = Number.isFinite(existingState.usageMinTimestamp)
+    ? existingState.usageMaxTimestamp - existingState.usageMinTimestamp
+    : Number.NEGATIVE_INFINITY;
+  if (candidateSpan !== existingSpan) return candidateSpan > existingSpan;
+  if (candidateState.usageMinTimestamp !== existingState.usageMinTimestamp) {
+    return candidateState.usageMinTimestamp < existingState.usageMinTimestamp;
+  }
+  if (candidateState.usageMaxTimestamp !== existingState.usageMaxTimestamp) {
+    return candidateState.usageMaxTimestamp > existingState.usageMaxTimestamp;
+  }
+  return false;
 }
 
-async function scanCodexRecords(sessionsRoot, archivedSessionsRoot) {
+async function scanCodexActivity(sessionsRoot, archivedSessionsRoot, nowMs) {
   const activeFiles = listJsonlFiles(sessionsRoot);
   const archivedFiles = listJsonlFiles(archivedSessionsRoot);
   const sourceAvailable = activeFiles !== null || archivedFiles !== null;
-  if (!sourceAvailable) return { sourceAvailable: false, records: [] };
-
   const sessions = new Map();
-  for (const filePath of [...(activeFiles ?? []), ...(archivedFiles ?? [])]) {
-    const candidate = await readCodexSession(filePath);
-    if (!candidate) continue;
-    const existing = sessions.get(candidate.sessionIdentity);
-    if (!existing || isMoreComplete(candidate, existing)) {
-      sessions.set(candidate.sessionIdentity, candidate);
+  let parsedRecords = 0;
+  for (const files of [activeFiles ?? [], archivedFiles ?? []]) {
+    for (const filePath of files) {
+      const { parsedRecords: fileRecords, summary: candidate } = await readCodexSession(
+        filePath,
+        nowMs,
+      );
+      parsedRecords += fileRecords;
+      if (!candidate) continue;
+      const existing = sessions.get(candidate.sessionIdentity);
+      if (!existing || isMoreComplete(candidate, existing)) {
+        sessions.set(candidate.sessionIdentity, candidate);
+      }
     }
   }
 
+  const accumulator = createActivityAccumulator(nowMs, sourceAvailable);
+  for (const { accumulator: sessionAccumulator } of sessions.values()) {
+    mergeActivityAccumulator(accumulator, sessionAccumulator);
+  }
   return {
-    sourceAvailable: true,
-    records: [...sessions.values()].flatMap(({ records }) => records),
+    aggregate: finalizeActivityAccumulator(accumulator),
+    scanSummary: {
+      tool: 'codex',
+      parsedRecords,
+      retainedEventRecords: 0,
+      retainedSessionSummaries: sessions.size,
+    },
   };
 }
 
@@ -382,9 +493,14 @@ export function buildMethodology() {
     '会话数按各工具的稳定标识去重，Codex 活动与归档中的同一会话只保留一份；' +
     'Claude Code 累计每条 assistant message usage，输入量包含普通输入、缓存创建与缓存读取；' +
     'Codex 仅累计每次 token_count 的 last_token_usage；' +
-    '项目覆盖与近 90 天活跃日按两个工具的归一化集合合并，最近 30 天含边界；' +
+    '项目覆盖按两个工具的归一化集合合并，coverage 与活跃自然日统一使用 Asia/Shanghai；' +
+    '最近 30 天与近 90 天窗口按经过时长计算并包含边界；' +
     '缺失 usage 只计入缺口，不估算 Token。输出仅含聚合数字、日期与方法说明。'
   );
+}
+
+export function formatCliError() {
+  return 'STATS_COLLECTION_FAILED';
 }
 
 export async function collectDevelopmentStats({
@@ -392,24 +508,23 @@ export async function collectDevelopmentStats({
   codexSessionsRoot,
   codexArchivedSessionsRoot,
   nowMs = Date.now(),
+  onScanSummary,
 }) {
-  const [claudeSource, codexSource] = await Promise.all([
-    scanClaudeRecords(claudeProjectsRoot),
-    scanCodexRecords(codexSessionsRoot, codexArchivedSessionsRoot),
-  ]);
-  const claudeAggregate = aggregateToolActivity(claudeSource.records, nowMs, {
-    sourceAvailable: claudeSource.sourceAvailable,
-  });
-  const codexAggregate = aggregateToolActivity(codexSource.records, nowMs, {
-    sourceAvailable: codexSource.sourceAvailable,
-  });
+  const claudeSource = await scanClaudeActivity(claudeProjectsRoot, nowMs);
+  if (typeof onScanSummary === 'function') onScanSummary(claudeSource.scanSummary);
+  const codexSource = await scanCodexActivity(
+    codexSessionsRoot,
+    codexArchivedSessionsRoot,
+    nowMs,
+  );
+  if (typeof onScanSummary === 'function') onScanSummary(codexSource.scanSummary);
 
   return {
     generatedAt: new Date(nowMs).toISOString(),
     methodology: buildMethodology(),
-    totals: mergeActivityTotals(claudeAggregate, codexAggregate),
-    claudeCode: claudeAggregate.activity,
-    codex: codexAggregate.activity,
+    totals: mergeActivityTotals(claudeSource.aggregate, codexSource.aggregate),
+    claudeCode: claudeSource.aggregate.activity,
+    codex: codexSource.aggregate.activity,
   };
 }
 
@@ -433,8 +548,8 @@ async function main() {
 
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === filename;
 if (isMain) {
-  main().catch((error) => {
-    console.error(error instanceof Error ? error.message : String(error));
+  main().catch(() => {
+    console.error(formatCliError());
     process.exitCode = 1;
   });
 }

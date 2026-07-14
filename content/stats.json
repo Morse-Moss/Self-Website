@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-07-14T16:32:08.685Z",
-  "methodology": "会话数按各工具的稳定标识去重，Codex 活动与归档中的同一会话只保留一份；Claude Code 累计每条 assistant message usage，输入量包含普通输入、缓存创建与缓存读取；Codex 仅累计每次 token_count 的 last_token_usage；项目覆盖与近 90 天活跃日按两个工具的归一化集合合并，最近 30 天含边界；缺失 usage 只计入缺口，不估算 Token。输出仅含聚合数字、日期与方法说明。",
+  "generatedAt": "2026-07-14T17:30:50.869Z",
+  "methodology": "会话数按各工具的稳定标识去重，Codex 活动与归档中的同一会话只保留一份；Claude Code 累计每条 assistant message usage，输入量包含普通输入、缓存创建与缓存读取；Codex 仅累计每次 token_count 的 last_token_usage；项目覆盖按两个工具的归一化集合合并，coverage 与活跃自然日统一使用 Asia/Shanghai；最近 30 天与近 90 天窗口按经过时长计算并包含边界；缺失 usage 只计入缺口，不估算 Token。输出仅含聚合数字、日期与方法说明。",
   "totals": {
-    "sessions": 2682,
+    "sessions": 2687,
     "projects": 69,
-    "activeDaysLast90": 83
+    "activeDaysLast90": 84
   },
   "claudeCode": {
     "sessions": 116,
@@ -30,25 +30,25 @@
     "recordsWithoutUsage": 0
   },
   "codex": {
-    "sessions": 2566,
+    "sessions": 2571,
     "projects": 19,
     "coverageStart": "2026-03-20",
-    "coverageEnd": "2026-07-14",
+    "coverageEnd": "2026-07-15",
     "allTime": {
-      "inputTokens": 69089950049,
-      "outputTokens": 190479341,
-      "cachedInputTokens": 66342135296,
+      "inputTokens": 69292510940,
+      "outputTokens": 190906269,
+      "cachedInputTokens": 66539043072,
       "cacheCreationInputTokens": 0,
-      "reasoningOutputTokens": 72748852,
-      "totalTokens": 69608995824
+      "reasoningOutputTokens": 72930671,
+      "totalTokens": 69812505858
     },
     "last30Days": {
-      "inputTokens": 56818283031,
-      "outputTokens": 126052994,
-      "cachedInputTokens": 54811848320,
+      "inputTokens": 57021566934,
+      "outputTokens": 126482050,
+      "cachedInputTokens": 55009475200,
       "cacheCreationInputTokens": 0,
-      "reasoningOutputTokens": 47352130,
-      "totalTokens": 57201964839
+      "reasoningOutputTokens": 47534851,
+      "totalTokens": 57406200013
     },
     "recordsWithoutUsage": 398
   }

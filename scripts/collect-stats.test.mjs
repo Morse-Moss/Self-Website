@@ -57,6 +57,25 @@ function writeJsonl(filePath, records, malformedLine = false) {
   fs.writeFileSync(filePath, `${lines.join('\n')}\n`, 'utf8');
 }
 
+function writeRepeatedJsonl(filePath, prefixRecords, repeatedRecord, count) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const file = fs.openSync(filePath, 'w');
+  const repeatedLine = `${JSON.stringify(repeatedRecord)}\n`;
+  const chunkSize = 256;
+  try {
+    for (const record of prefixRecords) fs.writeSync(file, `${JSON.stringify(record)}\n`);
+    const chunk = repeatedLine.repeat(chunkSize);
+    let remaining = count;
+    while (remaining >= chunkSize) {
+      fs.writeSync(file, chunk);
+      remaining -= chunkSize;
+    }
+    if (remaining > 0) fs.writeSync(file, repeatedLine.repeat(remaining));
+  } finally {
+    fs.closeSync(file);
+  }
+}
+
 function expectedTotals(overrides = {}) {
   return {
     inputTokens: 0,
@@ -220,6 +239,54 @@ test('aggregateToolActivity computes all-time and recent coverage totals', () =>
   });
 });
 
+test('aggregateToolActivity ignores future records before every aggregate', () => {
+  const parseClaudeRecord = feature('parseClaudeRecord');
+  const aggregateToolActivity = feature('aggregateToolActivity');
+  const records = [
+    parseClaudeRecord(claudeRecord),
+    parseClaudeRecord({
+      ...claudeRecord,
+      sessionId: 'future-with-usage',
+      timestamp: '2026-07-16T10:00:00.000Z',
+      cwd: 'C:\\private\\future-one',
+    }),
+    parseClaudeRecord({
+      type: 'assistant',
+      sessionId: 'future-without-usage',
+      timestamp: '2026-07-17T10:00:00.000Z',
+      cwd: 'C:\\private\\future-two',
+      message: { content: 'usage is missing' },
+    }),
+  ];
+
+  const aggregate = aggregateToolActivity(records, NOW_MS);
+
+  assert.deepEqual(aggregate.activity, {
+    sessions: 1,
+    projects: 1,
+    coverageStart: '2026-07-10',
+    coverageEnd: '2026-07-10',
+    allTime: expectedTotals({
+      inputTokens: 160,
+      outputTokens: 30,
+      cachedInputTokens: 40,
+      cacheCreationInputTokens: 20,
+      totalTokens: 190,
+    }),
+    last30Days: expectedTotals({
+      inputTokens: 160,
+      outputTokens: 30,
+      cachedInputTokens: 40,
+      cacheCreationInputTokens: 20,
+      totalTokens: 190,
+    }),
+    recordsWithoutUsage: 0,
+  });
+  assert.equal(aggregate.sessionIdentities.size, 1);
+  assert.equal(aggregate.projectIdentities.size, 1);
+  assert.equal(aggregate.activeDaysLast90.size, 1);
+});
+
 test('aggregateToolActivity handles large histories without argument spreading', () => {
   const aggregateToolActivity = feature('aggregateToolActivity');
   const record = {
@@ -273,7 +340,32 @@ test('normalization and day windows are deterministic and inclusive', () => {
   assert.equal(normalizeProjectIdentity('  '), null);
   assert.equal(withinDays(NOW_MS - 30 * DAY_MS, NOW_MS, 30), true);
   assert.equal(withinDays(NOW_MS - 30 * DAY_MS - 1, NOW_MS, 30), false);
+  assert.equal(withinDays(NOW_MS - 90 * DAY_MS, NOW_MS, 90), true);
+  assert.equal(withinDays(NOW_MS - 90 * DAY_MS - 1, NOW_MS, 90), false);
   assert.equal(withinDays(NOW_MS + 1, NOW_MS, 30), false);
+});
+
+test('coverage and active days use Asia/Shanghai natural-day boundaries', () => {
+  const dateKey = feature('dateKey');
+  const parseClaudeRecord = feature('parseClaudeRecord');
+  const aggregateToolActivity = feature('aggregateToolActivity');
+  const beforeMidnight = Date.parse('2026-07-10T15:30:00.000Z');
+  const afterMidnight = Date.parse('2026-07-10T16:30:00.000Z');
+
+  assert.equal(dateKey(beforeMidnight), '2026-07-10');
+  assert.equal(dateKey(afterMidnight), '2026-07-11');
+
+  const aggregate = aggregateToolActivity([
+    parseClaudeRecord({ ...claudeRecord, timestamp: new Date(beforeMidnight).toISOString() }),
+    parseClaudeRecord({
+      ...claudeRecord,
+      sessionId: 'cc-midnight-two',
+      timestamp: new Date(afterMidnight).toISOString(),
+    }),
+  ], NOW_MS);
+  assert.equal(aggregate.activity.coverageStart, '2026-07-10');
+  assert.equal(aggregate.activity.coverageEnd, '2026-07-11');
+  assert.equal(aggregate.activeDaysLast90.size, 2);
 });
 
 test('methodology distinguishes session deduplication from per-message usage', () => {
@@ -283,6 +375,17 @@ test('methodology distinguishes session deduplication from per-message usage', (
   assert.match(methodology, /会话数按各工具的稳定标识去重/);
   assert.match(methodology, /Claude Code 累计每条 assistant message usage/);
   assert.match(methodology, /Codex 活动与归档中的同一会话只保留一份/);
+  assert.match(methodology, /Asia\/Shanghai/);
+});
+
+test('CLI error formatting never echoes exception details or output paths', () => {
+  const formatCliError = feature('formatCliError');
+  const formatted = formatCliError(
+    new Error('write failed for C:\\private\\stats.json: SUPER-SECRET-RAW-CONTENT'),
+  );
+
+  assert.equal(formatted, 'STATS_COLLECTION_FAILED');
+  assert.doesNotMatch(formatted, /private|stats\.json|SUPER-SECRET|[A-Za-z]:[\\/]/i);
 });
 
 test('collectDevelopmentStats deduplicates Codex archives and skips malformed lines', async (t) => {
@@ -458,6 +561,152 @@ test('collectDevelopmentStats deduplicates Codex archives and skips malformed li
     assert.equal(serialized.includes(sensitive), false, `serialized output leaked ${sensitive}`);
   }
   assert.doesNotMatch(serialized, /[A-Za-z]:[\\/]/);
+});
+
+test('collectDevelopmentStats streams large JSONL inputs into bounded summaries', async (t) => {
+  const collectDevelopmentStats = feature('collectDevelopmentStats');
+  const root = makeTempDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const claudeRoot = path.join(root, 'claude-projects');
+  const codexActiveRoot = path.join(root, 'codex-sessions');
+  const codexArchiveRoot = path.join(root, 'codex-archives');
+  const sharedProject = path.join(root, 'shared-project');
+  const claudeRecords = 12_000;
+  const codexRecords = 8_000;
+  const scanSummaries = [];
+
+  writeRepeatedJsonl(path.join(claudeRoot, 'large.jsonl'), [], {
+    type: 'assistant',
+    sessionId: 'cc-large',
+    timestamp: '2026-07-10T10:00:00.000Z',
+    cwd: sharedProject,
+    message: {
+      usage: {
+        input_tokens: 1,
+        cache_read_input_tokens: 1,
+        output_tokens: 1,
+      },
+    },
+  }, claudeRecords);
+  writeRepeatedJsonl(path.join(codexActiveRoot, 'large.jsonl'), [{
+    timestamp: '2026-07-10T09:00:00.000Z',
+    type: 'session_meta',
+    payload: { id: 'codex-large', cwd: sharedProject },
+  }], {
+    timestamp: '2026-07-10T10:00:00.000Z',
+    type: 'event_msg',
+    payload: {
+      type: 'token_count',
+      info: {
+        last_token_usage: {
+          input_tokens: 2,
+          cached_input_tokens: 1,
+          output_tokens: 1,
+          total_tokens: 3,
+        },
+      },
+    },
+  }, codexRecords);
+
+  const result = await collectDevelopmentStats({
+    claudeProjectsRoot: claudeRoot,
+    codexSessionsRoot: codexActiveRoot,
+    codexArchivedSessionsRoot: codexArchiveRoot,
+    nowMs: NOW_MS,
+    onScanSummary: (summary) => scanSummaries.push(summary),
+  });
+
+  assert.equal(result.claudeCode.allTime.inputTokens, claudeRecords * 2);
+  assert.equal(result.claudeCode.allTime.totalTokens, claudeRecords * 3);
+  assert.equal(result.codex.allTime.inputTokens, codexRecords * 2);
+  assert.equal(result.codex.allTime.totalTokens, codexRecords * 3);
+  assert.deepEqual(result.totals, {
+    sessions: 2,
+    projects: 1,
+    activeDaysLast90: 1,
+  });
+  assert.deepEqual(scanSummaries, [
+    {
+      tool: 'claudeCode',
+      parsedRecords: claudeRecords,
+      retainedEventRecords: 0,
+      retainedSessionSummaries: 0,
+    },
+    {
+      tool: 'codex',
+      parsedRecords: codexRecords + 1,
+      retainedEventRecords: 0,
+      retainedSessionSummaries: 1,
+    },
+  ]);
+});
+
+test('Codex duplicate selection prefers valid usage coverage over raw event count', async (t) => {
+  const collectDevelopmentStats = feature('collectDevelopmentStats');
+  const root = makeTempDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const codexActiveRoot = path.join(root, 'codex-sessions');
+  const codexArchiveRoot = path.join(root, 'codex-archives');
+  const project = path.join(root, 'project');
+  const metadata = {
+    timestamp: '2026-07-10T09:00:00.000Z',
+    type: 'session_meta',
+    payload: { id: 'codex-shared', cwd: project },
+  };
+  const usageRecord = (timestamp, inputTokens, outputTokens) => ({
+    timestamp,
+    type: 'event_msg',
+    payload: {
+      type: 'token_count',
+      info: {
+        last_token_usage: {
+          input_tokens: inputTokens,
+          output_tokens: outputTokens,
+          total_tokens: inputTokens + outputTokens,
+        },
+      },
+    },
+  });
+  const missingUsageRecord = (timestamp) => ({
+    timestamp,
+    type: 'event_msg',
+    payload: { type: 'token_count', info: { total_token_usage: { total_tokens: 999 } } },
+  });
+
+  writeJsonl(path.join(codexActiveRoot, 'active.jsonl'), [
+    metadata,
+    usageRecord('2026-07-10T10:00:00.000Z', 10, 2),
+    usageRecord('2026-07-11T10:00:00.000Z', 20, 3),
+    missingUsageRecord('2026-07-12T10:00:00.000Z'),
+  ]);
+  writeJsonl(path.join(codexArchiveRoot, 'archive.jsonl'), [
+    metadata,
+    usageRecord('2026-07-10T10:00:00.000Z', 100, 10),
+    missingUsageRecord('2026-07-10T11:00:00.000Z'),
+    missingUsageRecord('2026-07-11T11:00:00.000Z'),
+    missingUsageRecord('2026-07-12T11:00:00.000Z'),
+    missingUsageRecord('2026-07-13T11:00:00.000Z'),
+    missingUsageRecord('2026-07-14T11:00:00.000Z'),
+  ]);
+
+  const result = await collectDevelopmentStats({
+    claudeProjectsRoot: path.join(root, 'missing-claude'),
+    codexSessionsRoot: codexActiveRoot,
+    codexArchivedSessionsRoot: codexArchiveRoot,
+    nowMs: NOW_MS,
+  });
+
+  assert.deepEqual(result.codex, {
+    sessions: 1,
+    projects: 1,
+    coverageStart: '2026-07-10',
+    coverageEnd: '2026-07-12',
+    allTime: expectedTotals({ inputTokens: 30, outputTokens: 5, totalTokens: 35 }),
+    last30Days: expectedTotals({ inputTokens: 30, outputTokens: 5, totalTokens: 35 }),
+    recordsWithoutUsage: 1,
+  });
 });
 
 test('missing log roots produce null coverage instead of invented totals', async () => {
