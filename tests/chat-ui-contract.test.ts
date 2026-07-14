@@ -73,6 +73,23 @@ test('MorseChat opens from the global event and exposes the three structured sta
   assert.doesNotMatch(intentClick, /sendMessage|submit|fetch/);
 });
 
+test('MorseChat supports an embedded section without launcher, close, or dialog semantics', () => {
+  const component = fs.readFileSync(componentPath, 'utf8');
+
+  assert.match(component, /type MorseChatProps = \{ variant\?: 'overlay' \| 'embedded' \};/);
+  assert.match(component, /export default function MorseChat\(\{ variant = 'overlay' \}: MorseChatProps\)/);
+  assert.match(component, /const embedded = variant === 'embedded'/);
+  assert.match(component, /useState\(embedded\)/);
+  assert.match(component, /!embedded && !open/);
+  assert.match(component, /\{!embedded \? \([\s\S]*aria-label="关闭对话"/);
+  assert.match(component, /role=\{embedded \? undefined : 'dialog'\}/);
+  assert.match(component, /aria-labelledby=\{embedded \? 'morse-chat-title' : undefined\}/);
+  assert.match(component, /embedded[\s\S]*scrollIntoView/);
+  assert.match(component, /prefers-reduced-motion: reduce/);
+  assert.match(component, /\.focus\(\{ preventScroll: true \}\)/);
+  assert.doesNotMatch(component, /video|audio|speech|tts|lipSync/i);
+});
+
 test('MorseChat retries a recoverable turn without appending a second user bubble', () => {
   const component = fs.readFileSync(componentPath, 'utf8');
 
@@ -95,14 +112,15 @@ test('MorseChat retries a recoverable turn without appending a second user bubbl
   );
 });
 
-test('MorseChat is mounted only by the works overlay and keeps tokenized mobile full-screen mode', () => {
+test('home owns one embedded chat while works keeps one tokenized overlay instance', () => {
   const layout = fs.readFileSync(layoutPath, 'utf8');
   const worksLayout = fs.readFileSync(worksLayoutPath, 'utf8');
   const page = fs.readFileSync(pagePath, 'utf8');
   const styles = fs.readFileSync(stylePath, 'utf8');
 
   assert.doesNotMatch(layout, /import MorseChat|<MorseChat\b/);
-  assert.doesNotMatch(page, /import MorseChat|<MorseChat\b/);
+  assert.match(page, /import MorseChat/);
+  assert.equal((page.match(/<MorseChat variant="embedded"\s*\/>/g) ?? []).length, 1);
   assert.match(worksLayout, /import MorseChat/);
   assert.equal((worksLayout.match(/<MorseChat\s*\/>/g) ?? []).length, 1);
   const launcherRule = styles.match(/\.launcher\s*\{([^}]*)\}/)?.[1] ?? '';
@@ -123,5 +141,13 @@ test('MorseChat is mounted only by the works overlay and keeps tokenized mobile 
   assert.match(styles, /100dvh/);
   assert.match(styles, /html\.morse-chat-open/);
   assert.match(styles, /overflow:\s*hidden/);
+  const embeddedRootRule = styles.match(/\.root\.embeddedRoot\s*\{([^}]*)\}/)?.[1] ?? '';
+  const embeddedPanelRule = styles.match(/\.panel\.embeddedPanel\s*\{([^}]*)\}/)?.[1] ?? '';
+  assert.match(embeddedRootRule, /position:\s*relative/);
+  assert.match(embeddedRootRule, /min-width:\s*0/);
+  assert.doesNotMatch(embeddedRootRule, /position:\s*fixed/);
+  assert.match(embeddedPanelRule, /width:\s*100%/);
+  assert.match(embeddedPanelRule, /min-width:\s*0/);
+  assert.doesNotMatch(embeddedPanelRule, /position:\s*fixed/);
   assert.doesNotMatch(styles, /#[0-9a-f]{3,8}|rgba?\(/i);
 });

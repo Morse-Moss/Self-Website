@@ -61,6 +61,26 @@
   backdrop-filter: blur(22px);
 }
 
+.root.embeddedRoot {
+  position: relative;
+  inset: auto;
+  z-index: auto;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.panel.embeddedPanel {
+  position: relative;
+  inset: auto;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  height: min(500px, 58svh);
+  min-height: 420px;
+  box-shadow: var(--shadow-card);
+}
+
 .header {
   display: flex;
   align-items: center;
@@ -453,12 +473,37 @@
   .userMessage {
     margin-left: var(--space-5);
   }
+
+  .root.embeddedRoot {
+    top: auto;
+    right: auto;
+    bottom: auto;
+  }
+
+  .panel.embeddedPanel {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    height: 330px;
+    min-height: 320px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-sm);
+  }
+
+  .embeddedPanel .header {
+    min-height: 60px;
+  }
 }
 
 @media (max-width: 560px) {
   .root {
     top: var(--space-3);
     right: calc(var(--space-3) + 92px);
+  }
+
+  .root.embeddedRoot {
+    top: auto;
+    right: auto;
   }
 }
 

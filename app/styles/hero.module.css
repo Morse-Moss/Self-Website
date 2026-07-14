@@ -1,179 +1,72 @@
-/* ============================================================
-   hero.module.css · 首屏 · 30 秒速览层
-   参照 prototype/css/main.css 首屏部分移植(hero / chips /
-   metric / mock-tag / contact),零裸色值,全部走 tokens.css。
-
-   布局:
-   - 桌面(>760px)双栏:左侧速览内容列(约 50% 宽,让出右侧
-     给光球,fadeX1=0.48 与之对齐),右侧 DigitalHuman 舞台
-     (绝对定位铺满 hero,烤入参数把光球放在 0.68/0.42)
-   - 移动(≤760px)单列:形体在上(移动参数 0.72/0.26),
-     文字在下(内容底部对齐)
-   - 速览内容在 1440 与 390 都必须不滚动即全部可见
-   ============================================================ */
-
 .hero {
   position: relative;
-  min-height: 70vh;
-  min-height: 70svh;
   display: flex;
+  min-height: min(680px, calc(100svh - var(--topbar-h) - var(--space-7)));
   align-items: center;
-  padding: var(--space-6) 0;
+  padding: var(--space-6) 0 var(--space-7);
   overflow: hidden;
 }
 
-.container {
-  position: relative;
-  z-index: 1; /* 内容层压在 DigitalHuman 舞台之上 */
+.heroInner {
+  display: grid;
+  grid-template-columns: minmax(0, 0.92fr) minmax(420px, 1.08fr);
+  gap: var(--space-7);
+  align-items: center;
   width: min(var(--container), calc(100% - 48px));
   margin-inline: auto;
 }
 
-.content {
-  max-width: 50%; /* 左栏:与光球 fadeX1=0.48 渐隐区对齐,特效不挡文字 */
+.identity {
+  min-width: 0;
 }
 
-/* ---------------- 眉头行 ---------------- */
-.eyebrow {
+.kicker {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
+  color: var(--accent);
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   letter-spacing: 0;
-  color: var(--accent);
 }
-.eyebrow::before {
+
+.kicker::before {
   content: "";
   width: 36px;
   height: 1px;
   background: var(--line-strong);
 }
 
-/* ---------------- 名字 / 定位 ---------------- */
-.title {
+.identity h1 {
   margin-top: var(--space-5);
   font-family: var(--font-display);
   font-size: var(--fs-hero);
   font-weight: 800;
+  line-height: 1;
   letter-spacing: 0;
-  line-height: 1.05;
 }
 
-.sub {
-  margin-top: var(--space-5);
-  max-width: 34em;
-  color: var(--muted);
-  font-size: clamp(1rem, 0.92rem + 0.45vw, 1.1875rem);
-  line-height: 1.85;
+.identity h1 span {
+  display: inline-block;
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--line-strong);
 }
 
 .role {
-  margin-top: var(--space-3);
+  margin-top: var(--space-4);
+  overflow-wrap: anywhere;
   color: var(--status-amber);
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
   letter-spacing: 0;
 }
 
-/* ---------------- 核心技术栈行 ---------------- */
-.chips {
-  margin-top: var(--space-5);
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-.chip {
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
+.summary {
+  max-width: 35rem;
+  margin-top: var(--space-4);
+  overflow-wrap: anywhere;
   color: var(--muted);
-  background: var(--surface-glass);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  padding: 7px 14px;
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
-}
-
-/* ---------------- 3 个硬亮点卡 ---------------- */
-.highlights {
-  margin-top: var(--space-6);
-  display: flex;
-  align-items: stretch;
-  flex-wrap: wrap;
-  gap: var(--space-4);
-}
-.highlightCard {
-  flex: 1 1 0;
-  min-width: 128px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  background: var(--surface-glass);
-  border: 1px solid var(--line-faint);
-  border-radius: var(--radius-sm);
-  padding: var(--space-4) var(--space-5);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
-}
-.highlightValue {
-  display: inline-flex;
-  align-items: baseline;
-}
-.highlightNum {
-  font-family: var(--font-display);
-  font-size: var(--fs-num);
-  font-weight: 700;
-  letter-spacing: 0;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-.highlightSuffix {
-  color: var(--accent);
-  font-weight: 700;
-  font-size: 1.125rem;
-  margin-left: 2px;
-}
-.highlightLabel {
-  font-size: var(--fs-xs);
-  color: var(--muted);
-  letter-spacing: 0;
-}
-
-/* 「示例数据」标注:虚线小签,与真实数字区分(沿用原型 .mock-tag) */
-.mockTag {
-  display: inline-block;
-  align-self: center; /* 与卡片行/联系方式行同轴对齐,不再底部悬浮 */
-  font-family: var(--font-mono);
-  font-size: var(--fs-3xs);
-  letter-spacing: 0;
-  color: var(--muted);
-  border: 1px dashed var(--line-strong);
-  border-radius: 6px;
-  padding: 3px 8px;
-  white-space: nowrap;
-}
-
-/* ---------------- 联系方式行 ---------------- */
-.contact {
-  margin-top: var(--space-6);
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-4);
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  letter-spacing: 0;
-  color: var(--muted);
-}
-.contactPlaceholder {
-  color: var(--muted);
-  border-bottom: 1px solid var(--line);
-  padding-bottom: 2px;
-  cursor: default;
-}
-.sep {
-  color: var(--faint);
+  line-height: 1.8;
 }
 
 .actions {
@@ -188,11 +81,13 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  min-width: 126px;
   min-height: 44px;
   padding: 0 var(--space-5);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   font: inherit;
+  font-weight: 700;
   letter-spacing: 0;
   cursor: pointer;
 }
@@ -200,7 +95,6 @@
 .primaryAction {
   background: var(--accent);
   color: var(--accent-ink);
-  font-weight: 700;
 }
 
 .secondaryAction {
@@ -213,26 +107,70 @@
   border-color: var(--accent);
 }
 
-/* ---------------- 移动 · 单列(形体在上,文字在下) ---------------- */
-@media (max-width: 760px) {
+@media (prefers-reduced-motion: no-preference) {
+  .identity[data-reveal] {
+    opacity: 0;
+    transform: translateY(var(--space-3));
+    transition:
+      opacity var(--dur-slow) var(--ease),
+      transform var(--dur-slow) var(--ease);
+  }
+
+  .identity[data-reveal][data-revealed="true"] {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 900px) {
   .hero {
-    align-items: flex-end; /* 光球占上部(移动参数 centerY=0.26),文字沉底 */
-    padding: var(--space-9) 0 var(--space-8); /* 底部内边距加大,联系方式行远离屏幕边缘 */
+    min-height: auto;
+    align-items: flex-start;
   }
-  .container {
-    width: calc(100% - 40px);
+
+  .heroInner {
+    grid-template-columns: 1fr;
+    gap: var(--space-6);
   }
-  .content {
-    max-width: 100%;
+
+  .identity {
+    max-width: 42rem;
   }
-  /* 390 不滚动可见:压缩纵向节奏 */
-  .title { margin-top: var(--space-4); }
-  .sub { margin-top: var(--space-3); line-height: 1.7; }
-  .chips { margin-top: var(--space-4); gap: 8px; }
-  .highlights { margin-top: var(--space-5); gap: var(--space-3); }
-  .highlightCard {
-    min-width: 96px;
-    padding: var(--space-3) var(--space-4);
+}
+
+@media (max-width: 640px) {
+  .hero {
+    min-height: calc(100svh - var(--topbar-h) - var(--space-9));
+    padding: var(--space-5) 0 var(--space-6);
   }
-  .contact { margin-top: var(--space-5); }
+
+  .heroInner {
+    width: calc(100% - 32px);
+    gap: var(--space-5);
+  }
+
+  .identity h1 {
+    margin-top: var(--space-3);
+  }
+
+  .role,
+  .summary {
+    margin-top: var(--space-3);
+  }
+
+  .summary {
+    line-height: 1.65;
+  }
+
+  .actions {
+    margin-top: var(--space-4);
+  }
+
+  .primaryAction,
+  .secondaryAction {
+    flex: 1 1 140px;
+    min-width: 0;
+    padding-right: var(--space-3);
+    padding-left: var(--space-3);
+  }
 }

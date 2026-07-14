@@ -15,6 +15,7 @@ type AccessState = 'checking' | 'locked' | 'authorized';
 type ChatMode = 'general' | 'interviewer';
 type ChatAudienceIntent = 'general' | 'recruiter' | 'collaboration' | 'peer';
 type BudgetLevel = 'normal' | 'notice' | 'warning' | 'critical' | 'exhausted';
+type MorseChatProps = { variant?: 'overlay' | 'embedded' };
 
 interface ChatSource {
   documentId: string;
@@ -85,8 +86,9 @@ function budgetMessage(level: BudgetLevel): string {
   return '';
 }
 
-export default function MorseChat() {
-  const [open, setOpen] = useState(false);
+export default function MorseChat({ variant = 'overlay' }: MorseChatProps) {
+  const embedded = variant === 'embedded';
+  const [open, setOpen] = useState(embedded);
   const [accessState, setAccessState] = useState<AccessState>('checking');
   const [inviteCode, setInviteCode] = useState('');
   const [accessError, setAccessError] = useState('');
@@ -99,13 +101,37 @@ export default function MorseChat() {
   const [draft, setDraft] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [budgetLevel, setBudgetLevel] = useState<BudgetLevel>('normal');
+  const rootRef = useRef<HTMLDivElement>(null);
+  const inviteInputRef = useRef<HTMLInputElement>(null);
+  const messageInputRef = useRef<HTMLTextAreaElement>(null);
   const messageEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const handleOpen = () => setOpen(true);
+    let focusFrame = 0;
+    const handleOpen = () => {
+      if (!embedded) {
+        setOpen(true);
+        return;
+      }
+
+      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      rootRef.current?.scrollIntoView({
+        behavior: reducedMotion ? 'auto' : 'smooth',
+        block: 'center',
+      });
+      focusFrame = window.requestAnimationFrame(() => {
+        const focusTarget = accessState === 'authorized'
+          ? messageInputRef.current
+          : inviteInputRef.current;
+        focusTarget?.focus({ preventScroll: true });
+      });
+    };
     window.addEventListener('morse-chat:open', handleOpen);
-    return () => window.removeEventListener('morse-chat:open', handleOpen);
-  }, []);
+    return () => {
+      window.removeEventListener('morse-chat:open', handleOpen);
+      window.cancelAnimationFrame(focusFrame);
+    };
+  }, [accessState, embedded]);
 
   useEffect(() => {
     let active = true;
@@ -126,10 +152,10 @@ export default function MorseChat() {
   }, [messages]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || embedded) return;
     document.documentElement.classList.add('morse-chat-open');
     return () => document.documentElement.classList.remove('morse-chat-open');
-  }, [open]);
+  }, [embedded, open]);
 
   async function unlock(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -301,22 +327,34 @@ export default function MorseChat() {
   }
 
   return (
-    <div className={styles.root} data-testid="morse-chat">
-      {!open ? (
+    <div
+      ref={rootRef}
+      className={`${styles.root} ${embedded ? styles.embeddedRoot : ''}`}
+      data-testid="morse-chat"
+      data-variant={variant}
+    >
+      {!embedded && !open ? (
         <button className={styles.launcher} type="button" onClick={() => setOpen(true)}>
           <span className={styles.signal} aria-hidden="true" />
           对话
         </button>
-      ) : (
-        <section className={styles.panel} role="dialog" aria-label="数字摩斯对话">
+      ) : open ? (
+        <section
+          className={`${styles.panel} ${embedded ? styles.embeddedPanel : ''}`}
+          role={embedded ? undefined : 'dialog'}
+          aria-label={embedded ? undefined : '数字摩斯对话'}
+          aria-labelledby={embedded ? 'morse-chat-title' : undefined}
+        >
           <header className={styles.header}>
             <div>
               <p className={styles.kicker}>DIGITAL MORSE</p>
-              <h2 className={styles.title}>数字摩斯</h2>
+              <h2 className={styles.title} id="morse-chat-title">数字摩斯</h2>
             </div>
-            <button className={styles.closeButton} type="button" onClick={() => setOpen(false)} aria-label="关闭对话">
-              ×
-            </button>
+            {!embedded ? (
+              <button className={styles.closeButton} type="button" onClick={() => setOpen(false)} aria-label="关闭对话">
+                ×
+              </button>
+            ) : null}
           </header>
 
           {accessState === 'checking' ? (
@@ -330,6 +368,7 @@ export default function MorseChat() {
               </div>
               <label className={styles.fieldLabel} htmlFor="morse-invite-code">邀请码</label>
               <input
+                ref={inviteInputRef}
                 id="morse-invite-code"
                 className={styles.input}
                 value={inviteCode}
@@ -430,6 +469,7 @@ export default function MorseChat() {
               <form className={styles.composer} onSubmit={submitMessage}>
                 <label className={styles.srOnly} htmlFor="morse-message">输入问题</label>
                 <textarea
+                  ref={messageInputRef}
                   id="morse-message"
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
@@ -448,7 +488,7 @@ export default function MorseChat() {
             </>
           )}
         </section>
-      )}
+      ) : null}
     </div>
   );
 }

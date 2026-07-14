@@ -12,27 +12,16 @@ const files = {
   siteHeader: path.resolve('components/site/SiteHeader.tsx'),
   rootLayout: path.resolve('app/layout.tsx'),
   home: path.resolve('app/page.tsx'),
-  restoredHomeSections: path.resolve('components/home/RestoredHomeSections.tsx'),
+  homeSections: path.resolve('components/home/MorseHomeSections.tsx'),
   homeStyles: path.resolve('app/styles/hero.module.css'),
-  homeSectionStyles: path.resolve('components/S3Sections.module.css'),
+  homeSectionStyles: path.resolve('components/home/MorseHomeSections.module.css'),
+  siteContent: path.resolve('content/site-content.json'),
   works: path.resolve('app/works/page.tsx'),
   worksLayout: path.resolve('app/works/layout.tsx'),
   worksStyles: path.resolve('app/works/page.module.css'),
   caseRoute: path.resolve('app/works/[slug]/page.tsx'),
   caseRouteStyles: path.resolve('app/works/[slug]/page.module.css'),
 } as const;
-
-const retiredSurfacePattern = new RegExp(
-  [
-    'S3',
-    'Sections|s3',
-    '-content|Digital',
-    'Human|Life',
-    'form|Scroll',
-    'Effects|stats|chips|contact',
-  ].join(''),
-  'i',
-);
 
 const prohibitedProductPattern = new RegExp(
   ['image', 'gen|Digital', 'Human|Life', 'form|S3', 'Sections|s3', '-content'].join(''),
@@ -93,36 +82,61 @@ test('CaseStudy keeps the six evidence sections in exact order and leads with ho
   assert.match(source, /<Image[\s\S]*unoptimized/);
 });
 
-test('restored home renders content-owned project actions as external links only', () => {
-  const source = readSource(files.restoredHomeSections);
-
-  assert.match(source, /project\.actions\.map/);
-  assert.doesNotMatch(source, /action\.kind\s*===\s*['"]case['"]/);
-  assert.match(source, /<a[\s\S]*target=['"]_blank['"][\s\S]*rel=['"]noreferrer['"]/);
-});
-
-test('home keeps the S6 identity while the shared shell owns controls and works owns chat', () => {
-  const source = readSource(files.home);
+test('home leads with Morse, one embedded chat, and the shared shell controls', () => {
+  const home = readSource(files.home);
   const rootLayout = readSource(files.rootLayout);
   const siteHeader = readSource(files.siteHeader);
   const worksLayout = readSource(files.worksLayout);
 
-  assert.match(source, /import DigitalHuman from ['"]@\/components\/DigitalHuman['"]/);
-  assert.match(source, /import RestoredHomeSections/);
-  assert.match(source, /siteContent\.profile\.title/);
-  assert.match(source, /siteContent\.profile\.role/);
-  assert.match(source, /siteContent\.profile\.summary/);
-  assert.match(source, /siteContent\.profile\.capabilities\.map/);
-  assert.match(source, /<DigitalHuman\s*\/>/);
-  assert.match(source, /href=['"]#systems['"]/);
-  assert.doesNotMatch(source, /import MorseChat|<MorseChat\b/);
+  assert.match(home, /Morse/);
+  assert.match(home, /siteContent\.profile\.role/);
+  assert.match(home, /siteContent\.profile\.summary/);
+  assert.match(home, /getFeaturedProjects/);
+  assert.match(home, /MorseHomeSections/);
+  assert.match(home, /<MorseChat variant="embedded"\s*\/>/);
+  assert.equal((home.match(/<MorseChat\b/g) ?? []).length, 1);
+  assert.match(home, /href="\/works"/);
+  assert.doesNotMatch(
+    home,
+    /DigitalHuman|RestoredHomeSections|系统展厅|高频问题|杠杆账本|ResumeMode|ResumeSheet|SiteFooter|ProjectCard|content\.faq|content\.projects\.map/,
+  );
   assert.match(rootLayout, /<SiteHeader\s+site=\{siteContent\.site\}\s*\/>/);
   assert.match(siteHeader, /site\.nav\.map/);
   assert.match(siteHeader, /<OpenChatButton\b/);
   assert.match(siteHeader, /<ResumeModeToggle\b/);
   assert.equal((worksLayout.match(/<MorseChat\s*\/>/g) ?? []).length, 1);
-  assert.doesNotMatch(source, /getFeaturedProjects|featured\.media|<ProjectCard/);
-  assert.doesNotMatch(source, /1,200|480|示例数据|Email|WeChat/);
+  assert.doesNotMatch(home, /1,200|480|示例数据|Email|WeChat|时间线|FAQ/i);
+});
+
+test('home sections render exactly two public projects, linked capabilities, and non-null facts', () => {
+  const sections = readSource(files.homeSections);
+  const content = JSON.parse(readSource(files.siteContent)) as {
+    home: { featuredSlugs: string[] };
+    projects: Array<{ slug: string; disclosure: string }>;
+  };
+  const featured = content.home.featuredSlugs
+    .map((slug) => content.projects.find((project) => project.slug === slug))
+    .filter((project) => project !== undefined);
+
+  assert.deepEqual(content.home.featuredSlugs, ['deep-research', 'digital-morse']);
+  assert.equal(featured.length, 2);
+  assert.ok(featured.every((project) => project.disclosure === 'public'));
+  assert.match(sections, /featuredProjects\.map/);
+  assert.doesNotMatch(sections, /content\.projects\.map|content\.faq|project\.actions\.map/);
+  assert.match(sections, /project\.status/);
+  assert.match(sections, /project\.summary/);
+  assert.match(sections, /project\.capabilities\.map/);
+  assert.match(sections, /projectHashHref/);
+  assert.match(sections, /能力矩阵/);
+  assert.match(sections, /开发事实/);
+  assert.match(sections, /projectHashHref\('deep-research'\)/);
+  assert.match(sections, /projectHashHref\('digital-morse'\)/);
+  assert.match(sections, /\.flatMap\(\(metric\) => metric\.value === null \? \[\] : \[\{ \.\.\.metric, value: metric\.value \}\]\)/);
+  assert.match(sections, /activity\.allTime !== null \|\| activity\.last30Days !== null/);
+  assert.match(sections, /Intl\.NumberFormat\('zh-CN', \{\s*notation: 'compact',\s*maximumFractionDigits: 1,?\s*\}\)/);
+  assert.match(sections, /title=\{fullValue\}/);
+  assert.match(sections, /className=\{styles\.srOnly\}/);
+  assert.doesNotMatch(sections, /\?\?\s*0|\|\|\s*0|职业|时间线|FAQ|高频问题/);
 });
 
 test('works index is an unfiltered four-project catalog driven by the public content helper', () => {
@@ -175,6 +189,8 @@ test('new route TSX stays inside the approved evidence-only product surface', ()
     files.projectCard,
     files.caseStudy,
     files.openChatButton,
+    files.home,
+    files.homeSections,
     files.works,
     files.caseRoute,
   ].map(readSource);

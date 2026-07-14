@@ -57,12 +57,13 @@ test('root layout owns the persistent visual shell and global resume surface', (
   assert.doesNotMatch(layout, /<MorseChat\b/);
 });
 
-test('route trees do not duplicate the global shell and works keeps only its chat overlay', () => {
+test('route trees do not duplicate the global shell and each route keeps one chat presentation', () => {
   const page = readSource(pagePath);
   const worksLayout = readSource(worksLayoutPath);
 
   assert.equal(fs.existsSync(obsoleteShellPath), false);
-  assert.doesNotMatch(page, /<ResumeModeToggle\b|<ResumeSheet\b|<MorseChat\b|<ScrollEffects\b/);
+  assert.doesNotMatch(page, /<ResumeModeToggle\b|<ResumeSheet\b|<ScrollEffects\b|<SiteFooter\b/);
+  assert.equal(count(page, /<MorseChat variant="embedded"\s*\/>/g), 1);
   assert.doesNotMatch(page, /data-standard-content/);
   assert.doesNotMatch(worksLayout, /SiteShell|SiteHeader|SiteFooter|ResumeSheet|ScrollEffects/);
   assert.match(worksLayout, /import MorseChat from ['"]@\/components\/MorseChat['"]/);
@@ -70,12 +71,21 @@ test('route trees do not duplicate the global shell and works keeps only its cha
   assert.match(worksLayout, /<>\s*\{children\}\s*<MorseChat\s*\/>\s*<\/>/s);
 });
 
-test('persistent ScrollEffects rebuilds for each pathname and cleans its GSAP context', () => {
+test('persistent ScrollEffects uses one native observer and rebuilds for each pathname', () => {
   const scrollEffects = readSource(scrollEffectsPath);
 
   assert.match(scrollEffects, /import\s+\{\s*usePathname\s*\}\s+from\s+['"]next\/navigation['"]/);
   assert.match(scrollEffects, /const pathname = usePathname\(\)/);
-  assert.match(scrollEffects, /return \(\) => ctx\.revert\(\)/);
+  assert.doesNotMatch(scrollEffects, /gsap|ScrollTrigger/);
+  assert.equal(count(scrollEffects, /new IntersectionObserver/g), 1);
+  assert.match(scrollEffects, /threshold:\s*0\.12/);
+  assert.match(scrollEffects, /rootMargin:\s*['"]0px 0px -8% 0px['"]/);
+  assert.match(scrollEffects, /dataset\.revealed = ['"]true['"]/);
+  assert.match(scrollEffects, /dataset\.morseReady = ['"]true['"]/);
+  assert.match(scrollEffects, /observer\.unobserve\(entry\.target\)/);
+  assert.match(scrollEffects, /for \(const node of observedNodes\) observer\.unobserve\(node\)/);
+  assert.match(scrollEffects, /observer\.disconnect\(\)/);
+  assert.match(scrollEffects, /prefers-reduced-motion: reduce/);
   assert.match(scrollEffects, /\}, \[pathname\]\);/);
 });
 
