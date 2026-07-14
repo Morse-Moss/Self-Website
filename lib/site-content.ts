@@ -68,6 +68,7 @@ export type SiteContent = {
     title: string;
     role: string;
     summary: string;
+    capabilities: string[];
     principles: string[];
   };
   home: { worksIntro: string; featuredSlugs: ProjectSlug[] };
