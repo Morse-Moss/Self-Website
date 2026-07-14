@@ -2,30 +2,21 @@ import Link from 'next/link';
 
 import OpenChatButton from '@/components/site/OpenChatButton';
 import type { SiteContent } from '@/lib/site-content';
+import type { DevelopmentStats } from '@/lib/stats';
 
 import styles from '@/components/S3Sections.module.css';
-
-type Stats = {
-  generatedAt: string;
-  methodology: string;
-  claudeCode: {
-    sessions: number | null;
-    projects: number | null;
-    activeDaysLast90: number | null;
-  };
-};
 
 export default function RestoredHomeSections({
   content,
   stats,
 }: {
   content: SiteContent;
-  stats: Stats;
+  stats: DevelopmentStats;
 }) {
   const metrics = [
-    { label: 'AI 协作会话', value: stats.claudeCode.sessions },
-    { label: '项目覆盖', value: stats.claudeCode.projects },
-    { label: '近 90 天活跃', value: stats.claudeCode.activeDaysLast90 },
+    { label: 'AI 协作会话', value: stats.totals.sessions },
+    { label: '项目覆盖', value: stats.totals.projects },
+    { label: '近 90 天活跃', value: stats.totals.activeDaysLast90 },
   ];
 
   return (

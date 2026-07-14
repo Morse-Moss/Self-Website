@@ -1,5 +1,5 @@
 // scripts/site-content.test.mjs
-// S3 contract tests: gallery placeholders, real stats mapping, resume mode constants.
+// S3/S9 contract tests: gallery placeholders, aggregate stats, resume mode constants.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -19,10 +19,6 @@ const visualSmokePath = path.join(repoRoot, 'scripts', 's3-visual-smoke.mjs');
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-}
-
-function getByPath(value, dottedPath) {
-  return dottedPath.split('.').reduce((acc, key) => (acc == null ? acc : acc[key]), value);
 }
 
 test('S3 gallery keeps four scoped cards with explicit evidence states', () => {
@@ -55,26 +51,20 @@ test('S3 gallery keeps four scoped cards with explicit evidence states', () => {
   assert.doesNotMatch(operationsPipeline.status, /功能闭环已验证/);
 });
 
-test('S3 ledger maps real visible metrics to stats.json instead of hard-coded numbers', () => {
-  const content = readJson(contentPath);
+test('S9 development facts expose merged totals and per-tool usage', () => {
   const stats = readJson(statsPath);
 
-  assert.deepEqual(
-    content.ledger.metrics.map((metric) => metric.sourcePath),
-    ['claudeCode.sessions', 'claudeCode.projects', 'claudeCode.activeDaysLast90'],
-  );
-
-  for (const metric of content.ledger.metrics) {
-    const value = getByPath(stats, metric.sourcePath);
-    assert.equal(typeof value, 'number');
-    assert.equal(metric.dataLabel, '真实统计');
-    assert.ok(metric.methodologyLabel.length > 0);
+  for (const key of ['sessions', 'projects', 'activeDaysLast90']) {
+    assert.ok(stats.totals[key] === null || typeof stats.totals[key] === 'number');
   }
 
-  assert.deepEqual(
-    content.ledger.sampleItems.map((item) => item.sampleLabel),
-    ['待补证据', '示例数据'],
-  );
+  for (const tool of ['claudeCode', 'codex']) {
+    assert.equal('activeDaysLast90' in stats[tool], false);
+    assert.ok(stats[tool].allTime === null || typeof stats[tool].allTime.totalTokens === 'number');
+    assert.ok(
+      stats[tool].last30Days === null || typeof stats[tool].last30Days.totalTokens === 'number',
+    );
+  }
 });
 
 test('S3 resume mode exposes stable persistence and print contract labels', () => {
