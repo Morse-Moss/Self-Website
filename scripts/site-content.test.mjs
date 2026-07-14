@@ -52,6 +52,7 @@ test('S3 gallery keeps four scoped cards with explicit evidence states', () => {
 });
 
 test('S9 development facts expose merged totals and per-tool usage', () => {
+  const content = readJson(contentPath);
   const stats = readJson(statsPath);
 
   for (const key of ['sessions', 'projects', 'activeDaysLast90']) {
@@ -65,6 +66,16 @@ test('S9 development facts expose merged totals and per-tool usage', () => {
       stats[tool].last30Days === null || typeof stats[tool].last30Days.totalTokens === 'number',
     );
   }
+
+  for (const metric of content.ledger.metrics) {
+    assert.equal(metric.dataLabel, '真实统计');
+    assert.ok(metric.methodologyLabel.length > 0);
+  }
+
+  assert.deepEqual(
+    content.ledger.sampleItems.map((item) => item.sampleLabel),
+    ['待补证据', '示例数据'],
+  );
 });
 
 test('S3 resume mode exposes stable persistence and print contract labels', () => {
