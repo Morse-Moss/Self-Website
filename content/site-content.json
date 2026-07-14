@@ -4,7 +4,7 @@
     "description": "摩斯的多页 AI 原生作品集与数字分身。",
     "nav": [
       { "label": "首页", "href": "/" },
-      { "label": "作品", "href": "/works" }
+      { "label": "作品集", "href": "/works" }
     ],
     "resumeMode": {
       "storageKey": "morse.resumeMode",
@@ -15,13 +15,16 @@
     "footer": {
       "morse": "-- --- .-. ... .",
       "statement": "数字摩斯在场，真人摩斯验收。",
-      "copyright": "© 2026 数字生命摩斯"
+      "copyright": "© 2026 数字生命摩斯",
+      "links": [
+        { "label": "GitHub", "href": "https://github.com/Morse-Moss" }
+      ]
     }
   },
   "profile": {
     "kicker": "AGENT SYSTEM DEVELOPER",
-    "title": "数字生命摩斯",
-    "role": "Agent 系统开发者",
+    "title": "Morse",
+    "role": "Agent 系统开发者 × AI Native 实践者",
     "summary": "我把研究、内容生产、运营协作和个人知识入口做成可验证、可恢复、有人负责最终判断的系统。",
     "capabilities": ["Agent 系统", "RAG", "多 Agent", "全栈开发"],
     "principles": [
@@ -32,7 +35,7 @@
   },
   "home": {
     "worksIntro": "四个系统，分别处理内容生产、运营协作、深度研究和公开知识对话。",
-    "featuredSlugs": ["auto-operations"]
+    "featuredSlugs": ["deep-research", "digital-morse"]
   },
   "works": {
     "title": "作品",
@@ -43,17 +46,28 @@
       "slug": "content-agent",
       "name": "内容创作 Agent 系统",
       "type": "电商内容生产工作台",
-      "status": "内网已部署",
+      "status": "企业内部项目 · 脱敏展示",
       "summary": "把商品素材、提示词、Provider 任务、生成结果与审核收进可追踪的电商内容生产工作台。",
       "featured": false,
-      "media": null,
-      "actions": [
+      "disclosure": "internal-redacted",
+      "capabilities": ["内容生产工作流", "异步任务治理", "素材与版本管理"],
+      "techStack": [
         {
-          "kind": "case",
-          "label": "查看案例",
-          "href": "/works/content-agent"
+          "label": "前端",
+          "items": ["React", "TypeScript", "Vite", "Ant Design", "TanStack Query"]
+        },
+        {
+          "label": "后端",
+          "items": ["FastAPI", "SQLAlchemy", "Pydantic", "Alembic"]
+        },
+        { "label": "数据", "items": ["MySQL", "Redis"] },
+        {
+          "label": "AI / Agent",
+          "items": ["Provider 适配", "ARQ", "LangGraph"]
         }
       ],
+      "media": null,
+      "actions": [],
       "caseStudy": {
         "problem": "电商内容生产同时涉及商品素材、参考图、提示词、模型参数、异步任务和多版本结果，人工切换成本高。",
         "role": "摩斯是项目开发负责人，负责整个项目的开发。",
@@ -69,8 +83,7 @@
         ],
         "evidence": [
           "商品素材包承载商品图、参考素材、提示词版本、OperationRun 和生成结果。",
-          "对话式创作路径已有文本判断、生成确认、任务创建、结果回挂和失败状态处理的代码与验证记录。",
-          "系统已部署到内网；该部署状态由摩斯确认。"
+          "对话式创作路径已有文本判断、生成确认、任务创建、结果回挂和失败状态处理的代码与验证记录。"
         ],
         "boundaries": [
           "部分 Provider 路径有真实联调记录，不代表所有模型与生成链路都已稳定。",
@@ -83,34 +96,28 @@
       "slug": "auto-operations",
       "name": "自动运营 Agent 系统",
       "type": "受控运营工作流",
-      "status": "生产环境运行中",
+      "status": "企业内部项目 · 脱敏展示",
       "summary": "围绕已授权账号，把内容沉淀、草稿处理、素材、发布校验和人工确认连接成受控运营工作流。",
-      "featured": true,
-      "media": {
-        "src": "/works/auto-operations/login-workbench-2026-07-13.png",
-        "width": 510,
-        "height": 580,
-        "alt": "自动运营 Agent 系统经裁剪后的生产登录工作台",
-        "caption": "生产登录页只读截取，2026-07-13；未登录、未执行业务操作，已裁去品牌区域。",
-        "evidence": {
-          "capturedAt": "2026-07-13",
-          "commit": "16f16ba",
-          "runMode": "Railway 生产登录页，只读",
-          "sanitization": "裁去品牌区域；画面不含账号、任务、业务数据或 Provider 配置"
-        }
-      },
-      "actions": [
+      "featured": false,
+      "disclosure": "internal-redacted",
+      "capabilities": ["受控运营工作流", "任务状态治理", "人工发布闸门"],
+      "techStack": [
         {
-          "kind": "case",
-          "label": "查看案例",
-          "href": "/works/auto-operations"
+          "label": "前端",
+          "items": ["React", "TypeScript", "Vite", "Ant Design", "dnd-kit"]
         },
         {
-          "kind": "external",
-          "label": "访问系统",
-          "href": "https://aitavix.com"
+          "label": "后端",
+          "items": ["FastAPI", "SQLAlchemy", "Pydantic", "Alembic"]
+        },
+        { "label": "数据", "items": ["MySQL"] },
+        {
+          "label": "工程与部署",
+          "items": ["APScheduler", "Docker"]
         }
       ],
+      "media": null,
+      "actions": [],
       "caseStudy": {
         "problem": "运营资料分散在采集结果、内容库、草稿、素材和发布任务中，状态难追踪。",
         "role": "摩斯是项目开发负责人，负责整个项目的开发。",
@@ -125,9 +132,8 @@
           "任务状态、素材本地化、失败原因和人工发布闸门组成受控运营链路。"
         ],
         "evidence": [
-          "Railway 生产服务在 2026-07-13 的只读核验中为 RUNNING。",
-          "生产部署 commit 为 16f16ba，公开自定义域名为 https://aitavix.com。",
-          "生产登录页以只读方式截取，未登录且未执行任何业务操作。"
+          "内容资产、任务状态、失败原因和人工确认均保留在受控运营链路中。",
+          "发布前校验与人工发布闸门构成工作流边界，不把无人值守发布写成已上线能力。"
         ],
         "boundaries": [
           "不公开公司、客户、账号、Cookie、Token、平台签名、生产数据库、运营数据或发布实录。",
@@ -142,14 +148,29 @@
       "type": "深度研究与报告生成系统",
       "status": "已接受能力持续扩展中",
       "summary": "用可观察工件、证据覆盖、受限缺口修复和人工发布审批约束深度研究报告。",
-      "featured": false,
+      "featured": true,
+      "disclosure": "public",
+      "capabilities": ["多 Agent 研究链", "证据与质量门", "可恢复运行"],
+      "techStack": [
+        {
+          "label": "前端",
+          "items": ["React", "TypeScript", "Vite", "XYFlow"]
+        },
+        {
+          "label": "后端",
+          "items": ["Python", "FastAPI", "Pydantic", "HTTPX"]
+        },
+        {
+          "label": "AI / Agent",
+          "items": ["固定 hv_analysis 工作流", "证据审查", "人工发布审批"]
+        },
+        {
+          "label": "工程与部署",
+          "items": ["Pytest", "Docker local runtime"]
+        }
+      ],
       "media": null,
       "actions": [
-        {
-          "kind": "case",
-          "label": "查看案例",
-          "href": "/works/deep-research"
-        },
         {
           "kind": "external",
           "label": "GitHub",
@@ -187,14 +208,26 @@
       "type": "个人作品集 × AI 分身",
       "status": "本地闭环已验证 · 尚未部署",
       "summary": "让个人作品集与 AI 分身共用同一份审核公开知识、来源展示和受控对话入口。",
-      "featured": false,
+      "featured": true,
+      "disclosure": "public",
+      "capabilities": ["受控文字对话", "RAG 来源展示", "短期访问与预算治理"],
+      "techStack": [
+        {
+          "label": "前端",
+          "items": ["Next.js", "React", "TypeScript", "CSS Modules"]
+        },
+        {
+          "label": "后端",
+          "items": ["Next.js Route Handlers", "OpenAI Responses API", "SSE"]
+        },
+        { "label": "数据", "items": ["PostgreSQL", "pgvector"] },
+        {
+          "label": "AI / Agent",
+          "items": ["RAG", "Embedding", "引用来源", "费用门"]
+        }
+      ],
       "media": null,
       "actions": [
-        {
-          "kind": "case",
-          "label": "查看案例",
-          "href": "/works/digital-morse"
-        },
         {
           "kind": "external",
           "label": "GitHub",

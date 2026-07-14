@@ -9,9 +9,16 @@ export const projectSlugs = [
 
 export type ProjectSlug = (typeof projectSlugs)[number];
 
+export type ProjectDisclosure = "public" | "internal-redacted";
+
+export type TechStackGroup = {
+  label: "前端" | "后端" | "数据" | "AI / Agent" | "工程与部署";
+  items: string[];
+};
+
 export type ProjectAction = {
-  kind: "case" | "external";
-  label: "查看案例" | "访问系统" | "GitHub";
+  kind: "external";
+  label: "GitHub";
   href: string;
 };
 
@@ -45,9 +52,17 @@ export type Project = {
   status: string;
   summary: string;
   featured: boolean;
+  disclosure: ProjectDisclosure;
+  capabilities: string[];
+  techStack: TechStackGroup[];
   media: ProjectMedia | null;
   actions: ProjectAction[];
   caseStudy: CaseStudy;
+};
+
+export type SiteFooterLink = {
+  label: "GitHub";
+  href: string;
 };
 
 export type SiteContent = {
@@ -61,7 +76,12 @@ export type SiteContent = {
       toggleLabel: string;
       printLabel: string;
     };
-    footer: { morse: string; statement: string; copyright: string };
+    footer: {
+      morse: string;
+      statement: string;
+      copyright: string;
+      links: SiteFooterLink[];
+    };
   };
   profile: {
     kicker: string;
@@ -91,3 +111,7 @@ export const getProjectBySlug = (slug: string): Project | undefined =>
 
 export const getProjectStaticParams = (): Array<{ slug: ProjectSlug }> =>
   projectSlugs.map((slug) => ({ slug }));
+
+export const projectHashHref = (
+  slug: ProjectSlug,
+): `/works#${ProjectSlug}` => `/works#${slug}`;

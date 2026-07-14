@@ -5,7 +5,10 @@ import test from 'node:test';
 const repoRoot = new URL('../', import.meta.url);
 
 function readUtf8(relativePath) {
-  return readFileSync(new URL(relativePath, repoRoot), 'utf8');
+  return readFileSync(new URL(relativePath, repoRoot), 'utf8').replaceAll(
+    '\r\n',
+    '\n',
+  );
 }
 
 function assertIncludesAll(source, expected, label) {
@@ -73,7 +76,7 @@ test('stage contract contains the complete closed-stage governance sections', ()
   );
 });
 
-test('blueprint and stage contract pin exact sources, CTAs, and safety boundaries', () => {
+test('historical S7 contract retains its source and safety record', () => {
   const blueprint = readUtf8('docs/portfolio-blueprint.md');
   const contract = readUtf8('docs/task-center/s7-multipage-portfolio.md');
   const combined = `${blueprint}\n${contract}`;
@@ -83,7 +86,6 @@ test('blueprint and stage contract pin exact sources, CTAs, and safety boundarie
     [
       '`content/site-content.json`',
       '`content/s3-content.json`',
-      'https://aitavix.com',
       'https://github.com/Morse-Moss/Deep-research-sys',
       'https://github.com/Morse-Moss/Self-Website',
       '`public/works/auto-operations/`',
@@ -100,6 +102,23 @@ test('blueprint and stage contract pin exact sources, CTAs, and safety boundarie
       '不 push',
     ],
     'S7 source and safety contract',
+  );
+});
+
+test('S9 blueprint supersedes the old S7 enterprise-project exposure', () => {
+  const blueprint = readUtf8('docs/portfolio-blueprint.md');
+
+  assertIncludesAll(
+    blueprint,
+    [
+      '## 14. S9 Morse 作品集重设计(2026-07-14)',
+      '本节是当前作品集前端与公开内容的最高优先级需求',
+      '内容创作 Agent 系统和自动运营 Agent 系统均为企业内部脱敏案例',
+      '旧的企业项目公开访问入口不得继续使用',
+      '企业内部项目没有摩斯单独批准的脱敏素材时不得展示系统截图',
+      '深度研究 Agent 系统与数字摩斯可以保留已确认 GitHub',
+    ],
+    'S9 privacy override',
   );
 });
 

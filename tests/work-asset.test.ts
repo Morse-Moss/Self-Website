@@ -10,7 +10,13 @@ const sourceFilename =
   'auto-operations-railway-login-desktop-1440-2026-07-13.png';
 
 async function listFiles(directory: string): Promise<string[]> {
-  const entries = await readdir(directory, { withFileTypes: true });
+  let entries;
+  try {
+    entries = await readdir(directory, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw error;
+  }
   const files = await Promise.all(
     entries.map(async (entry) => {
       const entryPath = path.join(directory, entry.name);
@@ -21,31 +27,10 @@ async function listFiles(directory: string): Promise<string[]> {
   return files.flat();
 }
 
-test('publishes only the approved sanitized login workbench crop', async () => {
+test('does not publish the internal-project login workbench asset', async () => {
   const assetPath = path.join(assetDirectory, approvedFilename);
-  const png = await readFile(assetPath);
 
-  assert.deepEqual(
-    png.subarray(0, 8),
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-  );
-  assert.equal(png.subarray(12, 16).toString('ascii'), 'IHDR');
-  assert.equal(png.readUInt32BE(16), 510);
-  assert.equal(png.readUInt32BE(20), 580);
-
-  const publishedNames = await readdir(assetDirectory);
-  assert.deepEqual(publishedNames, [approvedFilename]);
-
-  const forbiddenFilenameParts = [
-    'raw',
-    'railway',
-    'desktop-1440',
-    '拓效',
-    'tavix',
-  ];
-  for (const part of forbiddenFilenameParts) {
-    assert.equal(approvedFilename.toLowerCase().includes(part.toLowerCase()), false);
-  }
+  await assert.rejects(readFile(assetPath), { code: 'ENOENT' });
 
   const publicFiles = await listFiles(publicRoot);
   assert.equal(
