@@ -88,7 +88,10 @@ test('home leads with Morse, one embedded chat, and the shared shell controls', 
   const siteHeader = readSource(files.siteHeader);
   const worksLayout = readSource(files.worksLayout);
 
-  assert.match(home, /Morse/);
+  assert.match(
+    home,
+    /<h1\s+id=["']home-title["']>\s*<span>\s*Morse\s*<\/span>\s*<\/h1>/,
+  );
   assert.match(home, /siteContent\.profile\.role/);
   assert.match(home, /siteContent\.profile\.summary/);
   assert.match(home, /getFeaturedProjects/);
