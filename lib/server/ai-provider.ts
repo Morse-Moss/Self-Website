@@ -12,9 +12,9 @@ export interface AnswerRequest {
 
 export type AnswerEvent =
   | { type: 'delta'; text: string }
-  | { type: 'done'; usage: TokenUsage };
+  | { type: 'done'; usage: TokenUsage | null };
 
 export interface AiProvider {
-  embed(inputs: string[]): Promise<number[][]>;
-  streamAnswer(request: AnswerRequest): AsyncIterable<AnswerEvent>;
+  embed(inputs: string[], signal?: AbortSignal): Promise<number[][]>;
+  streamAnswer(request: AnswerRequest, signal?: AbortSignal): AsyncIterable<AnswerEvent>;
 }

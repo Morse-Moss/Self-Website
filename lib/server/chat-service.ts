@@ -55,7 +55,7 @@ export type ChatServiceEvent =
   | { type: 'delta'; text: string }
   | {
       type: 'done';
-      usage: TokenUsage;
+      usage: TokenUsage | null;
       budgetLevel: BudgetLevel;
       consumed: boolean;
       remainingMessages: number;
@@ -354,13 +354,11 @@ async function completeTurn(input: {
   turnId: string;
   answer: string;
   sources: PublicChatSource[];
-  usage: TokenUsage;
+  usage: TokenUsage | null;
   config: ChatServiceConfig;
   now: Date;
   budgetLevel: BudgetLevel;
 }): Promise<BudgetLevel> {
-  const cost = estimateCostUsd(input.usage, input.config.tokenRates);
-
   try {
     await input.client.query('BEGIN');
     await input.client.query(
@@ -372,26 +370,31 @@ async function completeTurn(input: {
         input.now,
       ],
     );
-    await input.client.query(
-      `INSERT INTO usage_events
-        (access_session_id, conversation_id, provider, model, input_tokens, output_tokens, estimated_cost_usd, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [
-        input.accessSessionId,
-        input.conversationId,
-        input.config.providerName ?? 'openai',
-        input.config.model ?? 'configured-model',
-        input.usage.inputTokens,
-        input.usage.outputTokens,
-        cost,
-        input.now,
-      ],
-    );
+    if (input.usage) {
+      const cost = estimateCostUsd(input.usage, input.config.tokenRates);
+      await input.client.query(
+        `INSERT INTO usage_events
+          (access_session_id, conversation_id, provider, model, input_tokens, output_tokens, estimated_cost_usd, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [
+          input.accessSessionId,
+          input.conversationId,
+          input.config.providerName ?? 'openai',
+          input.config.model ?? 'configured-model',
+          input.usage.inputTokens,
+          input.usage.outputTokens,
+          cost,
+          input.now,
+        ],
+      );
+    }
     await input.client.query('COMMIT');
   } catch (error) {
     await input.client.query('ROLLBACK');
     throw error;
   }
+
+  if (!input.usage) return input.budgetLevel;
 
   let level = input.budgetLevel;
   try {

@@ -3,14 +3,19 @@ import { test } from 'node:test';
 
 import { loadServerConfig } from '../lib/server/config.ts';
 
-const completeEnv = {
+const completeEnv: Record<string, string> = {
   DATABASE_URL: 'postgresql://localhost/revolution',
   OPENAI_API_KEY: 'test-key',
   OPENAI_BASE_URL: 'http://127.0.0.1:8080/v1',
   OPENAI_CHAT_MODEL: 'test-chat',
+  OPENAI_CHAT_PROTOCOL: 'chat_completions',
   OPENAI_EMBEDDING_API_KEY: 'embedding-key',
   OPENAI_EMBEDDING_BASE_URL: 'http://127.0.0.1:18091/v1',
   OPENAI_EMBEDDING_MODEL: 'test-embedding',
+  MORSE_EMBEDDING_TIMEOUT_MS: '7000',
+  MORSE_PROVIDER_FIRST_BYTE_TIMEOUT_MS: '19000',
+  MORSE_PROVIDER_TOTAL_TIMEOUT_MS: '85000',
+  MORSE_PROVIDER_CONCURRENCY: '3',
   MORSE_MAX_MESSAGES_PER_SESSION: '30',
   MORSE_SESSION_HOURS: '12',
   MORSE_MONTHLY_BUDGET_USD: '5',
@@ -26,9 +31,14 @@ test('loadServerConfig parses access, provider, and budget settings', () => {
   assert.equal(config.sessionHours, 12);
   assert.equal(config.maxMessagesPerSession, 30);
   assert.equal(config.chatModel, 'test-chat');
+  assert.equal(config.chatProtocol, 'chat_completions');
   assert.equal(config.openaiBaseUrl, 'http://127.0.0.1:8080/v1');
   assert.equal(config.embeddingApiKey, 'embedding-key');
   assert.equal(config.embeddingBaseUrl, 'http://127.0.0.1:18091/v1');
+  assert.equal(config.embeddingTimeoutMs, 7000);
+  assert.equal(config.providerFirstByteTimeoutMs, 19000);
+  assert.equal(config.providerTotalTimeoutMs, 85000);
+  assert.equal(config.providerConcurrency, 3);
   assert.deepEqual(config.tokenRates, {
     inputUsdPerMillion: 1.25,
     outputUsdPerMillion: 10,
@@ -51,6 +61,7 @@ test('loadServerConfig fails closed for missing secrets, model IDs, or pricing',
     'DATABASE_URL',
     'OPENAI_API_KEY',
     'OPENAI_CHAT_MODEL',
+    'OPENAI_CHAT_PROTOCOL',
     'OPENAI_EMBEDDING_MODEL',
     'MORSE_INPUT_USD_PER_MILLION',
     'MORSE_OUTPUT_USD_PER_MILLION',
@@ -59,4 +70,18 @@ test('loadServerConfig fails closed for missing secrets, model IDs, or pricing',
     delete env[key as keyof typeof env];
     assert.throws(() => loadServerConfig(env), new RegExp(key));
   }
+});
+
+test('loadServerConfig rejects an unsupported explicit chat protocol', () => {
+  assert.throws(
+    () => loadServerConfig({ ...completeEnv, OPENAI_CHAT_PROTOCOL: 'automatic' }),
+    /OPENAI_CHAT_PROTOCOL.*responses.*chat_completions/,
+  );
+});
+
+test('loadServerConfig rejects a non-integer provider concurrency', () => {
+  assert.throws(
+    () => loadServerConfig({ ...completeEnv, MORSE_PROVIDER_CONCURRENCY: '1.5' }),
+    /MORSE_PROVIDER_CONCURRENCY.*positive integer/,
+  );
 });

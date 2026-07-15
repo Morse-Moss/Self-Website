@@ -2,8 +2,8 @@ import OpenAI from 'openai';
 
 import {
   OpenAIProvider,
+  type OpenAIChatClientLike,
   type OpenAIEmbeddingClientLike,
-  type OpenAIResponseClientLike,
 } from './openai-provider.ts';
 import type { loadServerConfig } from './config.ts';
 
@@ -22,13 +22,18 @@ export function createProvider(config: ServerConfig): OpenAIProvider {
   });
 
   return new OpenAIProvider(
-    responseClient as unknown as OpenAIResponseClientLike,
+    responseClient as unknown as OpenAIChatClientLike,
     embeddingClient as unknown as OpenAIEmbeddingClientLike,
     {
+      protocol: config.chatProtocol,
       chatModel: config.chatModel,
       embeddingModel: config.embeddingModel,
       embeddingDimensions: config.embeddingDimensions,
       maxOutputTokens: config.maxOutputTokens,
+      embeddingTimeoutMs: config.embeddingTimeoutMs,
+      firstByteTimeoutMs: config.providerFirstByteTimeoutMs,
+      totalTimeoutMs: config.providerTotalTimeoutMs,
+      providerConcurrency: config.providerConcurrency,
     },
   );
 }

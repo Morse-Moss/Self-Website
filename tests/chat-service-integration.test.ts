@@ -100,6 +100,14 @@ class EmptyAnswerProvider extends FakeProvider {
   }
 }
 
+class NullUsageProvider extends FakeProvider {
+  override async *streamAnswer(request: AnswerRequest): AsyncIterable<AnswerEvent> {
+    this.requests.push(request);
+    yield { type: 'delta', text: 'Completed answer with unavailable usage. [source 1]' };
+    yield { type: 'done', usage: null };
+  }
+}
+
 const provider = new FakeProvider();
 const config = {
   maxMessagesPerSession: 2,
@@ -344,6 +352,44 @@ test('runChat keeps a committed turn when the post-commit budget refresh fails',
       messageCount: 1,
       messageRows: 2,
       usageRows: 1,
+    });
+  } finally {
+    await cleanupFailureFixture(fixture);
+  }
+});
+
+test('runChat commits an answer without writing legacy usage when provider usage is missing', {
+  skip: !pool,
+}, async () => {
+  const fixture = await createFailureFixture('s10-null-provider-usage');
+  try {
+    const events: ChatServiceEvent[] = [];
+    for await (const event of runChat({
+      pool: pool!,
+      provider: new NullUsageProvider(),
+      accessSessionId: fixture.accessSessionId,
+      request: {
+        message: 'Describe the research system.',
+        mode: 'general',
+        audienceIntent: 'general',
+        conversationId: null,
+        turnId: randomUUID(),
+      },
+      config,
+      now,
+    })) {
+      events.push(event);
+    }
+
+    const done = events.at(-1);
+    assert.equal(done?.type, 'done');
+    if (done?.type !== 'done') throw new Error('done event is missing');
+    assert.equal(done.usage, null);
+    assert.equal(done.consumed, true);
+    assert.deepEqual(await readSessionSnapshot(fixture.accessSessionId), {
+      messageCount: 1,
+      messageRows: 2,
+      usageRows: 0,
     });
   } finally {
     await cleanupFailureFixture(fixture);
