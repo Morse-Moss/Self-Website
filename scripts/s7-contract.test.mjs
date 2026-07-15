@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const repoRoot = new URL('../', import.meta.url);
+const s9SpecPath =
+  'docs/superpowers/specs/2026-07-14-aiking-inspired-portfolio-redesign-design.md';
 
 function readUtf8(relativePath) {
   return readFileSync(new URL(relativePath, repoRoot), 'utf8').replaceAll(
@@ -17,7 +19,7 @@ function assertIncludesAll(source, expected, label) {
   }
 }
 
-test('blueprint defines the S7 multipage public experience', () => {
+test('historical S7 blueprint retains the multipage public experience record', () => {
   const blueprint = readUtf8('docs/portfolio-blueprint.md');
 
   assertIncludesAll(
@@ -53,7 +55,7 @@ test('blueprint defines the S7 multipage public experience', () => {
   );
 });
 
-test('stage contract contains the complete closed-stage governance sections', () => {
+test('historical S7 stage contract retains its closed-stage governance record', () => {
   const contract = readUtf8('docs/task-center/s7-multipage-portfolio.md');
 
   assertIncludesAll(
@@ -105,20 +107,31 @@ test('historical S7 contract retains its source and safety record', () => {
   );
 });
 
-test('S9 blueprint supersedes the old S7 enterprise-project exposure', () => {
+test('S9 supersedes historical S7 live-page requirements', () => {
   const blueprint = readUtf8('docs/portfolio-blueprint.md');
+  const specification = readUtf8(s9SpecPath);
+  const currentHarness = readUtf8('scripts/s9-visual-smoke.mjs');
+  const currentContract = `${blueprint}\n${specification}\n${currentHarness}`;
 
   assertIncludesAll(
-    blueprint,
+    currentContract,
     [
       '## 14. S9 Morse 作品集重设计(2026-07-14)',
+      'Morse',
+      '/works#content-agent',
       '本节是当前作品集前端与公开内容的最高优先级需求',
       '内容创作 Agent 系统和自动运营 Agent 系统均为企业内部脱敏案例',
-      '旧的企业项目公开访问入口不得继续使用',
-      '企业内部项目没有摩斯单独批准的脱敏素材时不得展示系统截图',
-      '深度研究 Agent 系统与数字摩斯可以保留已确认 GitHub',
+      '旧 `/works/[slug]` 地址重定向到 `/works#slug`',
+      '首页不再保留完整四项目展厅、职业经历或静态 FAQ',
+      '删除企业内部项目的公开入口、生产截图和可识别部署信息',
+      '访问系统按钮',
     ],
-    'S9 privacy override',
+    'S9 current public contract',
+  );
+  assert.doesNotMatch(
+    currentHarness,
+    /['"]\/works\/(?:content-agent|auto-operations|deep-research|digital-morse)['"]/,
+    'S9 current browser gate must use /works#slug instead of legacy detail routes',
   );
 });
 
@@ -138,7 +151,7 @@ test('run-state retains S7 and M3 closeout evidence after pointer advancement', 
   );
 });
 
-test('S7 has a repeatable multipage visual acceptance command', () => {
+test('historical S7 retains its repeatable multipage visual evidence command', () => {
   const packageJson = JSON.parse(readUtf8('package.json'));
   const harness = readUtf8('scripts/s7-visual-smoke.mjs');
 
