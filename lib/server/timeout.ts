@@ -21,6 +21,7 @@ interface TimeoutSignalOptions {
 
 export interface TimeoutSignal {
   signal: AbortSignal;
+  abort(reason?: unknown): void;
   cancelTimeout(): void;
   dispose(): void;
 }
@@ -62,6 +63,10 @@ export function createTimeoutSignal(options: TimeoutSignalOptions): TimeoutSigna
 
   return {
     signal: controller.signal,
+    abort(reason = new DOMException('The operation was aborted.', 'AbortError')) {
+      cancelTimeout();
+      controller.abort(reason);
+    },
     cancelTimeout,
     dispose() {
       cancelTimeout();

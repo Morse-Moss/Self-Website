@@ -74,11 +74,17 @@ class DelayedProvider extends FakeProvider {
 }
 
 class ThrowsAfterDoneProvider extends FakeProvider {
+  closed = false;
+
   override async *streamAnswer(request: AnswerRequest): AsyncIterable<AnswerEvent> {
     this.requests.push(request);
-    yield { type: 'delta', text: '完成回答。[来源1]' };
-    yield { type: 'done', usage: { inputTokens: 100, outputTokens: 20 } };
-    throw new Error('late provider failure');
+    try {
+      yield { type: 'delta', text: '完成回答。[来源1]' };
+      yield { type: 'done', usage: { inputTokens: 100, outputTokens: 20 } };
+      throw new Error('late provider failure');
+    } finally {
+      this.closed = true;
+    }
   }
 }
 
@@ -603,11 +609,12 @@ test('runChat stops consuming provider events after the first done event', {
   skip: !pool,
 }, async () => {
   const fixture = await createFailureFixture('s8-provider-terminal-done');
+  const provider = new ThrowsAfterDoneProvider();
   try {
     const events: ChatServiceEvent[] = [];
     for await (const event of runChat({
       pool: pool!,
-      provider: new ThrowsAfterDoneProvider(),
+      provider,
       accessSessionId: fixture.accessSessionId,
       request: {
         message: '介绍深度研究系统',
@@ -623,6 +630,7 @@ test('runChat stops consuming provider events after the first done event', {
     }
 
     assert.deepEqual(events.map((event) => event.type), ['meta', 'delta', 'done']);
+    assert.equal(provider.closed, true);
     assert.deepEqual(await readSessionSnapshot(fixture.accessSessionId), {
       messageCount: 1,
       messageRows: 2,

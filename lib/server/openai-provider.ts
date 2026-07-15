@@ -17,11 +17,15 @@ type OpenAIResponseStreamEvent =
       type: 'response.completed';
       response: { usage?: { input_tokens: number; output_tokens: number } | null };
     }
+  | { type: 'response.incomplete'; response?: unknown }
   | { type: 'response.failed'; response?: { error?: { message?: string } | null } }
   | { type: 'error'; message?: string };
 
 interface OpenAIChatCompletionChunk {
-  choices: Array<{ delta: { content?: string | null } }>;
+  choices: Array<{
+    delta: { content?: string | null };
+    finish_reason?: string | null;
+  }>;
   usage?: { prompt_tokens: number; completion_tokens: number } | null;
 }
 
@@ -60,6 +64,7 @@ export type OpenAIChatProtocol = 'responses' | 'chat_completions';
 export type OpenAIProviderErrorCode =
   | 'EMBEDDING_UNAVAILABLE'
   | 'PROVIDER_UNAVAILABLE'
+  | 'PROVIDER_RESPONSE_INCOMPLETE'
   | 'PROVIDER_RESPONSE_FAILED'
   | 'PROVIDER_STREAM_FAILED';
 
@@ -107,6 +112,7 @@ async function* streamWithTimeout<T>(input: {
     signal: input.totalSignal,
   });
   let iterator: AsyncIterator<T> | undefined;
+  let completed = false;
 
   try {
     const stream = await raceWithSignal(
@@ -122,15 +128,20 @@ async function* streamWithTimeout<T>(input: {
         waitingForFirstByte = false;
         firstByteTimeout.cancelTimeout();
       }
-      if (next.done) return;
+      if (next.done) {
+        completed = true;
+        return;
+      }
       yield next.value;
     }
   } finally {
-    try {
-      const closing = iterator?.return?.();
-      if (closing) void Promise.resolve(closing).catch(() => undefined);
-    } catch {
-      // Stream cleanup must not replace the operation result.
+    if (!completed) {
+      firstByteTimeout.abort();
+      try {
+        await iterator?.return?.();
+      } catch {
+        // Stream cleanup must not replace the operation result.
+      }
     }
     firstByteTimeout.dispose();
   }
@@ -190,15 +201,15 @@ export class OpenAIProvider implements AiProvider {
       signal,
     });
     let release: (() => void) | undefined;
+    let usage: TokenUsage | null = null;
 
     try {
       release = await this.generationSemaphore.acquire(totalTimeout.signal);
       if (this.config.protocol === 'responses') {
-        yield* this.streamResponses(request, totalTimeout.signal);
-        return;
+        usage = yield* this.streamResponses(request, totalTimeout.signal);
+      } else {
+        usage = yield* this.streamChatCompletions(request, totalTimeout.signal);
       }
-
-      yield* this.streamChatCompletions(request, totalTimeout.signal);
     } catch (error) {
       if (totalTimeout.signal.aborted) throw totalTimeout.signal.reason;
       if (error instanceof OperationTimeoutError || error instanceof OpenAIProviderError) {
@@ -209,12 +220,14 @@ export class OpenAIProvider implements AiProvider {
       release?.();
       totalTimeout.dispose();
     }
+
+    yield { type: 'done', usage };
   }
 
   private async *streamResponses(
     request: AnswerRequest,
     totalSignal: AbortSignal,
-  ): AsyncIterable<AnswerEvent> {
+  ): AsyncGenerator<AnswerEvent, TokenUsage | null, void> {
     const responses = this.chatClient.responses;
     if (!responses) throw new Error('Configured Responses client is unavailable.');
 
@@ -231,25 +244,32 @@ export class OpenAIProvider implements AiProvider {
       firstByteTimeoutMs: this.config.firstByteTimeoutMs,
     });
 
+    let completed = false;
+    let usage: TokenUsage | null = null;
+
     for await (const event of stream) {
       if (event.type === 'response.output_text.delta') {
         yield { type: 'delta', text: event.delta };
       } else if (event.type === 'response.completed') {
-        const usage = event.response.usage;
-        yield { type: 'done', usage: usage ? toResponseUsage(usage) : null };
-        return;
+        completed = true;
+        usage = event.response.usage ? toResponseUsage(event.response.usage) : null;
+      } else if (event.type === 'response.incomplete') {
+        throw new OpenAIProviderError('PROVIDER_RESPONSE_INCOMPLETE');
       } else if (event.type === 'response.failed') {
         throw new OpenAIProviderError('PROVIDER_RESPONSE_FAILED');
       } else if (event.type === 'error') {
         throw new OpenAIProviderError('PROVIDER_STREAM_FAILED');
       }
     }
+
+    if (!completed) throw new OpenAIProviderError('PROVIDER_RESPONSE_INCOMPLETE');
+    return usage;
   }
 
   private async *streamChatCompletions(
     request: AnswerRequest,
     totalSignal: AbortSignal,
-  ): AsyncIterable<AnswerEvent> {
+  ): AsyncGenerator<AnswerEvent, TokenUsage | null, void> {
     const completions = this.chatClient.chat?.completions;
     if (!completions) throw new Error('Configured Chat Completions client is unavailable.');
 
@@ -268,6 +288,7 @@ export class OpenAIProvider implements AiProvider {
       firstByteTimeoutMs: this.config.firstByteTimeoutMs,
     });
     let usage: TokenUsage | null = null;
+    let completed = false;
 
     for await (const chunk of stream) {
       if (chunk.usage) {
@@ -277,13 +298,17 @@ export class OpenAIProvider implements AiProvider {
         };
       }
       for (const choice of chunk.choices) {
+        if (typeof choice.finish_reason === 'string' && choice.finish_reason.trim()) {
+          completed = true;
+        }
         if (choice.delta.content) {
           yield { type: 'delta', text: choice.delta.content };
         }
       }
     }
 
-    yield { type: 'done', usage };
+    if (!completed) throw new OpenAIProviderError('PROVIDER_RESPONSE_INCOMPLETE');
+    return usage;
   }
 }
 

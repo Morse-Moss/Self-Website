@@ -151,9 +151,12 @@ test('OpenAIProvider streams Chat Completions without falling back to Responses'
           chatBody = body;
           chatOptions = options;
           return (async function* () {
-            yield { choices: [{ delta: { content: 'Hello' } }], usage: null };
             yield {
-              choices: [],
+              choices: [{ delta: { content: 'Hello' }, finish_reason: null }],
+              usage: null,
+            };
+            yield {
+              choices: [{ delta: {}, finish_reason: 'stop' }],
               usage: { prompt_tokens: 21, completion_tokens: 4, total_tokens: 25 },
             };
           })();
@@ -199,7 +202,7 @@ test('OpenAIProvider reports null when Chat Completions omits usage', async () =
     chat: {
       completions: {
         create: async () => (async function* () {
-          yield { choices: [{ delta: { content: 'Hello' } }] };
+          yield { choices: [{ delta: { content: 'Hello' }, finish_reason: 'stop' }] };
         })(),
       },
     },
@@ -222,6 +225,84 @@ test('OpenAIProvider reports null when Chat Completions omits usage', async () =
     { type: 'delta', text: 'Hello' },
     { type: 'done', usage: null },
   ]);
+});
+
+test('OpenAIProvider rejects Chat Completions EOF without a finish reason', async () => {
+  const provider = new OpenAIProvider({
+    chat: {
+      completions: {
+        create: async () => (async function* () {
+          yield {
+            choices: [{ delta: { content: 'Partial' }, finish_reason: null }],
+          };
+        })(),
+      },
+    },
+  }, {
+    embeddings: { create: async () => ({ data: [] }) },
+  }, {
+    ...providerConfig,
+    protocol: 'chat_completions',
+  });
+  const iterator = provider.streamAnswer({
+    instructions: 'Use evidence only.',
+    messages: [{ role: 'user', content: 'Hello' }],
+  })[Symbol.asyncIterator]();
+
+  assert.deepEqual(await iterator.next(), {
+    done: false,
+    value: { type: 'delta', text: 'Partial' },
+  });
+  await assert.rejects(iterator.next(), (error: unknown) => (
+    (error as { code?: string }).code === 'PROVIDER_RESPONSE_INCOMPLETE'
+  ));
+});
+
+test('OpenAIProvider rejects a Responses incomplete terminal event', async () => {
+  const provider = new OpenAIProvider({
+    responses: {
+      create: async () => (async function* () {
+        yield { type: 'response.output_text.delta' as const, delta: 'Partial' };
+        yield {
+          type: 'response.incomplete' as const,
+          response: { incomplete_details: { reason: 'raw private reason' } },
+        };
+      })(),
+    },
+  }, {
+    embeddings: { create: async () => ({ data: [] }) },
+  }, providerConfig);
+  const iterator = provider.streamAnswer({
+    instructions: 'Use evidence only.',
+    messages: [{ role: 'user', content: 'Hello' }],
+  })[Symbol.asyncIterator]();
+
+  assert.equal((await iterator.next()).value.type, 'delta');
+  await assert.rejects(iterator.next(), (error: unknown) => (
+    (error as { code?: string }).code === 'PROVIDER_RESPONSE_INCOMPLETE'
+    && !(error as Error).message.includes('raw private reason')
+  ));
+});
+
+test('OpenAIProvider rejects Responses EOF without response.completed', async () => {
+  const provider = new OpenAIProvider({
+    responses: {
+      create: async () => (async function* () {
+        yield { type: 'response.output_text.delta' as const, delta: 'Partial' };
+      })(),
+    },
+  }, {
+    embeddings: { create: async () => ({ data: [] }) },
+  }, providerConfig);
+  const iterator = provider.streamAnswer({
+    instructions: 'Use evidence only.',
+    messages: [{ role: 'user', content: 'Hello' }],
+  })[Symbol.asyncIterator]();
+
+  assert.equal((await iterator.next()).value.type, 'delta');
+  await assert.rejects(iterator.next(), (error: unknown) => (
+    (error as { code?: string }).code === 'PROVIDER_RESPONSE_INCOMPLETE'
+  ));
 });
 
 test('OpenAIProvider does not expose raw SDK errors', async () => {
@@ -343,7 +424,6 @@ test('OpenAIProvider limits generation across instances and aborts a queued wait
       done: false,
       value: { type: 'done', usage: null },
     });
-    await first.return?.();
 
     const after = secondProvider.streamAnswer(request)[Symbol.asyncIterator]();
     assert.deepEqual(await guard(after.next()), {
@@ -361,6 +441,174 @@ test('OpenAIProvider limits generation across instances and aborts a queued wait
     } catch {
       // Cleanup must not replace the assertion failure.
     }
+  }
+});
+
+test('OpenAIProvider aborts and awaits early stream cleanup before releasing capacity', async () => {
+  let createCalls = 0;
+  let sdkSignal: AbortSignal | undefined;
+  let markReturnStarted!: () => void;
+  let releaseCleanup!: () => void;
+  const returnStarted = new Promise<void>((resolve) => { markReturnStarted = resolve; });
+  const cleanupReleased = new Promise<void>((resolve) => { releaseCleanup = resolve; });
+  const responseClient = {
+    responses: {
+      create: async (_body: unknown, options?: { signal?: AbortSignal }) => {
+        createCalls += 1;
+        if (createCalls > 1) return fakeResponseStream();
+        sdkSignal = options?.signal;
+        let nextCalls = 0;
+        return {
+          [Symbol.asyncIterator]() {
+            return {
+              next: async () => {
+                nextCalls += 1;
+                if (nextCalls === 1) {
+                  return {
+                    done: false as const,
+                    value: { type: 'response.output_text.delta' as const, delta: 'Partial' },
+                  };
+                }
+                return new Promise<never>(() => undefined);
+              },
+              return: async () => {
+                markReturnStarted();
+                await cleanupReleased;
+                return { done: true as const, value: undefined };
+              },
+            };
+          },
+        };
+      },
+    },
+  };
+  const firstProvider = new OpenAIProvider(responseClient, {
+    embeddings: { create: async () => ({ data: [] }) },
+  }, { ...providerConfig, providerConcurrency: 1 });
+  const secondProvider = new OpenAIProvider(responseClient, {
+    embeddings: { create: async () => ({ data: [] }) },
+  }, { ...providerConfig, providerConcurrency: 1 });
+  const request = {
+    instructions: 'Use evidence only.',
+    messages: [{ role: 'user' as const, content: 'Hello' }],
+  };
+  const first = firstProvider.streamAnswer(request)[Symbol.asyncIterator]();
+  assert.equal((await first.next()).value.type, 'delta');
+  const closing = first.return?.() ?? Promise.resolve({ done: true as const, value: undefined });
+  await returnStarted;
+  const second = secondProvider.streamAnswer(request)[Symbol.asyncIterator]();
+  const secondEvent = second.next();
+
+  try {
+    const prematureOutcome = await Promise.race([
+      closing.then(
+        () => 'first-settled',
+        () => 'first-settled',
+      ),
+      secondEvent.then(
+        () => 'second-started',
+        () => 'second-started',
+      ),
+      new Promise<string>((resolve) => {
+        setTimeout(() => resolve('cleanup-pending'), 30);
+      }),
+    ]);
+    assert.equal(sdkSignal?.aborted, true);
+    assert.equal(prematureOutcome, 'cleanup-pending');
+    assert.equal(createCalls, 1);
+
+    releaseCleanup();
+    await closing;
+    assert.equal((await guard(secondEvent)).value.type, 'delta');
+  } finally {
+    releaseCleanup();
+    await closing.catch(() => undefined);
+    await second.return?.();
+  }
+});
+
+test('OpenAIProvider waits for timed-out stream cleanup before releasing capacity', async () => {
+  let createCalls = 0;
+  let sdkSignal: AbortSignal | undefined;
+  let markReturnStarted!: () => void;
+  let releaseCleanup!: () => void;
+  const returnStarted = new Promise<void>((resolve) => { markReturnStarted = resolve; });
+  const cleanupReleased = new Promise<void>((resolve) => { releaseCleanup = resolve; });
+  const responseClient = {
+    responses: {
+      create: async (_body: unknown, options?: { signal?: AbortSignal }) => {
+        createCalls += 1;
+        if (createCalls > 1) return fakeResponseStream();
+        sdkSignal = options?.signal;
+        return {
+          [Symbol.asyncIterator]() {
+            return {
+              next: async () => new Promise<never>(() => undefined),
+              return: async () => {
+                markReturnStarted();
+                await cleanupReleased;
+                return { done: true as const, value: undefined };
+              },
+            };
+          },
+        };
+      },
+    },
+  };
+  const firstProvider = new OpenAIProvider(responseClient, {
+    embeddings: { create: async () => ({ data: [] }) },
+  }, {
+    ...providerConfig,
+    providerConcurrency: 1,
+    firstByteTimeoutMs: 10,
+    totalTimeoutMs: 500,
+  });
+  const secondProvider = new OpenAIProvider(responseClient, {
+    embeddings: { create: async () => ({ data: [] }) },
+  }, {
+    ...providerConfig,
+    providerConcurrency: 1,
+    firstByteTimeoutMs: 10,
+    totalTimeoutMs: 500,
+  });
+  const request = {
+    instructions: 'Use evidence only.',
+    messages: [{ role: 'user' as const, content: 'Hello' }],
+  };
+  const first = firstProvider.streamAnswer(request)[Symbol.asyncIterator]();
+  const firstEvent = first.next();
+  void firstEvent.catch(() => undefined);
+  await returnStarted;
+  const second = secondProvider.streamAnswer(request)[Symbol.asyncIterator]();
+  const secondEvent = second.next();
+
+  try {
+    const prematureOutcome = await Promise.race([
+      firstEvent.then(
+        () => 'first-settled',
+        () => 'first-settled',
+      ),
+      secondEvent.then(
+        () => 'second-started',
+        () => 'second-started',
+      ),
+      new Promise<string>((resolve) => {
+        setTimeout(() => resolve('cleanup-pending'), 30);
+      }),
+    ]);
+    assert.equal(sdkSignal?.aborted, true);
+    assert.equal(prematureOutcome, 'cleanup-pending');
+    assert.equal(createCalls, 1);
+
+    releaseCleanup();
+    await assert.rejects(firstEvent, (error: unknown) => (
+      (error as { code?: string }).code === 'PROVIDER_FIRST_BYTE_TIMEOUT'
+    ));
+    assert.equal((await guard(secondEvent)).value.type, 'delta');
+  } finally {
+    releaseCleanup();
+    await firstEvent.catch(() => undefined);
+    await second.return?.();
   }
 });
 

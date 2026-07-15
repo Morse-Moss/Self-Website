@@ -561,6 +561,12 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
             input.accessSessionId,
             input.config.maxMessagesPerSession,
           );
+          try {
+            await answerIterator.return?.();
+          } catch {
+            // The committed answer remains terminal even if iterator cleanup reports an error.
+          }
+          answerIterator = null;
           yield {
             type: 'done',
             usage: event.usage,
