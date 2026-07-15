@@ -3,7 +3,9 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { test } from 'node:test';
+import type { PoolClient } from 'pg';
 
+import { restartInteraction } from '../lib/server/interaction-log.ts';
 import {
   createDisposablePostgresDatabase,
   withPostgresClient,
@@ -81,6 +83,79 @@ const zeroCounts: CleanupCounts = {
   deletedAlertOutbox: 0,
   deletedAccessAttempts: 0,
 };
+
+interface InteractionRetentionRow {
+  created_at: Date;
+  delete_after: Date;
+  status: string;
+}
+
+test('same-turn stopped and failed retries preserve the first problem retention deadline', async () => {
+  const database = await createDisposablePostgresDatabase();
+  const firstProblemAt = new Date('2035-02-01T09:00:00.000Z');
+  const firstProblemDeadline = new Date('2035-02-11T09:00:00.000Z');
+  const tenDaysMs = 10 * 24 * 60 * 60 * 1000;
+
+  try {
+    const migration = await runScript(migrationRunner, {
+      DATABASE_URL: database.connectionString,
+    });
+    assert.equal(migration.code, 0, migration.stderr);
+
+    await withPostgresClient(database.connectionString, async (client) => {
+      for (const status of ['stopped', 'failed'] as const) {
+        const turnId = randomUUID();
+        await client.query(
+          `INSERT INTO interaction_turns
+            (id, access_session_id, conversation_id, workflow, audience_intent,
+             question, answer, status, error_code, created_at, completed_at, delete_after)
+           VALUES ($1, $2, $3, 'chat', 'general', $4, $5, $6, $7, $8, $9, $10)`,
+          [
+            turnId,
+            randomUUID(),
+            randomUUID(),
+            `first problem ${status}`,
+            `partial answer ${status}`,
+            status,
+            status === 'stopped' ? 'CLIENT_ABORTED' : 'PROVIDER_ERROR',
+            firstProblemAt,
+            new Date(firstProblemAt.getTime() + 60_000),
+            firstProblemDeadline,
+          ],
+        );
+
+        const before = await client.query<InteractionRetentionRow>(
+          `SELECT created_at, delete_after, status
+             FROM interaction_turns
+            WHERE id = $1`,
+          [turnId],
+        );
+
+        await restartInteraction({
+          client: client as unknown as PoolClient,
+          turnId,
+        });
+
+        const after = await client.query<InteractionRetentionRow>(
+          `SELECT created_at, delete_after, status
+             FROM interaction_turns
+            WHERE id = $1`,
+          [turnId],
+        );
+
+        assert.equal(after.rows[0].status, 'running');
+        assert.equal(
+          before.rows[0].delete_after.getTime(),
+          before.rows[0].created_at.getTime() + tenDaysMs,
+        );
+        assert.equal(after.rows[0].created_at.getTime(), before.rows[0].created_at.getTime());
+        assert.equal(after.rows[0].delete_after.getTime(), before.rows[0].delete_after.getTime());
+      }
+    });
+  } finally {
+    await database.dispose();
+  }
+});
 
 test('cleanup enforces the 12-hour and 10-day retention boundaries idempotently', async () => {
   const database = await createDisposablePostgresDatabase();

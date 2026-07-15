@@ -1,4 +1,5 @@
 import { EMBEDDING_DIMENSIONS } from './embedding.ts';
+import type { TokenRates } from './budget.ts';
 
 type Env = Record<string, string | undefined>;
 
@@ -25,6 +26,36 @@ function positiveInteger(env: Env, name: string, fallback: number): number {
     throw new Error(`${name} must be a positive integer.`);
   }
   return value;
+}
+
+function interactionRetentionDays(env: Env): number {
+  const name = 'MORSE_INTERACTION_RETENTION_DAYS';
+  const value = positiveInteger(env, name, 10);
+  if (value !== 10) throw new Error(`${name} must be 10.`);
+  return value;
+}
+
+function booleanSetting(env: Env, name: string, fallback: boolean): boolean {
+  const raw = env[name]?.trim();
+  if (!raw) return fallback;
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  throw new Error(`${name} must be true or false.`);
+}
+
+function tokenRates(env: Env): TokenRates | null {
+  const input = env.MORSE_INPUT_USD_PER_MILLION?.trim();
+  const output = env.MORSE_OUTPUT_USD_PER_MILLION?.trim();
+  if (!input && !output) return null;
+  if (!input || !output) {
+    throw new Error(
+      'MORSE_INPUT_USD_PER_MILLION and MORSE_OUTPUT_USD_PER_MILLION must both be set or both be omitted.',
+    );
+  }
+  return {
+    inputUsdPerMillion: positiveNumber(env, 'MORSE_INPUT_USD_PER_MILLION'),
+    outputUsdPerMillion: positiveNumber(env, 'MORSE_OUTPUT_USD_PER_MILLION'),
+  };
 }
 
 function chatProtocol(env: Env): 'responses' | 'chat_completions' {
@@ -70,10 +101,9 @@ export function loadServerConfig(env: Env = process.env) {
     maxOutputTokens: positiveNumber(env, 'MORSE_MAX_OUTPUT_TOKENS', 600),
     historyMessageLimit: positiveNumber(env, 'MORSE_HISTORY_MESSAGE_LIMIT', 12),
     retrievalLimit: positiveNumber(env, 'MORSE_RETRIEVAL_LIMIT', 5),
-    monthlyBudgetUsd: positiveNumber(env, 'MORSE_MONTHLY_BUDGET_USD', 5),
-    tokenRates: {
-      inputUsdPerMillion: positiveNumber(env, 'MORSE_INPUT_USD_PER_MILLION'),
-      outputUsdPerMillion: positiveNumber(env, 'MORSE_OUTPUT_USD_PER_MILLION'),
-    },
+    chatEnabled: booleanSetting(env, 'MORSE_CHAT_ENABLED', true),
+    sseHeartbeatMs: positiveInteger(env, 'MORSE_SSE_HEARTBEAT_MS', 15_000),
+    interactionRetentionDays: interactionRetentionDays(env),
+    tokenRates: tokenRates(env),
   };
 }

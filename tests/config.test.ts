@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { loadServerConfig } from '../lib/server/config.ts';
+import { loadAccessConfig, loadServerConfig } from '../lib/server/config.ts';
 
 const completeEnv: Record<string, string> = {
   DATABASE_URL: 'postgresql://localhost/revolution',
@@ -18,12 +18,11 @@ const completeEnv: Record<string, string> = {
   MORSE_PROVIDER_CONCURRENCY: '3',
   MORSE_MAX_MESSAGES_PER_SESSION: '30',
   MORSE_SESSION_HOURS: '12',
-  MORSE_MONTHLY_BUDGET_USD: '5',
   MORSE_INPUT_USD_PER_MILLION: '1.25',
   MORSE_OUTPUT_USD_PER_MILLION: '10',
 };
 
-test('loadServerConfig parses access, provider, and budget settings', () => {
+test('loadServerConfig parses access, provider, lifecycle, and optional pricing settings', () => {
   const config = loadServerConfig(completeEnv);
 
   assert.equal(config.databaseUrl, 'postgresql://localhost/revolution');
@@ -39,6 +38,9 @@ test('loadServerConfig parses access, provider, and budget settings', () => {
   assert.equal(config.providerFirstByteTimeoutMs, 19000);
   assert.equal(config.providerTotalTimeoutMs, 85000);
   assert.equal(config.providerConcurrency, 3);
+  assert.equal(config.chatEnabled, true);
+  assert.equal(config.sseHeartbeatMs, 15_000);
+  assert.equal(config.interactionRetentionDays, 10);
   assert.deepEqual(config.tokenRates, {
     inputUsdPerMillion: 1.25,
     outputUsdPerMillion: 10,
@@ -56,20 +58,78 @@ test('loadServerConfig falls back to chat credentials for embeddings', () => {
   assert.equal(config.embeddingBaseUrl, 'http://127.0.0.1:8080/v1');
 });
 
-test('loadServerConfig fails closed for missing secrets, model IDs, or pricing', () => {
+test('loadServerConfig fails closed for missing secrets or model IDs', () => {
   for (const key of [
     'DATABASE_URL',
     'OPENAI_API_KEY',
     'OPENAI_CHAT_MODEL',
     'OPENAI_CHAT_PROTOCOL',
     'OPENAI_EMBEDDING_MODEL',
-    'MORSE_INPUT_USD_PER_MILLION',
-    'MORSE_OUTPUT_USD_PER_MILLION',
   ]) {
     const env = { ...completeEnv };
     delete env[key as keyof typeof env];
     assert.throws(() => loadServerConfig(env), new RegExp(key));
   }
+});
+
+test('loadServerConfig accepts omitted token rates and rejects partial or invalid pairs', () => {
+  const omitted = { ...completeEnv };
+  delete omitted.MORSE_INPUT_USD_PER_MILLION;
+  delete omitted.MORSE_OUTPUT_USD_PER_MILLION;
+  assert.equal(loadServerConfig(omitted).tokenRates, null);
+
+  const missingOutput = { ...completeEnv };
+  delete missingOutput.MORSE_OUTPUT_USD_PER_MILLION;
+  assert.throws(() => loadServerConfig(missingOutput), /MORSE_INPUT_USD_PER_MILLION.*MORSE_OUTPUT_USD_PER_MILLION/);
+
+  const missingInput = { ...completeEnv };
+  delete missingInput.MORSE_INPUT_USD_PER_MILLION;
+  assert.throws(() => loadServerConfig(missingInput), /MORSE_INPUT_USD_PER_MILLION.*MORSE_OUTPUT_USD_PER_MILLION/);
+
+  assert.throws(
+    () => loadServerConfig({ ...completeEnv, MORSE_INPUT_USD_PER_MILLION: '0' }),
+    /MORSE_INPUT_USD_PER_MILLION.*positive number/,
+  );
+});
+
+test('loadServerConfig ignores the removed monthly budget setting', () => {
+  const config = loadServerConfig({ ...completeEnv, MORSE_MONTHLY_BUDGET_USD: 'not-a-number' });
+  assert.equal('monthlyBudgetUsd' in config, false);
+});
+
+test('loadServerConfig parses kill switch, heartbeat, and fixed retention settings', () => {
+  const disabled = loadServerConfig({
+    ...completeEnv,
+    MORSE_CHAT_ENABLED: 'false',
+    MORSE_SSE_HEARTBEAT_MS: '2500',
+    MORSE_INTERACTION_RETENTION_DAYS: '10',
+  });
+  assert.equal(disabled.chatEnabled, false);
+  assert.equal(disabled.sseHeartbeatMs, 2500);
+  assert.equal(disabled.interactionRetentionDays, 10);
+
+  assert.throws(
+    () => loadServerConfig({ ...completeEnv, MORSE_CHAT_ENABLED: 'yes' }),
+    /MORSE_CHAT_ENABLED.*true.*false/,
+  );
+});
+
+test('loadServerConfig rejects interaction retention other than ten days', () => {
+  for (const days of ['7', '14']) {
+    assert.throws(
+      () => loadServerConfig({ ...completeEnv, MORSE_INTERACTION_RETENTION_DAYS: days }),
+      /MORSE_INTERACTION_RETENTION_DAYS.*10/,
+    );
+  }
+});
+
+test('loadAccessConfig needs only database and access settings', () => {
+  assert.deepEqual(loadAccessConfig({ DATABASE_URL: 'postgresql://localhost/revolution' }), {
+    databaseUrl: 'postgresql://localhost/revolution',
+    cookieName: 'morse_access',
+    sessionHours: 12,
+    maxMessagesPerSession: 30,
+  });
 });
 
 test('loadServerConfig rejects an unsupported explicit chat protocol', () => {

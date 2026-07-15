@@ -5,6 +5,7 @@ import { test } from 'node:test';
 
 const accessRoutePath = path.resolve('app/api/access/route.ts');
 const chatRoutePath = path.resolve('app/api/chat/route.ts');
+const historyRoutePath = path.resolve('app/api/chat/history/route.ts');
 const healthRoutePath = path.resolve('app/api/health/route.ts');
 const providerFactoryPath = path.resolve('lib/server/provider.ts');
 
@@ -26,11 +27,26 @@ test('chat API authenticates server-side and emits only the public SSE contract'
   assert.match(source, /normalizeChatRequest/);
   assert.match(source, /text\/event-stream/);
   assert.match(source, /CHAT_NOT_CONFIGURED/);
+  assert.match(source, /CHAT_DISABLED/);
   assert.match(source, /INVALID_CHAT_REQUEST/);
-  for (const event of ['meta', 'delta', 'done', 'error']) {
-    assert.match(source, new RegExp(`encodeSse\\('${event}'`));
-  }
+  assert.match(source, /createChatRouteStream/);
+  assert.match(source, /createSseStream/);
+  assert.match(source, /emit\(event\.type, event\)/);
+  assert.match(source, /emit\('error', \{ code: publicErrorCode\(error\) \}\)/);
+  assert.match(source, /requestSignal:\s*request\.signal/);
+  assert.match(source, /signal,\s*\}\),/);
+  assert.doesNotMatch(source, /MORSE_MONTHLY_BUDGET_USD|monthlyBudgetUsd/);
   assert.doesNotMatch(source, /apiKey.*JSON|stringify.*apiKey/i);
+});
+
+test('chat history API uses access-only config and cannot restore interaction logs', () => {
+  const source = fs.readFileSync(historyRoutePath, 'utf8');
+
+  assert.match(source, /loadAccessConfig/);
+  assert.match(source, /authenticateSession/);
+  assert.match(source, /loadConversationHistory/);
+  assert.match(source, /ACCESS_REQUIRED/);
+  assert.doesNotMatch(source, /loadServerConfig|createProvider|OPENAI_|interaction_turns/);
 });
 
 test('health API reports database and knowledge readiness without provider secrets', () => {

@@ -134,41 +134,41 @@ Expected: PASS on first and repeated cleanup.
 - Modify: `tests/chat-service-integration.test.ts`
 - Create: `tests/conversation-history-integration.test.ts`
 
-- [ ] **Step 1: Write Provider protocol RED tests**
+- [x] **Step 1: Write Provider protocol RED tests**
 
 Assert explicit `responses` and `chat_completions` request shapes, `store:false`, no automatic fallback, nullable usage, AbortSignal forwarding, first-byte timeout and total timeout.
 
-- [ ] **Step 2: Verify Provider RED**
+- [x] **Step 2: Verify Provider RED**
 
 Run: `node --test tests/openai-provider.test.ts`
 
 Expected: FAIL on protocol selection, signal and nullable usage.
 
-- [ ] **Step 3: Implement Provider boundary and bounded concurrency**
+- [x] **Step 3: Implement Provider boundary and bounded concurrency**
 
 Use an explicit protocol config. Pass one signal to embedding and generation. Add small in-process semaphores with abortable queue waits. Convert raw errors to stable internal categories without logging payloads.
 
-- [ ] **Step 4: Verify Provider GREEN**
+- [x] **Step 4: Verify Provider GREEN**
 
 Run: `node --test tests/openai-provider.test.ts tests/config.test.ts`
 
 Expected: PASS for both local fake clients and timeout/abort cases.
 
-- [ ] **Step 5: Write runtime lifecycle RED tests**
+- [x] **Step 5: Write runtime lifecycle RED tests**
 
 Cover stop before first token, stop after partial token, request disconnect, heartbeat framing, failed persistence, idempotent replay, quota restoration and one active turn per conversation.
 
-- [ ] **Step 6: Implement runtime lifecycle**
+- [x] **Step 6: Implement runtime lifecycle**
 
 Propagate `request.signal` through one AbortController; send 15-second SSE comments; expose service-driven status events; record stopped/failed interaction rows while compensating runtime history and message quota.
 
-- [ ] **Step 7: Write and implement history recovery**
+- [x] **Step 7: Write and implement history recovery**
 
 The authenticated history route returns only conversations belonging to the current valid access Session, including decoded text, workflow, sources and remaining quota. Expired access returns 401; 10-day logs are never queried by this route.
 
-- [ ] **Step 8: Verify runtime/history GREEN and commit**
+- [x] **Step 8: Verify runtime/history GREEN and commit**
 
-Run: `node --test tests/chat-sse.test.ts tests/chat-service-integration.test.ts tests/conversation-history-integration.test.ts tests/routes-contract.test.ts`
+Run: `node --test tests/chat-sse.test.ts tests/chat-service-integration.test.ts tests/conversation-history-integration.test.ts tests/api-contract.test.ts`
 
 Expected: all focused tests PASS with PostgreSQL enabled.
 

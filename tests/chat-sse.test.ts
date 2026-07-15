@@ -93,3 +93,31 @@ test('readChatSse maps reader failures to provider incomplete', async () => {
   }));
   await assert.rejects(readChatSse(response, () => undefined), /PROVIDER_INCOMPLETE/);
 });
+
+test('readChatSse ignores arbitrarily fragmented heartbeat comments between events', async () => {
+  const events: string[] = [];
+  await readChatSse(
+    responseFrom([
+      ': hea',
+      'rtbeat\n',
+      '\nevent: sta',
+      'tus\ndata: {"stage":"routing"}\n\n: heartbeat\n\nevent: del',
+      'ta\ndata: {"text":"answer"}\n\nevent: done\ndata: {"remainingMessages":29}\n\n',
+    ]),
+    (event) => events.push(event),
+  );
+  assert.deepEqual(events, ['status', 'delta', 'done']);
+});
+
+test('readChatSse preserves an active AbortError instead of reporting provider incomplete', async () => {
+  const response = new Response(new ReadableStream<Uint8Array>({
+    pull(controller) {
+      controller.error(new DOMException('Stopped by visitor.', 'AbortError'));
+    },
+  }));
+
+  await assert.rejects(
+    readChatSse(response, () => undefined),
+    (error: unknown) => error instanceof DOMException && error.name === 'AbortError',
+  );
+});

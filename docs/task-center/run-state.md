@@ -4,7 +4,7 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**S10-CS-2 PROVIDER + RUNTIME**
+**S10-CS-3 RAG + AUTO SEARCH**
 
 ## next_allowed_pointer
 按 `docs/task-center/s10-smart-customer-service.md` 的 Phase Registry 顺序推进。只有当前阶段 RED/GREEN、focused verification、审查和状态同步后才能进入下一阶段；不部署、不 push。博查/飞书缺少凭据时真实链保持 `BLOCKED_EXTERNAL`，不得用 Mock 冒充。
@@ -18,6 +18,13 @@
 - Admin/alerts:独立密码+TOTP 管理认证、badcase 与 JSON/CSV 导出；首次邀请码、初诊、故障恢复和安全事件通过幂等 Outbox 发飞书。
 - Cost/safety:无月预算硬门；保留 30 条消息、五次联网、并发、超时、限流、kill switch 和 usage 统计。
 - Contract:`docs/task-center/s10-smart-customer-service.md`;design/plan 位于 `docs/superpowers/{specs,plans}/2026-07-15-s10-smart-customer-service*.md`。
+
+### S10-CS-2 provider/runtime evidence(2026-07-16)
+
+- Runtime PASS:显式 Responses/Chat Completions 双协议、同一 AbortSignal、Embedding/首字节/总时长超时、Provider 并发、15 秒 SSE heartbeat、终态清理、同 Session 单飞、幂等 replay/orphan 恢复和事务补偿均完成。
+- Lifecycle PASS:停止、断线和失败只保留 10 天 interaction，不扣消息额度、不写 12 小时 runtime assistant；history 只返回当前有效访客 Session 所属且未过期的完成会话。
+- Verification PASS:`DATABASE_URL=local npm test` 为 308/308、0 fail、0 skip；`npm run build` PASS，13/13 页面并包含 `/api/chat/history`；`git diff --check ffa4afb` PASS。
+- Review PASS:CRITICAL compliance 与 quality/safety 双审查均无 blocker；真实 GPT 未调用，仍保持 `BLOCKED_EXTERNAL`。
 
 ## S9 Morse portfolio closeout evidence(2026-07-15)
 - Product PASS:首页以 `Morse` 为主身份并保留嵌入式文字对话;`/works` 承载四项目单页折叠与 Hash 同步,旧案例路由只重定向;两个企业内部项目保持无媒体、无公开访问动作的脱敏文字案例。

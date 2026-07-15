@@ -58,6 +58,7 @@ export async function readChatSse<T extends ChatSsePayload>(
     throw new ChatSseError('PROVIDER_INCOMPLETE');
   } catch (error) {
     if (error instanceof ChatSseError) throw error;
+    if (error instanceof Error && error.name === 'AbortError') throw error;
     throw new ChatSseError('PROVIDER_INCOMPLETE');
   } finally {
     reader.releaseLock();
