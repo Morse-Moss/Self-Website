@@ -1,55 +1,55 @@
 {
-  "generatedAt": "2026-07-14T17:30:50.869Z",
+  "generatedAt": "2026-07-15T06:59:47.458Z",
   "methodology": "会话数按各工具的稳定标识去重，Codex 活动与归档中的同一会话只保留一份；Claude Code 累计每条 assistant message usage，输入量包含普通输入、缓存创建与缓存读取；Codex 仅累计每次 token_count 的 last_token_usage；项目覆盖按两个工具的归一化集合合并，coverage 与活跃自然日统一使用 Asia/Shanghai；最近 30 天与近 90 天窗口按经过时长计算并包含边界；缺失 usage 只计入缺口，不估算 Token。输出仅含聚合数字、日期与方法说明。",
   "totals": {
-    "sessions": 2687,
-    "projects": 69,
+    "sessions": 2754,
+    "projects": 67,
     "activeDaysLast90": 84
   },
   "claudeCode": {
-    "sessions": 116,
-    "projects": 56,
+    "sessions": 107,
+    "projects": 54,
     "coverageStart": "2026-04-20",
-    "coverageEnd": "2026-07-08",
+    "coverageEnd": "2026-07-15",
     "allTime": {
-      "inputTokens": 7316122476,
-      "outputTokens": 54207241,
-      "cachedInputTokens": 6764727808,
+      "inputTokens": 6952760060,
+      "outputTokens": 51449785,
+      "cachedInputTokens": 6421544960,
       "cacheCreationInputTokens": 74953133,
       "reasoningOutputTokens": 0,
-      "totalTokens": 7370329717
+      "totalTokens": 7004209845
     },
     "last30Days": {
-      "inputTokens": 5817411094,
-      "outputTokens": 43951589,
-      "cachedInputTokens": 5384936320,
+      "inputTokens": 5702479304,
+      "outputTokens": 43187207,
+      "cachedInputTokens": 5277227392,
       "cacheCreationInputTokens": 74953133,
       "reasoningOutputTokens": 0,
-      "totalTokens": 5861362683
+      "totalTokens": 5745666511
     },
     "recordsWithoutUsage": 0
   },
   "codex": {
-    "sessions": 2571,
+    "sessions": 2647,
     "projects": 19,
     "coverageStart": "2026-03-20",
     "coverageEnd": "2026-07-15",
     "allTime": {
-      "inputTokens": 69292510940,
-      "outputTokens": 190906269,
-      "cachedInputTokens": 66539043072,
+      "inputTokens": 76710102808,
+      "outputTokens": 209129246,
+      "cachedInputTokens": 73640088064,
       "cacheCreationInputTokens": 0,
-      "reasoningOutputTokens": 72930671,
-      "totalTokens": 69812505858
+      "reasoningOutputTokens": 79561872,
+      "totalTokens": 77268036150
     },
     "last30Days": {
-      "inputTokens": 57021566934,
-      "outputTokens": 126482050,
-      "cachedInputTokens": 55009475200,
+      "inputTokens": 64388844363,
+      "outputTokens": 144264542,
+      "cachedInputTokens": 62065542528,
       "cacheCreationInputTokens": 0,
-      "reasoningOutputTokens": 47534851,
-      "totalTokens": 57406200013
+      "reasoningOutputTokens": 53926180,
+      "totalTokens": 64810345653
     },
-    "recordsWithoutUsage": 398
+    "recordsWithoutUsage": 399
   }
 }
