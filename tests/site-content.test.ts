@@ -201,6 +201,7 @@ test("keeps all public JSON free of placeholders and private-source leakage", ()
     /output[\\/]system-captures/i,
     /imagegen/i,
     /Mock Provider/i,
+    /访问系统/,
     /节省工时|增长率|产能提升/,
   ];
 
