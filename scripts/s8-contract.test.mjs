@@ -14,14 +14,13 @@ function assertIncludesAll(source, expected, label) {
   }
 }
 
-test('run-state advances exactly one current pointer to S8 mainline closeout', () => {
+test('run-state retains the S8 mainline closeout after pointer advancement', () => {
   const runState = readUtf8('docs/task-center/run-state.md');
 
   assert.equal(runState.match(/^## current_pointer$/gm)?.length, 1);
   assertIncludesAll(
     runState,
     [
-      '**S8 CUSTOMER SERVICE CONVERSATION MAINLINE PASS**',
       '## S8 customer-service closeout evidence(2026-07-14)',
       'Real Provider BLOCKED',
       'docs/task-center/s8-customer-service-conversation.md',

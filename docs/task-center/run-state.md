@@ -1,13 +1,21 @@
 # 正式站 v1 · Task Center(唯一运行事实源)
 
-> Goal:在已通过的 M3-RAG 与 S7 多页作品集上完成智能客服文字对话可用性闭环;当前增量为 S8。
-> 启动:2026-07-08 · M3-RAG 启动:2026-07-12 · S8 合同准备:2026-07-13 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
+> Goal:在已通过的 M3-RAG、S7 多页作品集与 S8 文字对话闭环上完成 S9 Morse 作品集重设计。
+> 启动:2026-07-08 · M3-RAG 启动:2026-07-12 · S8 合同准备:2026-07-13 · S9 完成:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**S8 CUSTOMER SERVICE CONVERSATION MAINLINE PASS**
+**S9 MORSE PORTFOLIO REDESIGN MAINLINE PASS**
 
 ## next_allowed_pointer
-`S8-CS-6 CLOSEOUT` 已完成并吸收到本地与远端 `master`。下一指针只能由摩斯显式选择部署或另开 S9;不得自动推进。真实 Provider 证据保持 BLOCKED,3 次 smoke 上限已耗尽,禁止第 4 次调用;联网搜索、语音、数字人、远程数据库和外置向量库仍不在本轮授权内。
+S9 已通过 merge commit `1fb7e28` 吸收到本地与远端 `master`。下一指针只能由摩斯显式选择部署或新阶段;不得自动推进。S8 真实 Provider 证据保持 BLOCKED,3 次 smoke 上限已耗尽,禁止第 4 次调用;联网搜索、语音、数字人、远程数据库和外置向量库仍不在本轮授权内。
+
+## S9 Morse portfolio closeout evidence(2026-07-15)
+- Product PASS:首页以 `Morse` 为主身份并保留嵌入式文字对话;`/works` 承载四项目单页折叠与 Hash 同步,旧案例路由只重定向;两个企业内部项目保持无媒体、无公开访问动作的脱敏文字案例。
+- Viewport PASS:首页 hero 在 1440x900、390x844 与 390x844 reduced-motion 下完整占据首屏,下一节不进入初始视口;身份、操作和对话区整体垂直居中。
+- Verification PASS:`npm test` 为 215 total / 200 pass / 15 PostgreSQL SKIP / 0 fail;`npm run build` 生成 12/12 页面;post-merge `npm run visual:s9` 为 `failures: []`,console/page error 0,外部运行时请求 0,所有横向溢出 0。
+- Performance PASS:Lighthouse desktop performance 1.00,FCP 0.2s,LCP 0.5s,TBT 0ms,CLS 0;证据与完整边界见 `docs/verify/s9/s9-closeout.md`。
+- Environment boundary:`DATABASE_URL` 与本地 embedding 未配置,因此 15 个 PostgreSQL 用例保持 SKIP;未调用 Provider、未写数据库、未安装依赖、未改 schema、未部署。
+- Git boundary:S9 branch HEAD `23c04ce` 经 merge commit `1fb7e28` 吸收到本地与远端 `master`;`AGENTS.md`、研究稿、概念图、旧截图、`output/**` 与临时脚本未进入提交。
 
 ## S8 customer-service scope amendment(2026-07-13)
 - Stage contract:`docs/task-center/s8-customer-service-conversation.md`;本文件只保存唯一指针,详细阶段、授权、失败登记和 LOOP 以阶段合同为准。
@@ -29,7 +37,7 @@
 - Git boundary:S8 commit `71a6213` 已通过 merge commit `9ca4895` 吸收到本地与远端 `master`;未 PR 或部署。`AGENTS.md`、研究稿、概念图、`output/**`、旧临时脚本和非最终截图未进入提交。
 
 ## S6 visual restoration amendment(2026-07-14)
-- Pointer boundary:本修订只恢复展示层,不推进阶段指针;`current_pointer` 继续保持 `S8 CUSTOMER SERVICE CONVERSATION MAINLINE PASS`。
+- Pointer boundary:本修订当时只恢复展示层、未推进 S8 指针;该指针已由 2026-07-15 的 S9 收尾推进。
 - Product PASS:首页恢复 S6 深色身份首屏、光球氛围、系统展厅、关于、真实统计、FAQ 与 CTA;S7 `/works` 和四个案例路由、S8 短期码/RAG/SSE/来源/短期记忆/预算/重试/幂等全部保留。
 - Visibility PASS:hero 从 100svh 收敛为 70svh;首个系统标题取消滚动 reveal 依赖;移动 launcher 按 640/560 两级断点移入顶部控制行。浏览器门要求标题完整入屏且真实可见,并对 launcher 与视口内文字/图片/控件做相交检查,1440x900、600x900 与 390x844 最终均为 0 overlap。
 - Verification PASS:`DATABASE_URL=local npm test` 114/114;`npm run build` 生成 12 条路由;`visual:s6-restore` 覆盖六路由 1440/600/390 主文档 200、聊天开关、外链、overflow、console/page error、外部请求和 reduced-motion;CDP 连接、命令与关闭均有界失败并输出结构化诊断,最终 `failures: []`。
