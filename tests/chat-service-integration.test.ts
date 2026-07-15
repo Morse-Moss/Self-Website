@@ -513,6 +513,7 @@ test('runChat replays a completed turn id without a second provider answer or qu
     const replayDone = replayEvents.at(-1);
     assert.equal(replayDone?.type, 'done');
     if (replayDone?.type !== 'done') throw new Error('replay done event is missing');
+    assert.equal(replayDone.usage, null);
     assert.equal(replayDone.consumed, false);
     assert.equal(replayDone.remainingMessages, 1);
   } finally {

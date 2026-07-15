@@ -484,7 +484,7 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
       );
       yield {
         type: 'done',
-        usage: { inputTokens: 0, outputTokens: 0 },
+        usage: null,
         budgetLevel,
         consumed: false,
         remainingMessages,
