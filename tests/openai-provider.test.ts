@@ -811,3 +811,81 @@ test('OpenAIProvider enforces the total answer timeout after the first byte', as
   assert.equal((sdkSignal?.reason as { code?: string }).code, 'PROVIDER_TOTAL_TIMEOUT');
   assert.equal(returnCalls, 1);
 });
+
+async function assertNeverSettlingCleanupIsBounded(
+  timeoutKind: 'first-byte' | 'total',
+): Promise<void> {
+  let createCalls = 0;
+  let sdkSignal: AbortSignal | undefined;
+  let nextCalls = 0;
+  const responseClient = {
+    responses: {
+      create: async (_body: unknown, options?: { signal?: AbortSignal }) => {
+        createCalls += 1;
+        if (createCalls > 1) return fakeResponseStream();
+        sdkSignal = options?.signal;
+        return {
+          [Symbol.asyncIterator]() {
+            return {
+              next: async () => {
+                nextCalls += 1;
+                if (timeoutKind === 'total' && nextCalls === 1) {
+                  return {
+                    done: false as const,
+                    value: { type: 'response.output_text.delta' as const, delta: 'Partial' },
+                  };
+                }
+                return new Promise<never>(() => undefined);
+              },
+              return: async () => new Promise<never>(() => undefined),
+            };
+          },
+        };
+      },
+    },
+  };
+  const config = {
+    ...providerConfig,
+    providerConcurrency: 1,
+    firstByteTimeoutMs: timeoutKind === 'first-byte' ? 10 : 100,
+    totalTimeoutMs: timeoutKind === 'total' ? 20 : 500,
+  };
+  const firstProvider = new OpenAIProvider(responseClient, {
+    embeddings: { create: async () => ({ data: [] }) },
+  }, config);
+  const secondProvider = new OpenAIProvider(responseClient, {
+    embeddings: { create: async () => ({ data: [] }) },
+  }, config);
+  const request = {
+    instructions: 'Use evidence only.',
+    messages: [{ role: 'user' as const, content: 'Hello' }],
+  };
+  const first = firstProvider.streamAnswer(request)[Symbol.asyncIterator]();
+  if (timeoutKind === 'total') {
+    assert.equal((await first.next()).value.type, 'delta');
+  }
+  const terminal = first.next();
+  void terminal.catch(() => undefined);
+
+  await assert.rejects(guard(terminal, 400), (error: unknown) => (
+    (error as { code?: string }).code === (
+      timeoutKind === 'first-byte'
+        ? 'PROVIDER_FIRST_BYTE_TIMEOUT'
+        : 'PROVIDER_TOTAL_TIMEOUT'
+    )
+  ));
+  assert.equal(sdkSignal?.aborted, true);
+
+  const second = secondProvider.streamAnswer(request)[Symbol.asyncIterator]();
+  assert.equal((await guard(second.next(), 200)).value.type, 'delta');
+  assert.equal(createCalls, 2);
+  await second.return?.();
+}
+
+test('OpenAIProvider bounds never-settling cleanup after first-byte timeout', async () => {
+  await assertNeverSettlingCleanupIsBounded('first-byte');
+});
+
+test('OpenAIProvider bounds never-settling cleanup after total timeout', async () => {
+  await assertNeverSettlingCleanupIsBounded('total');
+});

@@ -91,6 +91,7 @@ export interface OpenAIProviderConfig {
 }
 
 const generationSemaphores = new Map<number, Semaphore>();
+const PROVIDER_STREAM_CLEANUP_GRACE_MS = 100;
 
 function getGenerationSemaphore(capacity: number): Semaphore {
   let semaphore = generationSemaphores.get(capacity);
@@ -99,6 +100,34 @@ function getGenerationSemaphore(capacity: number): Semaphore {
     generationSemaphores.set(capacity, semaphore);
   }
   return semaphore;
+}
+
+async function closeIterator<T>(iterator: AsyncIterator<T> | undefined): Promise<void> {
+  if (!iterator?.return) return;
+
+  let cleanup: Promise<void>;
+  try {
+    cleanup = Promise.resolve(iterator.return()).then(
+      () => undefined,
+      () => undefined,
+    );
+  } catch {
+    return;
+  }
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const grace = new Promise<void>((resolve) => {
+    timer = setTimeout(() => {
+      timer = undefined;
+      resolve();
+    }, PROVIDER_STREAM_CLEANUP_GRACE_MS);
+  });
+
+  try {
+    await Promise.race([cleanup, grace]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
 async function* streamWithTimeout<T>(input: {
@@ -137,11 +166,7 @@ async function* streamWithTimeout<T>(input: {
   } finally {
     if (!completed) {
       firstByteTimeout.abort();
-      try {
-        await iterator?.return?.();
-      } catch {
-        // Stream cleanup must not replace the operation result.
-      }
+      await closeIterator(iterator);
     }
     firstByteTimeout.dispose();
   }
