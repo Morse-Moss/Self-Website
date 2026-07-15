@@ -13,12 +13,12 @@ The S9 home hero currently uses `min(680px, ...)`, so a 1440x900 viewport ends t
 - At desktop, tablet, and mobile widths, the home hero must fill the viewport below the fixed top bar.
 - The first pixel of the featured-work band must start at or below the bottom edge of the initial viewport.
 - The identity, embedded text chat, actions, and fixed header must remain vertically centered and usable.
-- Existing tablet and mobile stacking, spacing, and chat sizing remain unchanged.
+- Existing tablet and mobile stacking, spacing, and chat sizing remain unchanged; the full hero group stays vertically centered instead of leaving a large bottom void.
 - Content taller than the available viewport may expand the hero naturally; it must not be clipped to a fixed height.
 
 ## Scope
 
-- Change `app/styles/hero.module.css` so one shared viewport-relative minimum applies at every width; remove the narrower rules that shorten it.
+- Change `app/styles/hero.module.css` so one shared viewport-relative minimum applies at every width; remove the narrower rules that shorten it or force the content group to the top.
 - Update `scripts/s9-visual-smoke.mjs` so every viewport requires the featured band below the fold.
 - Update `scripts/s9-contract.test.mjs` with a source contract that fails on the old 680px cap.
 - Refresh the five S9 screenshots and closeout evidence after browser acceptance passes.

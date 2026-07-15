@@ -76,6 +76,7 @@ test('S9 home hero fills the first viewport before the featured band begins', ()
     heroStyles,
     /min-height:\s*calc\(100svh - var\(--topbar-h\) - var\(--space-9\)\)/,
   );
+  assert.doesNotMatch(heroStyles, /align-items:\s*flex-start;/);
   assert.match(
     inspectHome,
     /nextBandBelowFold: Boolean\(featuredRect && featuredRect\.top >= innerHeight - 1\)/,

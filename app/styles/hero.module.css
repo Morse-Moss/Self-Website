@@ -123,10 +123,6 @@
 }
 
 @media (max-width: 900px) {
-  .hero {
-    align-items: flex-start;
-  }
-
   .heroInner {
     grid-template-columns: 1fr;
     gap: var(--space-6);

@@ -17,7 +17,7 @@
 
 - [ ] **Step 1: Write the failing contract test**
 
-Read `app/styles/hero.module.css` and the `inspectHome` slice of `scripts/s9-visual-smoke.mjs`. Require one `min-height: calc(100svh - var(--topbar-h));`, reject `min(680px` and the narrower `var(--space-9)` deduction, and require the next band below the fold for every viewport.
+Read `app/styles/hero.module.css` and the `inspectHome` slice of `scripts/s9-visual-smoke.mjs`. Require one `min-height: calc(100svh - var(--topbar-h));`, reject `min(680px`, the narrower `var(--space-9)` deduction, and the mobile `align-items: flex-start`; require the next band below the fold for every viewport.
 
 - [ ] **Step 2: Run RED**
 
@@ -46,7 +46,7 @@ Replace the base hero height with:
 min-height: calc(100svh - var(--topbar-h));
 ```
 
-Remove the `min-height: auto` override at 900px and the `var(--space-9)` height deduction at 640px so every width inherits the shared minimum. Keep all other responsive layout and spacing declarations unchanged.
+Remove the `min-height: auto` and `align-items: flex-start` overrides at 900px and the `var(--space-9)` height deduction at 640px so every width inherits the shared minimum and vertical centering. Keep all other responsive layout and spacing declarations unchanged.
 
 - [ ] **Step 2: Update browser geometry checks**
 
