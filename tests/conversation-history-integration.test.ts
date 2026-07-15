@@ -114,7 +114,11 @@ before(async () => {
     [
       ownerConversationId,
       encodeTurnMessage(runtimeQuestionTurnId, 'decoded question'),
-      encodeTurnMessage(runtimeAnswerTurnId, 'decoded answer', sources),
+      `morse-turn-v1:${JSON.stringify({
+        turnId: runtimeAnswerTurnId,
+        content: 'decoded answer',
+        sources,
+      })}`,
       expiredConversationId,
       now,
     ],
@@ -164,9 +168,11 @@ test('history route returns only owned unexpired runtime messages with decoded s
         turnId: runtimeAnswerTurnId,
         text: 'decoded answer',
         sources: [{
-          documentId: 'project-deep-research',
+          id: 'project-deep-research',
           title: 'Deep Research',
           href: '/works/deep-research',
+          kind: 'local',
+          domain: null,
           score: 0.9,
         }],
       },

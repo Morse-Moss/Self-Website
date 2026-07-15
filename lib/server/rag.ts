@@ -13,6 +13,17 @@ export interface KnowledgeSource {
   score: number;
 }
 
+// Calibrated against the 20-case BGE retrieval set (minimum positive top score 0.482)
+// and ten unrelated queries (maximum negative top score 0.421).
+export const LOCAL_EVIDENCE_MIN_SCORE = 0.45;
+
+export function hasSufficientLocalEvidence(sources: KnowledgeSource[]): boolean {
+  const topScore = Math.max(
+    ...sources.map((source) => Number.isFinite(source.score) ? source.score : Number.NEGATIVE_INFINITY),
+  );
+  return topScore >= LOCAL_EVIDENCE_MIN_SCORE;
+}
+
 interface KnowledgeRow {
   chunk_id: string;
   document_id: string;

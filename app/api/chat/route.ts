@@ -9,7 +9,7 @@ import {
 } from '@/lib/server/chat-service';
 import { loadServerConfig } from '@/lib/server/config';
 import { getPool } from '@/lib/server/db';
-import { createProvider } from '@/lib/server/provider';
+import { createProvider, createSearchProvider } from '@/lib/server/provider';
 import {
   createSseStream,
   type SseScheduler,
@@ -80,6 +80,7 @@ export async function POST(request: NextRequest) {
     runChat: (signal) => runChat({
       pool,
       provider: createProvider(config),
+      searchProvider: createSearchProvider(config),
       accessSessionId: session.id,
       request: chatRequest,
       config: {
@@ -88,6 +89,8 @@ export async function POST(request: NextRequest) {
         retrievalLimit: config.retrievalLimit,
         interactionRetentionDays: config.interactionRetentionDays,
         tokenRates: config.tokenRates,
+        searchEnabled: config.searchEnabled,
+        maxSearchesPerSession: config.maxSearchesPerSession,
         providerName: 'openai',
         model: config.chatModel,
       },

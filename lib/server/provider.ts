@@ -5,6 +5,7 @@ import {
   type OpenAIChatClientLike,
   type OpenAIEmbeddingClientLike,
 } from './openai-provider.ts';
+import { BochaSearchProvider } from './bocha-search-provider.ts';
 import type { loadServerConfig } from './config.ts';
 
 type ServerConfig = ReturnType<typeof loadServerConfig>;
@@ -36,4 +37,22 @@ export function createProvider(config: ServerConfig): OpenAIProvider {
       providerConcurrency: config.providerConcurrency,
     },
   );
+}
+
+export function createSearchProvider(config: ServerConfig): BochaSearchProvider | null {
+  if (
+    !config.searchEnabled
+    || config.searchProvider !== 'bocha'
+    || !config.bochaApiKey
+    || !config.bochaBaseUrl
+  ) return null;
+
+  return new BochaSearchProvider({
+    apiKey: config.bochaApiKey,
+    baseUrl: config.bochaBaseUrl,
+    timeoutMs: config.searchTimeoutMs,
+    concurrency: config.searchConcurrency,
+    officialDomains: config.officialSourceDomains,
+    githubOwners: config.officialGithubOwners,
+  });
 }

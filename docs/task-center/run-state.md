@@ -4,7 +4,7 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**S10-CS-3 RAG + AUTO SEARCH**
+**S10-CS-4 JD + DIAGNOSIS**
 
 ## next_allowed_pointer
 按 `docs/task-center/s10-smart-customer-service.md` 的 Phase Registry 顺序推进。只有当前阶段 RED/GREEN、focused verification、审查和状态同步后才能进入下一阶段；不部署、不 push。博查/飞书缺少凭据时真实链保持 `BLOCKED_EXTERNAL`，不得用 Mock 冒充。
@@ -18,6 +18,15 @@
 - Admin/alerts:独立密码+TOTP 管理认证、badcase 与 JSON/CSV 导出；首次邀请码、初诊、故障恢复和安全事件通过幂等 Outbox 发飞书。
 - Cost/safety:无月预算硬门；保留 30 条消息、五次联网、并发、超时、限流、kill switch 和 usage 统计。
 - Contract:`docs/task-center/s10-smart-customer-service.md`;design/plan 位于 `docs/superpowers/{specs,plans}/2026-07-15-s10-smart-customer-service*.md`。
+
+### S10-CS-3 RAG/automatic-search evidence(2026-07-16)
+
+- Search PASS:确定性 Router 保护 Morse 中英文个人事实；外部时效/技术问题可联网；禁用、额度耗尽或 Provider 失败均诚实降级且不虚报已核验。
+- Citation PASS:Bocha one-shot Mock 只消费标题/摘要/URL；单标签、私网、metadata 与 special-use DNS 被拒绝；公开/history/replay citation 严格为 `id/title/href/kind/domain/score`。
+- Transaction PASS:每 turn 一次、每 Session 五次；claim/finalize 复用既有锁连接；COMMIT 发送前失败不调用搜索，提交后丢 ack 只从已结束事务确认 durable claim；`max=2` 并发无连接池饥饿。
+- RAG PASS:冻结 20 正例/10 负例并由 `rag:eval` 硬门 `0.45`；top1 17/20、top3 20/20，最低正例 `0.4822101`、最高负例 `0.4209749`。
+- Verification PASS:`DATABASE_URL=local npm test` 355/355、0 fail、0 skip；`npm run build` 13/13；`git diff --check` 与 secret filename scan PASS；CRITICAL compliance 与 quality/safety 双审查 PASS。
+- External boundary:未调用真实 GPT、博查或飞书；Bocha/Feishu 保持 `BLOCKED_EXTERNAL`，未 push/部署。
 
 ### S10-CS-2 provider/runtime evidence(2026-07-16)
 

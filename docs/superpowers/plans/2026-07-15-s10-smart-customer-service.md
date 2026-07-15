@@ -189,29 +189,29 @@ Expected: all focused tests PASS with PostgreSQL enabled.
 - Modify: `tests/chat-core.test.ts`
 - Modify: `tests/chat-service-integration.test.ts`
 
-- [ ] **Step 1: Write SearchRouter and URL RED tests**
+- [x] **Step 1: Write SearchRouter and URL RED tests**
 
 Cases include recency/current-version questions, sufficient local evidence, Morse personal facts, five-search Session quota, disabled search, malicious schemes, URL credentials, localhost/private/metadata addresses, fake official labels and prompt injection in snippets.
 
-- [ ] **Step 2: Verify search RED**
+- [x] **Step 2: Verify search RED**
 
 Run: `node --test tests/search-router.test.ts tests/search-safety.test.ts`
 
 Expected: FAIL because no search boundary exists.
 
-- [ ] **Step 3: Implement deterministic routing and source classification**
+- [x] **Step 3: Implement deterministic routing and source classification**
 
 Return `{ shouldSearch, query, reason }` without a model call. Personal Morse facts cannot use web evidence. Normalize HTTPS URL and classify source using configured official domains or GitHub host/organization; do not fetch result pages.
 
-- [ ] **Step 4: Implement Bocha adapter and Mock contract**
+- [x] **Step 4: Implement Bocha adapter and Mock contract**
 
 Send one bounded search request, accept at most five title/summary/URL results, validate every result server-side, apply timeout/signal, and return a stable degraded result on Provider failure.
 
-- [ ] **Step 5: Integrate server-owned citations**
+- [x] **Step 5: Integrate server-owned citations**
 
 Merge local and web evidence with unique server IDs. Prompts wrap snippets as untrusted data; public SSE receives only server-produced IDs/title/href/kind/domain/score. Search rows record query, reason, status and sanitized results.
 
-- [ ] **Step 6: Verify search GREEN and local RAG**
+- [x] **Step 6: Verify search GREEN and local RAG**
 
 Run: `node --test tests/search-router.test.ts tests/search-safety.test.ts tests/bocha-search-provider.test.ts tests/chat-core.test.ts tests/chat-service-integration.test.ts`
 
@@ -219,7 +219,7 @@ Then run: `npm run rag:eval`
 
 Expected: focused tests PASS and existing top-3 retrieval remains passing.
 
-- [ ] **Step 7: Commit the search slice**
+- [x] **Step 7: Commit the search slice**
 
 Keep real Bocha evidence `BLOCKED_EXTERNAL` while no API key exists.
 

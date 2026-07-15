@@ -41,6 +41,12 @@ test('loadServerConfig parses access, provider, lifecycle, and optional pricing 
   assert.equal(config.chatEnabled, true);
   assert.equal(config.sseHeartbeatMs, 15_000);
   assert.equal(config.interactionRetentionDays, 10);
+  assert.equal(config.searchEnabled, false);
+  assert.equal(config.maxSearchesPerSession, 5);
+  assert.equal(config.searchConcurrency, 2);
+  assert.equal(config.searchTimeoutMs, 12_000);
+  assert.equal(config.searchProvider, null);
+  assert.equal(config.bochaApiKey, null);
   assert.deepEqual(config.tokenRates, {
     inputUsdPerMillion: 1.25,
     outputUsdPerMillion: 10,
@@ -70,6 +76,60 @@ test('loadServerConfig fails closed for missing secrets or model IDs', () => {
     delete env[key as keyof typeof env];
     assert.throws(() => loadServerConfig(env), new RegExp(key));
   }
+});
+
+test('loadServerConfig enables only strict Bocha search configuration and parses trust lists', () => {
+  const config = loadServerConfig({
+    ...completeEnv,
+    MORSE_SEARCH_ENABLED: 'true',
+    MORSE_SEARCH_PROVIDER: 'bocha',
+    BOCHA_API_KEY: 'bocha-key',
+    BOCHA_BASE_URL: 'https://api.bocha.test/v1/',
+    MORSE_MAX_SEARCHES_PER_SESSION: '5',
+    MORSE_SEARCH_CONCURRENCY: '1',
+    MORSE_SEARCH_TIMEOUT_MS: '9000',
+    MORSE_OFFICIAL_SOURCE_DOMAINS: ' OpenAI.com,platform.openai.com,openai.com ',
+    MORSE_OFFICIAL_GITHUB_OWNERS: ' Morse-Moss,openai ',
+  });
+
+  assert.equal(config.searchEnabled, true);
+  assert.equal(config.searchProvider, 'bocha');
+  assert.equal(config.bochaApiKey, 'bocha-key');
+  assert.equal(config.bochaBaseUrl, 'https://api.bocha.test/v1');
+  assert.equal(config.maxSearchesPerSession, 5);
+  assert.equal(config.searchConcurrency, 1);
+  assert.equal(config.searchTimeoutMs, 9000);
+  assert.deepEqual(config.officialSourceDomains, ['openai.com', 'platform.openai.com']);
+  assert.deepEqual(config.officialGithubOwners, ['Morse-Moss', 'openai']);
+});
+
+test('loadServerConfig keeps search disabled without a key and fails closed when enabled settings are unsafe', () => {
+  assert.doesNotThrow(() => loadServerConfig({ ...completeEnv, MORSE_SEARCH_ENABLED: 'false' }));
+
+  for (const [name, env, pattern] of [
+    ['missing key', { MORSE_SEARCH_ENABLED: 'true', MORSE_SEARCH_PROVIDER: 'bocha' }, /BOCHA_API_KEY/],
+    ['wrong provider', { MORSE_SEARCH_ENABLED: 'true', MORSE_SEARCH_PROVIDER: 'other', BOCHA_API_KEY: 'key' }, /MORSE_SEARCH_PROVIDER.*bocha/],
+    ['unsafe base', { MORSE_SEARCH_ENABLED: 'true', MORSE_SEARCH_PROVIDER: 'bocha', BOCHA_API_KEY: 'key', BOCHA_BASE_URL: 'http:\/\/bocha.test' }, /BOCHA_BASE_URL.*HTTPS/],
+    ['concurrency above two', { MORSE_SEARCH_CONCURRENCY: '3' }, /MORSE_SEARCH_CONCURRENCY.*2/],
+    ['quota above five', { MORSE_MAX_SEARCHES_PER_SESSION: '6' }, /MORSE_MAX_SEARCHES_PER_SESSION.*5/],
+    ['bad domain', { MORSE_OFFICIAL_SOURCE_DOMAINS: 'https:\/\/openai.com/docs' }, /MORSE_OFFICIAL_SOURCE_DOMAINS/],
+    ['github cannot bypass owner rules', { MORSE_OFFICIAL_SOURCE_DOMAINS: 'github.com' }, /MORSE_OFFICIAL_SOURCE_DOMAINS.*GitHub/],
+    ['bad owner', { MORSE_OFFICIAL_GITHUB_OWNERS: 'Morse\/Moss' }, /MORSE_OFFICIAL_GITHUB_OWNERS/],
+  ] as const) {
+    assert.throws(() => loadServerConfig({ ...completeEnv, ...env }), pattern, name);
+  }
+});
+
+test('loadServerConfig permits only loopback HTTP for the local Bocha Mock', () => {
+  const config = loadServerConfig({
+    ...completeEnv,
+    MORSE_SEARCH_ENABLED: 'true',
+    MORSE_SEARCH_PROVIDER: 'bocha',
+    BOCHA_API_KEY: 'mock-key',
+    BOCHA_BASE_URL: 'http://127.0.0.1:43123/v1/',
+  });
+
+  assert.equal(config.bochaBaseUrl, 'http://127.0.0.1:43123/v1');
 });
 
 test('loadServerConfig accepts omitted token rates and rejects partial or invalid pairs', () => {

@@ -20,7 +20,23 @@ import {
   terminateInteraction,
   type InteractionTurn,
 } from './interaction-log.ts';
-import { retrieveKnowledge } from './rag.ts';
+import {
+  claimSearch,
+  finalizeSearchCompleted,
+  finalizeSearchFailed,
+} from './interaction-search.ts';
+import {
+  hasSufficientLocalEvidence,
+  retrieveKnowledge,
+  type KnowledgeSource,
+} from './rag.ts';
+import {
+  toPublicSearchSource,
+  type SearchProvider,
+  type SearchResponse,
+} from './search-provider.ts';
+import { routeSearch } from './search-router.ts';
+import { parseStoredSearchResults } from './search-safety.ts';
 import { OperationTimeoutError } from './timeout.ts';
 import {
   decodeTurnMessage,
@@ -54,6 +70,8 @@ export interface ChatServiceConfig {
   retrievalLimit: number;
   interactionRetentionDays: number;
   tokenRates: TokenRates | null;
+  searchEnabled?: boolean;
+  maxSearchesPerSession?: number;
   providerName?: string;
   model?: string;
 }
@@ -61,7 +79,7 @@ export interface ChatServiceConfig {
 export type PublicChatSource = TurnSource;
 
 export type ChatServiceEvent =
-  | { type: 'status'; stage: 'routing' | 'knowledge' | 'answering' }
+  | { type: 'status'; stage: 'routing' | 'knowledge' | 'web' | 'answering' }
   | {
       type: 'meta';
       conversationId: string;
@@ -80,6 +98,7 @@ export type ChatServiceEvent =
 export interface RunChatInput {
   pool: Pool;
   provider: AiProvider;
+  searchProvider?: SearchProvider | null;
   accessSessionId: string;
   request: NormalizedChatRequest;
   config: ChatServiceConfig;
@@ -94,11 +113,14 @@ interface TurnContext {
   messages: AiMessage[];
   replay: InteractionTurn | null;
   createdConversation: boolean;
+  searchCount: number;
+  searchAlreadyClaimed: boolean;
 }
 
 interface SessionLockRow {
   expires_at: Date;
   message_count: number;
+  search_count: number;
 }
 
 interface ConversationRow {
@@ -270,6 +292,8 @@ async function recoverRunningTurn(input: {
   turnId: string;
   request: NormalizedChatRequest;
   historyMessageLimit: number;
+  searchCount: number;
+  searchAlreadyClaimed: boolean;
 }): Promise<TurnContext> {
   const result = await input.client.query<ConversationMessageRow>(
     `SELECT id::text AS id, role, content
@@ -302,6 +326,8 @@ async function recoverRunningTurn(input: {
     messages: toHistoryMessages(result.rows.slice(-input.historyMessageLimit)),
     replay: null,
     createdConversation: result.rows.length === 1,
+    searchCount: input.searchCount,
+    searchAlreadyClaimed: input.searchAlreadyClaimed,
   };
 }
 
@@ -314,7 +340,7 @@ async function reserveTurnInTransaction(input: {
   now: Date;
 }): Promise<TurnContext> {
   const sessionResult = await input.client.query<SessionLockRow>(
-    `SELECT session.expires_at, session.message_count
+    `SELECT session.expires_at, session.message_count, session.search_count
        FROM access_sessions AS session
        JOIN invite_codes AS invite ON invite.id = session.invite_code_id
       WHERE session.id = $1
@@ -378,6 +404,8 @@ async function reserveTurnInTransaction(input: {
       messages: [],
       replay: interaction,
       createdConversation: false,
+      searchCount: session.search_count,
+      searchAlreadyClaimed: interaction.usedSearch,
     };
   }
 
@@ -390,6 +418,8 @@ async function reserveTurnInTransaction(input: {
       turnId: input.turnId,
       request: input.request,
       historyMessageLimit: input.config.historyMessageLimit,
+      searchCount: session.search_count,
+      searchAlreadyClaimed: interaction.usedSearch,
     });
   }
 
@@ -472,6 +502,8 @@ async function reserveTurnInTransaction(input: {
     ),
     replay: null,
     createdConversation,
+    searchCount: session.search_count,
+    searchAlreadyClaimed: interaction?.usedSearch ?? false,
   };
 }
 
@@ -718,6 +750,140 @@ function providerPhaseError(error: unknown): RuntimePhaseError {
   return new RuntimePhaseError('PROVIDER_UNAVAILABLE', 'PROVIDER_UNAVAILABLE', error);
 }
 
+function toLocalPublicSources(knowledge: KnowledgeSource[]): PublicChatSource[] {
+  return knowledge.map((source, index) => ({
+    id: `local-${index + 1}`,
+    title: source.title,
+    href: source.href,
+    kind: 'local',
+    domain: null,
+    score: source.score,
+  }));
+}
+
+function storedSearchResponse(input: {
+  status: string;
+  results: unknown;
+  errorCode: string | null;
+}): SearchResponse {
+  if (input.status === 'completed') {
+    return {
+      status: 'completed',
+      results: parseStoredSearchResults(input.results),
+      errorCode: null,
+    };
+  }
+  return {
+    status: 'failed',
+    results: [],
+    errorCode: input.errorCode === 'SEARCH_TIMEOUT' ? 'SEARCH_TIMEOUT' : 'SEARCH_FAILED',
+  };
+}
+
+async function resolveSearch(input: {
+  pool: Pool;
+  client: PoolClient;
+  provider?: SearchProvider | null;
+  accessSessionId: string;
+  turn: TurnContext;
+  question: string;
+  localEvidenceSufficient: boolean;
+  config: ChatServiceConfig;
+  now: Date;
+  signal?: AbortSignal;
+}): Promise<SearchResponse | undefined> {
+  const maxSearches = input.config.maxSearchesPerSession ?? 5;
+  let query = input.question;
+  let routeReason = 'existing_claim';
+
+  if (!input.turn.searchAlreadyClaimed) {
+    const route = routeSearch({
+      question: input.question,
+      searchEnabled: input.config.searchEnabled === true && input.provider !== null
+        && input.provider !== undefined,
+      searchCount: input.turn.searchCount,
+      localEvidenceSufficient: input.localEvidenceSufficient,
+    });
+    if (!route.shouldSearch || !route.query || !input.provider) {
+      if (route.reason !== 'disabled' && route.reason !== 'quota_exhausted') return undefined;
+      const availableRoute = routeSearch({
+        question: input.question,
+        searchEnabled: true,
+        searchCount: 0,
+        localEvidenceSufficient: input.localEvidenceSufficient,
+      });
+      return availableRoute.shouldSearch
+        ? { status: 'failed', results: [], errorCode: 'SEARCH_FAILED' }
+        : undefined;
+    }
+    query = route.query;
+    routeReason = route.reason;
+  }
+
+  let claim;
+  try {
+    claim = await claimSearch({
+      pool: input.pool,
+      client: input.client,
+      accessSessionId: input.accessSessionId,
+      turnId: input.turn.turnId,
+      query,
+      routeReason,
+      maxSearches,
+      now: input.now,
+    });
+  } catch {
+    console.error(JSON.stringify({
+      event: 'morse_search_claim_failed',
+      code: 'SEARCH_CLAIM_FAILED',
+    }));
+    return { status: 'failed', results: [], errorCode: 'SEARCH_FAILED' };
+  }
+
+  if (claim.kind === 'quota_exhausted') {
+    return { status: 'failed', results: [], errorCode: 'SEARCH_FAILED' };
+  }
+  if (claim.kind === 'existing') return storedSearchResponse(claim.search);
+  if (!input.provider) {
+    return { status: 'failed', results: [], errorCode: 'SEARCH_FAILED' };
+  }
+
+  let response: SearchResponse;
+  try {
+    response = await input.provider.search(claim.search.query, input.signal);
+  } catch (error) {
+    if (input.signal?.aborted) throw error;
+    response = { status: 'failed', results: [], errorCode: 'SEARCH_FAILED' };
+  }
+  throwIfAborted(input.signal);
+
+  try {
+    if (response.status === 'completed') {
+      await finalizeSearchCompleted({
+        pool: input.pool,
+        client: input.client,
+        turnId: input.turn.turnId,
+        results: response.results,
+      });
+    } else {
+      await finalizeSearchFailed({
+        pool: input.pool,
+        client: input.client,
+        turnId: input.turn.turnId,
+        results: [],
+        errorCode: response.errorCode,
+      });
+    }
+    return response;
+  } catch {
+    console.error(JSON.stringify({
+      event: 'morse_search_persistence_failed',
+      code: 'SEARCH_PERSISTENCE_FAILED',
+    }));
+    return { status: 'failed', results: [], errorCode: 'SEARCH_FAILED' };
+  }
+}
+
 export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEvent> {
   const clock = input.now ? () => input.now! : () => new Date();
   const startedAt = clock();
@@ -803,12 +969,27 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
         error,
       );
     }
-    sources = knowledge.map((source) => ({
-      documentId: source.documentId,
-      title: source.title,
-      href: source.href,
-      score: source.score,
-    }));
+    const localSources = toLocalPublicSources(knowledge);
+
+    yield { type: 'status', stage: 'web' };
+    const search = await resolveSearch({
+      pool: input.pool,
+      client: lockClient,
+      provider: input.searchProvider,
+      accessSessionId: input.accessSessionId,
+      turn,
+      question: input.request.message,
+      localEvidenceSufficient: hasSufficientLocalEvidence(knowledge),
+      config: input.config,
+      now: clock(),
+      signal: input.signal,
+    });
+    sources = [
+      ...localSources,
+      ...(search?.status === 'completed'
+        ? search.results.map(toPublicSearchSource)
+        : []),
+    ];
 
     yield {
       type: 'meta',
@@ -822,6 +1003,7 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
       input.request.mode,
       input.request.audienceIntent,
       knowledge,
+      search,
     );
     answerIterator = input.provider.streamAnswer({
       instructions,

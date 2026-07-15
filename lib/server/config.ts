@@ -66,6 +66,95 @@ function chatProtocol(env: Env): 'responses' | 'chat_completions' {
   return value;
 }
 
+function commaSeparatedDomains(env: Env, name: string): string[] {
+  const values = env[name]?.split(',').map((value) => value.trim()).filter(Boolean) ?? [];
+  const unique = new Map<string, string>();
+  for (const value of values) {
+    const normalized = value.toLowerCase().replace(/\.$/u, '');
+    if (!/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u.test(normalized)) {
+      throw new Error(`${name} must contain comma-separated domain names.`);
+    }
+    if (normalized === 'github.com') {
+      throw new Error(`${name} cannot classify GitHub without an owner allowlist.`);
+    }
+    unique.set(normalized, normalized);
+  }
+  return [...unique.values()];
+}
+
+function commaSeparatedGithubOwners(env: Env, name: string): string[] {
+  const values = env[name]?.split(',').map((value) => value.trim()).filter(Boolean) ?? [];
+  const unique = new Map<string, string>();
+  for (const value of values) {
+    if (!/^[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?$/iu.test(value)) {
+      throw new Error(`${name} must contain comma-separated GitHub owners.`);
+    }
+    const key = value.toLowerCase();
+    if (!unique.has(key)) unique.set(key, value);
+  }
+  return [...unique.values()];
+}
+
+function bochaBaseUrl(env: Env): string {
+  const name = 'BOCHA_BASE_URL';
+  const raw = required(env, name);
+  try {
+    const url = new URL(raw);
+    const loopbackHttp = url.protocol === 'http:' && url.hostname === '127.0.0.1';
+    if (
+      (url.protocol !== 'https:' && !loopbackHttp)
+      || url.username
+      || url.password
+      || url.search
+      || url.hash
+    ) {
+      throw new Error();
+    }
+    const pathname = url.pathname.replace(/\/+$/u, '');
+    return `${url.origin}${pathname}`;
+  } catch {
+    throw new Error(`${name} must be a credential-free HTTPS or loopback HTTP base URL.`);
+  }
+}
+
+function searchSettings(env: Env) {
+  const searchEnabled = booleanSetting(env, 'MORSE_SEARCH_ENABLED', false);
+  const maxSearchesPerSession = positiveInteger(env, 'MORSE_MAX_SEARCHES_PER_SESSION', 5);
+  if (maxSearchesPerSession > 5) {
+    throw new Error('MORSE_MAX_SEARCHES_PER_SESSION must be at most 5.');
+  }
+  const searchConcurrency = positiveInteger(env, 'MORSE_SEARCH_CONCURRENCY', 2);
+  if (searchConcurrency > 2) {
+    throw new Error('MORSE_SEARCH_CONCURRENCY must be at most 2.');
+  }
+  const common = {
+    searchEnabled,
+    maxSearchesPerSession,
+    searchConcurrency,
+    searchTimeoutMs: positiveNumber(env, 'MORSE_SEARCH_TIMEOUT_MS', 12_000),
+    officialSourceDomains: commaSeparatedDomains(env, 'MORSE_OFFICIAL_SOURCE_DOMAINS'),
+    officialGithubOwners: commaSeparatedGithubOwners(env, 'MORSE_OFFICIAL_GITHUB_OWNERS'),
+  };
+  if (!searchEnabled) {
+    return {
+      ...common,
+      searchProvider: null,
+      bochaApiKey: null,
+      bochaBaseUrl: null,
+    } as const;
+  }
+  const searchProvider = required(env, 'MORSE_SEARCH_PROVIDER');
+  if (searchProvider !== 'bocha') {
+    throw new Error('MORSE_SEARCH_PROVIDER must be bocha when search is enabled.');
+  }
+  return {
+    ...common,
+    searchProvider: 'bocha',
+    bochaApiKey: required(env, 'BOCHA_API_KEY'),
+    bochaBaseUrl: bochaBaseUrl(env),
+  } as const;
+}
+
 export function loadAccessConfig(env: Env = process.env) {
   return {
     databaseUrl: required(env, 'DATABASE_URL'),
@@ -79,9 +168,11 @@ export function loadServerConfig(env: Env = process.env) {
   const access = loadAccessConfig(env);
   const openaiApiKey = required(env, 'OPENAI_API_KEY');
   const openaiBaseUrl = env.OPENAI_BASE_URL?.trim() || undefined;
+  const search = searchSettings(env);
 
   return {
     ...access,
+    ...search,
     openaiApiKey,
     openaiBaseUrl,
     chatModel: required(env, 'OPENAI_CHAT_MODEL'),

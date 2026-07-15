@@ -48,7 +48,7 @@ release_boundary:
 
 ## Current Pointer
 
-**S10-CS-3 RAG + AUTO SEARCH**
+**S10-CS-4 JD + DIAGNOSIS**
 
 ## Next Allowed Pointer
 
@@ -61,8 +61,8 @@ release_boundary:
 | `S10-CS-0 CONTRACT + PROVIDER EVIDENCE` | PASS | contract test 5/5；CRITICAL compliance 与 safety delta review PASS |
 | `S10-CS-1 MIGRATION + RETENTION` | PASS | migration focused 15/15；retention 3/3；full PostgreSQL suite 236/236，0 skip；CRITICAL 双审查 PASS |
 | `S10-CS-2 PROVIDER + RUNTIME` | PASS | 双协议 adapter、全链 abort、timeout、heartbeat、12h history；PostgreSQL 全套 308/308、0 skip；build 13/13；CRITICAL 双审查 PASS |
-| `S10-CS-3 RAG + AUTO SEARCH` | IN PROGRESS | BGE/pgvector、SearchRouter、Bocha Mock、引用安全 |
-| `S10-CS-4 JD + DIAGNOSIS` | PENDING | workflow 合同、结构化初诊、Outbox 幂等 |
+| `S10-CS-3 RAG + AUTO SEARCH` | PASS | SearchRouter/Bocha Mock/六字段 citation；355/355；正负 RAG 阈值与 CRITICAL 双审查 PASS |
+| `S10-CS-4 JD + DIAGNOSIS` | IN PROGRESS | workflow 合同、结构化初诊、Outbox 幂等 |
 | `S10-CS-5 ADMIN + ALERTS` | PENDING | scrypt+TOTP、权限矩阵、badcase、导出、飞书 Mock |
 | `S10-CS-6 UI + EVAL + CLOSEOUT` | PENDING | 双宽浏览器、全量验证、CRITICAL 双审查、知识收尾 |
 
@@ -98,7 +98,7 @@ release_boundary:
 | `S10-F2` | CLOSED | 12h runtime cascade、9d interaction 保留、10d 原文删除与幂等清理在 disposable pgvector 通过 |
 | `S10-F3` | CLOSED | bootstrap、001-only baseline、checksum、并发锁、partial-002、事务回滚与旧数据保全通过 |
 | `S10-F4` | OPEN | admin 与 visitor cookie/权限物理隔离，TOTP replay/CSRF/CSV 防护通过 |
-| `S10-F5` | OPEN | SearchRouter、恶意 URL、citation 和站内个人事实边界通过 |
+| `S10-F5` | CLOSED | 个人事实 veto、非公网 URL、六字段 citation、搜索事务/额度/降级与正负 RAG 阈值通过 |
 | `S10-F6` | OPEN | 初诊、首次邀请码、两轮故障/恢复、邀请码/管理员安全通知 Outbox 去重通过 |
 | `S10-F7` | CLOSED | stop/abort/断线只写 10 天 interaction、不扣额度、不写 runtime assistant；12 小时 history 仅恢复已完成会话；事务、补偿与 orphan retry 测试通过 |
 
@@ -111,6 +111,7 @@ release_boundary:
 - 2026-07-15：`S10-CS-0` PASS / `S10-CS-1` START。合同测试 5/5；compliance 与 quality/safety delta review 均 PASS，72h/12h、migration bootstrap、incident/outbox、GitHub 分类、push 边界和九组安全条件已冻结。
 - 2026-07-16：`S10-CS-1` PASS / `S10-CS-2` START。001-only 本地项目库经哨兵验证 baseline 登记并升级到 002，原 9 条知识文档保全。迁移 15/15、retention 3/3、完整 PostgreSQL suite 236/236、0 skip；spec 与 quality/safety 双审查全部 PASS。旧 S9 current-pointer 契约已修为历史 closeout 保留，S9/S10 focused 25/25。
 - 2026-07-16：`S10-CS-2` PASS / `S10-CS-3` START。完成显式 Responses/Chat Completions 双协议、贯穿 request/Embedding/Provider/SSE 的同一取消链、独立超时与并发、15 秒 heartbeat、终态流清理、同 Session 单飞、幂等 replay/orphan 恢复、事务配额补偿和 12 小时 history。控制器复验 PostgreSQL 全套 308/308、0 skip，`npm run build` 13/13；compliance 与 quality/safety 审查均 PASS。真实 GPT 未调用，仍按外部证据表保持 `BLOCKED_EXTERNAL`。
+- 2026-07-16：`S10-CS-3` PASS / `S10-CS-4` START。完成确定性 SearchRouter、Bocha one-shot Mock、搜索 claim/finalize 与五次额度、严格公网 HTTPS/六字段 citation、失败/禁用诚实降级和个人事实 veto；`0.45` 本地充分性阈值由冻结的 20 正例/10 负例共同硬门，实测最低正例 `0.4822101`、最高负例 `0.4209749`。`DATABASE_URL=local npm test` 355/355、0 skip，build 13/13，CRITICAL compliance 与 quality/safety correction-cycle-2 均 PASS；真实 Bocha 未调用，保持 `BLOCKED_EXTERNAL`。
 
 ## Preauthorization Matrix
 

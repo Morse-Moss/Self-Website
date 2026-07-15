@@ -1,7 +1,7 @@
 import type { Pool, PoolClient } from 'pg';
 
 import type { TokenUsage } from './budget.ts';
-import type { TurnSource } from './turn-codec.ts';
+import { sanitizeTurnSources, type TurnSource } from './turn-codec.ts';
 
 export type InteractionStatus = 'running' | 'completed' | 'stopped' | 'failed';
 
@@ -16,6 +16,7 @@ export interface InteractionTurn {
   status: string;
   errorCode: string | null;
   sources: TurnSource[];
+  usedSearch: boolean;
 }
 
 interface InteractionRow {
@@ -29,15 +30,7 @@ interface InteractionRow {
   status: string;
   error_code: string | null;
   knowledge_sources: unknown;
-}
-
-function isSource(value: unknown): value is TurnSource {
-  if (!value || typeof value !== 'object') return false;
-  const source = value as Record<string, unknown>;
-  return typeof source.documentId === 'string'
-    && typeof source.title === 'string'
-    && typeof source.href === 'string'
-    && typeof source.score === 'number';
+  used_search: boolean;
 }
 
 function toInteraction(row: InteractionRow): InteractionTurn {
@@ -51,15 +44,14 @@ function toInteraction(row: InteractionRow): InteractionTurn {
     answer: row.answer,
     status: row.status,
     errorCode: row.error_code,
-    sources: Array.isArray(row.knowledge_sources) && row.knowledge_sources.every(isSource)
-      ? row.knowledge_sources
-      : [],
+    sources: sanitizeTurnSources(row.knowledge_sources) ?? [],
+    usedSearch: row.used_search,
   };
 }
 
 const interactionColumns = `id::text, access_session_id::text,
   conversation_id::text, workflow, audience_intent, question, answer,
-  status, error_code, knowledge_sources`;
+  status, error_code, knowledge_sources, used_search`;
 
 export async function loadInteractionForUpdate(
   client: PoolClient,
@@ -144,7 +136,6 @@ export async function restartInteraction(input: {
             provider = NULL,
             model = NULL,
             latency_ms = NULL,
-            used_search = false,
             completed_at = NULL
       WHERE id = $1 AND status IN ('stopped', 'failed')`,
     [input.turnId],
