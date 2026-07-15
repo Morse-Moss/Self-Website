@@ -5,10 +5,16 @@ import path from 'node:path';
 import test from 'node:test';
 
 const helperUrl = new URL('./lib/s9-cdp.mjs', import.meta.url);
+const harnessUrl = new URL('./s9-visual-smoke.mjs', import.meta.url);
 
 async function loadHelpers() {
   assert.ok(existsSync(helperUrl), 'scripts/lib/s9-cdp.mjs must exist');
   return import(helperUrl.href);
+}
+
+async function loadHarness() {
+  assert.ok(existsSync(harnessUrl), 'scripts/s9-visual-smoke.mjs must exist');
+  return import(harnessUrl.href);
 }
 
 function createFakeFs({ content, mtimeMs }) {
@@ -395,7 +401,10 @@ test('Windows process-tree fallback targets only the owned child PID', async () 
 
   terminateOwnedProcessTree({ exitCode: null, pid: 4242 }, {
     platform: 'win32',
-    spawnSyncFn: (command, args, options) => calls.push({ command, args, options }),
+    spawnSyncFn: (command, args, options) => {
+      calls.push({ command, args, options });
+      return { status: 0 };
+    },
   });
 
   assert.equal(calls.length, 1);
@@ -403,6 +412,85 @@ test('Windows process-tree fallback targets only the owned child PID', async () 
   assert.deepEqual(calls[0].args, ['/PID', '4242', '/T', '/F']);
   assert.equal(calls[0].options.windowsHide, true);
   assert.equal(calls[0].options.stdio, 'ignore');
+  assert.equal(calls[0].options.timeout, 2_000);
+
+  assert.throws(
+    () => terminateOwnedProcessTree({ exitCode: null, pid: 4242 }, {
+      platform: 'win32',
+      spawnSyncFn: () => ({ error: Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' }) }),
+    }),
+    (error) => error?.code === 'OWNED_PROCESS_TERMINATION_TIMEOUT',
+  );
+  assert.throws(
+    () => terminateOwnedProcessTree({ exitCode: null, pid: 4242 }, {
+      platform: 'win32',
+      spawnSyncFn: () => ({ status: 1 }),
+    }),
+    (error) => error?.code === 'OWNED_PROCESS_TERMINATION_FAILED',
+  );
+});
+
+test('readiness failure after spawn cleans the owned process and profile through main wiring', async () => {
+  const { main } = await loadHarness();
+  const calls = [];
+  const browserProcess = new EventEmitter();
+  browserProcess.exitCode = null;
+  browserProcess.pid = 4242;
+  const processLike = new EventEmitter();
+  processLike.exitCode = 0;
+  processLike.exit = (code) => { processLike.exitCode = code; };
+  const consoleLike = {
+    error: (value) => calls.push(['stderr', value]),
+    log: (value) => calls.push(['stdout', value]),
+  };
+
+  const summary = await main({
+    argv: ['node', 'scripts/s9-visual-smoke.mjs', 'http://127.0.0.1:3010'],
+    env: { S9_EDGE_PATH: 'C:/owned/msedge.exe' },
+    processLike,
+    dependencies: {
+      consoleLike,
+      edgeExists: () => true,
+      makeProfile: () => 'C:/Temp/revolution-s9-edge-owned',
+      spawnBrowser: () => {
+        calls.push(['spawn']);
+        return browserProcess;
+      },
+      waitForEndpoint: async () => {
+        calls.push(['readiness']);
+        const error = new Error('private endpoint details');
+        error.code = 'OWNED_ENDPOINT_TIMEOUT';
+        throw error;
+      },
+      cleanupBrowserOptions: {
+        removeProfile: async (profileDir) => calls.push(['remove', profileDir]),
+        terminateProcessTree: async (child) => {
+          calls.push(['terminate', child.pid]);
+          child.exitCode = 1;
+        },
+        waitForExit: async (child) => {
+          calls.push(['wait', child.pid]);
+          return child.exitCode !== null;
+        },
+      },
+    },
+  });
+
+  assert.deepEqual(calls.slice(0, 5), [
+    ['spawn'],
+    ['readiness'],
+    ['wait', 4242],
+    ['terminate', 4242],
+    ['wait', 4242],
+  ]);
+  assert.ok(calls.some((call) => (
+    call[0] === 'remove' && call[1] === 'C:/Temp/revolution-s9-edge-owned'
+  )));
+  assert.deepEqual(summary.failures, ['harness:infrastructure:browser:endpoint-timeout']);
+  assert.equal(processLike.exitCode, 1);
+  assert.doesNotMatch(JSON.stringify({ calls, summary }), /private endpoint details/);
+  assert.equal(processLike.listenerCount('SIGINT'), 0);
+  assert.equal(processLike.listenerCount('SIGTERM'), 0);
 });
 
 test('profile removal enforces the system-temp ownership boundary', async () => {
@@ -464,9 +552,18 @@ test('network monitor ignores only the old Document explicitly replaced by harne
   });
   monitor.beginNavigation('/works');
   monitor.handle('Network.loadingFailed', {
+    canceled: true,
     errorText: 'net::ERR_ABORTED',
     requestId: 'document-old',
     type: 'Document',
+  });
+  monitor.handle('Log.entryAdded', {
+    entry: {
+      level: 'error',
+      networkRequestId: 'document-old',
+      source: 'network',
+      text: 'Failed to load resource: net::ERR_ABORTED',
+    },
   });
 
   assert.deepEqual(monitor.snapshot().failures, []);
@@ -480,6 +577,23 @@ test('network monitor ignores only the old Document explicitly replaced by harne
     monitor.snapshot().failures,
     ['/works:network-Document-failed'],
   );
+
+  const uncanceled = createNetworkMonitor({ targetOrigin: 'http://127.0.0.1:3010' });
+  uncanceled.beginNavigation('/');
+  uncanceled.handle('Network.requestWillBeSent', {
+    loaderId: 'loader-old',
+    request: { url: 'http://127.0.0.1:3010/' },
+    requestId: 'document-old',
+    type: 'Document',
+  });
+  uncanceled.beginNavigation('/works');
+  uncanceled.handle('Network.loadingFailed', {
+    canceled: false,
+    errorText: 'net::ERR_ABORTED',
+    requestId: 'document-old',
+    type: 'Document',
+  });
+  assert.deepEqual(uncanceled.snapshot().failures, ['/:network-Document-failed']);
 });
 
 test('network monitor records external WebSocket origin without path or query', async () => {
@@ -496,15 +610,15 @@ test('network monitor records external WebSocket origin without path or query', 
   assert.doesNotMatch(JSON.stringify(snapshot), /private|prompt|secret/);
 });
 
-test('network monitor ignores untracked internal Other noise but records tracked resources', async () => {
+test('network monitor records untracked Other failures and tracked resources', async () => {
   const { createNetworkMonitor } = await loadHelpers();
   const monitor = createNetworkMonitor({ targetOrigin: 'http://127.0.0.1:3010' });
   monitor.beginNavigation('/works');
   monitor.handle('Network.loadingFailed', {
-    errorText: 'net::ERR_ABORTED',
+    errorText: 'net::ERR_NAME_NOT_RESOLVED',
     requestId: 'unknown-internal',
   });
-  assert.deepEqual(monitor.snapshot().failures, []);
+  assert.deepEqual(monitor.snapshot().failures, ['/works:network-Other-failed']);
 
   monitor.handle('Network.requestWillBeSent', {
     loaderId: 'loader-other',
@@ -517,6 +631,65 @@ test('network monitor ignores untracked internal Other noise but records tracked
     requestId: 'tracked-other',
   });
   assert.deepEqual(monitor.snapshot().failures, ['/works:network-Other-failed']);
+});
+
+test('network monitor preserves uncorrelated Log failures and deduplicates correlated requests', async () => {
+  const { createNetworkMonitor } = await loadHelpers();
+  const monitor = createNetworkMonitor({ targetOrigin: 'http://127.0.0.1:3010' });
+  monitor.beginNavigation('/works');
+  monitor.handle('Network.requestWillBeSent', {
+    loaderId: 'loader-script',
+    request: { url: 'http://127.0.0.1:3010/app.js?session=secret' },
+    requestId: 'request-script',
+    type: 'Script',
+  });
+  monitor.handle('Network.loadingFailed', {
+    errorText: 'net::ERR_NAME_NOT_RESOLVED',
+    requestId: 'request-script',
+    type: 'Script',
+  });
+  monitor.handle('Log.entryAdded', {
+    entry: {
+      level: 'error',
+      networkRequestId: 'request-script',
+      source: 'network',
+      text: 'private response body',
+      url: 'http://127.0.0.1:3010/app.js?session=secret',
+    },
+  });
+  monitor.handle('Log.entryAdded', {
+    entry: {
+      level: 'error',
+      source: 'network',
+      text: 'Failed to load resource: net::ERR_NAME_NOT_RESOLVED private',
+      url: 'https://private.example/secret',
+    },
+  });
+
+  const snapshot = monitor.snapshot();
+  assert.deepEqual(snapshot.failures, [
+    '/works:network-Script-failed',
+    '/works:network-Log-failed',
+  ]);
+  assert.doesNotMatch(JSON.stringify(snapshot), /private|secret|response|app\.js/);
+});
+
+test('running animation count includes finite and infinite animations', async () => {
+  const { countRunningAnimations } = await loadHelpers();
+  assert.equal(typeof countRunningAnimations, 'function');
+  assert.equal(countRunningAnimations([
+    { effect: { getTiming: () => ({ iterations: 1 }) }, playState: 'running' },
+    { effect: { getTiming: () => ({ iterations: Infinity }) }, playState: 'running' },
+    { effect: { getTiming: () => ({ iterations: 1 }) }, playState: 'finished' },
+  ]), 2);
+});
+
+test('public CDP failure mapping exposes only explicit safe codes', async () => {
+  const { publicS9CdpFailureCode } = await loadHelpers();
+  assert.equal(publicS9CdpFailureCode({ code: 'OWNED_ENDPOINT_TIMEOUT' }), 'browser:endpoint-timeout');
+  assert.equal(publicS9CdpFailureCode({ code: 'CDP_COMMAND_TIMEOUT' }), 'cdp:command-timeout');
+  assert.equal(publicS9CdpFailureCode({ code: 'PRIVATE_PATH_C_ERROR' }), null);
+  assert.equal(publicS9CdpFailureCode(new Error('C:/private/path')), null);
 });
 
 test('network monitor ignores only the active navigation favicon abort', async () => {

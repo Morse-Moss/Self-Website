@@ -26,6 +26,32 @@ const NETWORK_RESOURCE_TYPES = new Set([
   'XHR',
 ]);
 const SUMMARY_VIEWPORTS = ['desktop', 'mobile', 'mobile-reduced'];
+const PUBLIC_CDP_FAILURE_CODES = new Map([
+  ['ANIMATION_FRAME_ACTIVITY', 'animation:frame-activity'],
+  ['ANIMATION_FRAME_CONFIG_INVALID', 'animation:frame-config-invalid'],
+  ['ANIMATION_FRAME_QUIET_TIMEOUT', 'animation:frame-quiet-timeout'],
+  ['CDP_COMMAND_FAILED', 'cdp:command-failed'],
+  ['CDP_COMMAND_SEND_FAILED', 'cdp:command-send-failed'],
+  ['CDP_COMMAND_TIMEOUT', 'cdp:command-timeout'],
+  ['CDP_CONNECT_CLOSED', 'cdp:connect-closed'],
+  ['CDP_CONNECT_ERROR', 'cdp:connect-error'],
+  ['CDP_CONNECT_TIMEOUT', 'cdp:connect-timeout'],
+  ['CDP_TRANSPORT_CLOSED', 'cdp:transport-closed'],
+  ['CDP_TRANSPORT_DISPOSED', 'cdp:transport-disposed'],
+  ['CDP_TRANSPORT_ERROR', 'cdp:transport-error'],
+  ['CDP_TRANSPORT_NOT_OPEN', 'cdp:transport-not-open'],
+  ['OWNED_BROWSER_EXITED', 'browser:exited-before-ready'],
+  ['OWNED_ENDPOINT_INVALID', 'browser:endpoint-invalid'],
+  ['OWNED_ENDPOINT_STALE', 'browser:endpoint-stale'],
+  ['OWNED_ENDPOINT_TIMEOUT', 'browser:endpoint-timeout'],
+  ['OWNED_PROCESS_CLEANUP_FAILED', 'browser:process-cleanup-failed'],
+  ['OWNED_PROCESS_INVALID', 'browser:process-invalid'],
+  ['OWNED_PROCESS_TERMINATION_FAILED', 'browser:process-termination-failed'],
+  ['OWNED_PROCESS_TERMINATION_TIMEOUT', 'browser:process-termination-timeout'],
+  ['OWNED_PROFILE_BOUNDARY', 'browser:profile-boundary'],
+  ['POINTER_MODE_INVALID', 'input:pointer-mode-invalid'],
+  ['POINTER_TARGET_UNAVAILABLE', 'input:pointer-target-unavailable'],
+]);
 
 export function createS9Summary(input = {}) {
   const strings = (values) => (
@@ -82,6 +108,15 @@ export class S9CdpError extends Error {
     super(code);
     this.code = code;
   }
+}
+
+export function publicS9CdpFailureCode(error) {
+  return PUBLIC_CDP_FAILURE_CODES.get(error?.code) ?? null;
+}
+
+export function countRunningAnimations(animations) {
+  if (!Array.isArray(animations)) return 0;
+  return animations.filter((animation) => animation?.playState === 'running').length;
 }
 
 export async function assertConsecutiveAnimationFramesQuiet({
@@ -186,6 +221,7 @@ export async function dispatchPrimaryClick(client, {
 export function createNetworkMonitor({ targetOrigin }) {
   const targetUrl = new URL(targetOrigin);
   const requests = new Map();
+  const reportedRequestIds = new Set();
   const failures = new Set();
   const externalOrigins = new Set();
   const httpFailures = [];
@@ -208,6 +244,15 @@ export function createNetworkMonitor({ targetOrigin }) {
     return targetProtocols.has(url.protocol)
       && url.hostname === targetUrl.hostname
       && url.port === targetUrl.port;
+  };
+  const targetRequestUrl = (value) => {
+    let url;
+    try {
+      url = new URL(value);
+    } catch {
+      return null;
+    }
+    return sameTargetEndpoint(url) ? url.href : null;
   };
   const isTargetNavigationIcon = (value) => {
     let url;
@@ -266,11 +311,12 @@ export function createNetworkMonitor({ targetOrigin }) {
           loaderId: typeof params.loaderId === 'string' ? params.loaderId : null,
           requestId: typeof params.requestId === 'string' ? params.requestId : null,
           route: currentRoute,
+          targetUrl: targetRequestUrl(params.request?.url),
           type,
         };
         if (request.requestId) {
           requests.set(request.requestId, request);
-          if (type === 'Document') currentDocument = request;
+          if (type === 'Document' && request.targetUrl !== null) currentDocument = request;
         }
         recordExternalOrigin(params.request?.url);
         return;
@@ -285,24 +331,48 @@ export function createNetworkMonitor({ targetOrigin }) {
       if (method === 'Network.loadingFailed') {
         const request = requests.get(params.requestId);
         const type = resourceType(request?.type ?? params.type);
-        if (request === undefined && type === 'Other') return;
         const isExpectedDocumentAbort = type === 'Document'
           && request !== undefined
           && expectedAbortedDocument !== null
+          && params.canceled === true
           && params.errorText === 'net::ERR_ABORTED'
           && request?.requestId === expectedAbortedDocument?.requestId
-          && request?.loaderId === expectedAbortedDocument?.loaderId;
+          && request?.loaderId === expectedAbortedDocument?.loaderId
+          && request?.targetUrl !== null
+          && request?.targetUrl === expectedAbortedDocument?.targetUrl;
         const isExpectedNavigationIconAbort = type === 'Other'
           && request?.isNavigationIcon === true
           && expectedAbortedDocument !== null
           && params.canceled === true
           && params.errorText === 'net::ERR_ABORTED'
           && request?.loaderId === expectedAbortedDocument?.loaderId;
+        if (
+          (isExpectedDocumentAbort || isExpectedNavigationIconAbort)
+          && typeof params.requestId === 'string'
+        ) {
+          reportedRequestIds.add(params.requestId);
+        }
         if (!isExpectedDocumentAbort && !isExpectedNavigationIconAbort) {
-          failures.add(`${request?.route ?? currentRoute}:network-${type}-failed`);
+          if (!reportedRequestIds.has(params.requestId)) {
+            failures.add(`${request?.route ?? currentRoute}:network-${type}-failed`);
+          }
+          if (typeof params.requestId === 'string') reportedRequestIds.add(params.requestId);
         }
         if (request?.requestId) requests.delete(request.requestId);
-        if (isExpectedDocumentAbort) expectedAbortedDocument = null;
+        if (request === expectedAbortedDocument) expectedAbortedDocument = null;
+        if (request === currentDocument) currentDocument = null;
+        return;
+      }
+
+      if (method === 'Log.entryAdded') {
+        const entry = params.entry;
+        if (entry?.source !== 'network' || entry?.level !== 'error') return;
+        const requestId = typeof entry.networkRequestId === 'string'
+          ? entry.networkRequestId
+          : null;
+        if (requestId && reportedRequestIds.has(requestId)) return;
+        failures.add(`${requests.get(requestId)?.route ?? currentRoute}:network-Log-failed`);
+        if (requestId) reportedRequestIds.add(requestId);
         return;
       }
 
@@ -556,6 +626,7 @@ export function terminateOwnedProcessTree(child, {
   killFn = process.kill,
   platform = process.platform,
   spawnSyncFn = spawnSync,
+  timeoutMs = 2_000,
 } = {}) {
   if (!child || child.exitCode !== null) return;
   if (!Number.isInteger(child.pid) || child.pid < 1) {
@@ -563,10 +634,17 @@ export function terminateOwnedProcessTree(child, {
   }
 
   if (platform === 'win32') {
-    spawnSyncFn('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
+    const result = spawnSyncFn('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
       stdio: 'ignore',
+      timeout: timeoutMs,
       windowsHide: true,
     });
+    if (result?.error?.code === 'ETIMEDOUT') {
+      throw new S9CdpError('OWNED_PROCESS_TERMINATION_TIMEOUT');
+    }
+    if (result?.error || result?.status !== 0) {
+      throw new S9CdpError('OWNED_PROCESS_TERMINATION_FAILED');
+    }
     return;
   }
   killFn(-child.pid, 'SIGKILL');
@@ -632,9 +710,14 @@ export async function cleanupOwnedBrowser(browser, {
   }
 
   if (!await waitForExit(browser.browserProcess, closeTimeoutMs)) {
-    await terminateProcessTree(browser.browserProcess);
+    let terminationError = null;
+    try {
+      await terminateProcessTree(browser.browserProcess);
+    } catch (error) {
+      terminationError = error;
+    }
     if (!await waitForExit(browser.browserProcess, closeTimeoutMs)) {
-      throw new S9CdpError('OWNED_PROCESS_CLEANUP_FAILED');
+      throw terminationError ?? new S9CdpError('OWNED_PROCESS_CLEANUP_FAILED');
     }
   }
   await removeProfile(browser.profileDir);

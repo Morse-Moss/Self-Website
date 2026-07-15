@@ -85,12 +85,23 @@ test('S9 harness owns a bounded Edge process and mocks access without sensitive 
   );
 });
 
+test('S9 reduced-motion gate rejects every active animation including finite durations', () => {
+  const harness = readHarness();
+  const helpers = readUtf8('scripts/lib/s9-cdp.mjs');
+
+  assert.match(harness, /animationStates: document\.getAnimations\(\)/);
+  assert.match(harness, /canvas\.runningAnimations = countRunningAnimations\(canvas\.animationStates\)/);
+  assert.match(helpers, /animation\?\.playState === 'running'/);
+  assert.match(harness, /check\(canvas\.runningAnimations === 0/);
+  assert.doesNotMatch(harness, /runningInfiniteAnimations|iterations === Infinity/);
+});
+
 test('S9 harness stdout is one exact privacy-limited summary', () => {
   const harness = readHarness();
-  const consoleLogs = harness.match(/console\.log\(/g) ?? [];
+  const consoleLogs = harness.match(/consoleLike\.log\(/g) ?? [];
 
   assert.equal(consoleLogs.length, 1);
-  assert.match(harness, /console\.log\(JSON\.stringify\(summary, null, 2\)\)/);
+  assert.match(harness, /consoleLike\.log\(JSON\.stringify\(summary, null, 2\)\)/);
   assert.match(
     harness,
     /const summary = createS9Summary\(\{\s*failures,\s*screenshots,\s*routeStatuses,\s*canvasPixelVariance,\s*expandedSlugs,\s*horizontalOverflow,\s*consoleErrors,\s*pageErrors,\s*externalRuntimeRequests,\s*\}\);/,

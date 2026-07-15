@@ -17,11 +17,13 @@ import {
   assertConsecutiveAnimationFramesQuiet,
   cleanupOwnedBrowser,
   connectCdpTransport,
+  countRunningAnimations,
   createCleanupCoordinator,
   createNetworkMonitor,
   createS9Summary,
   dispatchPrimaryClick,
   installSignalCleanup,
+  publicS9CdpFailureCode,
   waitForOwnedDevToolsActivePort,
 } from './lib/s9-cdp.mjs';
 
@@ -32,6 +34,7 @@ function isDirectExecution(metaUrl, argvPath) {
 
 export async function main({
   argv = process.argv,
+  dependencies = {},
   env = process.env,
   processLike = process,
 } = {}) {
@@ -48,6 +51,14 @@ const SCREENSHOT_TIMEOUT_MS = 10_000;
 const CLOSE_TIMEOUT_MS = 2_000;
 const CANVAS_SAMPLE_WIDTH = 160;
 const CANVAS_SAMPLE_HEIGHT = 90;
+const {
+  cleanupBrowserOptions = {},
+  consoleLike = console,
+  edgeExists = existsSync,
+  makeProfile = mkdtempSync,
+  spawnBrowser = spawn,
+  waitForEndpoint = waitForOwnedDevToolsActivePort,
+} = dependencies;
 
 const viewports = [
   { name: 'desktop', width: 1440, height: 900, reducedMotion: false },
@@ -88,7 +99,8 @@ class HarnessError extends Error {
 }
 
 function failureCode(error) {
-  return error instanceof HarnessError ? error.code : 'unexpected';
+  if (error instanceof HarnessError) return error.code;
+  return publicS9CdpFailureCode(error) ?? 'unexpected';
 }
 
 function addFailure(code) {
@@ -113,12 +125,12 @@ async function fetchJson(url, options = {}) {
 }
 
 async function launchBrowser({ onOwnedBrowser }) {
-  if (!existsSync(edgePath)) throw new HarnessError('browser:edge-missing');
+  if (!edgeExists(edgePath)) throw new HarnessError('browser:edge-missing');
 
   const profilePrefix = path.join(os.tmpdir(), 'revolution-s9-edge-');
-  const profileDir = mkdtempSync(profilePrefix);
+  const profileDir = makeProfile(profilePrefix);
   const startedAtMs = Date.now();
-  const browserProcess = spawn(edgePath, [
+  const browserProcess = spawnBrowser(edgePath, [
     '--headless=new',
     '--no-first-run',
     '--no-default-browser-check',
@@ -148,7 +160,7 @@ async function launchBrowser({ onOwnedBrowser }) {
   };
   onOwnedBrowser(browserState);
 
-  const endpoint = await waitForOwnedDevToolsActivePort({
+  const endpoint = await waitForEndpoint({
     fsApi: { readFileSync, statSync },
     isProcessExited: () => browserProcess.exitCode !== null,
     profileDir,
@@ -222,7 +234,8 @@ async function createPageClient(webSocketUrl) {
     }
     if (message.method === 'Log.entryAdded' && message.params.entry.level === 'error') {
       const entry = message.params.entry;
-      if (entry.source !== 'network') runtime.consoleErrors += 1;
+      if (entry.source === 'network') networkMonitor.handle(message.method, message.params);
+      else runtime.consoleErrors += 1;
     }
     if ([
       'Network.requestWillBeSent',
@@ -430,10 +443,8 @@ async function sampleCanvas(client) {
     return {
       frameDifference,
       pointerEvents: getComputedStyle(canvas).pointerEvents,
-      runningInfiniteAnimations: document.getAnimations()
-        .filter((animation) => animation.playState === 'running')
-        .filter((animation) => animation.effect?.getTiming().iterations === Infinity)
-        .length,
+      animationStates: document.getAnimations()
+        .map((animation) => ({ playState: animation.playState })),
       sampleHeight,
       sampleWidth,
       variance,
@@ -566,6 +577,7 @@ async function inspectHome(client, viewport) {
   if (!canvas) {
     addFailure(`${viewportName}:home:canvas-sample-missing`);
   } else {
+    canvas.runningAnimations = countRunningAnimations(canvas.animationStates);
     canvasPixelVariance[viewportName] = {
       frameDifference: Number(canvas.frameDifference.toFixed(6)),
       sampleHeight: canvas.sampleHeight,
@@ -576,7 +588,7 @@ async function inspectHome(client, viewport) {
     check(canvas.variance > 0, `${viewportName}:home:canvas-blank`);
     if (viewport.reducedMotion) {
       check(canvas.frameDifference === 0, `${viewportName}:home:canvas-not-static`);
-      check(canvas.runningInfiniteAnimations === 0, `${viewportName}:home:infinite-animation`);
+      check(canvas.runningAnimations === 0, `${viewportName}:home:active-animation`);
     } else {
       check(canvas.frameDifference > 0, `${viewportName}:home:canvas-not-moving`);
     }
@@ -1118,7 +1130,10 @@ try {
 
   cleanupCoordinator = createCleanupCoordinator(async () => {
     try {
-      await cleanupOwnedBrowser(browser, { closeTimeoutMs: CLOSE_TIMEOUT_MS });
+      await cleanupOwnedBrowser(browser, {
+        ...cleanupBrowserOptions,
+        closeTimeoutMs: CLOSE_TIMEOUT_MS,
+      });
     } catch {
       addFailure('browser:owned-cleanup-failed');
     }
@@ -1170,9 +1185,9 @@ const summary = createS9Summary({
   pageErrors,
   externalRuntimeRequests,
 });
-console.log(JSON.stringify(summary, null, 2));
+consoleLike.log(JSON.stringify(summary, null, 2));
 if (failures.length > 0) {
-  console.error('S9_VISUAL_SMOKE_FAILED');
+  consoleLike.error('S9_VISUAL_SMOKE_FAILED');
   processLike.exitCode = 1;
 }
 return summary;
