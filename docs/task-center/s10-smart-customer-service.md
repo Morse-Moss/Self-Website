@@ -48,7 +48,7 @@ release_boundary:
 
 ## Current Pointer
 
-**S10-CS-1 MIGRATION + RETENTION**
+**S10-CS-2 PROVIDER + RUNTIME**
 
 ## Next Allowed Pointer
 
@@ -59,8 +59,8 @@ release_boundary:
 | Pointer | State | Exit evidence |
 |---|---|---|
 | `S10-CS-0 CONTRACT + PROVIDER EVIDENCE` | PASS | contract test 5/5；CRITICAL compliance 与 safety delta review PASS |
-| `S10-CS-1 MIGRATION + RETENTION` | IN PROGRESS | 001→002、checksum、10d 清理、旧数据保全 |
-| `S10-CS-2 PROVIDER + RUNTIME` | PENDING | 双协议 adapter、abort、timeout、heartbeat、history |
+| `S10-CS-1 MIGRATION + RETENTION` | PASS | migration focused 15/15；retention 3/3；full PostgreSQL suite 236/236，0 skip；CRITICAL 双审查 PASS |
+| `S10-CS-2 PROVIDER + RUNTIME` | IN PROGRESS | 双协议 adapter、abort、timeout、heartbeat、history |
 | `S10-CS-3 RAG + AUTO SEARCH` | PENDING | BGE/pgvector、SearchRouter、Bocha Mock、引用安全 |
 | `S10-CS-4 JD + DIAGNOSIS` | PENDING | workflow 合同、结构化初诊、Outbox 幂等 |
 | `S10-CS-5 ADMIN + ALERTS` | PENDING | scrypt+TOTP、权限矩阵、badcase、导出、飞书 Mock |
@@ -95,8 +95,8 @@ release_boundary:
 | ID | State | Closure condition |
 |---|---|---|
 | `S10-F1` | CLOSED | 蓝图 §15、唯一指针、active S10 contract test 与 CRITICAL 双审查通过 |
-| `S10-F2` | OPEN | 12h runtime history 与 10d interaction log 通过真实 pgvector 时间旅行测试 |
-| `S10-F3` | OPEN | migration runner bootstrap、001-only baseline、登记顺序/checksum，001→002 与重复执行通过 |
+| `S10-F2` | CLOSED | 12h runtime cascade、9d interaction 保留、10d 原文删除与幂等清理在 disposable pgvector 通过 |
+| `S10-F3` | CLOSED | bootstrap、001-only baseline、checksum、并发锁、partial-002、事务回滚与旧数据保全通过 |
 | `S10-F4` | OPEN | admin 与 visitor cookie/权限物理隔离，TOTP replay/CSRF/CSV 防护通过 |
 | `S10-F5` | OPEN | SearchRouter、恶意 URL、citation 和站内个人事实边界通过 |
 | `S10-F6` | OPEN | 初诊、首次邀请码、两轮故障/恢复、邀请码/管理员安全通知 Outbox 去重通过 |
@@ -109,6 +109,7 @@ release_boundary:
 - 2026-07-15：完成代码、UI 与 CRITICAL challenge 三路只读审查。确认复用 S8 主链，不建第二套聊天服务；合同需覆盖旧蓝图冲突、拆分 12h/10d 数据、additive migration、独立 admin、snippet-only 搜索与事务 Outbox。
 - 2026-07-15：中转 `/models` PASS；Responses 与 Chat Completions 共 2 次极短探测均无 HTTP 响应，按预算停止。真实 GPT 当前 `BLOCKED_EXTERNAL`。
 - 2026-07-15：`S10-CS-0` PASS / `S10-CS-1` START。合同测试 5/5；compliance 与 quality/safety delta review 均 PASS，72h/12h、migration bootstrap、incident/outbox、GitHub 分类、push 边界和九组安全条件已冻结。
+- 2026-07-16：`S10-CS-1` PASS / `S10-CS-2` START。001-only 本地项目库经哨兵验证 baseline 登记并升级到 002，原 9 条知识文档保全。迁移 15/15、retention 3/3、完整 PostgreSQL suite 236/236、0 skip；spec 与 quality/safety 双审查全部 PASS。旧 S9 current-pointer 契约已修为历史 closeout 保留，S9/S10 focused 25/25。
 
 ## Preauthorization Matrix
 

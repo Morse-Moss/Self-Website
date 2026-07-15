@@ -75,39 +75,39 @@ Stage only S10 docs, `.env.example`, and the contract test. Do not stage `.env.l
 - Create: `tests/migration-integration.test.ts`
 - Create: `tests/retention-integration.test.ts`
 
-- [ ] **Step 1: Write migration RED tests**
+- [x] **Step 1: Write migration RED tests**
 
 Cover `001 -> 002`, ordered application, repeat execution, checksum drift rejection, preservation of an existing invite/document, and a transaction rollback when `002` fails.
 
-- [ ] **Step 2: Run migration tests and verify RED**
+- [x] **Step 2: Run migration tests and verify RED**
 
 Run: `node --test tests/migration-integration.test.ts tests/schema.test.ts`
 
 Expected: FAIL because the runner hardcodes `001` and S10 tables do not exist.
 
-- [ ] **Step 3: Implement additive schema**
+- [x] **Step 3: Implement additive schema**
 
 Create `interaction_turns`, `interaction_searches`, `diagnoses`, `alert_outbox`, `service_incidents`, `admin_sessions`, `admin_security_state`, `access_attempts`, and required indexes. Add `workflow`, `audience_intent`, and `search_count` without destructive conversion. Use nullable usage/cost columns and plain runtime identifiers in 10-day tables so Session deletion cannot cascade. `schema_migrations` is runner infrastructure and is not created by `002`.
 
-- [ ] **Step 4: Implement the migration runner**
+- [x] **Step 4: Implement the migration runner**
 
 Bootstrap `schema_migrations` before reading its rows. Read `db/migrations/*.sql`, sort by numeric prefix, hash bytes with SHA-256, apply one file per transaction, record checksum in the same transaction, and reject mismatches before executing later files. On an existing 001-only database, verify the vector extension plus 001 table/column/constraint sentinels and baseline-register the current 001 checksum; reject partial or incompatible schemas. Tests cover empty DB, 001-only DB, repeated execution, checksum drift and 002 rollback.
 
-- [ ] **Step 5: Verify migration GREEN**
+- [x] **Step 5: Verify migration GREEN**
 
 Run: `node --test tests/migration-integration.test.ts tests/schema.test.ts`
 
 Expected: PASS on a disposable PostgreSQL database.
 
-- [ ] **Step 6: Write retention RED tests**
+- [x] **Step 6: Write retention RED tests**
 
 At fixed times, prove 12-hour Session cleanup removes runtime messages while a 9-day interaction remains, then prove 10-day cleanup removes raw turn/search/diagnosis content and expired admin/outbox rows while retaining knowledge and invite definitions.
 
-- [ ] **Step 7: Implement idempotent cleanup**
+- [x] **Step 7: Implement idempotent cleanup**
 
 Delete each data class by its own expiry column in one transaction and print counts only. Never print content.
 
-- [ ] **Step 8: Verify retention GREEN and commit**
+- [x] **Step 8: Verify retention GREEN and commit**
 
 Run: `node --test tests/retention-integration.test.ts tests/operations-scripts.test.ts`
 

@@ -4,7 +4,7 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**S10-CS-1 MIGRATION + RETENTION**
+**S10-CS-2 PROVIDER + RUNTIME**
 
 ## next_allowed_pointer
 按 `docs/task-center/s10-smart-customer-service.md` 的 Phase Registry 顺序推进。只有当前阶段 RED/GREEN、focused verification、审查和状态同步后才能进入下一阶段；不部署、不 push。博查/飞书缺少凭据时真实链保持 `BLOCKED_EXTERNAL`，不得用 Mock 冒充。
