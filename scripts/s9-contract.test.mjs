@@ -57,6 +57,46 @@ test('S9 raw-CDP harness contains the complete route, viewport, and event contra
   }
 });
 
+test('S9 samples Canvas pixels from two bounded 160x90 CDP screenshot clips', () => {
+  const harness = readHarness();
+  const sampleStart = harness.indexOf('async function sampleCanvas(client)');
+  const sampleEnd = harness.indexOf('async function inspectHome(client, viewport)', sampleStart);
+
+  assert.notEqual(sampleStart, -1, 'sampleCanvas must exist');
+  assert.notEqual(sampleEnd, -1, 'sampleCanvas must end before inspectHome');
+  const sampleCanvas = harness.slice(sampleStart, sampleEnd);
+
+  assert.match(harness, /const CANVAS_SAMPLE_WIDTH = 160;/);
+  assert.match(harness, /const CANVAS_SAMPLE_HEIGHT = 90;/);
+  assert.match(sampleCanvas, /canvas\.getBoundingClientRect\(\)/);
+  assert.match(sampleCanvas, /Math\.min\(window\.innerWidth, rect\.right\)/);
+  assert.match(sampleCanvas, /Math\.min\(window\.innerHeight, rect\.bottom\)/);
+  assert.match(
+    sampleCanvas,
+    /visibleRight - visibleLeft < sampleWidth\s*\|\| visibleBottom - visibleTop < sampleHeight\s*\) return null;/,
+  );
+  assert.match(sampleCanvas, /x: window\.scrollX \+ visibleLeft,\s*y: window\.scrollY \+ visibleTop,/);
+  assert.match(
+    sampleCanvas,
+    /client\.send\('Page\.captureScreenshot', \{\s*captureBeyondViewport: false,\s*clip: \{\s*x: sample\.x,\s*y: sample\.y,\s*width: CANVAS_SAMPLE_WIDTH,\s*height: CANVAS_SAMPLE_HEIGHT,\s*scale: 1,\s*\},\s*format: 'png',\s*fromSurface: true,\s*\}/,
+    'sampleCanvas must capture the bounded 160x90 clip through CDP',
+  );
+  assert.match(
+    sampleCanvas,
+    /const firstScreenshot = await captureFrame\(\);\s*await delay\(360\);\s*const secondScreenshot = await captureFrame\(\);/,
+  );
+  assert.match(sampleCanvas, /`data:image\/png;base64,\$\{firstScreenshot\.data\}`/);
+  assert.match(sampleCanvas, /`data:image\/png;base64,\$\{secondScreenshot\.data\}`/);
+  assert.match(sampleCanvas, /await image\.decode\(\)/);
+  assert.match(sampleCanvas, /context\.drawImage\(image, 0, 0, sampleWidth, sampleHeight\)/);
+  assert.match(sampleCanvas, /context\.getImageData\(0, 0, sampleWidth, sampleHeight\)\.data/);
+  assert.match(sampleCanvas, /const first = await decodePng\([^;]+firstDataUrl[^;]+\);/);
+  assert.match(sampleCanvas, /const second = await decodePng\([^;]+secondDataUrl[^;]+\);/);
+  assert.match(sampleCanvas, /const variance = first\.reduce\(/);
+  assert.match(sampleCanvas, /Math\.abs\(value - second\[index\]\)/);
+  assert.doesNotMatch(sampleCanvas, /drawImage\(canvas,/);
+});
+
 test('S9 harness owns a bounded Edge process and mocks access without sensitive payload reads', () => {
   const harness = readHarness();
   const lifecycleSource = `${harness}\n${readUtf8('scripts/lib/s9-cdp.mjs')}`;

@@ -737,6 +737,45 @@ async function captureScreenshot(client, viewportName, kind) {
 }
 
 async function sampleCanvas(client) {
+  const sample = await client.evaluate(`(() => {
+    const canvas = document.querySelector('[data-testid="morse-signal-canvas"]');
+    if (!(canvas instanceof HTMLCanvasElement)) return null;
+    const sampleWidth = ${CANVAS_SAMPLE_WIDTH};
+    const sampleHeight = ${CANVAS_SAMPLE_HEIGHT};
+    const rect = canvas.getBoundingClientRect();
+    const visibleLeft = Math.max(0, rect.left);
+    const visibleTop = Math.max(0, rect.top);
+    const visibleRight = Math.min(window.innerWidth, rect.right);
+    const visibleBottom = Math.min(window.innerHeight, rect.bottom);
+    if (
+      visibleRight - visibleLeft < sampleWidth
+      || visibleBottom - visibleTop < sampleHeight
+    ) return null;
+    return {
+      x: window.scrollX + visibleLeft,
+      y: window.scrollY + visibleTop,
+    };
+  })()`, COMMAND_TIMEOUT_MS);
+  if (!sample) return null;
+
+  const captureFrame = () => client.send('Page.captureScreenshot', {
+    captureBeyondViewport: false,
+    clip: {
+      x: sample.x,
+      y: sample.y,
+      width: CANVAS_SAMPLE_WIDTH,
+      height: CANVAS_SAMPLE_HEIGHT,
+      scale: 1,
+    },
+    format: 'png',
+    fromSurface: true,
+  }, SCREENSHOT_TIMEOUT_MS);
+  const firstScreenshot = await captureFrame();
+  await delay(360);
+  const secondScreenshot = await captureFrame();
+  const firstDataUrl = `data:image/png;base64,${firstScreenshot.data}`;
+  const secondDataUrl = `data:image/png;base64,${secondScreenshot.data}`;
+
   return client.evaluate(`(async () => {
     const canvas = document.querySelector('[data-testid="morse-signal-canvas"]');
     if (!(canvas instanceof HTMLCanvasElement)) return null;
@@ -748,9 +787,12 @@ async function sampleCanvas(client) {
     const context = scratch.getContext('2d', { willReadFrequently: true });
     if (!context) return null;
 
-    const readPixels = () => {
+    const decodePng = async (dataUrl) => {
+      const image = new Image();
+      image.src = dataUrl;
+      await image.decode();
       context.clearRect(0, 0, sampleWidth, sampleHeight);
-      context.drawImage(canvas, 0, 0, sampleWidth, sampleHeight);
+      context.drawImage(image, 0, 0, sampleWidth, sampleHeight);
       const rgba = context.getImageData(0, 0, sampleWidth, sampleHeight).data;
       const pixels = new Float64Array(sampleWidth * sampleHeight);
       for (let rgbaIndex = 0, pixelIndex = 0; rgbaIndex < rgba.length; rgbaIndex += 4, pixelIndex += 1) {
@@ -760,9 +802,8 @@ async function sampleCanvas(client) {
       return pixels;
     };
 
-    const first = readPixels();
-    await new Promise((resolve) => setTimeout(resolve, 360));
-    const second = readPixels();
+    const first = await decodePng(${JSON.stringify(firstDataUrl)});
+    const second = await decodePng(${JSON.stringify(secondDataUrl)});
     const mean = first.reduce((total, value) => total + value, 0) / first.length;
     const variance = first.reduce((total, value) => total + ((value - mean) ** 2), 0) / first.length;
     const frameDifference = first.reduce(
