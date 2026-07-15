@@ -57,6 +57,36 @@ test('S9 raw-CDP harness contains the complete route, viewport, and event contra
   }
 });
 
+test('S9 home hero fills the first viewport before the featured band begins', () => {
+  const heroStyles = readUtf8('app/styles/hero.module.css');
+  const harness = readHarness();
+  const inspectHomeStart = harness.indexOf('async function inspectHome(client, viewport)');
+  const inspectHomeEnd = harness.indexOf('async function inspectWorksShell', inspectHomeStart);
+
+  assert.notEqual(inspectHomeStart, -1, 'inspectHome must exist');
+  assert.notEqual(inspectHomeEnd, -1, 'inspectHome must end before inspectWorksShell');
+  const inspectHome = harness.slice(inspectHomeStart, inspectHomeEnd);
+
+  assert.match(
+    heroStyles,
+    /\.hero\s*\{[\s\S]*?min-height: calc\(100svh - var\(--topbar-h\)\);/,
+  );
+  assert.doesNotMatch(heroStyles, /min\(680px/);
+  assert.doesNotMatch(
+    heroStyles,
+    /min-height:\s*calc\(100svh - var\(--topbar-h\) - var\(--space-9\)\)/,
+  );
+  assert.match(
+    inspectHome,
+    /nextBandBelowFold: Boolean\(featuredRect && featuredRect\.top >= innerHeight - 1\)/,
+  );
+  assert.match(
+    inspectHome,
+    /check\(state\.nextBandBelowFold, `\$\{viewportName\}:home:next-band-entered-first-viewport`\)/,
+  );
+  assert.doesNotMatch(inspectHome, /nextBandVisible|next-band-not-visible/);
+});
+
 test('S9 samples Canvas pixels from two bounded 160x90 CDP screenshot clips', () => {
   const harness = readHarness();
   const sampleStart = harness.indexOf('async function sampleCanvas(client)');

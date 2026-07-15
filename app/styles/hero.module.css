@@ -1,7 +1,7 @@
 .hero {
   position: relative;
   display: flex;
-  min-height: min(680px, calc(100svh - var(--topbar-h) - var(--space-7)));
+  min-height: calc(100svh - var(--topbar-h));
   align-items: center;
   padding: var(--space-6) 0 var(--space-7);
   overflow: hidden;
@@ -124,7 +124,6 @@
 
 @media (max-width: 900px) {
   .hero {
-    min-height: auto;
     align-items: flex-start;
   }
 
@@ -140,7 +139,6 @@
 
 @media (max-width: 640px) {
   .hero {
-    min-height: calc(100svh - var(--topbar-h) - var(--space-9));
     padding: var(--space-5) 0 var(--space-6);
   }
 

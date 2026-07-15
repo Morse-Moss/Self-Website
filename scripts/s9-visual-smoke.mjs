@@ -886,7 +886,7 @@ async function inspectHome(client, viewport) {
       headerFixed: header ? getComputedStyle(header).position === 'fixed' : false,
       identityChatOverlap: Boolean(identityRect && chatRect && overlaps(identityRect, chatRect)),
       mainClearsHeader: Boolean(headerRect && mainRect && mainRect.top >= headerRect.bottom - 1),
-      nextBandVisible: Boolean(featuredRect && featuredRect.top < innerHeight && featuredRect.bottom > 0),
+      nextBandBelowFold: Boolean(featuredRect && featuredRect.top >= innerHeight - 1),
       roleVisible,
       textOverflowCount: horizontalNodes.filter((element) => element.scrollWidth - element.clientWidth > 1).length,
       viewportOverflowCount: viewportNodes.filter((element) => {
@@ -905,7 +905,7 @@ async function inspectHome(client, viewport) {
   check(state.featuredCount === 2, `${viewportName}:home:featured-count`);
   check(state.capabilityVisible, `${viewportName}:home:capability-matrix`);
   check(state.factsVisible, `${viewportName}:home:development-facts`);
-  check(state.nextBandVisible, `${viewportName}:home:next-band-not-visible`);
+  check(state.nextBandBelowFold, `${viewportName}:home:next-band-entered-first-viewport`);
   check(state.headerFixed && state.mainClearsHeader, `${viewportName}:home:fixed-header-overlap`);
   check(!state.identityChatOverlap, `${viewportName}:home:identity-chat-overlap`);
   check(state.textOverflowCount === 0, `${viewportName}:home:text-overflow`);
