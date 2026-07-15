@@ -6,21 +6,39 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
-  rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
-import { createServer } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
-const targetUrl = new URL(process.argv[2] || 'http://127.0.0.1:3010');
-const edgePath = process.env.S9_EDGE_PATH
-  || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-const evidenceDir = path.resolve(new URL('../docs/verify/s9/', import.meta.url).pathname.slice(1));
-const publicContent = JSON.parse(readFileSync(
-  new URL('../content/site-content.json', import.meta.url),
-  'utf8',
-));
+import {
+  assertConsecutiveAnimationFramesQuiet,
+  cleanupOwnedBrowser,
+  connectCdpTransport,
+  createCleanupCoordinator,
+  createNetworkMonitor,
+  createS9Summary,
+  dispatchPrimaryClick,
+  installSignalCleanup,
+  waitForOwnedDevToolsActivePort,
+} from './lib/s9-cdp.mjs';
+
+function isDirectExecution(metaUrl, argvPath) {
+  return typeof argvPath === 'string'
+    && pathToFileURL(path.resolve(argvPath)).href === metaUrl;
+}
+
+export async function main({
+  argv = process.argv,
+  env = process.env,
+  processLike = process,
+} = {}) {
+let targetUrl;
+let edgePath;
+let evidenceDir;
+let publicContent;
 
 const CONNECTION_TIMEOUT_MS = 5_000;
 const COMMAND_TIMEOUT_MS = 10_000;
@@ -62,8 +80,6 @@ let consoleErrors = 0;
 let pageErrors = 0;
 const externalRuntimeRequestSet = new Set();
 
-mkdirSync(evidenceDir, { recursive: true });
-
 class HarnessError extends Error {
   constructor(code) {
     super(code);
@@ -87,43 +103,6 @@ function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-function withTimeout(promise, timeoutMs, code) {
-  let timeout;
-  return Promise.race([
-    promise.finally(() => clearTimeout(timeout)),
-    new Promise((_, reject) => {
-      timeout = setTimeout(() => reject(new HarnessError(code)), timeoutMs);
-    }),
-  ]);
-}
-
-async function reserveDebugPort() {
-  const server = createServer();
-  try {
-    await withTimeout(
-      new Promise((resolve, reject) => {
-        server.once('error', reject);
-        server.listen(0, '127.0.0.1', resolve);
-      }),
-      CONNECTION_TIMEOUT_MS,
-      'browser:debug-port-timeout',
-    );
-    const address = server.address();
-    if (!address || typeof address === 'string') {
-      throw new HarnessError('browser:debug-port-unavailable');
-    }
-    return address.port;
-  } finally {
-    if (server.listening) {
-      await withTimeout(
-        new Promise((resolve) => server.close(resolve)),
-        CLOSE_TIMEOUT_MS,
-        'browser:debug-port-close-timeout',
-      );
-    }
-  }
-}
-
 async function fetchJson(url, options = {}) {
   const response = await fetch(url, {
     ...options,
@@ -133,12 +112,12 @@ async function fetchJson(url, options = {}) {
   return response.json();
 }
 
-async function launchBrowser() {
+async function launchBrowser({ onOwnedBrowser }) {
   if (!existsSync(edgePath)) throw new HarnessError('browser:edge-missing');
 
-  const debugPort = await reserveDebugPort();
   const profilePrefix = path.join(os.tmpdir(), 'revolution-s9-edge-');
   const profileDir = mkdtempSync(profilePrefix);
+  const startedAtMs = Date.now();
   const browserProcess = spawn(edgePath, [
     '--headless=new',
     '--no-first-run',
@@ -151,220 +130,65 @@ async function launchBrowser() {
     '--metrics-recording-only',
     '--mute-audio',
     '--remote-debugging-address=127.0.0.1',
-    `--remote-debugging-port=${debugPort}`,
+    '--remote-debugging-port=0',
     `--user-data-dir=${profileDir}`,
     'about:blank',
   ], {
+    detached: process.platform !== 'win32',
     stdio: 'ignore',
     windowsHide: true,
   });
   browserProcess.on('error', () => {});
 
-  const cdpBase = `http://127.0.0.1:${debugPort}`;
   const browserState = {
     browserProcess,
     browserWebSocketUrl: null,
-    cdpBase,
+    cdpBase: null,
     profileDir,
   };
+  onOwnedBrowser(browserState);
 
-  try {
-    const deadline = Date.now() + CONNECTION_TIMEOUT_MS;
-    let version;
-    while (!version && Date.now() < deadline) {
-      if (browserProcess.exitCode !== null) {
-        throw new HarnessError('browser:early-exit');
-      }
-      try {
-        version = await fetchJson(`${cdpBase}/json/version`);
-      } catch {
-        await delay(75);
-      }
-    }
-    if (!version?.webSocketDebuggerUrl) {
-      throw new HarnessError('browser:cdp-readiness-timeout');
-    }
-    browserState.browserWebSocketUrl = version.webSocketDebuggerUrl;
-    return browserState;
-  } catch (error) {
-    await stopBrowser(browserState);
-    throw error;
-  }
-}
-
-async function connectSocket(webSocketUrl) {
-  const socket = new WebSocket(webSocketUrl);
-  await withTimeout(
-    new Promise((resolve, reject) => {
-      socket.onopen = resolve;
-      socket.onerror = () => reject(new HarnessError('cdp:websocket-error'));
-      socket.onclose = () => reject(new HarnessError('cdp:websocket-closed-before-open'));
-    }),
-    CONNECTION_TIMEOUT_MS,
-    'cdp:websocket-timeout',
-  );
-  return socket;
-}
-
-function createCommandClient(socket) {
-  let commandId = 0;
-  const pending = new Map();
-
-  socket.onmessage = (event) => {
-    let message;
-    try {
-      message = JSON.parse(event.data);
-    } catch {
-      return;
-    }
-    if (!message.id || !pending.has(message.id)) return;
-
-    const command = pending.get(message.id);
-    pending.delete(message.id);
-    if (message.error) command.reject(new HarnessError(`cdp:${command.method}-failed`));
-    else command.resolve(message.result ?? {});
-  };
-  socket.onclose = () => {
-    for (const command of pending.values()) {
-      command.reject(new HarnessError(`cdp:${command.method}-closed`));
-    }
-    pending.clear();
-  };
-
-  function send(method, params = {}, timeoutMs = COMMAND_TIMEOUT_MS) {
-    return new Promise((resolve, reject) => {
-      if (socket.readyState !== WebSocket.OPEN) {
-        reject(new HarnessError(`cdp:${method}-not-open`));
-        return;
-      }
-      const id = ++commandId;
-      const timeout = setTimeout(() => {
-        pending.delete(id);
-        reject(new HarnessError(`cdp:${method}-timeout`));
-      }, timeoutMs);
-      pending.set(id, {
-        method,
-        reject: (error) => {
-          clearTimeout(timeout);
-          reject(error);
-        },
-        resolve: (value) => {
-          clearTimeout(timeout);
-          resolve(value);
-        },
-      });
-      socket.send(JSON.stringify({ id, method, params }));
-    });
-  }
-
-  return { send };
-}
-
-async function stopBrowser(browser) {
-  if (!browser) return;
-
-  if (browser.browserWebSocketUrl) {
-    try {
-      const socket = await connectSocket(browser.browserWebSocketUrl);
-      const client = createCommandClient(socket);
-      try {
-        await client.send('Browser.close', {}, CLOSE_TIMEOUT_MS);
-      } catch {
-        // Browser.close often closes its own transport before acknowledging.
-      } finally {
-        if (socket.readyState < WebSocket.CLOSING) socket.close();
-      }
-    } catch {
-      // The owned browser may already have exited after its last page closed.
-    }
-  }
-
-  try {
-    await withTimeout(
-      browser.browserProcess.exitCode === null
-        ? new Promise((resolve) => browser.browserProcess.once('exit', resolve))
-        : Promise.resolve(),
-      CLOSE_TIMEOUT_MS,
-      'browser:graceful-close-timeout',
-    );
-  } catch {
-    browser.browserProcess.kill();
-    try {
-      await withTimeout(
-        browser.browserProcess.exitCode === null
-          ? new Promise((resolve) => browser.browserProcess.once('exit', resolve))
-          : Promise.resolve(),
-        CLOSE_TIMEOUT_MS,
-        'browser:forced-close-timeout',
-      );
-    } catch {
-      addFailure('browser:owned-process-close-failed');
-    }
-  }
-
-  const resolvedProfile = path.resolve(browser.profileDir);
-  const resolvedTemp = `${path.resolve(os.tmpdir())}${path.sep}`;
-  if (
-    resolvedProfile.startsWith(resolvedTemp)
-    && path.basename(resolvedProfile).startsWith('revolution-s9-edge-')
-  ) {
-    try {
-      rmSync(resolvedProfile, { force: true, maxRetries: 3, recursive: true, retryDelay: 100 });
-    } catch {
-      addFailure('browser:temp-profile-cleanup-failed');
-    }
-  } else {
-    addFailure('browser:temp-profile-boundary-failed');
-  }
+  const endpoint = await waitForOwnedDevToolsActivePort({
+    fsApi: { readFileSync, statSync },
+    isProcessExited: () => browserProcess.exitCode !== null,
+    profileDir,
+    startedAtMs,
+    timeoutMs: CONNECTION_TIMEOUT_MS,
+  });
+  browserState.browserWebSocketUrl = endpoint.browserWebSocketUrl;
+  browserState.cdpBase = endpoint.cdpBase;
+  return browserState;
 }
 
 async function openTab(cdpBase) {
   const tab = await fetchJson(`${cdpBase}/json/new?about:blank`, { method: 'PUT' });
   if (!tab.webSocketDebuggerUrl) throw new HarnessError('cdp:new-tab-missing-socket');
-  return { socket: await connectSocket(tab.webSocketDebuggerUrl), tab };
+  const cdpUrl = new URL(cdpBase);
+  const socketUrl = new URL(tab.webSocketDebuggerUrl);
+  if (
+    socketUrl.hostname !== cdpUrl.hostname
+    || socketUrl.port !== cdpUrl.port
+    || !/^\/devtools\/page\/[A-Za-z0-9._-]+$/.test(socketUrl.pathname)
+  ) {
+    throw new HarnessError('cdp:new-tab-unowned-socket');
+  }
+  return tab.webSocketDebuggerUrl;
 }
 
-function createPageClient(socket) {
-  let commandId = 0;
-  let currentRoute = 'about:blank';
-  let navigationInProgress = false;
-  let navigationStatuses = [];
-  const pending = new Map();
+async function createPageClient(webSocketUrl) {
+  let transport;
   const runtime = {
     consoleErrors: 0,
     pageErrors: 0,
-    externalRuntimeRequests: new Set(),
-    httpFailures: [],
   };
-
-  function rejectPending(code) {
-    for (const command of pending.values()) {
-      command.reject(new HarnessError(`${code}:${command.method}`));
-    }
-    pending.clear();
-  }
-
-  function statusFromResponse(response, type) {
-    if (!response?.url) return;
-    let responseUrl;
-    try {
-      responseUrl = new URL(response.url);
-    } catch {
-      return;
-    }
-    if (responseUrl.origin !== targetUrl.origin) return;
-
-    const status = Math.round(response.status || 0);
-    if (type === 'Document' && status > 0) navigationStatuses.push(status);
-    if (status >= 400) runtime.httpFailures.push({ route: currentRoute, status, type });
-  }
+  const networkMonitor = createNetworkMonitor({ targetOrigin: targetUrl.origin });
 
   async function handleAccessMock(params) {
     let requestUrl;
     try {
       requestUrl = new URL(params.request.url);
     } catch {
-      await send('Fetch.continueRequest', { requestId: params.requestId });
+      await transport.send('Fetch.continueRequest', { requestId: params.requestId });
       return;
     }
 
@@ -374,7 +198,7 @@ function createPageClient(socket) {
         expiresAt: null,
         remainingMessages: 0,
       })).toString('base64');
-      await send('Fetch.fulfillRequest', {
+      await transport.send('Fetch.fulfillRequest', {
         requestId: params.requestId,
         responseCode: 200,
         responseHeaders: [
@@ -386,26 +210,10 @@ function createPageClient(socket) {
       return;
     }
 
-    await send('Fetch.continueRequest', { requestId: params.requestId });
+    await transport.send('Fetch.continueRequest', { requestId: params.requestId });
   }
 
-  socket.onmessage = (event) => {
-    let message;
-    try {
-      message = JSON.parse(event.data);
-    } catch {
-      runtime.pageErrors += 1;
-      return;
-    }
-
-    if (message.id && pending.has(message.id)) {
-      const command = pending.get(message.id);
-      pending.delete(message.id);
-      if (message.error) command.reject(new HarnessError(`cdp:${command.method}-failed`));
-      else command.resolve(message.result ?? {});
-      return;
-    }
-
+  function handleEvent(message) {
     if (message.method === 'Runtime.consoleAPICalled' && message.params.type === 'error') {
       runtime.consoleErrors += 1;
     }
@@ -414,66 +222,31 @@ function createPageClient(socket) {
     }
     if (message.method === 'Log.entryAdded' && message.params.entry.level === 'error') {
       const entry = message.params.entry;
-      const exactNavigationAbort = navigationInProgress
-        && entry.source === 'network'
-        && entry.text === 'Failed to load resource: net::ERR_ABORTED';
-      if (!exactNavigationAbort) runtime.consoleErrors += 1;
+      if (entry.source !== 'network') runtime.consoleErrors += 1;
     }
-    if (message.method === 'Network.requestWillBeSent') {
-      const requestUrl = message.params.request?.url;
-      if (message.params.redirectResponse) {
-        statusFromResponse(message.params.redirectResponse, message.params.type);
-      }
-      if (!requestUrl || requestUrl.startsWith('data:') || requestUrl.startsWith('blob:')) return;
-      try {
-        const requestOrigin = new URL(requestUrl).origin;
-        if (requestOrigin !== targetUrl.origin) {
-          runtime.externalRuntimeRequests.add(requestOrigin);
-        }
-      } catch {
-        // Browser-internal schemes do not represent page runtime requests.
-      }
-    }
-    if (message.method === 'Network.responseReceived') {
-      statusFromResponse(message.params.response, message.params.type);
+    if ([
+      'Network.requestWillBeSent',
+      'Network.responseReceived',
+      'Network.loadingFailed',
+      'Network.webSocketCreated',
+    ].includes(message.method)) {
+      networkMonitor.handle(message.method, message.params);
     }
     if (message.method === 'Fetch.requestPaused') {
       void handleAccessMock(message.params).catch(() => {
         runtime.pageErrors += 1;
       });
     }
-  };
-  socket.onclose = () => rejectPending('cdp:socket-closed');
-  socket.onerror = () => rejectPending('cdp:socket-error');
-
-  function send(method, params = {}, timeoutMs = COMMAND_TIMEOUT_MS) {
-    return new Promise((resolve, reject) => {
-      if (socket.readyState !== WebSocket.OPEN) {
-        reject(new HarnessError(`cdp:${method}-not-open`));
-        return;
-      }
-      const id = ++commandId;
-      const timeout = setTimeout(() => {
-        pending.delete(id);
-        reject(new HarnessError(`cdp:${method}-timeout`));
-      }, timeoutMs);
-      pending.set(id, {
-        method,
-        reject: (error) => {
-          clearTimeout(timeout);
-          reject(error);
-        },
-        resolve: (value) => {
-          clearTimeout(timeout);
-          resolve(value);
-        },
-      });
-      socket.send(JSON.stringify({ id, method, params }));
-    });
   }
 
+  transport = await connectCdpTransport(webSocketUrl, {
+    commandTimeoutMs: COMMAND_TIMEOUT_MS,
+    connectTimeoutMs: CONNECTION_TIMEOUT_MS,
+    onEvent: handleEvent,
+  });
+
   async function evaluate(expression, timeoutMs = COMMAND_TIMEOUT_MS) {
-    const result = await send('Runtime.evaluate', {
+    const result = await transport.send('Runtime.evaluate', {
       expression,
       returnByValue: true,
       awaitPromise: true,
@@ -485,28 +258,23 @@ function createPageClient(socket) {
   }
 
   return {
-    beginNavigation(route) {
-      currentRoute = route;
-      navigationInProgress = true;
-      navigationStatuses = [];
-    },
-    endNavigation() {
-      navigationInProgress = false;
-      return [...navigationStatuses];
-    },
+    beginNavigation: networkMonitor.beginNavigation,
+    endNavigation: networkMonitor.endNavigation,
+    dispose: transport.dispose,
     evaluate,
+    networkMonitor,
     runtime,
-    send,
+    send: transport.send,
   };
 }
 
-async function closeTab(client, socket) {
+async function closeTab(client) {
   try {
     await client.send('Page.close', {}, CLOSE_TIMEOUT_MS);
   } catch {
     // Page.close can close its own target transport before responding.
   } finally {
-    if (socket.readyState < WebSocket.CLOSING) socket.close();
+    client.dispose();
   }
 }
 
@@ -517,6 +285,65 @@ async function waitFor(client, expression, code, timeoutMs = INTERACTION_TIMEOUT
     await delay(50);
   }
   throw new HarnessError(code);
+}
+
+async function clickSelector(client, viewport, selector) {
+  try {
+    await dispatchPrimaryClick(client, {
+      pointerMode: viewport.width < 640 ? 'touch' : 'mouse',
+      selector,
+    });
+    return true;
+  } catch (error) {
+    if (error?.code === 'POINTER_TARGET_UNAVAILABLE') return false;
+    throw error;
+  }
+}
+
+async function cancelActivePageScroll(client) {
+  await client.evaluate(`new Promise((resolve) => {
+    window.scrollTo({ top: window.scrollY, behavior: 'auto' });
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)));
+  })`);
+}
+
+async function waitForPointerTargetStable(client, selector, code) {
+  const stable = await client.evaluate(`new Promise((resolve) => {
+    let frames = 0;
+    let previous = null;
+    let quietFrames = 0;
+    const sample = () => {
+      const target = document.querySelector(${JSON.stringify(selector)});
+      if (!(target instanceof HTMLElement)) {
+        resolve(false);
+        return;
+      }
+      const rect = target.getBoundingClientRect();
+      const current = {
+        bottom: rect.bottom,
+        left: rect.left,
+        right: rect.right,
+        scrollY: window.scrollY,
+        top: rect.top,
+      };
+      const unchanged = previous
+        && Math.abs(current.bottom - previous.bottom) < 0.5
+        && Math.abs(current.left - previous.left) < 0.5
+        && Math.abs(current.right - previous.right) < 0.5
+        && Math.abs(current.scrollY - previous.scrollY) < 0.5
+        && Math.abs(current.top - previous.top) < 0.5;
+      quietFrames = unchanged ? quietFrames + 1 : 0;
+      previous = current;
+      frames += 1;
+      if (quietFrames >= 3 || frames >= 120) {
+        resolve(quietFrames >= 3);
+        return;
+      }
+      requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  })`);
+  if (!stable) throw new HarnessError(code);
 }
 
 function expectedLocation(route) {
@@ -702,16 +529,12 @@ async function inspectHome(client, viewport) {
   check(state.textOverflowCount === 0, `${viewportName}:home:text-overflow`);
   check(state.viewportOverflowCount === 0, `${viewportName}:home:control-overflow`);
 
-  for (const trigger of ['header', 'hero']) {
-    const clicked = await client.evaluate(`(() => {
-      const button = ${trigger === 'header'
-        ? "document.querySelector('header button')"
-        : "document.querySelector('#home-title')?.parentElement?.querySelector('button')"};
-      if (!(button instanceof HTMLButtonElement)) return false;
-      document.querySelector('#morse-invite-code')?.blur();
-      button.click();
-      return true;
-    })()`);
+  for (const [trigger, selector] of [
+    ['header', 'header button'],
+    ['hero', '#home-title ~ div button'],
+  ]) {
+    if (trigger === 'hero') await cancelActivePageScroll(client);
+    const clicked = await clickSelector(client, viewport, selector);
     check(clicked, `${viewportName}:home:${trigger}-chat-trigger-missing`);
     if (clicked) {
       await waitFor(
@@ -790,15 +613,18 @@ async function inspectWorksShell(client, viewportName, route) {
   check(state.viewportOverflowCount === 0, `${viewportName}:${route}:control-overflow`);
 }
 
-async function clickSlug(client, slug) {
-  const clicked = await client.evaluate(`(() => {
-    const button = document.querySelector(
-      '[data-project-slug="${slug}"] button[aria-expanded]'
-    );
-    if (!(button instanceof HTMLButtonElement)) return false;
-    button.click();
-    return true;
-  })()`);
+async function clickSlug(client, viewport, slug) {
+  const selector = `[data-project-slug="${slug}"] button[aria-expanded]`;
+  await waitForPointerTargetStable(
+    client,
+    selector,
+    `works:${slug}:pointer-target-stability-timeout`,
+  );
+  const clicked = await clickSelector(
+    client,
+    viewport,
+    selector,
+  );
   if (!clicked) throw new HarnessError(`works:${slug}:toggle-missing`);
 }
 
@@ -835,6 +661,13 @@ async function waitForExpanded(client, viewportName, slug, requireAligned = true
   })()`);
 }
 
+async function waitForStaleDetailsRemoved(client, viewportName, activeSlug, label) {
+  await waitFor(client, `Array.from(document.querySelectorAll('[data-project-details]')).every(
+    (details) => details.closest('[data-project-slug]')?.getAttribute('data-project-slug')
+      === ${JSON.stringify(activeSlug)}
+  )`, `${viewportName}:works:${label}:stale-details-timeout`);
+}
+
 async function assertAllCollapsed(client, viewportName, label) {
   await waitFor(client, `(() => {
     const buttons = Array.from(document.querySelectorAll('button[aria-expanded]'));
@@ -852,31 +685,58 @@ async function assertAllCollapsed(client, viewportName, label) {
   return state;
 }
 
-async function verifyExternalClickIsolation(client, viewportName) {
-  const state = await client.evaluate(`(() => {
+async function verifyExternalClickIsolation(client, viewport) {
+  const viewportName = viewport.name;
+  const guardInstalled = await client.evaluate(`(() => {
     const article = document.querySelector('[data-project-slug="deep-research"]');
     const link = article?.querySelector('a[href^="https://"]');
-    if (!(link instanceof HTMLAnchorElement)) return { clicked: false };
-    const before = location.href;
-    let intercepted = false;
+    if (!(link instanceof HTMLAnchorElement)) return false;
+    const state = { before: location.href, intercepted: false };
     const preventExternalNavigation = (event) => {
-      if (event.target instanceof Element && event.target.closest('a[href^="https://"]')) {
-        intercepted = true;
+      if (event.target instanceof Element && event.target.closest('a[href^="https://"]') === link) {
+        state.intercepted = true;
         event.preventDefault();
       }
     };
     document.addEventListener('click', preventExternalNavigation, true);
-    link.click();
-    document.removeEventListener('click', preventExternalNavigation, true);
-    return {
-      clicked: intercepted,
-      expandedCount: document.querySelectorAll('button[aria-expanded="true"]').length,
-      locationUnchanged: location.href === before,
-    };
+    globalThis.__s9ExternalClickGuard = { preventExternalNavigation, state };
+    return true;
   })()`);
+  check(guardInstalled, `${viewportName}:works:external-click-missing`);
+  if (!guardInstalled) return;
+
+  let state;
+  try {
+    const clicked = await clickSelector(
+      client,
+      viewport,
+      '[data-project-slug="deep-research"] a[href^="https://"]',
+    );
+    check(clicked, `${viewportName}:works:external-hit-target`);
+  } finally {
+    state = await client.evaluate(`(() => {
+      const guard = globalThis.__s9ExternalClickGuard;
+      if (!guard) return null;
+      document.removeEventListener('click', guard.preventExternalNavigation, true);
+      delete globalThis.__s9ExternalClickGuard;
+      const article = document.querySelector('[data-project-slug="deep-research"]');
+      const expandedCount = document.querySelectorAll('button[aria-expanded="true"]').length;
+      const locationUnchanged = location.href === guard.state.before;
+      const clicked = guard.state.intercepted;
+      const targetCollapsed = article?.getAttribute('data-expanded') === 'false';
+      return { clicked, expandedCount, locationUnchanged, targetCollapsed };
+    })()`);
+  }
+  if (!state) {
+    addFailure(`${viewportName}:works:external-guard-state`);
+    return;
+  }
   check(state.clicked, `${viewportName}:works:external-click-missing`);
   check(state.locationUnchanged, `${viewportName}:works:external-navigation`);
-  check(state.expandedCount === 0, `${viewportName}:works:external-click-toggled-card`);
+  check(
+    state.expandedCount === 0 && state.targetCollapsed,
+    `${viewportName}:works:external-click-toggled-card`,
+  );
 }
 
 async function verifyKeyboard(client, viewportName) {
@@ -967,33 +827,65 @@ async function verifyTransitionSequences(client, viewport) {
   const viewportName = viewport.name;
   await navigate(client, viewportName, '/works');
   await assertAllCollapsed(client, viewportName, 'works:a-b-initial');
-  await clickSlug(client, 'content-agent');
+  await clickSlug(client, viewport, 'content-agent');
   await waitForExpanded(client, viewportName, 'content-agent');
-  await clickSlug(client, 'auto-operations');
+  await clickSlug(client, viewport, 'auto-operations');
   await waitForExpanded(client, viewportName, 'auto-operations');
+  await waitForStaleDetailsRemoved(client, viewportName, 'auto-operations', 'a-b');
 
   await navigate(client, viewportName, '/works');
   await assertAllCollapsed(client, viewportName, 'works:a-b-c-initial');
-  await clickSlug(client, 'content-agent');
+  await clickSlug(client, viewport, 'content-agent');
   await waitFor(
     client,
-    'document.querySelectorAll("button[aria-expanded=true]").length === 1',
+    `(() => {
+      const active = document.querySelector(
+        '[data-project-slug="content-agent"] button[aria-expanded="true"]'
+      ) !== null;
+      const details = document.querySelector(
+        '[data-project-slug="content-agent"] [data-project-details]'
+      ) !== null;
+      return active && details;
+    })()`,
     `${viewportName}:works:a-b-c-a-timeout`,
   );
-  await delay(35);
-  await clickSlug(client, 'auto-operations');
-  await delay(35);
-  await clickSlug(client, 'deep-research');
+  await clickSlug(client, viewport, 'auto-operations');
+  await waitFor(
+    client,
+    `(() => {
+      const active = document.querySelector(
+        '[data-project-slug="auto-operations"] button[aria-expanded="true"]'
+      ) !== null;
+      const targetDetails = document.querySelector(
+        '[data-project-slug="auto-operations"] [data-project-details]'
+      ) !== null;
+      return active && targetDetails;
+    })()`,
+    `${viewportName}:works:a-b-c-b-timeout`,
+  );
+  await clickSlug(client, viewport, 'deep-research');
   await waitForExpanded(client, viewportName, 'deep-research');
+  await waitForStaleDetailsRemoved(client, viewportName, 'deep-research', 'a-b-c');
 
   if (!viewport.reducedMotion) {
     await navigate(client, viewportName, '/works');
-    await clickSlug(client, 'content-agent');
+    await clickSlug(client, viewport, 'content-agent');
     await waitForExpanded(client, viewportName, 'content-agent');
     await installScrollObserver(client);
     try {
-      await clickSlug(client, 'auto-operations');
-      await delay(35);
+      await clickSlug(client, viewport, 'auto-operations');
+      await waitFor(client, `(() => {
+        const targetExpanded = document.querySelector(
+          '[data-project-slug="auto-operations"] button[aria-expanded="true"]'
+        ) !== null;
+        const staleDetails = document.querySelector(
+          '[data-project-slug="content-agent"] [data-project-details]'
+        ) !== null;
+        return targetExpanded && staleDetails;
+      })()`, `${viewportName}:works:wheel-pending-transition-timeout`);
+      const callCountBeforeWheel = await client.evaluate(
+        'globalThis.__s9ScrollCalls?.length ?? -1',
+      );
       await client.send('Input.dispatchMouseEvent', {
         deltaX: 0,
         deltaY: 240,
@@ -1001,7 +893,27 @@ async function verifyTransitionSequences(client, viewport) {
         x: Math.floor(viewport.width / 2),
         y: Math.floor(viewport.height / 2),
       });
-      await delay(700);
+      await waitFor(
+        client,
+        '(globalThis.__s9WheelEvents ?? 0) > 0',
+        `${viewportName}:works:wheel-not-received-timeout`,
+      );
+      await waitForStaleDetailsRemoved(client, viewportName, 'auto-operations', 'wheel');
+      let quietFrames = true;
+      try {
+        await assertConsecutiveAnimationFramesQuiet({
+          expectedValue: callCountBeforeWheel,
+          maxFrames: 8,
+          quietFrames: 4,
+          requestFrame: () => client.evaluate(
+            'new Promise((resolve) => requestAnimationFrame(() => resolve(true)))',
+          ),
+          sample: () => client.evaluate('globalThis.__s9ScrollCalls?.length ?? -1'),
+        });
+      } catch (error) {
+        if (error?.code !== 'ANIMATION_FRAME_ACTIVITY') throw error;
+        quietFrames = false;
+      }
       const wheelState = await client.evaluate(`({
         callCount: globalThis.__s9ScrollCalls?.length ?? -1,
         expandedCount: document.querySelectorAll('button[aria-expanded="true"]').length,
@@ -1011,7 +923,10 @@ async function verifyTransitionSequences(client, viewport) {
         wheelEvents: globalThis.__s9WheelEvents ?? 0,
       })`);
       check(wheelState.wheelEvents > 0, `${viewportName}:works:wheel-not-received`);
-      check(wheelState.callCount === 0, `${viewportName}:works:wheel-did-not-cancel-final-scroll`);
+      check(
+        quietFrames && wheelState.callCount === callCountBeforeWheel,
+        `${viewportName}:works:wheel-did-not-cancel-final-scroll`,
+      );
       check(
         wheelState.expandedCount === 1 && wheelState.targetExpanded,
         `${viewportName}:works:wheel-corrupted-expansion`,
@@ -1025,7 +940,7 @@ async function verifyTransitionSequences(client, viewport) {
     await navigate(client, viewportName, '/works');
     await installScrollObserver(client);
     try {
-      await clickSlug(client, 'content-agent');
+      await clickSlug(client, viewport, 'content-agent');
       await waitForExpanded(client, viewportName, 'content-agent');
       const reducedScroll = await client.evaluate(
         'globalThis.__s9ScrollCalls?.at(-1) ?? null',
@@ -1082,12 +997,12 @@ async function inspectWorks(client, viewport) {
     check(state.actions === 0, `${viewportName}:works:${label}:internal-action`);
   }
 
-  await verifyExternalClickIsolation(client, viewportName);
+  await verifyExternalClickIsolation(client, viewport);
   await verifyKeyboard(client, viewportName);
 
   await navigate(client, viewportName, '/works');
   for (const slug of slugs) {
-    await clickSlug(client, slug);
+    await clickSlug(client, viewport, slug);
     const state = await waitForExpanded(client, viewportName, slug);
     check(state.expandedCount === 1, `${viewportName}:works:${slug}:logical-expanded-count`);
     check(state.hashMatches, `${viewportName}:works:${slug}:hash`);
@@ -1119,18 +1034,17 @@ async function inspectWorks(client, viewport) {
 
   if (screenshotFiles[viewportName]?.works) {
     await navigate(client, viewportName, '/works');
-    await clickSlug(client, 'deep-research');
+    await clickSlug(client, viewport, 'deep-research');
     await waitForExpanded(client, viewportName, 'deep-research');
     await captureScreenshot(client, viewportName, 'works');
   }
 }
 
 async function runViewport(browser, viewport) {
-  let socket;
   let client;
   try {
-    ({ socket } = await openTab(browser.cdpBase));
-    client = createPageClient(socket);
+    const pageWebSocketUrl = await openTab(browser.cdpBase);
+    client = await createPageClient(pageWebSocketUrl);
     await client.send('Page.enable');
     await client.send('Runtime.enable');
     await client.send('Log.enable');
@@ -1173,28 +1087,60 @@ async function runViewport(browser, viewport) {
     if (client) {
       consoleErrors += client.runtime.consoleErrors;
       pageErrors += client.runtime.pageErrors;
-      for (const origin of client.runtime.externalRuntimeRequests) {
+      const networkSnapshot = client.networkMonitor.snapshot();
+      for (const origin of networkSnapshot.externalOrigins) {
         externalRuntimeRequestSet.add(origin);
       }
-      for (const failure of client.runtime.httpFailures) {
+      for (const failure of networkSnapshot.failures) {
+        addFailure(`${viewport.name}:${failure}`);
+      }
+      for (const failure of networkSnapshot.httpFailures) {
         addFailure(`${viewport.name}:${failure.route}:http-${failure.status}-${failure.type}`);
       }
     }
-    if (client && socket) await closeTab(client, socket);
-    else if (socket?.readyState < WebSocket.CLOSING) socket.close();
+    if (client) await closeTab(client);
   }
 }
 
 let browser;
+let cleanupCoordinator;
+let removeSignalHandlers = () => {};
 try {
-  browser = await launchBrowser();
+  targetUrl = new URL(argv[2] || 'http://127.0.0.1:3010');
+  edgePath = env.S9_EDGE_PATH
+    || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+  evidenceDir = path.resolve(new URL('../docs/verify/s9/', import.meta.url).pathname.slice(1));
+  publicContent = JSON.parse(readFileSync(
+    new URL('../content/site-content.json', import.meta.url),
+    'utf8',
+  ));
+  mkdirSync(evidenceDir, { recursive: true });
+
+  cleanupCoordinator = createCleanupCoordinator(async () => {
+    try {
+      await cleanupOwnedBrowser(browser, { closeTimeoutMs: CLOSE_TIMEOUT_MS });
+    } catch {
+      addFailure('browser:owned-cleanup-failed');
+    }
+  });
+  removeSignalHandlers = installSignalCleanup({
+    coordinator: cleanupCoordinator,
+    exit: (code) => processLike.exit(code),
+    processLike,
+  });
+  browser = await launchBrowser({
+    onOwnedBrowser(browserState) {
+      browser = browserState;
+    },
+  });
   for (const viewport of viewports) {
     await runViewport(browser, viewport);
   }
 } catch (error) {
   addFailure(`harness:infrastructure:${failureCode(error)}`);
 } finally {
-  await stopBrowser(browser);
+  if (cleanupCoordinator) await cleanupCoordinator.run('normal');
+  removeSignalHandlers();
 }
 
 if (consoleErrors > 0) addFailure('runtime:console-errors');
@@ -1213,7 +1159,7 @@ const screenshots = screenshotOrder.flatMap((fileName) => (
   screenshotByName.has(fileName) ? [screenshotByName.get(fileName)] : []
 ));
 
-const summary = {
+const summary = createS9Summary({
   failures,
   screenshots,
   routeStatuses,
@@ -1223,6 +1169,15 @@ const summary = {
   consoleErrors,
   pageErrors,
   externalRuntimeRequests,
-};
+});
 console.log(JSON.stringify(summary, null, 2));
-if (failures.length > 0) process.exitCode = 1;
+if (failures.length > 0) {
+  console.error('S9_VISUAL_SMOKE_FAILED');
+  processLike.exitCode = 1;
+}
+return summary;
+}
+
+if (isDirectExecution(import.meta.url, process.argv[1])) {
+  await main();
+}
