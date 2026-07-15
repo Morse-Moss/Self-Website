@@ -1,4 +1,4 @@
-import ProjectCard from '@/components/works/ProjectCard';
+import ProjectGallery from '@/components/works/ProjectGallery';
 import { getAllProjects, siteContent } from '@/lib/site-content';
 
 import styles from './page.module.css';
@@ -14,9 +14,7 @@ export default function WorksPage() {
         <span>{siteContent.works.intro}</span>
       </header>
 
-      <div className={styles.projectGrid}>
-        {projects.map((project) => <ProjectCard key={project.slug} project={project} />)}
-      </div>
+      <ProjectGallery projects={projects} />
     </main>
   );
 }

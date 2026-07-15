@@ -3,9 +3,14 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const repoRoot = new URL('../', import.meta.url);
+const s9SpecPath =
+  'docs/superpowers/specs/2026-07-14-aiking-inspired-portfolio-redesign-design.md';
 
 function readUtf8(relativePath) {
-  return readFileSync(new URL(relativePath, repoRoot), 'utf8');
+  return readFileSync(new URL(relativePath, repoRoot), 'utf8').replaceAll(
+    '\r\n',
+    '\n',
+  );
 }
 
 function assertIncludesAll(source, expected, label) {
@@ -14,7 +19,7 @@ function assertIncludesAll(source, expected, label) {
   }
 }
 
-test('blueprint defines the S7 multipage public experience', () => {
+test('historical S7 blueprint retains the multipage public experience record', () => {
   const blueprint = readUtf8('docs/portfolio-blueprint.md');
 
   assertIncludesAll(
@@ -50,7 +55,7 @@ test('blueprint defines the S7 multipage public experience', () => {
   );
 });
 
-test('stage contract contains the complete closed-stage governance sections', () => {
+test('historical S7 stage contract retains its closed-stage governance record', () => {
   const contract = readUtf8('docs/task-center/s7-multipage-portfolio.md');
 
   assertIncludesAll(
@@ -73,7 +78,7 @@ test('stage contract contains the complete closed-stage governance sections', ()
   );
 });
 
-test('blueprint and stage contract pin exact sources, CTAs, and safety boundaries', () => {
+test('historical S7 contract retains its source and safety record', () => {
   const blueprint = readUtf8('docs/portfolio-blueprint.md');
   const contract = readUtf8('docs/task-center/s7-multipage-portfolio.md');
   const combined = `${blueprint}\n${contract}`;
@@ -83,7 +88,6 @@ test('blueprint and stage contract pin exact sources, CTAs, and safety boundarie
     [
       '`content/site-content.json`',
       '`content/s3-content.json`',
-      'https://aitavix.com',
       'https://github.com/Morse-Moss/Deep-research-sys',
       'https://github.com/Morse-Moss/Self-Website',
       '`public/works/auto-operations/`',
@@ -103,6 +107,34 @@ test('blueprint and stage contract pin exact sources, CTAs, and safety boundarie
   );
 });
 
+test('S9 supersedes historical S7 live-page requirements', () => {
+  const blueprint = readUtf8('docs/portfolio-blueprint.md');
+  const specification = readUtf8(s9SpecPath);
+  const currentHarness = readUtf8('scripts/s9-visual-smoke.mjs');
+  const currentContract = `${blueprint}\n${specification}\n${currentHarness}`;
+
+  assertIncludesAll(
+    currentContract,
+    [
+      '## 14. S9 Morse 作品集重设计(2026-07-14)',
+      'Morse',
+      '/works#content-agent',
+      '本节是当前作品集前端与公开内容的最高优先级需求',
+      '内容创作 Agent 系统和自动运营 Agent 系统均为企业内部脱敏案例',
+      '旧 `/works/[slug]` 地址重定向到 `/works#slug`',
+      '首页不再保留完整四项目展厅、职业经历或静态 FAQ',
+      '删除企业内部项目的公开入口、生产截图和可识别部署信息',
+      '访问系统按钮',
+    ],
+    'S9 current public contract',
+  );
+  assert.doesNotMatch(
+    currentHarness,
+    /['"]\/works\/(?:content-agent|auto-operations|deep-research|digital-morse)['"]/,
+    'S9 current browser gate must use /works#slug instead of legacy detail routes',
+  );
+});
+
 test('run-state retains S7 and M3 closeout evidence after pointer advancement', () => {
   const runState = readUtf8('docs/task-center/run-state.md');
 
@@ -119,7 +151,7 @@ test('run-state retains S7 and M3 closeout evidence after pointer advancement', 
   );
 });
 
-test('S7 has a repeatable multipage visual acceptance command', () => {
+test('historical S7 retains its repeatable multipage visual evidence command', () => {
   const packageJson = JSON.parse(readUtf8('package.json'));
   const harness = readUtf8('scripts/s7-visual-smoke.mjs');
 

@@ -8,6 +8,7 @@ import {
 } from '../lib/client/chat-errors.ts';
 import { buildSystemInstructions, normalizeChatRequest } from '../lib/server/chat-core.ts';
 import { publicKnowledgeHref } from '../lib/server/public-knowledge.ts';
+import { projectSlugs } from '../lib/site-content.ts';
 
 const dataset = JSON.parse(await fs.readFile('content/chat-eval.json', 'utf8'));
 const approvedSource = {
@@ -15,7 +16,7 @@ const approvedSource = {
   documentId: 'project-deep-research',
   title: '深度研究 Agent 系统',
   sourcePath: 'content/site-content.json#projects.deep-research',
-  href: '/works/deep-research',
+  href: '/works#deep-research',
   content: '深度研究报告使用证据工件、质量门和人工发布审批。',
   score: 1,
 };
@@ -65,7 +66,7 @@ function sourcesFor(item) {
         chunkId: 'eval-approved-2',
         documentId: 'project-digital-morse',
         title: '数字摩斯',
-        href: '/works/digital-morse',
+        href: '/works#digital-morse',
       },
     ];
   }
@@ -100,9 +101,15 @@ for (const item of dataset.cases) {
     }
   } else if (item.expectedBehavior === 'navigate') {
     const href = publicKnowledgeHref(item.documentId);
-    passed = item.documentId.startsWith('project-')
-      ? href.startsWith('/works/')
-      : href === '/works/digital-morse';
+    const projectPrefix = 'project-';
+    const projectSlug = item.documentId.startsWith(projectPrefix)
+      ? item.documentId.slice(projectPrefix.length)
+      : null;
+    const validProjectHref = projectSlug !== null
+      && projectSlugs.includes(projectSlug)
+      && href === `/works#${projectSlug}`;
+    const validRootHref = projectSlug === null && href === '/';
+    passed = href === item.expectedHref && (validProjectHref || validRootHref);
   } else {
     const normalized = normalizeChatRequest({
       message: item.query,

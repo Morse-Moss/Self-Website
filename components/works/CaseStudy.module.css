@@ -1,8 +1,10 @@
 .caseStudy {
-  width: min(100%, var(--container));
+  grid-column: 1 / -1;
+  width: 100%;
   min-width: 0;
-  margin: 0 auto;
-  padding: var(--space-8) var(--space-4) var(--space-9);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--line-faint);
+  cursor: default;
 }
 
 .header {
@@ -18,10 +20,10 @@
   letter-spacing: 0;
 }
 
-.header h1 {
+.header h2 {
   margin-top: var(--space-3);
-  font-size: var(--fs-portfolio-hero);
-  line-height: 1.08;
+  font-size: var(--fs-h2);
+  line-height: 1.2;
   overflow-wrap: anywhere;
 }
 
@@ -36,7 +38,7 @@
   max-width: 48rem;
   margin-top: var(--space-4);
   color: var(--muted);
-  font-size: var(--fs-h3);
+  font-size: var(--fs-body);
   line-height: 1.7;
   overflow-wrap: anywhere;
 }
@@ -152,8 +154,34 @@
   min-width: 0;
 }
 
-.sections h2 {
+.sections h3 {
   font-size: var(--fs-h3);
+}
+
+.stackGroups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4) var(--space-6);
+  min-width: 0;
+  margin: var(--space-4) 0 0;
+}
+
+.stackGroups > div {
+  min-width: 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line-faint);
+}
+
+.stackGroups dt {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: 0;
+}
+
+.stackGroups dd {
+  min-width: 0;
+  margin: 0;
 }
 
 .sections section > div > p,
@@ -190,11 +218,11 @@
 
 @media (max-width: 640px) {
   .caseStudy {
-    padding-top: var(--space-7);
+    padding-top: var(--space-5);
   }
 
-  .header h1 {
-    font-size: var(--fs-portfolio-hero-mobile);
+  .header h2 {
+    font-size: var(--fs-h3);
   }
 
   .summary {
@@ -202,6 +230,7 @@
   }
 
   .evidenceFigure,
+  .stackGroups,
   .sections section {
     grid-template-columns: minmax(0, 1fr);
   }

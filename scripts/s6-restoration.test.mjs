@@ -3,8 +3,20 @@ import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const repoRoot = new URL('../', import.meta.url);
+const s9SpecPath =
+  'docs/superpowers/specs/2026-07-14-aiking-inspired-portfolio-redesign-design.md';
 
-test('S6 restoration has a repeatable multi-width browser acceptance gate', () => {
+function readUtf8(relativePath) {
+  return readFileSync(new URL(relativePath, repoRoot), 'utf8');
+}
+
+function assertIncludesAll(source, expected, label) {
+  for (const value of expected) {
+    assert.ok(source.includes(value), `${label} must include: ${value}`);
+  }
+}
+
+test('historical S6 restoration retains its multi-width browser evidence gate', () => {
   const packageJson = JSON.parse(readFileSync(new URL('package.json', repoRoot), 'utf8'));
   const harnessPath = new URL('scripts/s6-restoration-smoke.mjs', repoRoot);
 
@@ -57,4 +69,31 @@ test('S6 restoration has a repeatable multi-width browser acceptance gate', () =
   ]) {
     assert.ok(harness.includes(value), `S6 restoration harness must include: ${value}`);
   }
+});
+
+test('S9 supersedes historical S6 live-page requirements', () => {
+  const blueprint = readUtf8('docs/portfolio-blueprint.md');
+  const specification = readUtf8(s9SpecPath);
+  const currentHarness = readUtf8('scripts/s9-visual-smoke.mjs');
+  const currentContract = `${blueprint}\n${specification}\n${currentHarness}`;
+
+  assertIncludesAll(
+    currentContract,
+    [
+      '## 14. S9 Morse 作品集重设计(2026-07-14)',
+      'Morse',
+      '/works#content-agent',
+      '企业内部脱敏案例',
+      '旧 `/works/[slug]` 地址重定向到 `/works#slug`',
+      '首页不再保留完整四项目展厅、职业经历或静态 FAQ',
+      '删除企业内部项目的公开入口、生产截图和可识别部署信息',
+      '访问系统按钮',
+    ],
+    'S9 current public contract',
+  );
+  assert.doesNotMatch(
+    currentHarness,
+    /['"]\/works\/(?:content-agent|auto-operations|deep-research|digital-morse)['"]/,
+    'S9 current browser gate must use /works#slug instead of legacy detail routes',
+  );
 });

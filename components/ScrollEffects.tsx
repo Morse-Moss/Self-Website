@@ -1,71 +1,42 @@
 'use client';
 
 import { useEffect } from 'react';
-import gsap from 'gsap';
-import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { usePathname } from 'next/navigation';
+
+function revealNode(node: HTMLElement) {
+  if (node.hasAttribute('data-reveal')) node.dataset.revealed = 'true';
+  if (node.hasAttribute('data-morse-pulse')) node.dataset.morseReady = 'true';
+}
 
 export default function ScrollEffects() {
+  const pathname = usePathname();
+
   useEffect(() => {
     const revealNodes = Array.from(document.querySelectorAll<HTMLElement>('[data-reveal]'));
     const morseNodes = Array.from(document.querySelectorAll<HTMLElement>('[data-morse-pulse]'));
+    const observedNodes = Array.from(new Set([...revealNodes, ...morseNodes]));
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     if (reducedMotion) {
-      for (const node of revealNodes) node.dataset.revealed = 'true';
-      for (const node of morseNodes) node.dataset.morseReady = 'true';
+      for (const node of observedNodes) revealNode(node);
       return undefined;
     }
 
-    gsap.registerPlugin(ScrollTrigger);
-
-    const ctx = gsap.context(() => {
-      for (const node of revealNodes) {
-        gsap.fromTo(
-          node,
-          { autoAlpha: 0, y: window.innerWidth <= 760 ? 12 : 24 },
-          {
-            autoAlpha: 1,
-            y: 0,
-            duration: window.innerWidth <= 760 ? 0.42 : 0.72,
-            ease: 'power3.out',
-            scrollTrigger: {
-              trigger: node,
-              start: 'top 84%',
-              once: true,
-              onEnter: () => {
-                node.dataset.revealed = 'true';
-              },
-            },
-          },
-        );
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        revealNode(entry.target as HTMLElement);
+        observer.unobserve(entry.target);
       }
+    }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
 
-      for (const group of morseNodes) {
-        const ticks = Array.from(group.querySelectorAll<HTMLElement>('[data-morse-tick]'));
-        gsap.fromTo(
-          ticks,
-          { scaleX: 0.18, autoAlpha: 0.22 },
-          {
-            scaleX: 1,
-            autoAlpha: 1,
-            duration: 0.18,
-            ease: 'steps(2)',
-            stagger: { each: 0.07, from: 'start' },
-            scrollTrigger: {
-              trigger: group,
-              start: 'top 88%',
-              once: true,
-              onEnter: () => {
-                group.dataset.morseReady = 'true';
-              },
-            },
-          },
-        );
-      }
-    });
+    for (const node of observedNodes) observer.observe(node);
 
-    return () => ctx.revert();
-  }, []);
+    return () => {
+      for (const node of observedNodes) observer.unobserve(node);
+      observer.disconnect();
+    };
+  }, [pathname]);
 
   return null;
 }

@@ -21,36 +21,18 @@ const expectedSlugs = [
 const expectedProjects = {
   "content-agent": {
     name: "内容创作 Agent 系统",
-    status: "内网已部署",
-    actions: [
-      { kind: "case", label: "查看案例", href: "/works/content-agent" },
-    ],
+    status: "企业内部项目 · 脱敏展示",
+    actions: [],
   },
   "auto-operations": {
     name: "自动运营 Agent 系统",
-    status: "生产环境运行中",
-    actions: [
-      {
-        kind: "case",
-        label: "查看案例",
-        href: "/works/auto-operations",
-      },
-      {
-        kind: "external",
-        label: "访问系统",
-        href: "https://aitavix.com",
-      },
-    ],
+    status: "企业内部项目 · 脱敏展示",
+    actions: [],
   },
   "deep-research": {
     name: "深度研究 Agent 系统",
     status: "已接受能力持续扩展中",
     actions: [
-      {
-        kind: "case",
-        label: "查看案例",
-        href: "/works/deep-research",
-      },
       {
         kind: "external",
         label: "GitHub",
@@ -62,11 +44,6 @@ const expectedProjects = {
     name: "数字摩斯",
     status: "本地闭环已验证 · 尚未部署",
     actions: [
-      {
-        kind: "case",
-        label: "查看案例",
-        href: "/works/digital-morse",
-      },
       {
         kind: "external",
         label: "GitHub",
@@ -88,12 +65,57 @@ test("exports the exact project slugs and static params", () => {
   );
 });
 
-test("returns the featured auto-operations project and undefined when missing", () => {
+test("returns the featured public projects and undefined when missing", () => {
   assert.deepEqual(
     getFeaturedProjects().map((project) => project.slug),
-    ["auto-operations"],
+    ["deep-research", "digital-morse"],
   );
   assert.equal(getProjectBySlug("missing-project"), undefined);
+});
+
+test("S9 publishes Morse identity and only public featured projects", () => {
+  assert.equal(siteContent.profile.title, "Morse");
+  assert.equal(
+    siteContent.profile.role,
+    "Agent 系统开发者 × AI Native 实践者",
+  );
+  assert.deepEqual(siteContent.home.featuredSlugs, [
+    "deep-research",
+    "digital-morse",
+  ]);
+  assert.deepEqual(
+    siteContent.site.nav.map((item) => item.label),
+    ["首页", "作品集"],
+  );
+  assert.deepEqual(siteContent.site.footer.links, [
+    { label: "GitHub", href: "https://github.com/Morse-Moss" },
+  ]);
+});
+
+test("internal projects have no public media or external action", () => {
+  for (const slug of ["content-agent", "auto-operations"]) {
+    const project = getProjectBySlug(slug);
+    assert.ok(project);
+    assert.equal(project.disclosure, "internal-redacted");
+    assert.equal(project.media, null);
+    assert.deepEqual(project.actions, []);
+
+    const serialized = JSON.stringify(project);
+    assert.doesNotMatch(
+      serialized,
+      /https?:\/\/|Railway|login-workbench|capturedAt|commit|生产环境|内网已部署|RUNNING/,
+    );
+  }
+});
+
+test("every project has grouped stack and capability evidence", () => {
+  for (const project of getAllProjects()) {
+    assert.ok(Array.isArray(project.techStack));
+    assert.ok(Array.isArray(project.capabilities));
+    assert.ok(project.techStack.length >= 2);
+    assert.ok(project.techStack.every((group) => group.items.length > 0));
+    assert.ok(project.capabilities.length >= 2);
+  }
 });
 
 test("keeps project names, statuses, and CTAs exact", () => {
@@ -124,19 +146,9 @@ test("provides six case-study fields for every project", () => {
   }
 });
 
-test("publishes media only for auto-operations", () => {
+test("publishes no project media before assets are separately approved", () => {
   for (const project of getAllProjects()) {
-    if (project.slug === "auto-operations") {
-      assert.ok(project.media);
-      assert.equal(
-        project.media.src,
-        "/works/auto-operations/login-workbench-2026-07-13.png",
-      );
-      assert.equal(project.media.width, 510);
-      assert.equal(project.media.height, 580);
-    } else {
-      assert.equal(project.media, null);
-    }
+    assert.equal(project.media, null);
   }
 });
 
@@ -146,7 +158,7 @@ test("keeps the approved global copy and four FAQ topics", () => {
     description: "摩斯的多页 AI 原生作品集与数字分身。",
     nav: [
       { label: "首页", href: "/" },
-      { label: "作品", href: "/works" },
+      { label: "作品集", href: "/works" },
     ],
     resumeMode: {
       storageKey: "morse.resumeMode",
@@ -158,6 +170,9 @@ test("keeps the approved global copy and four FAQ topics", () => {
       morse: "-- --- .-. ... .",
       statement: "数字摩斯在场，真人摩斯验收。",
       copyright: "© 2026 数字生命摩斯",
+      links: [
+        { label: "GitHub", href: "https://github.com/Morse-Moss" },
+      ],
     },
   });
   assert.deepEqual(siteContent.profile.capabilities, [
@@ -186,6 +201,7 @@ test("keeps all public JSON free of placeholders and private-source leakage", ()
     /output[\\/]system-captures/i,
     /imagegen/i,
     /Mock Provider/i,
+    /访问系统/,
     /节省工时|增长率|产能提升/,
   ];
 

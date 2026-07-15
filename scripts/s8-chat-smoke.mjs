@@ -6,6 +6,8 @@ import path from 'node:path';
 
 import pg from 'pg';
 
+import { projectSlugs } from '../lib/site-content.ts';
+
 const targetUrl = new URL(process.argv[2] || 'http://127.0.0.1:3011');
 const cdpBase = process.env.CDP_BASE || 'http://127.0.0.1:9222';
 const inviteCode = process.env.MORSE_SMOKE_INVITE_CODE?.trim();
@@ -241,7 +243,7 @@ async function inspectConversation(client) {
       streamDone: Boolean(assistant),
       quotaPresent: Boolean(quota),
       remainingMessages: quota ? Number.parseInt(quota.textContent || '', 10) : -1,
-      sourceHref: source ? new URL(source.href, location.href).pathname : null,
+      sourceHref: source ? new URL(source.href, location.href).href : null,
       sourceCount: document.querySelectorAll('ol[aria-label="回答来源"] a').length,
       scrollWidth: document.documentElement.scrollWidth,
       clientWidth: document.documentElement.clientWidth,
@@ -316,8 +318,22 @@ async function runViewport({ expectRetry, height, key, starter, width }) {
     );
     const conversation = await inspectConversation(client);
     const screenshot = await capture(client, `s8-chat-${key}.png`);
-    const sourcePath = conversation.sourceHref;
-    if (sourcePath !== '/' && !sourcePath?.startsWith('/works/')) {
+    const sourceUrl = conversation.sourceHref ? new URL(conversation.sourceHref) : null;
+    if (!sourceUrl) throw new Error('Public source link is missing.');
+    let sourcePathname;
+    let sourceHash;
+    if (sourceUrl.pathname === '/') {
+      if (sourceUrl.hash) throw new Error('Home source must not include a Hash.');
+      sourcePathname = '/';
+      sourceHash = '';
+    } else if (sourceUrl.pathname === '/works') {
+      const sourceSlug = sourceUrl.hash.slice(1);
+      if (!projectSlugs.includes(sourceSlug) || sourceUrl.hash !== `#${sourceSlug}`) {
+        throw new Error('Project source Hash is invalid.');
+      }
+      sourcePathname = '/works';
+      sourceHash = `#${sourceSlug}`;
+    } else {
       throw new Error('Public source path is missing.');
     }
     const sourceClicked = await client.evaluate(`(() => {
@@ -327,8 +343,15 @@ async function runViewport({ expectRetry, height, key, starter, width }) {
       return true;
     })()`);
     if (!sourceClicked) throw new Error('Public source link is not clickable.');
-    await waitFor(client, `location.pathname === ${JSON.stringify(sourcePath)}`, 'source navigation');
-    const sourceNavigation = await client.evaluate('location.pathname');
+    await waitFor(
+      client,
+      `location.pathname === ${JSON.stringify(sourcePathname)}
+        && location.hash === ${JSON.stringify(sourceHash)}`,
+      'source navigation',
+    );
+    const sourceNavigation = await client.evaluate(
+      '({ pathname: location.pathname, hash: location.hash })',
+    );
 
     await navigate(client, '/');
     await clickButton(client, '对话');

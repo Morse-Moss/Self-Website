@@ -18,6 +18,8 @@ interface SiteContent {
     name?: string;
     status?: string;
     summary?: string;
+    capabilities?: string[];
+    techStack?: Array<{ label?: string; items?: string[] }>;
     caseStudy?: {
       problem?: string;
       role?: string;
@@ -35,11 +37,11 @@ function joinParts(parts: Array<string | undefined>): string {
 }
 
 export function publicKnowledgeHref(documentId: string): string {
-  if (documentId === 'about') return '/';
+  if (documentId === 'about' || documentId.startsWith('faq-')) return '/';
   if (documentId.startsWith('project-')) {
-    return `/works/${documentId.slice('project-'.length)}`;
+    return `/works#${documentId.slice('project-'.length)}`;
   }
-  return '/works/digital-morse';
+  return '/';
 }
 
 export function extractPublicKnowledge(content: SiteContent): PublicKnowledgeDocument[] {
@@ -78,6 +80,14 @@ export function extractPublicKnowledge(content: SiteContent): PublicKnowledgeDoc
         project.name,
         project.status,
         project.summary,
+        project.capabilities?.length
+          ? `能力:\n${project.capabilities.join('\n')}`
+          : undefined,
+        ...(project.techStack ?? []).map((group) =>
+          group.label && group.items?.length
+            ? `${group.label}:\n${group.items.join('\n')}`
+            : undefined,
+        ),
         project.caseStudy?.problem,
         project.caseStudy?.role,
         ...(project.caseStudy?.decisions ?? []),

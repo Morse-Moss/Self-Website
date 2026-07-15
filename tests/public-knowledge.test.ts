@@ -21,27 +21,27 @@ test('extractPublicKnowledge produces the nine approved site-content documents',
       {
         id: 'project-content-agent',
         sourcePath: 'content/site-content.json#projects.content-agent',
-        href: '/works/content-agent',
+        href: '/works#content-agent',
       },
       {
         id: 'project-auto-operations',
         sourcePath: 'content/site-content.json#projects.auto-operations',
-        href: '/works/auto-operations',
+        href: '/works#auto-operations',
       },
       {
         id: 'project-deep-research',
         sourcePath: 'content/site-content.json#projects.deep-research',
-        href: '/works/deep-research',
+        href: '/works#deep-research',
       },
       {
         id: 'project-digital-morse',
         sourcePath: 'content/site-content.json#projects.digital-morse',
-        href: '/works/digital-morse',
+        href: '/works#digital-morse',
       },
-      { id: 'faq-1', sourcePath: 'content/site-content.json#faq.1', href: '/works/digital-morse' },
-      { id: 'faq-2', sourcePath: 'content/site-content.json#faq.2', href: '/works/digital-morse' },
-      { id: 'faq-3', sourcePath: 'content/site-content.json#faq.3', href: '/works/digital-morse' },
-      { id: 'faq-4', sourcePath: 'content/site-content.json#faq.4', href: '/works/digital-morse' },
+      { id: 'faq-1', sourcePath: 'content/site-content.json#faq.1', href: '/' },
+      { id: 'faq-2', sourcePath: 'content/site-content.json#faq.2', href: '/' },
+      { id: 'faq-3', sourcePath: 'content/site-content.json#faq.3', href: '/' },
+      { id: 'faq-4', sourcePath: 'content/site-content.json#faq.4', href: '/' },
     ],
   );
   assert.ok(documents.every((document) => document.title.length > 0));
@@ -68,6 +68,8 @@ test('extractPublicKnowledge limits profile and project content to approved fiel
     const document = documents.find((item) => item.id === `project-${project.slug}`);
 
     assert.ok(document);
+    assert.ok(Array.isArray(project.capabilities));
+    assert.ok(Array.isArray(project.techStack));
     assert.equal(document.title, project.name);
     assert.equal(
       document.content,
@@ -75,6 +77,11 @@ test('extractPublicKnowledge limits profile and project content to approved fiel
         project.name,
         project.status,
         project.summary,
+        `能力:\n${project.capabilities.join('\n')}`,
+        ...project.techStack.map(
+          (group: { label: string; items: string[] }) =>
+            `${group.label}:\n${group.items.join('\n')}`,
+        ),
         project.caseStudy.problem,
         project.caseStudy.role,
         ...project.caseStudy.decisions,
@@ -103,13 +110,26 @@ test('extractPublicKnowledge excludes drafts, paths, media, actions, and sanitiz
     },
   ];
 
-  const serialized = JSON.stringify(extractPublicKnowledge(content));
+  const documents = extractPublicKnowledge(content);
+  const serialized = JSON.stringify(documents);
 
-  assert.doesNotMatch(serialized, /content[\\/]drafts|[A-Za-z]:\\/i);
+  for (const document of documents) {
+    assert.doesNotMatch(document.content, /content[\\/]drafts|[A-Za-z]:[\\/]/i);
+  }
   assert.doesNotMatch(serialized, /generated-image\.png|生成图|截图待补/i);
   assert.doesNotMatch(serialized, /sanitization metadata|sanitization/i);
   assert.doesNotMatch(serialized, /无人值守运营|disabled-operation/i);
   assert.doesNotMatch(serialized, /\/works\/auto-operations\/login-workbench-2026-07-13\.png/i);
+
+  const internalKnowledge = JSON.stringify(
+    extractPublicKnowledge(loadSiteContent()).filter((document) =>
+      ['project-content-agent', 'project-auto-operations'].includes(document.id),
+    ),
+  );
+  assert.doesNotMatch(
+    internalKnowledge,
+    /https?:\/\/|Railway|login-workbench|capturedAt|commit|生产环境|内网已部署|RUNNING/,
+  );
 });
 
 test('extractPublicKnowledge includes all four FAQ questions and answers', () => {

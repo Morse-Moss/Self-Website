@@ -23,7 +23,7 @@
     { "id": "provider-unavailable", "category": "provider-error", "query": "Provider 不可用时提问。", "expectedBehavior": "error", "sourceScenario": "error", "errorCode": "PROVIDER_UNAVAILABLE" },
     { "id": "provider-incomplete", "category": "provider-error", "query": "回答流中断时提问。", "expectedBehavior": "error", "sourceScenario": "error", "errorCode": "PROVIDER_INCOMPLETE" },
     { "id": "retrieval-unavailable", "category": "retrieval-error", "query": "检索服务不可用时提问。", "expectedBehavior": "error", "sourceScenario": "error", "errorCode": "RETRIEVAL_UNAVAILABLE" },
-    { "id": "source-project-navigation", "category": "source-navigation", "query": "打开深度研究项目来源。", "expectedBehavior": "navigate", "sourceScenario": "navigation", "documentId": "project-deep-research" },
-    { "id": "source-faq-navigation", "category": "source-navigation", "query": "打开技术栈 FAQ 来源。", "expectedBehavior": "navigate", "sourceScenario": "navigation", "documentId": "faq-1" }
+    { "id": "source-project-navigation", "category": "source-navigation", "query": "打开深度研究项目来源。", "expectedBehavior": "navigate", "sourceScenario": "navigation", "documentId": "project-deep-research", "expectedHref": "/works#deep-research" },
+    { "id": "source-faq-navigation", "category": "source-navigation", "query": "打开技术栈 FAQ 来源。", "expectedBehavior": "navigate", "sourceScenario": "navigation", "documentId": "faq-1", "expectedHref": "/" }
   ]
 }
