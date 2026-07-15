@@ -11,10 +11,12 @@ import {
 } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
+  assertOwnedProfileBoundary,
   assertConsecutiveAnimationFramesQuiet,
+  assertConsecutiveProjectScrollStable,
   cleanupOwnedBrowser,
   connectCdpTransport,
   countRunningAnimations,
@@ -24,8 +26,335 @@ import {
   dispatchPrimaryClick,
   installSignalCleanup,
   publicS9CdpFailureCode,
+  removeOwnedProfileWithRetry,
+  terminateOwnedProfileProcesses,
+  terminateOwnedProcessTree,
   waitForOwnedDevToolsActivePort,
 } from './lib/s9-cdp.mjs';
+
+const S9_WORKER_FLAG = '--s9-worker';
+const WORKER_CLOSE_TIMEOUT_MS = 5_000;
+const WORKER_MESSAGE_LIMIT_BYTES = 64 * 1024;
+const WORKER_MESSAGE_TIMEOUT_MS = 180_000;
+const WORKER_TERMINATE_TIMEOUT_MS = 15_000;
+const SAFE_SCREENSHOTS = new Set([
+  's9-home-desktop-1440x900.png',
+  's9-home-mobile-390x844.png',
+  's9-home-mobile-390-reduced.png',
+  's9-works-desktop-1440x900.png',
+  's9-works-mobile-390x844.png',
+].map((fileName) => `docs/verify/s9/${fileName}`));
+const SAFE_SLUGS = new Set(['content-agent', 'auto-operations', 'deep-research', 'digital-morse']);
+const SAFE_HARNESS_ROUTES = new Set([
+  '/',
+  '/works',
+  '/works#content-agent',
+  '/works#auto-operations',
+  '/works#not-a-project',
+  ...[...SAFE_SLUGS].map((slug) => `/works/${slug}`),
+]);
+const SAFE_VIEWPORTS = new Set(['desktop', 'mobile', 'mobile-reduced']);
+
+function emitS9Summary(consoleLike, summary) {
+  consoleLike.log(JSON.stringify(summary, null, 2));
+  if (summary.failures.length > 0) consoleLike.error('S9_VISUAL_SMOKE_FAILED');
+}
+
+function appendSummaryFailure(summary, code) {
+  return createS9Summary({
+    ...summary,
+    failures: summary.failures.includes(code)
+      ? summary.failures
+      : [...summary.failures, code],
+  });
+}
+
+function isSafeExternalOrigin(value) {
+  try {
+    const url = new URL(value);
+    return ['http:', 'https:', 'ws:', 'wss:'].includes(url.protocol)
+      && url.origin === value;
+  } catch {
+    return false;
+  }
+}
+
+function isSafeHarnessRoute(value) {
+  return typeof value === 'string' && SAFE_HARNESS_ROUTES.has(value);
+}
+
+function parseWorkerSummary(message) {
+  if (!message || Array.isArray(message) || typeof message !== 'object') return null;
+  let serialized;
+  try {
+    serialized = JSON.stringify(message);
+  } catch {
+    return null;
+  }
+  if (
+    typeof serialized !== 'string'
+    || Buffer.byteLength(serialized, 'utf8') > WORKER_MESSAGE_LIMIT_BYTES
+  ) return null;
+
+  const normalized = createS9Summary(message);
+  if (serialized !== JSON.stringify(normalized)) return null;
+  if (normalized.failures.some((code) => (
+    code.length > 200 || !/^[A-Za-z0-9][A-Za-z0-9:/.#_-]*$/.test(code)
+  ))) return null;
+  if (normalized.screenshots.some((fileName) => !SAFE_SCREENSHOTS.has(fileName))) return null;
+  if (normalized.routeStatuses.some((entry) => (
+    !isSafeHarnessRoute(entry.route)
+    || !SAFE_VIEWPORTS.has(entry.viewport)
+    || entry.statuses.some((status) => !Number.isInteger(status) || status < 100 || status > 599)
+  ))) return null;
+  if (Object.keys(normalized.canvasPixelVariance).some((key) => !SAFE_VIEWPORTS.has(key))) {
+    return null;
+  }
+  if (Object.entries(normalized.expandedSlugs).some(([viewport, slugs]) => (
+    !SAFE_VIEWPORTS.has(viewport) || slugs.some((slug) => !SAFE_SLUGS.has(slug))
+  ))) return null;
+  if (normalized.horizontalOverflow.some((entry) => (
+    !isSafeHarnessRoute(entry.route)
+    || !SAFE_VIEWPORTS.has(entry.viewport)
+    || entry.pixels < 0
+  ))) return null;
+  if (normalized.externalRuntimeRequests.some((origin) => !isSafeExternalOrigin(origin))) return null;
+  return normalized;
+}
+
+export function sendS9WorkerSummary(processLike, summary) {
+  const safeSummary = parseWorkerSummary(summary);
+  if (!safeSummary || processLike?.connected !== true || typeof processLike.send !== 'function') {
+    return Promise.reject(new Error('worker IPC unavailable'));
+  }
+  return new Promise((resolve, reject) => {
+    try {
+      processLike.send(safeSummary, (error) => {
+        if (error) reject(new Error('worker IPC send failed'));
+        else resolve();
+      });
+    } catch {
+      reject(new Error('worker IPC send failed'));
+    }
+  });
+}
+
+function observeWorkerClose(worker) {
+  let closed = false;
+  let spawnFailed = false;
+  const promise = new Promise((resolve) => {
+    worker.once('error', () => { spawnFailed = true; });
+    worker.once('close', (code, signal) => {
+      closed = true;
+      resolve({ code, signal, spawnFailed });
+    });
+  });
+  return {
+    get closed() {
+      return closed;
+    },
+    promise,
+  };
+}
+
+function observeWorkerIpc(worker, timeoutMs) {
+  let invalid = false;
+  let received = false;
+  let settled = false;
+  let resolveOutcome;
+  const promise = new Promise((resolve) => { resolveOutcome = resolve; });
+  const finish = (outcome) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timeout);
+    resolveOutcome(outcome);
+  };
+  const handleMessage = (message) => {
+    if (received) {
+      invalid = true;
+      finish({ kind: 'invalid' });
+      return;
+    }
+    received = true;
+    const summary = parseWorkerSummary(message);
+    if (!summary) {
+      invalid = true;
+      finish({ kind: 'invalid' });
+      return;
+    }
+    finish({ kind: 'summary', summary });
+  };
+  const handlePrematureFailure = () => {
+    if (!received) finish({ kind: 'failed' });
+  };
+  const dispose = () => {
+    clearTimeout(timeout);
+    worker.removeListener('message', handleMessage);
+    worker.removeListener('error', handlePrematureFailure);
+    worker.removeListener('close', handlePrematureFailure);
+    worker.removeListener('disconnect', handlePrematureFailure);
+  };
+  const timeout = setTimeout(() => finish({ kind: 'failed' }), timeoutMs);
+  worker.on('message', handleMessage);
+  worker.once('error', handlePrematureFailure);
+  worker.once('close', handlePrematureFailure);
+  worker.once('disconnect', handlePrematureFailure);
+  return {
+    dispose,
+    get invalid() {
+      return invalid;
+    },
+    promise,
+  };
+}
+
+async function waitForObservedClose(observer, timeoutMs = WORKER_CLOSE_TIMEOUT_MS) {
+  if (observer.closed) return true;
+  let timeout;
+  const timedOut = new Promise((resolve) => {
+    timeout = setTimeout(() => resolve(false), timeoutMs);
+  });
+  const closed = observer.promise.then(() => true);
+  const result = await Promise.race([closed, timedOut]);
+  clearTimeout(timeout);
+  return result;
+}
+
+export async function runS9Supervisor({
+  argv = process.argv,
+  dependencies = {},
+  processLike = process,
+} = {}) {
+  const {
+    consoleLike = console,
+    makeProfile = mkdtempSync,
+    platform = process.platform,
+    removeProfile = removeOwnedProfileWithRetry,
+    spawnWorker = spawn,
+    tempRoot = os.tmpdir(),
+    terminateProfileProcesses = terminateOwnedProfileProcesses,
+    terminateWorker = terminateOwnedProcessTree,
+    workerCloseTimeoutMs = WORKER_CLOSE_TIMEOUT_MS,
+    workerMessageTimeoutMs = WORKER_MESSAGE_TIMEOUT_MS,
+    workerTerminateTimeoutMs = WORKER_TERMINATE_TIMEOUT_MS,
+  } = dependencies;
+  let summary = createS9Summary();
+  let profileDir = null;
+  let profileOwned = false;
+  let worker = null;
+  let closeObserver = null;
+  let ipcObserver = null;
+  let receivedSignal = null;
+  let resolveSignal;
+  const signalPromise = new Promise((resolve) => { resolveSignal = resolve; });
+  const handleSignal = (signal, exitCode) => {
+    if (receivedSignal) return;
+    receivedSignal = { exitCode, signal };
+    resolveSignal({ kind: 'signal' });
+  };
+  const handleSigint = () => handleSignal('SIGINT', 130);
+  const handleSigterm = () => handleSignal('SIGTERM', 143);
+  processLike.on('SIGINT', handleSigint);
+  processLike.on('SIGTERM', handleSigterm);
+
+  try {
+    const target = argv[2] || 'http://127.0.0.1:3010';
+    profileDir = makeProfile(path.join(tempRoot, 'revolution-s9-edge-'));
+    assertOwnedProfileBoundary(profileDir, { tempRoot });
+    profileOwned = true;
+    worker = spawnWorker(process.execPath, [
+      fileURLToPath(import.meta.url),
+      S9_WORKER_FLAG,
+      target,
+      profileDir,
+    ], {
+      detached: platform !== 'win32',
+      shell: false,
+      stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+      windowsHide: true,
+    });
+    closeObserver = observeWorkerClose(worker);
+    ipcObserver = observeWorkerIpc(worker, workerMessageTimeoutMs);
+    const outcome = await Promise.race([ipcObserver.promise, signalPromise]);
+    if (outcome.kind === 'signal') {
+      summary = appendSummaryFailure(summary, 'browser:worker-interrupted');
+    } else if (outcome.kind === 'summary') {
+      summary = outcome.summary;
+    } else if (outcome.kind === 'invalid') {
+      summary = appendSummaryFailure(summary, 'browser:worker-output-invalid');
+    } else {
+      summary = appendSummaryFailure(summary, 'browser:worker-process-failed');
+    }
+  } catch (error) {
+    const safeCode = publicS9CdpFailureCode(error);
+    summary = appendSummaryFailure(
+      summary,
+      safeCode === 'browser:profile-boundary'
+        ? safeCode
+        : 'browser:worker-process-failed',
+    );
+  } finally {
+    processLike.removeListener('SIGINT', handleSigint);
+    processLike.removeListener('SIGTERM', handleSigterm);
+    let profileProcessCleanupSucceeded = platform !== 'win32';
+    if (profileOwned && platform === 'win32') {
+      try {
+        await terminateProfileProcesses(profileDir, { platform });
+        profileProcessCleanupSucceeded = true;
+        try {
+          worker?.disconnect?.();
+        } catch {
+          // The profile-scoped zero-process result remains authoritative.
+        }
+        try {
+          worker?.unref?.();
+        } catch {
+          // Releasing the local ChildProcess handle is best effort only.
+        }
+      } catch {
+        summary = appendSummaryFailure(summary, 'browser:owned-cleanup-failed');
+      }
+    } else if (worker && closeObserver && !closeObserver.closed) {
+      try {
+        await terminateWorker(worker, {
+          platform,
+          timeoutMs: workerTerminateTimeoutMs,
+        });
+      } catch {
+        summary = appendSummaryFailure(summary, 'browser:owned-cleanup-failed');
+      }
+    }
+    if (
+      worker
+      && closeObserver
+      && !closeObserver.closed
+      && platform !== 'win32'
+      && !await waitForObservedClose(closeObserver, workerCloseTimeoutMs)
+    ) {
+      summary = appendSummaryFailure(summary, 'browser:owned-cleanup-failed');
+    }
+    if (ipcObserver?.invalid) {
+      summary = appendSummaryFailure(createS9Summary(), 'browser:worker-output-invalid');
+    }
+    ipcObserver?.dispose();
+    if (
+      profileOwned
+      && profileProcessCleanupSucceeded
+      && (platform === 'win32' || !closeObserver || closeObserver.closed)
+    ) {
+      try {
+        await removeProfile(profileDir);
+      } catch {
+        summary = appendSummaryFailure(summary, 'browser:owned-cleanup-failed');
+      }
+    }
+  }
+
+  emitS9Summary(consoleLike, summary);
+  if (receivedSignal) processLike.exit(receivedSignal.exitCode);
+  else processLike.exitCode = summary.failures.length > 0 ? 1 : 0;
+  return summary;
+}
 
 function isDirectExecution(metaUrl, argvPath) {
   return typeof argvPath === 'string'
@@ -37,6 +366,7 @@ export async function main({
   dependencies = {},
   env = process.env,
   processLike = process,
+  supervisedProfileDir = null,
 } = {}) {
 let targetUrl;
 let edgePath;
@@ -128,7 +458,7 @@ async function launchBrowser({ onOwnedBrowser }) {
   if (!edgeExists(edgePath)) throw new HarnessError('browser:edge-missing');
 
   const profilePrefix = path.join(os.tmpdir(), 'revolution-s9-edge-');
-  const profileDir = makeProfile(profilePrefix);
+  const profileDir = supervisedProfileDir ?? makeProfile(profilePrefix);
   const startedAtMs = Date.now();
   const browserProcess = spawnBrowser(edgePath, [
     '--headless=new',
@@ -625,19 +955,88 @@ async function inspectWorksShell(client, viewportName, route) {
   check(state.viewportOverflowCount === 0, `${viewportName}:${route}:control-overflow`);
 }
 
-async function clickSlug(client, viewport, slug) {
+async function clickSlug(client, viewport, slug, { waitForApplicationScroll = true } = {}) {
   const selector = `[data-project-slug="${slug}"] button[aria-expanded]`;
   await waitForPointerTargetStable(
     client,
     selector,
     `works:${slug}:pointer-target-stability-timeout`,
   );
-  const clicked = await clickSelector(
+  if (!waitForApplicationScroll) {
+    const clicked = await clickSelector(client, viewport, selector);
+    if (!clicked) throw new HarnessError(`works:${slug}:toggle-missing`);
+    return;
+  }
+
+  await installFinalProjectScrollProbe(client, slug);
+  try {
+    const clicked = await clickSelector(
+      client,
+      viewport,
+      selector,
+    );
+    if (!clicked) throw new HarnessError(`works:${slug}:toggle-missing`);
+    await waitForFinalProjectScroll(client, slug);
+  } finally {
+    await removeFinalProjectScrollProbe(client);
+  }
+}
+
+async function installFinalProjectScrollProbe(client, slug) {
+  const installed = await client.evaluate(`(() => {
+    const article = document.querySelector('[data-project-slug="${slug}"]');
+    if (!(article instanceof HTMLElement) || globalThis.__s9ProjectScrollProbe) return false;
+    const probe = {
+      article,
+      calls: 0,
+      hadOwnMethod: Object.hasOwn(article, 'scrollIntoView'),
+      original: article.scrollIntoView,
+    };
+    article.scrollIntoView = function scrollIntoView(options) {
+      probe.calls += 1;
+      return probe.original.call(this, options);
+    };
+    globalThis.__s9ProjectScrollProbe = probe;
+    return true;
+  })()`);
+  if (!installed) throw new HarnessError(`works:${slug}:final-scroll-probe-unavailable`);
+}
+
+async function waitForFinalProjectScroll(client, slug) {
+  await waitFor(
     client,
-    viewport,
-    selector,
+    '(globalThis.__s9ProjectScrollProbe?.calls ?? 0) > 0',
+    `works:${slug}:final-scroll-timeout`,
   );
-  if (!clicked) throw new HarnessError(`works:${slug}:toggle-missing`);
+}
+
+async function removeFinalProjectScrollProbe(client) {
+  await client.evaluate(`(() => {
+    const probe = globalThis.__s9ProjectScrollProbe;
+    if (!probe) return;
+    if (probe.hadOwnMethod) probe.article.scrollIntoView = probe.original;
+    else delete probe.article.scrollIntoView;
+    delete globalThis.__s9ProjectScrollProbe;
+  })()`);
+}
+
+async function sampleProjectScrollGeometry(client, slug) {
+  return client.evaluate(`(() => {
+    const article = document.querySelector('[data-project-slug="${slug}"]');
+    if (!(article instanceof HTMLElement)) return null;
+    const rect = article.getBoundingClientRect();
+    const root = document.documentElement;
+    return {
+      articleBottom: rect.bottom,
+      articleTop: rect.top,
+      clientHeight: root.clientHeight,
+      maxScrollY: Math.max(0, document.documentElement.scrollHeight - root.clientHeight),
+      scrollHeight: root.scrollHeight,
+      scrollMarginTop: Number.parseFloat(getComputedStyle(article).scrollMarginTop) || 0,
+      scrollY: window.scrollY,
+      viewportHeight: window.innerHeight,
+    };
+  })()`);
 }
 
 async function waitForExpanded(client, viewportName, slug, requireAligned = true) {
@@ -653,22 +1052,28 @@ async function waitForExpanded(client, viewportName, slug, requireAligned = true
   })()`, `${viewportName}:works:${slug}:presence-timeout`, INTERACTION_TIMEOUT_MS);
 
   if (requireAligned) {
-    await waitFor(client, `(() => {
-      const article = document.querySelector('[data-project-slug="${slug}"]');
-      if (!(article instanceof HTMLElement)) return false;
-      const margin = Number.parseFloat(getComputedStyle(article).scrollMarginTop) || 0;
-      return Math.abs(article.getBoundingClientRect().top - margin) <= 12;
-    })()`, `${viewportName}:works:${slug}:scroll-margin-timeout`, INTERACTION_TIMEOUT_MS);
+    try {
+      await assertConsecutiveProjectScrollStable({
+        maxFrames: 120,
+        quietFrames: 4,
+        requestFrame: () => client.evaluate(
+          'new Promise((resolve) => requestAnimationFrame(() => resolve(true)))',
+        ),
+        sample: () => sampleProjectScrollGeometry(client, slug),
+      });
+    } catch (error) {
+      if (error?.code !== 'PROJECT_SCROLL_STABILITY_TIMEOUT') throw error;
+      throw new HarnessError(`${viewportName}:works:${slug}:scroll-stability-timeout`);
+    }
   }
 
   return client.evaluate(`(() => {
     const article = document.querySelector('[data-project-slug="${slug}"]');
-    const margin = Number.parseFloat(getComputedStyle(article).scrollMarginTop) || 0;
     return {
       expandedCount: document.querySelectorAll('button[aria-expanded="true"]').length,
       gridColumnStart: getComputedStyle(article).gridColumnStart,
       hashMatches: location.hash === '#${slug}',
-      topDelta: Math.abs(article.getBoundingClientRect().top - margin),
+      scrollAligned: ${requireAligned ? 'true' : 'null'},
     };
   })()`);
 }
@@ -847,7 +1252,7 @@ async function verifyTransitionSequences(client, viewport) {
 
   await navigate(client, viewportName, '/works');
   await assertAllCollapsed(client, viewportName, 'works:a-b-c-initial');
-  await clickSlug(client, viewport, 'content-agent');
+  await clickSlug(client, viewport, 'content-agent', { waitForApplicationScroll: false });
   await waitFor(
     client,
     `(() => {
@@ -861,7 +1266,7 @@ async function verifyTransitionSequences(client, viewport) {
     })()`,
     `${viewportName}:works:a-b-c-a-timeout`,
   );
-  await clickSlug(client, viewport, 'auto-operations');
+  await clickSlug(client, viewport, 'auto-operations', { waitForApplicationScroll: false });
   await waitFor(
     client,
     `(() => {
@@ -885,7 +1290,7 @@ async function verifyTransitionSequences(client, viewport) {
     await waitForExpanded(client, viewportName, 'content-agent');
     await installScrollObserver(client);
     try {
-      await clickSlug(client, viewport, 'auto-operations');
+      await clickSlug(client, viewport, 'auto-operations', { waitForApplicationScroll: false });
       await waitFor(client, `(() => {
         const targetExpanded = document.querySelector(
           '[data-project-slug="auto-operations"] button[aria-expanded="true"]'
@@ -1019,7 +1424,7 @@ async function inspectWorks(client, viewport) {
     check(state.expandedCount === 1, `${viewportName}:works:${slug}:logical-expanded-count`);
     check(state.hashMatches, `${viewportName}:works:${slug}:hash`);
     check(state.gridColumnStart === '1', `${viewportName}:works:${slug}:grid-column`);
-    check(state.topDelta <= 12, `${viewportName}:works:${slug}:scroll-margin`);
+    check(state.scrollAligned, `${viewportName}:works:${slug}:scroll-alignment`);
     expandedSlugs[viewportName].push(slug);
   }
 
@@ -1129,6 +1534,7 @@ try {
   mkdirSync(evidenceDir, { recursive: true });
 
   cleanupCoordinator = createCleanupCoordinator(async () => {
+    if (supervisedProfileDir !== null) return;
     try {
       await cleanupOwnedBrowser(browser, {
         ...cleanupBrowserOptions,
@@ -1185,14 +1591,59 @@ const summary = createS9Summary({
   pageErrors,
   externalRuntimeRequests,
 });
-consoleLike.log(JSON.stringify(summary, null, 2));
+emitS9Summary(consoleLike, summary);
 if (failures.length > 0) {
-  consoleLike.error('S9_VISUAL_SMOKE_FAILED');
   processLike.exitCode = 1;
 }
 return summary;
 }
 
+export async function runS9Worker({
+  argv = process.argv,
+  dependencies = {},
+  env = process.env,
+  processLike = process,
+} = {}) {
+  const supervisedProfileDir = argv[4];
+  let summary;
+  try {
+    assertOwnedProfileBoundary(supervisedProfileDir);
+    summary = await main({
+      argv: [argv[0], argv[1], argv[3]],
+      dependencies: {
+        ...dependencies,
+        consoleLike: { error() {}, log() {} },
+      },
+      env,
+      processLike,
+      supervisedProfileDir,
+    });
+  } catch (error) {
+    summary = createS9Summary({
+      failures: [publicS9CdpFailureCode(error) ?? 'browser:worker-process-failed'],
+    });
+  }
+
+  let transportExitCode = 0;
+  try {
+    processLike.channel?.ref?.();
+    await sendS9WorkerSummary(processLike, summary);
+  } catch {
+    transportExitCode = 1;
+  }
+  try {
+    processLike.disconnect?.();
+  } catch {
+    // The supervisor owns final failure reporting.
+  }
+  processLike.exit(transportExitCode);
+  return summary;
+}
+
 if (isDirectExecution(import.meta.url, process.argv[1])) {
-  await main();
+  if (process.argv[2] === S9_WORKER_FLAG) {
+    await runS9Worker();
+  } else {
+    await runS9Supervisor();
+  }
 }

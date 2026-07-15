@@ -229,9 +229,26 @@ test('gallery settles generation-safe scrolling after stale project presence exi
   );
   assert.match(
     gallery,
-    /requestAnimationFrame\(\(\) => \{\s*finalScrollFrame\.current = requestAnimationFrame\(\(\) => \{[\s\S]*scrollToProject\(latest\.slug\)/,
+    /const scheduleStableFrame = \(\) => \{[\s\S]*finalScrollFrame\.current = requestAnimationFrame[\s\S]*scrollToProject\(latest\.slug\)/,
   );
   assert.doesNotMatch(gallery, /setTimeout|setInterval/);
+});
+
+test('gallery waits for target and document geometry to settle before final scroll', () => {
+  const gallery = readSource(files.projectGallery);
+
+  assert.match(gallery, /FINAL_SCROLL_QUIET_FRAMES/);
+  assert.match(gallery, /FINAL_SCROLL_MAX_FRAMES/);
+  assert.match(gallery, /target\.getBoundingClientRect\(\)/);
+  assert.match(gallery, /document\.documentElement\.scrollHeight/);
+  assert.match(gallery, /Math\.abs\(current\.height - previous\.height\) < 0\.5/);
+  assert.match(gallery, /Math\.abs\(current\.scrollHeight - previous\.scrollHeight\) < 0\.5/);
+  assert.match(gallery, /quietFrames >= FINAL_SCROLL_QUIET_FRAMES/);
+  assert.match(gallery, /frames >= FINAL_SCROLL_MAX_FRAMES/);
+  assert.match(
+    gallery,
+    /if \(!layoutStable && !frameLimitReached\) \{[\s\S]*scheduleStableFrame\(\);[\s\S]*return;[\s\S]*\}[\s\S]*scrollToProject\(latest\.slug\)/,
+  );
 });
 
 test('pending gallery correction is cancelled by subsequent user scroll intent only', () => {

@@ -35,6 +35,8 @@ const SCROLL_INTENT_KEYS = new Set([
   'End',
   ' ',
 ]);
+const FINAL_SCROLL_QUIET_FRAMES = 3;
+const FINAL_SCROLL_MAX_FRAMES = 120;
 
 function scrollToProject(next: ProjectSlug) {
   const target = document.getElementById(next);
@@ -111,7 +113,10 @@ export default function ProjectGallery({ projects }: ProjectGalleryProps) {
       return;
     }
 
-    finalScrollFrame.current = requestAnimationFrame(() => {
+    let frames = 0;
+    let quietFrames = 0;
+    let previous: { height: number; scrollHeight: number } | null = null;
+    const scheduleStableFrame = () => {
       finalScrollFrame.current = requestAnimationFrame(() => {
         finalScrollFrame.current = null;
         const latest = pendingFinalTarget.current;
@@ -133,12 +138,35 @@ export default function ProjectGallery({ projects }: ProjectGalleryProps) {
           return;
         }
 
+        const target = document.getElementById(latest.slug);
+        if (!target) {
+          return;
+        }
+        const rect = target.getBoundingClientRect();
+        const current = {
+          height: rect.height,
+          scrollHeight: document.documentElement.scrollHeight,
+        };
+        const unchanged = previous
+          && Math.abs(current.height - previous.height) < 0.5
+          && Math.abs(current.scrollHeight - previous.scrollHeight) < 0.5;
+        quietFrames = unchanged ? quietFrames + 1 : 0;
+        frames += 1;
+        previous = current;
+        const layoutStable = quietFrames >= FINAL_SCROLL_QUIET_FRAMES;
+        const frameLimitReached = frames >= FINAL_SCROLL_MAX_FRAMES;
+        if (!layoutStable && !frameLimitReached) {
+          scheduleStableFrame();
+          return;
+        }
+
         pendingFinalTarget.current = null;
         removeIntentListeners.current?.();
         removeIntentListeners.current = null;
         scrollToProject(latest.slug);
       });
-    });
+    };
+    scheduleStableFrame();
   }, [cancelPendingFinalScroll]);
 
   const handlePresenceChange = useCallback((slug: ProjectSlug, mounted: boolean) => {

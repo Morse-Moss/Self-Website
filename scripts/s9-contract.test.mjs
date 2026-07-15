@@ -96,7 +96,7 @@ test('S9 reduced-motion gate rejects every active animation including finite dur
   assert.doesNotMatch(harness, /runningInfiniteAnimations|iterations === Infinity/);
 });
 
-test('S9 harness stdout is one exact privacy-limited summary', () => {
+test('S9 supervisor stdout is one exact privacy-limited summary', () => {
   const harness = readHarness();
   const consoleLogs = harness.match(/consoleLike\.log\(/g) ?? [];
 
@@ -108,6 +108,43 @@ test('S9 harness stdout is one exact privacy-limited summary', () => {
   );
   assert.match(harness, /export async function main/);
   assert.match(harness, /if \(isDirectExecution\(import\.meta\.url, process\.argv\[1\]\)\)/);
+});
+
+test('S9 direct execution uses one IPC worker protocol and keeps cleanup in the supervisor lifetime', () => {
+  const harness = readHarness();
+  const helpers = readUtf8('scripts/lib/s9-cdp.mjs');
+
+  assert.match(harness, /export async function runS9Supervisor/);
+  assert.match(harness, /export async function runS9Worker/);
+  assert.match(harness, /export function sendS9WorkerSummary/);
+  assert.match(harness, /--s9-worker/);
+  assert.match(harness, /stdio: \['ignore', 'ignore', 'ignore', 'ipc'\]/);
+  assert.match(harness, /worker\.on\('message', handleMessage\)/);
+  assert.match(harness, /processLike\.send\(safeSummary/);
+  assert.match(harness, /terminateProfileProcesses\(profileDir, \{ platform \}\)/);
+  assert.match(harness, /if \(supervisedProfileDir !== null\) return/);
+  assert.match(harness, /await runS9Supervisor/);
+  assert.doesNotMatch(
+    harness,
+    /if \(isDirectExecution\(import\.meta\.url, process\.argv\[1\]\)\) \{\s*await main\(\);\s*\}/,
+  );
+  assert.doesNotMatch(harness, /worker\.(?:stdout|stderr)|collectBoundedStream|JSON\.parse\(stdout\)/);
+  for (const marker of [
+    'terminateOwnedProfileProcesses',
+    'S9_OWNED_PROFILE',
+    'Get-CimInstance Win32_Process',
+    '[StringComparison]::OrdinalIgnoreCase',
+    "Buffer.from(script, 'utf16le')",
+  ]) {
+    assert.ok(helpers.includes(marker), `missing profile-scoped cleanup marker: ${marker}`);
+  }
+});
+
+test('S9 supervisor shares one exact harness route allowlist across summary fields', () => {
+  const harness = readHarness();
+
+  assert.match(harness, /function isSafeHarnessRoute/);
+  assert.match(harness, /isSafeHarnessRoute\(entry\.route\)/);
 });
 
 test('S9 launcher cleans its owned process and profile when readiness fails', () => {
@@ -139,8 +176,19 @@ test('S9 harness uses one tested transport and reentrant cleanup coordinator', (
   assert.doesNotMatch(harness, /function connectSocket|function createCommandClient/);
 });
 
+test('S9 owned profile cleanup uses bounded transient-lock retry', () => {
+  const helpers = readUtf8('scripts/lib/s9-cdp.mjs');
+
+  assert.match(helpers, /removeProfile = removeOwnedProfileWithRetry/);
+  assert.match(helpers, /OWNED_PROFILE_CLEANUP_FAILED/);
+  assert.match(helpers, /EPERM/);
+  assert.match(helpers, /EBUSY/);
+  assert.match(helpers, /ENOTEMPTY/);
+});
+
 test('S9 harness delegates network accounting without a broad navigation-abort exemption', () => {
   const harness = readHarness();
+  const helpers = readUtf8('scripts/lib/s9-cdp.mjs');
 
   for (const marker of [
     'createNetworkMonitor',
@@ -157,6 +205,8 @@ test('S9 harness delegates network accounting without a broad navigation-abort e
     harness,
     /navigationInProgress|exactNavigationAbort|Failed to load resource: net::ERR_ABORTED/,
   );
+  assert.doesNotMatch(harness, /S9_DEBUG_NETWORK|S9_NETWORK_DEBUG|S9_DEBUG_FAST_NAV|onDiagnostic/);
+  assert.doesNotMatch(helpers, /onDiagnostic|documentUrl/);
 });
 
 test('S9 primary actions use verified CDP mouse and touch input', () => {
@@ -178,6 +228,20 @@ test('S9 primary actions use verified CDP mouse and touch input', () => {
   ]) {
     assert.ok(inputSource.includes(marker), `missing verified input marker: ${marker}`);
   }
+});
+
+test('S9 project clicks wait for the application final scroll before geometry acceptance', () => {
+  const harness = readHarness();
+
+  assert.match(harness, /installFinalProjectScrollProbe/);
+  assert.match(harness, /__s9ProjectScrollProbe/);
+  assert.match(harness, /article\.scrollIntoView = function scrollIntoView/);
+  assert.match(harness, /probe\.calls \+= 1/);
+  assert.match(harness, /await waitForFinalProjectScroll/);
+  assert.match(harness, /finally \{\s*await removeFinalProjectScrollProbe/);
+  assert.match(harness, /assertConsecutiveProjectScrollStable/);
+  assert.match(harness, /Math\.max\(0, document\.documentElement\.scrollHeight/);
+  assert.doesNotMatch(harness, /Math\.abs\(article\.getBoundingClientRect\(\)\.top - margin\) <= 12/);
 });
 
 test('S9 transition checks wait for stale presence and bounded quiet frames', () => {

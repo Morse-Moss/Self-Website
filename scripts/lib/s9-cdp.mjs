@@ -5,6 +5,12 @@ import path from 'node:path';
 
 const DEVTOOLS_BROWSER_PATH = /^\/devtools\/browser\/[A-Za-z0-9._-]+$/;
 const ENDPOINT_POLL_MS = 50;
+const MAX_RETIRED_NETWORK_LOADERS = 8;
+const PROFILE_POLL_MS = 100;
+const PROFILE_PROCESS_TIMEOUT_MS = 15_000;
+const PROFILE_PROCESS_SPAWN_GRACE_MS = 2_000;
+const PROFILE_TIMEOUT_MS = 5_000;
+const TRANSIENT_PROFILE_ERRORS = new Set(['EBUSY', 'ENOTEMPTY', 'EPERM']);
 const NETWORK_RESOURCE_TYPES = new Set([
   'CSPViolationReport',
   'Document',
@@ -49,8 +55,13 @@ const PUBLIC_CDP_FAILURE_CODES = new Map([
   ['OWNED_PROCESS_TERMINATION_FAILED', 'browser:process-termination-failed'],
   ['OWNED_PROCESS_TERMINATION_TIMEOUT', 'browser:process-termination-timeout'],
   ['OWNED_PROFILE_BOUNDARY', 'browser:profile-boundary'],
+  ['OWNED_PROFILE_CLEANUP_FAILED', 'browser:profile-cleanup-failed'],
+  ['OWNED_PROFILE_PROCESS_CLEANUP_FAILED', 'browser:profile-process-cleanup-failed'],
+  ['OWNED_PROFILE_PROCESS_CLEANUP_TIMEOUT', 'browser:profile-process-cleanup-timeout'],
   ['POINTER_MODE_INVALID', 'input:pointer-mode-invalid'],
   ['POINTER_TARGET_UNAVAILABLE', 'input:pointer-target-unavailable'],
+  ['PROJECT_SCROLL_CONFIG_INVALID', 'scroll:config-invalid'],
+  ['PROJECT_SCROLL_STABILITY_TIMEOUT', 'scroll:stability-timeout'],
 ]);
 
 export function createS9Summary(input = {}) {
@@ -117,6 +128,91 @@ export function publicS9CdpFailureCode(error) {
 export function countRunningAnimations(animations) {
   if (!Array.isArray(animations)) return 0;
   return animations.filter((animation) => animation?.playState === 'running').length;
+}
+
+export function isProjectScrollGeometryAcceptable(geometry, tolerance = 12) {
+  const fields = [
+    'articleBottom',
+    'articleTop',
+    'clientHeight',
+    'scrollHeight',
+    'scrollMarginTop',
+    'scrollY',
+    'viewportHeight',
+  ];
+  if (
+    !geometry
+    || !Number.isFinite(tolerance)
+    || tolerance < 0
+    || fields.some((field) => !Number.isFinite(geometry[field]))
+  ) {
+    return false;
+  }
+
+  const maxScrollY = Number.isFinite(geometry.maxScrollY)
+    ? Math.max(0, geometry.maxScrollY)
+    : Math.max(0, geometry.scrollHeight - geometry.clientHeight);
+  const documentTop = geometry.scrollY + geometry.articleTop;
+  const requestedScrollY = documentTop - geometry.scrollMarginTop;
+  const closestScrollY = Math.min(maxScrollY, Math.max(0, requestedScrollY));
+  const visible = geometry.articleBottom > 0
+    && geometry.articleTop < geometry.viewportHeight;
+
+  return visible && Math.abs(geometry.scrollY - closestScrollY) <= tolerance;
+}
+
+export async function assertConsecutiveProjectScrollStable({
+  maxFrames,
+  quietFrames,
+  requestFrame,
+  sample,
+  tolerance = 12,
+}) {
+  if (
+    !Number.isInteger(maxFrames)
+    || !Number.isInteger(quietFrames)
+    || quietFrames < 1
+    || maxFrames < quietFrames
+    || typeof requestFrame !== 'function'
+    || typeof sample !== 'function'
+  ) {
+    throw new S9CdpError('PROJECT_SCROLL_CONFIG_INVALID');
+  }
+
+  const stableFields = [
+    'articleBottom',
+    'articleTop',
+    'clientHeight',
+    'maxScrollY',
+    'scrollHeight',
+    'scrollMarginTop',
+    'scrollY',
+    'viewportHeight',
+  ];
+  let previous = null;
+  let consecutive = 0;
+
+  for (let frame = 0; frame < maxFrames; frame += 1) {
+    await requestFrame();
+    const current = await sample();
+    if (!isProjectScrollGeometryAcceptable(current, tolerance)) {
+      previous = null;
+      consecutive = 0;
+      continue;
+    }
+
+    const unchanged = previous !== null && stableFields.every((field) => {
+      if (current[field] === undefined && previous[field] === undefined) return true;
+      return Number.isFinite(current[field])
+        && Number.isFinite(previous[field])
+        && Math.abs(current[field] - previous[field]) < 0.5;
+    });
+    consecutive = unchanged ? consecutive + 1 : 1;
+    previous = current;
+    if (consecutive >= quietFrames) return current;
+  }
+
+  throw new S9CdpError('PROJECT_SCROLL_STABILITY_TIMEOUT');
 }
 
 export async function assertConsecutiveAnimationFramesQuiet({
@@ -222,6 +318,7 @@ export function createNetworkMonitor({ targetOrigin }) {
   const targetUrl = new URL(targetOrigin);
   const requests = new Map();
   const reportedRequestIds = new Set();
+  const retiredLoaderIds = new Set();
   const failures = new Set();
   const externalOrigins = new Set();
   const httpFailures = [];
@@ -266,6 +363,23 @@ export function createNetworkMonitor({ targetOrigin }) {
       && url.search === ''
       && url.hash === '';
   };
+  const isTargetNavigationIconPath = (value) => {
+    let url;
+    try {
+      url = new URL(value);
+    } catch {
+      return false;
+    }
+    return sameTargetEndpoint(url) && url.pathname === '/icon.svg';
+  };
+  const retireLoader = (loaderId) => {
+    if (typeof loaderId !== 'string' || loaderId === '') return;
+    retiredLoaderIds.delete(loaderId);
+    retiredLoaderIds.add(loaderId);
+    if (retiredLoaderIds.size > MAX_RETIRED_NETWORK_LOADERS) {
+      retiredLoaderIds.delete(retiredLoaderIds.values().next().value);
+    }
+  };
   const recordResponse = (response, type, route = currentRoute) => {
     let url;
     try {
@@ -294,6 +408,7 @@ export function createNetworkMonitor({ targetOrigin }) {
   return {
     beginNavigation(route) {
       expectedAbortedDocument = currentDocument;
+      retireLoader(currentDocument?.loaderId);
       currentRoute = routeLabel(route);
       navigationStatuses = [];
     },
@@ -308,6 +423,8 @@ export function createNetworkMonitor({ targetOrigin }) {
         }
         const request = {
           isNavigationIcon: type === 'Other' && isTargetNavigationIcon(params.request?.url),
+          isNavigationIconPath: type === 'Other'
+            && isTargetNavigationIconPath(params.request?.url),
           loaderId: typeof params.loaderId === 'string' ? params.loaderId : null,
           requestId: typeof params.requestId === 'string' ? params.requestId : null,
           route: currentRoute,
@@ -346,13 +463,31 @@ export function createNetworkMonitor({ targetOrigin }) {
           && params.canceled === true
           && params.errorText === 'net::ERR_ABORTED'
           && request?.loaderId === expectedAbortedDocument?.loaderId;
+        const isExpectedRetiredResourceAbort = type !== 'Document'
+          && request !== undefined
+          && request.isNavigationIconPath !== true
+          && typeof params.requestId === 'string'
+          && request.requestId === params.requestId
+          && typeof request.loaderId === 'string'
+          && retiredLoaderIds.has(request.loaderId)
+          && request.targetUrl !== null
+          && params.canceled === true
+          && params.errorText === 'net::ERR_ABORTED';
         if (
-          (isExpectedDocumentAbort || isExpectedNavigationIconAbort)
+          (
+            isExpectedDocumentAbort
+            || isExpectedNavigationIconAbort
+            || isExpectedRetiredResourceAbort
+          )
           && typeof params.requestId === 'string'
         ) {
           reportedRequestIds.add(params.requestId);
         }
-        if (!isExpectedDocumentAbort && !isExpectedNavigationIconAbort) {
+        if (
+          !isExpectedDocumentAbort
+          && !isExpectedNavigationIconAbort
+          && !isExpectedRetiredResourceAbort
+        ) {
           if (!reportedRequestIds.has(params.requestId)) {
             failures.add(`${request?.route ?? currentRoute}:network-${type}-failed`);
           }
@@ -650,8 +785,7 @@ export function terminateOwnedProcessTree(child, {
   killFn(-child.pid, 'SIGKILL');
 }
 
-export function removeOwnedProfile(profileDir, {
-  rmSyncFn = rmSync,
+export function assertOwnedProfileBoundary(profileDir, {
   tempRoot = os.tmpdir(),
 } = {}) {
   const resolvedProfile = path.resolve(profileDir);
@@ -663,12 +797,131 @@ export function removeOwnedProfile(profileDir, {
   ) {
     throw new S9CdpError('OWNED_PROFILE_BOUNDARY');
   }
+  return resolvedProfile;
+}
+
+export function selectLeafProfileProcessIds(matches) {
+  const parentPids = new Set(matches.map(({ ParentProcessId }) => ParentProcessId));
+  const leaves = matches.filter(({ ProcessId }) => !parentPids.has(ProcessId));
+  return (leaves.length > 0 ? leaves : matches).map(({ ProcessId }) => ProcessId);
+}
+
+export function decideProfileProcessCleanupAction({ deadlineReached, matchCount }) {
+  if (matchCount === 0) return 'success';
+  return deadlineReached ? 'timeout' : 'stop';
+}
+
+export function terminateOwnedProfileProcesses(profileDir, {
+  platform = process.platform,
+  processEnv = process.env,
+  systemRoot = processEnv.SystemRoot ?? processEnv.WINDIR ?? 'C:\\Windows',
+  powershellPath = path.join(
+    systemRoot,
+    'System32',
+    'WindowsPowerShell',
+    'v1.0',
+    'powershell.exe',
+  ),
+  spawnSyncFn = spawnSync,
+  tempRoot = os.tmpdir(),
+  timeoutMs = PROFILE_PROCESS_TIMEOUT_MS,
+} = {}) {
+  const resolvedProfile = assertOwnedProfileBoundary(profileDir, { tempRoot });
+  if (platform !== 'win32') {
+    throw new S9CdpError('OWNED_PROFILE_PROCESS_CLEANUP_FAILED');
+  }
+
+  const script = `
+$ErrorActionPreference = 'Stop'
+$profile = $env:S9_OWNED_PROFILE
+if ([string]::IsNullOrWhiteSpace($profile)) { exit 31 }
+$deadline = [DateTime]::UtcNow.AddMilliseconds(${timeoutMs})
+try {
+  while ($true) {
+    $matches = @(Get-CimInstance Win32_Process | Where-Object {
+      $_.ProcessId -ne $PID -and
+      -not [string]::IsNullOrEmpty($_.CommandLine) -and
+      $_.CommandLine.IndexOf($profile, [StringComparison]::OrdinalIgnoreCase) -ge 0
+    })
+    if ($matches.Count -eq 0) { exit 0 }
+    if ([DateTime]::UtcNow -ge $deadline) { exit 124 }
+    $parentPids = [Collections.Generic.HashSet[uint32]]::new()
+    foreach ($ownedProcess in $matches) {
+      [void]$parentPids.Add([uint32]$ownedProcess.ParentProcessId)
+    }
+    $leaves = @($matches | Where-Object {
+      -not $parentPids.Contains([uint32]$_.ProcessId)
+    })
+    $targets = if ($leaves.Count -gt 0) { $leaves } else { $matches }
+    foreach ($ownedProcess in $targets) {
+      Stop-Process -Force -Id $ownedProcess.ProcessId -ErrorAction SilentlyContinue
+    }
+    Start-Sleep -Milliseconds ${PROFILE_POLL_MS}
+  }
+} catch {
+  exit 32
+}
+`;
+  const encodedCommand = Buffer.from(script, 'utf16le').toString('base64');
+  const result = spawnSyncFn(powershellPath, [
+    '-NoLogo',
+    '-NoProfile',
+    '-NonInteractive',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-EncodedCommand',
+    encodedCommand,
+  ], {
+    env: {
+      S9_OWNED_PROFILE: resolvedProfile,
+      SystemRoot: systemRoot,
+      WINDIR: processEnv.WINDIR ?? systemRoot,
+    },
+    shell: false,
+    stdio: 'ignore',
+    timeout: timeoutMs + PROFILE_PROCESS_SPAWN_GRACE_MS,
+    windowsHide: true,
+  });
+  if (result?.error?.code === 'ETIMEDOUT' || result?.status === 124) {
+    throw new S9CdpError('OWNED_PROFILE_PROCESS_CLEANUP_TIMEOUT');
+  }
+  if (result?.error || result?.status !== 0) {
+    throw new S9CdpError('OWNED_PROFILE_PROCESS_CLEANUP_FAILED');
+  }
+}
+
+export function removeOwnedProfile(profileDir, {
+  rmSyncFn = rmSync,
+  tempRoot = os.tmpdir(),
+} = {}) {
+  const resolvedProfile = assertOwnedProfileBoundary(profileDir, { tempRoot });
   rmSyncFn(resolvedProfile, {
     force: true,
-    maxRetries: 3,
+    maxRetries: 0,
     recursive: true,
-    retryDelay: 100,
   });
+}
+
+export async function removeOwnedProfileWithRetry(profileDir, {
+  now = Date.now,
+  poll = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+  removeProfile = removeOwnedProfile,
+  timeoutMs = PROFILE_TIMEOUT_MS,
+} = {}) {
+  const deadline = now() + timeoutMs;
+
+  while (true) {
+    try {
+      await removeProfile(profileDir);
+      return;
+    } catch (error) {
+      if (!TRANSIENT_PROFILE_ERRORS.has(error?.code)) throw error;
+      if (now() >= deadline) {
+        throw new S9CdpError('OWNED_PROFILE_CLEANUP_FAILED');
+      }
+      await poll(PROFILE_POLL_MS);
+    }
+  }
 }
 
 export function waitForChildExit(child, timeoutMs) {
@@ -688,11 +941,31 @@ export function waitForChildExit(child, timeoutMs) {
 export async function cleanupOwnedBrowser(browser, {
   closeTimeoutMs = 2_000,
   connectTransport = connectCdpTransport,
-  removeProfile = removeOwnedProfile,
+  platform = process.platform,
+  removeProfile = removeOwnedProfileWithRetry,
+  removeProfileAfterExit = true,
   terminateProcessTree = terminateOwnedProcessTree,
   waitForExit = waitForChildExit,
 } = {}) {
   if (!browser) return;
+
+  if (platform === 'win32') {
+    if (!removeProfileAfterExit) {
+      await terminateProcessTree(browser.browserProcess, { platform });
+      return;
+    }
+    let terminationError = null;
+    try {
+      await terminateProcessTree(browser.browserProcess, { platform });
+    } catch (error) {
+      terminationError = error;
+    }
+    if (!await waitForExit(browser.browserProcess, closeTimeoutMs)) {
+      throw terminationError ?? new S9CdpError('OWNED_PROCESS_CLEANUP_FAILED');
+    }
+    if (removeProfileAfterExit) await removeProfile(browser.profileDir);
+    return;
+  }
 
   if (browser.browserWebSocketUrl) {
     let transport;
@@ -712,7 +985,7 @@ export async function cleanupOwnedBrowser(browser, {
   if (!await waitForExit(browser.browserProcess, closeTimeoutMs)) {
     let terminationError = null;
     try {
-      await terminateProcessTree(browser.browserProcess);
+      await terminateProcessTree(browser.browserProcess, { platform });
     } catch (error) {
       terminationError = error;
     }
@@ -720,5 +993,5 @@ export async function cleanupOwnedBrowser(browser, {
       throw terminationError ?? new S9CdpError('OWNED_PROCESS_CLEANUP_FAILED');
     }
   }
-  await removeProfile(browser.profileDir);
+  if (removeProfileAfterExit) await removeProfile(browser.profileDir);
 }
