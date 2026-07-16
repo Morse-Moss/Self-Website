@@ -4,7 +4,7 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**S10-CS-4 JD + DIAGNOSIS**
+**S10-CS-5 ADMIN + ALERTS**
 
 ## next_allowed_pointer
 按 `docs/task-center/s10-smart-customer-service.md` 的 Phase Registry 顺序推进。只有当前阶段 RED/GREEN、focused verification、审查和状态同步后才能进入下一阶段；不部署、不 push。博查/飞书缺少凭据时真实链保持 `BLOCKED_EXTERNAL`，不得用 Mock 冒充。
@@ -18,6 +18,16 @@
 - Admin/alerts:独立密码+TOTP 管理认证、badcase 与 JSON/CSV 导出；首次邀请码、初诊、故障恢复和安全事件通过幂等 Outbox 发飞书。
 - Cost/safety:无月预算硬门；保留 30 条消息、五次联网、并发、超时、限流、kill switch 和 usage 统计。
 - Contract:`docs/task-center/s10-smart-customer-service.md`;design/plan 位于 `docs/superpowers/{specs,plans}/2026-07-15-s10-smart-customer-service*.md`。
+
+### S10-CS-4 workflow/diagnosis/outbox evidence(2026-07-16)
+
+- Workflow PASS:`chat` 默认并限制 2,000 字，`jd_match` 限制 12,000 字，`diagnosis` 只接受五个受控字段；同 conversation/replay 不允许切换 workflow，三者复用同一 RAG/Search/Provider 主链。
+- Diagnosis PASS:字段跨 turn 合并并由服务端判定 `collecting -> complete -> handoff_pending`；结构化历史原文不再作为普通 user 消息回注，JD 与初诊字段在 system/prompt 双层标记为不可信数据。
+- Search PASS:合并后的初诊摘要用于 Embedding 和实际 Search query；SearchRouter 只消费无服务端标签的字段值，普通初诊不因“当前状态”误触联网，真实“最新 OpenAI API”请求仍正常搜索。
+- Transaction PASS:首次邀请码使用与 Session 同事务写 `invite-first-use:<inviteId>`；完整初诊的 assistant、usage、interaction、稳定 diagnosis 与 `diagnosis-complete:<diagnosisId>` Outbox 同事务。replay、retry、新 turn、Outbox 失败和 COMMIT 两类不确定结果均保持恰好一份。
+- Lifecycle PASS:diagnosis FK 锚点迁移到最新成功 interaction turn，diagnosis 与 Outbox 复用该 turn 的同一 10 天 deadline；延迟 Provider 回归证明不存在父记录提前级联窗口。
+- Verification PASS:Task 4 focused 80/80、`DATABASE_URL=local npm test` 383/383、0 fail、0 skip；`npm run build` 13/13；`git diff --check` 与显式密钥扫描 PASS；CRITICAL compliance 与 quality/safety 三轮 correction 后均 PASS。
+- External boundary:未调用真实 GPT、博查或飞书；Bocha/Feishu 保持 `BLOCKED_EXTERNAL`，未 push/部署。
 
 ### S10-CS-3 RAG/automatic-search evidence(2026-07-16)
 

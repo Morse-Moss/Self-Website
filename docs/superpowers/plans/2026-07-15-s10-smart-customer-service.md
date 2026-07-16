@@ -238,29 +238,29 @@ Keep real Bocha evidence `BLOCKED_EXTERNAL` while no API key exists.
 - Create: `tests/alert-outbox-integration.test.ts`
 - Modify: `tests/access-integration.test.ts`
 
-- [ ] **Step 1: Write workflow input RED tests**
+- [x] **Step 1: Write workflow input RED tests**
 
 Free chat accepts at most 2,000 characters, JD accepts 12,000, and diagnosis validates controlled fields with per-field/total limits. Reject file payloads, invalid workflow transitions and unknown fields.
 
-- [ ] **Step 2: Verify workflow RED**
+- [x] **Step 2: Verify workflow RED**
 
 Run: `node --test tests/chat-core.test.ts tests/jd-match.test.ts tests/diagnosis.test.ts`
 
 Expected: FAIL because only `mode` exists and all messages use 500 characters.
 
-- [ ] **Step 3: Implement workflow contracts**
+- [x] **Step 3: Implement workflow contracts**
 
 JD output instructions require requirement decomposition, project evidence, honest gaps and follow-up questions with no invented percentage. Diagnosis transitions `collecting -> complete -> handoff_pending`, and only the server decides completion from required fields.
 
-- [ ] **Step 4: Write Outbox RED tests**
+- [x] **Step 4: Write core Outbox RED tests**
 
-Prove the first invite use inserts exactly one row across repeated redemptions; diagnosis completion inserts exactly one row across retry/replay; ordinary chat, JD and routine quota events insert none; answer persistence and Outbox enqueue share one transaction. Invite abuse lockout and admin lockout each enqueue one security event per stable window.
+Prove the first invite use inserts exactly one row across repeated redemptions; diagnosis completion inserts exactly one row across retry/replay; ordinary chat, JD and routine quota events insert none; answer persistence and Outbox enqueue share one transaction. Invite abuse lockout and admin lockout security events remain in Task 5 Step 6 with their owning rate-limit/auth transactions.
 
-- [ ] **Step 5: Implement transactional Outbox**
+- [x] **Step 5: Implement transactional Outbox**
 
 Use unique dedupe keys and JSON payloads that omit secrets. External delivery is never attempted inside the user request transaction and failure cannot roll back an answer.
 
-- [ ] **Step 6: Verify workflows/Outbox GREEN and commit**
+- [x] **Step 6: Verify workflows/Outbox GREEN and commit**
 
 Run: `node --test tests/jd-match.test.ts tests/diagnosis.test.ts tests/alert-outbox-integration.test.ts tests/access-integration.test.ts tests/chat-service-integration.test.ts`
 

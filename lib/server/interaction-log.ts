@@ -98,6 +98,7 @@ export async function insertRunningInteraction(input: {
   turnId: string;
   accessSessionId: string;
   conversationId: string;
+  workflow: InteractionTurn['workflow'];
   audienceIntent: string;
   question: string;
   now: Date;
@@ -107,11 +108,12 @@ export async function insertRunningInteraction(input: {
     `INSERT INTO interaction_turns
       (id, access_session_id, conversation_id, workflow, audience_intent,
        question, status, created_at, delete_after)
-     VALUES ($1, $2, $3, 'chat', $4, $5, 'running', $6, $7)`,
+     VALUES ($1, $2, $3, $4, $5, $6, 'running', $7, $8)`,
     [
       input.turnId,
       input.accessSessionId,
       input.conversationId,
+      input.workflow,
       input.audienceIntent,
       input.question,
       input.now,

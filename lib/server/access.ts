@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 
 import type { Pool } from 'pg';
 
+import { enqueueAlert } from './alert-service.ts';
 import { hashSecret, isInviteUsable } from './security.ts';
 
 export type AccessErrorCode = 'INVITE_UNAVAILABLE';
@@ -85,6 +86,17 @@ export async function redeemInvite(
        VALUES ($1, $2, $3, $4, $5, $5)`,
       [sessionId, invite.id, hashSecret(token), expiresAt, now],
     );
+    if (invite.session_count === 0) {
+      await enqueueAlert(client, {
+        dedupeKey: `invite-first-use:${invite.id}`,
+        category: 'invite_first_use',
+        payload: {
+          inviteId: invite.id,
+          occurredAt: now.toISOString(),
+        },
+        now,
+      });
+    }
     await client.query('COMMIT');
 
     return { sessionId, token, expiresAt };

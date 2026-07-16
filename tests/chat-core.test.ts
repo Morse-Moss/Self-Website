@@ -45,6 +45,10 @@ test('normalizeChatRequest trims valid input and rejects invalid modes or oversi
     audienceIntent: 'recruiter',
   }), {
     message: '介绍一下深度研究',
+    workflow: 'chat',
+    jobDescription: null,
+    diagnosis: null,
+    diagnosisStatus: null,
     mode: 'interviewer',
     audienceIntent: 'recruiter',
     conversationId: null,
@@ -55,11 +59,79 @@ test('normalizeChatRequest trims valid input and rejects invalid modes or oversi
     () => normalizeChatRequest({ message: '你好', audienceIntent: 'admin' }),
     /audienceIntent/,
   );
-  assert.throws(() => normalizeChatRequest({ message: '问'.repeat(501), mode: 'general' }), /500/);
+  assert.equal(normalizeChatRequest({ message: '问'.repeat(2_000) }).message.length, 2_000);
+  assert.throws(() => normalizeChatRequest({ message: '问'.repeat(2_001) }), /2,000/);
   assert.throws(
     () => normalizeChatRequest({ message: '你好', turnId: 'not-a-uuid' }),
     /turnId/,
   );
+});
+
+test('normalizeChatRequest creates canonical JD and diagnosis workflow inputs', () => {
+  assert.deepEqual(normalizeChatRequest({
+    workflow: 'jd_match',
+    jobDescription: '  Agent 工程师  ',
+    audienceIntent: 'recruiter',
+  }), {
+    message: 'Agent 工程师',
+    workflow: 'jd_match',
+    jobDescription: 'Agent 工程师',
+    diagnosis: null,
+    diagnosisStatus: null,
+    mode: 'general',
+    audienceIntent: 'recruiter',
+    conversationId: null,
+    turnId: null,
+  });
+
+  assert.deepEqual(normalizeChatRequest({
+    workflow: 'diagnosis',
+    diagnosis: {
+      problem: '  知识库回答不稳定  ',
+      goal: '稳定上线',
+    },
+    audienceIntent: 'collaboration',
+  }), {
+    message: '问题：知识库回答不稳定\n目标：稳定上线\n当前状态：未提供\n约束：未提供\n预期时间：未提供',
+    workflow: 'diagnosis',
+    jobDescription: null,
+    diagnosis: {
+      problem: '知识库回答不稳定',
+      goal: '稳定上线',
+      currentState: '',
+      constraints: '',
+      expectedTimeline: '',
+    },
+    diagnosisStatus: 'collecting',
+    mode: 'general',
+    audienceIntent: 'collaboration',
+    conversationId: null,
+    turnId: null,
+  });
+});
+
+test('normalizeChatRequest rejects cross-workflow, unknown, and file-shaped payloads', () => {
+  assert.throws(
+    () => normalizeChatRequest({ workflow: 'chat', message: '你好', jobDescription: 'JD' }),
+    /jobDescription/i,
+  );
+  assert.throws(
+    () => normalizeChatRequest({ workflow: 'jd_match', message: 'JD', jobDescription: 'JD' }),
+    /message/i,
+  );
+  assert.throws(
+    () => normalizeChatRequest({ workflow: 'jd_match', jobDescription: { name: 'jd.pdf' } }),
+    /jobDescription/i,
+  );
+  assert.throws(
+    () => normalizeChatRequest({ workflow: 'diagnosis', diagnosis: { problem: '问题', file: 'brief.pdf' } }),
+    /unknown diagnosis field/i,
+  );
+  assert.throws(
+    () => normalizeChatRequest({ message: '你好', attachment: { name: 'brief.pdf' } }),
+    /unknown request field/i,
+  );
+  assert.throws(() => normalizeChatRequest({ workflow: 'other', message: '你好' }), /workflow/i);
 });
 
 test('audience intents add bounded guidance without changing the evidence-only contract', () => {

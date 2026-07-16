@@ -48,7 +48,7 @@ release_boundary:
 
 ## Current Pointer
 
-**S10-CS-4 JD + DIAGNOSIS**
+**S10-CS-5 ADMIN + ALERTS**
 
 ## Next Allowed Pointer
 
@@ -62,8 +62,8 @@ release_boundary:
 | `S10-CS-1 MIGRATION + RETENTION` | PASS | migration focused 15/15；retention 3/3；full PostgreSQL suite 236/236，0 skip；CRITICAL 双审查 PASS |
 | `S10-CS-2 PROVIDER + RUNTIME` | PASS | 双协议 adapter、全链 abort、timeout、heartbeat、12h history；PostgreSQL 全套 308/308、0 skip；build 13/13；CRITICAL 双审查 PASS |
 | `S10-CS-3 RAG + AUTO SEARCH` | PASS | SearchRouter/Bocha Mock/六字段 citation；355/355；正负 RAG 阈值与 CRITICAL 双审查 PASS |
-| `S10-CS-4 JD + DIAGNOSIS` | IN PROGRESS | workflow 合同、结构化初诊、Outbox 幂等 |
-| `S10-CS-5 ADMIN + ALERTS` | PENDING | scrypt+TOTP、权限矩阵、badcase、导出、飞书 Mock |
+| `S10-CS-4 JD + DIAGNOSIS` | PASS | 三 workflow 同主链、跨 turn 初诊、事务 Outbox；383/383、build 13/13、CRITICAL 双审查 PASS |
+| `S10-CS-5 ADMIN + ALERTS` | IN PROGRESS | scrypt+TOTP、权限矩阵、badcase、导出、飞书 Mock |
 | `S10-CS-6 UI + EVAL + CLOSEOUT` | PENDING | 双宽浏览器、全量验证、CRITICAL 双审查、知识收尾 |
 
 ## Fixed Controls
@@ -112,6 +112,7 @@ release_boundary:
 - 2026-07-16：`S10-CS-1` PASS / `S10-CS-2` START。001-only 本地项目库经哨兵验证 baseline 登记并升级到 002，原 9 条知识文档保全。迁移 15/15、retention 3/3、完整 PostgreSQL suite 236/236、0 skip；spec 与 quality/safety 双审查全部 PASS。旧 S9 current-pointer 契约已修为历史 closeout 保留，S9/S10 focused 25/25。
 - 2026-07-16：`S10-CS-2` PASS / `S10-CS-3` START。完成显式 Responses/Chat Completions 双协议、贯穿 request/Embedding/Provider/SSE 的同一取消链、独立超时与并发、15 秒 heartbeat、终态流清理、同 Session 单飞、幂等 replay/orphan 恢复、事务配额补偿和 12 小时 history。控制器复验 PostgreSQL 全套 308/308、0 skip，`npm run build` 13/13；compliance 与 quality/safety 审查均 PASS。真实 GPT 未调用，仍按外部证据表保持 `BLOCKED_EXTERNAL`。
 - 2026-07-16：`S10-CS-3` PASS / `S10-CS-4` START。完成确定性 SearchRouter、Bocha one-shot Mock、搜索 claim/finalize 与五次额度、严格公网 HTTPS/六字段 citation、失败/禁用诚实降级和个人事实 veto；`0.45` 本地充分性阈值由冻结的 20 正例/10 负例共同硬门，实测最低正例 `0.4822101`、最高负例 `0.4209749`。`DATABASE_URL=local npm test` 355/355、0 skip，build 13/13，CRITICAL compliance 与 quality/safety correction-cycle-2 均 PASS；真实 Bocha 未调用，保持 `BLOCKED_EXTERNAL`。
+- 2026-07-16：`S10-CS-4` PASS / `S10-CS-5` START。完成 `chat / jd_match / diagnosis` 同主链、2,000/12,000 字合同、跨 turn 五字段合并、受控 prompt 与 workflow/replay 隔离；首次邀请码和初诊通过同事务幂等 Outbox 入队。诊断稳定 id 的 FK 与 deadline 始终推进并复用最新成功 interaction turn；Embedding/实际搜索使用合并摘要，SearchRouter 仅判断字段值，避免“当前状态”标签误触联网。focused 80/80、`DATABASE_URL=local npm test` 383/383、0 skip，build 13/13，CRITICAL compliance correction-cycle-2 与 quality/safety correction-cycle-3 均 PASS。未调用真实 GPT、博查或飞书，未 push/部署。
 
 ## Preauthorization Matrix
 

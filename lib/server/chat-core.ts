@@ -1,11 +1,24 @@
 import type { KnowledgeSource } from './rag.ts';
 import type { SearchResponse } from './search-provider.ts';
+import {
+  buildDiagnosisSummary,
+  getDiagnosisCollectionStatus,
+  normalizeDiagnosisFields,
+  type DiagnosisFields,
+  type DiagnosisStatus,
+} from './workflows/diagnosis.ts';
+import { normalizeJobDescription } from './workflows/jd-match.ts';
 
 export type ChatMode = 'general' | 'interviewer';
 export type ChatAudienceIntent = 'general' | 'recruiter' | 'collaboration' | 'peer';
+export type ChatWorkflow = 'chat' | 'jd_match' | 'diagnosis';
 
 export interface NormalizedChatRequest {
   message: string;
+  workflow?: ChatWorkflow;
+  jobDescription?: string | null;
+  diagnosis?: DiagnosisFields | null;
+  diagnosisStatus?: Extract<DiagnosisStatus, 'collecting' | 'complete'> | null;
   mode: ChatMode;
   audienceIntent: ChatAudienceIntent;
   conversationId: string | null;
@@ -19,6 +32,17 @@ const audienceInstructions: Record<ChatAudienceIntent, string> = {
   peer: '来访者是 Agent/RAG 同行:优先解释技术判断、架构取舍、失败恢复和当前边界,不要把规划能力写成已实现。',
 };
 
+const requestFields = new Set([
+  'message',
+  'workflow',
+  'jobDescription',
+  'diagnosis',
+  'mode',
+  'audienceIntent',
+  'conversationId',
+  'turnId',
+]);
+
 function escapeKnowledge(value: string): string {
   return value
     .replaceAll('&', '&amp;')
@@ -27,19 +51,62 @@ function escapeKnowledge(value: string): string {
 }
 
 export function normalizeChatRequest(input: unknown): NormalizedChatRequest {
-  if (!input || typeof input !== 'object') {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
     throw new TypeError('Request body must be an object.');
   }
 
   const body = input as Record<string, unknown>;
-  const message = typeof body.message === 'string' ? body.message.trim() : '';
+  const unknownField = Object.keys(body).find((field) => !requestFields.has(field));
+  if (unknownField) throw new TypeError(`Unknown request field: ${unknownField}.`);
+
+  const workflow = body.workflow ?? 'chat';
+  if (workflow !== 'chat' && workflow !== 'jd_match' && workflow !== 'diagnosis') {
+    throw new TypeError('workflow must be chat, jd_match, or diagnosis.');
+  }
+
+  let message: string;
+  let jobDescription: string | null = null;
+  let diagnosis: DiagnosisFields | null = null;
+  let diagnosisStatus: Extract<DiagnosisStatus, 'collecting' | 'complete'> | null = null;
+
+  if (workflow === 'chat') {
+    if (Object.hasOwn(body, 'jobDescription')) {
+      throw new TypeError('jobDescription is only valid for jd_match.');
+    }
+    if (Object.hasOwn(body, 'diagnosis')) {
+      throw new TypeError('diagnosis is only valid for diagnosis workflow.');
+    }
+    message = typeof body.message === 'string' ? body.message.trim() : '';
+    if (!message) throw new TypeError('message is required.');
+    if (message.length > 2_000) {
+      throw new RangeError('message must be 2,000 characters or fewer.');
+    }
+  } else if (workflow === 'jd_match') {
+    if (Object.hasOwn(body, 'message')) {
+      throw new TypeError('message is only valid for chat workflow.');
+    }
+    if (Object.hasOwn(body, 'diagnosis')) {
+      throw new TypeError('diagnosis is only valid for diagnosis workflow.');
+    }
+    jobDescription = normalizeJobDescription(body.jobDescription);
+    message = jobDescription;
+  } else {
+    if (Object.hasOwn(body, 'message')) {
+      throw new TypeError('message is only valid for chat workflow.');
+    }
+    if (Object.hasOwn(body, 'jobDescription')) {
+      throw new TypeError('jobDescription is only valid for jd_match.');
+    }
+    diagnosis = normalizeDiagnosisFields(body.diagnosis);
+    diagnosisStatus = getDiagnosisCollectionStatus(diagnosis);
+    message = buildDiagnosisSummary(diagnosis);
+  }
+
   const mode = body.mode ?? 'general';
   const audienceIntent = body.audienceIntent ?? 'general';
   const conversationId = body.conversationId ?? null;
   const turnId = body.turnId ?? null;
 
-  if (!message) throw new TypeError('message is required.');
-  if (message.length > 500) throw new RangeError('message must be 500 characters or fewer.');
   if (mode !== 'general' && mode !== 'interviewer') {
     throw new TypeError('mode must be general or interviewer.');
   }
@@ -62,7 +129,17 @@ export function normalizeChatRequest(input: unknown): NormalizedChatRequest {
     throw new TypeError('turnId must be a UUID string or null.');
   }
 
-  return { message, mode, audienceIntent, conversationId, turnId };
+  return {
+    message,
+    workflow,
+    jobDescription,
+    diagnosis,
+    diagnosisStatus,
+    mode,
+    audienceIntent,
+    conversationId,
+    turnId,
+  };
 }
 
 export function buildSystemInstructions(
