@@ -12,12 +12,18 @@ const providerFactoryPath = path.resolve('lib/server/provider.ts');
 test('access API uses an HttpOnly short-lived cookie and supports logout', () => {
   const source = fs.readFileSync(accessRoutePath, 'utf8');
 
+  assert.match(source, /loadInviteAbuseConfig/);
+  assert.match(source, /redeemInviteProtected/);
+  assert.match(source, /trustedInviteSource/);
+  assert.match(source, /trustedProxyHops/);
+  assert.doesNotMatch(source, /user-agent/);
   assert.match(source, /httpOnly:\s*true/);
   assert.match(source, /sameSite:\s*'lax'/);
   assert.match(source, /secure:\s*process\.env\.NODE_ENV === 'production'/);
   assert.match(source, /export async function DELETE/);
   assert.match(source, /remainingMessages:\s*config\.maxMessagesPerSession/);
   assert.doesNotMatch(source, /OPENAI_API_KEY/);
+  assert.doesNotMatch(source, /access_attempts|alert_outbox/);
 });
 
 test('chat API authenticates server-side and emits only the public SSE contract', () => {

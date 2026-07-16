@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { loadAccessConfig, loadServerConfig } from '../lib/server/config.ts';
+import {
+  loadAccessConfig,
+  loadAdminConfig,
+  loadInviteAbuseConfig,
+  loadServerConfig,
+} from '../lib/server/config.ts';
 
 const completeEnv: Record<string, string> = {
   DATABASE_URL: 'postgresql://localhost/revolution',
@@ -203,5 +208,127 @@ test('loadServerConfig rejects a non-integer provider concurrency', () => {
   assert.throws(
     () => loadServerConfig({ ...completeEnv, MORSE_PROVIDER_CONCURRENCY: '1.5' }),
     /MORSE_PROVIDER_CONCURRENCY.*positive integer/,
+  );
+});
+
+test('loadAdminConfig isolates strict admin secrets, origin, cookie, and bounded policy', () => {
+  const config = loadAdminConfig({
+    DATABASE_URL: 'postgresql://localhost/revolution',
+    MORSE_ADMIN_PASSWORD_HASH: 'scrypt$test-only-hash',
+    MORSE_ADMIN_TOTP_SECRET: 'JBSWY3DPEHPK3PXP',
+    MORSE_ADMIN_ALLOWED_ORIGIN: 'http://127.0.0.1:3010/',
+  });
+
+  assert.deepEqual(config, {
+    databaseUrl: 'postgresql://localhost/revolution',
+    cookieName: 'morse_admin',
+    passwordHash: 'scrypt$test-only-hash',
+    totpSecret: 'JBSWY3DPEHPK3PXP',
+    allowedOrigin: 'http://127.0.0.1:3010',
+    sessionMinutes: 30,
+    maxFailedAttempts: 5,
+    lockMinutes: 15,
+  });
+});
+
+test('loadAdminConfig fails closed for missing secrets, unsafe origins, and weakened limits', () => {
+  const base = {
+    DATABASE_URL: 'postgresql://localhost/revolution',
+    MORSE_ADMIN_PASSWORD_HASH: 'scrypt$test-only-hash',
+    MORSE_ADMIN_TOTP_SECRET: 'JBSWY3DPEHPK3PXP',
+    MORSE_ADMIN_ALLOWED_ORIGIN: 'https://portfolio.example',
+  };
+
+  for (const key of [
+    'MORSE_ADMIN_PASSWORD_HASH',
+    'MORSE_ADMIN_TOTP_SECRET',
+    'MORSE_ADMIN_ALLOWED_ORIGIN',
+  ]) {
+    const env = { ...base };
+    delete env[key as keyof typeof env];
+    assert.throws(() => loadAdminConfig(env), new RegExp(key));
+  }
+
+  for (const origin of [
+    '*',
+    'http://portfolio.example',
+    'https://user:pass@portfolio.example',
+    'https://portfolio.example/admin',
+    'https://portfolio.example?next=admin',
+  ]) {
+    assert.throws(
+      () => loadAdminConfig({ ...base, MORSE_ADMIN_ALLOWED_ORIGIN: origin }),
+      /MORSE_ADMIN_ALLOWED_ORIGIN/,
+      origin,
+    );
+  }
+
+  assert.throws(
+    () => loadAdminConfig({ ...base, MORSE_ADMIN_SESSION_MINUTES: '31' }),
+    /MORSE_ADMIN_SESSION_MINUTES.*30/,
+  );
+  assert.throws(
+    () => loadAdminConfig({ ...base, MORSE_ADMIN_MAX_FAILED_ATTEMPTS: '6' }),
+    /MORSE_ADMIN_MAX_FAILED_ATTEMPTS.*5/,
+  );
+});
+
+test('loadInviteAbuseConfig requires a private fingerprint secret and bounds lockout policy', () => {
+  const secret = 'test-only-fingerprint-secret-32-bytes';
+  assert.deepEqual(loadInviteAbuseConfig({
+    DATABASE_URL: 'postgresql://localhost/revolution',
+    MORSE_INVITE_FINGERPRINT_SECRET: secret,
+  }), {
+    databaseUrl: 'postgresql://localhost/revolution',
+    fingerprintSecret: secret,
+    attemptWindowSeconds: 600,
+    maxFailedAttempts: 5,
+    lockSeconds: 900,
+    trustedProxyHops: 0,
+  });
+
+  assert.throws(
+    () => loadInviteAbuseConfig({ DATABASE_URL: 'postgresql://localhost/revolution' }),
+    /MORSE_INVITE_FINGERPRINT_SECRET/,
+  );
+  assert.throws(
+    () => loadInviteAbuseConfig({
+      DATABASE_URL: 'postgresql://localhost/revolution',
+      MORSE_INVITE_FINGERPRINT_SECRET: 'too-short',
+    }),
+    /MORSE_INVITE_FINGERPRINT_SECRET.*32/,
+  );
+  assert.throws(
+    () => loadInviteAbuseConfig({
+      DATABASE_URL: 'postgresql://localhost/revolution',
+      MORSE_INVITE_FINGERPRINT_SECRET: secret,
+      MORSE_INVITE_MAX_FAILED_ATTEMPTS: '6',
+    }),
+    /MORSE_INVITE_MAX_FAILED_ATTEMPTS.*5/,
+  );
+  assert.throws(
+    () => loadInviteAbuseConfig({
+      DATABASE_URL: 'postgresql://localhost/revolution',
+      MORSE_INVITE_FINGERPRINT_SECRET: secret,
+      MORSE_INVITE_ATTEMPT_WINDOW_SECONDS: '59',
+    }),
+    /MORSE_INVITE_ATTEMPT_WINDOW_SECONDS/,
+  );
+  assert.throws(
+    () => loadInviteAbuseConfig({
+      DATABASE_URL: 'postgresql://localhost/revolution',
+      MORSE_INVITE_FINGERPRINT_SECRET: secret,
+      MORSE_INVITE_ATTEMPT_WINDOW_SECONDS: '901',
+      MORSE_INVITE_LOCK_SECONDS: '900',
+    }),
+    /MORSE_INVITE_LOCK_SECONDS.*MORSE_INVITE_ATTEMPT_WINDOW_SECONDS/,
+  );
+  assert.throws(
+    () => loadInviteAbuseConfig({
+      DATABASE_URL: 'postgresql://localhost/revolution',
+      MORSE_INVITE_FINGERPRINT_SECRET: secret,
+      MORSE_INVITE_TRUSTED_PROXY_HOPS: '6',
+    }),
+    /MORSE_INVITE_TRUSTED_PROXY_HOPS.*0.*5/,
   );
 });

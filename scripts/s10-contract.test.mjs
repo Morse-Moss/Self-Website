@@ -49,6 +49,7 @@ test('S10 freezes separate access and retention lifetimes', () => {
 });
 
 test('S10 freezes Provider, search, admin and alert safety boundaries', () => {
+  const blueprint = read('docs/portfolio-blueprint.md');
   const design = read('docs/superpowers/specs/2026-07-15-s10-smart-customer-service-design.md');
   const plan = read('docs/superpowers/plans/2026-07-15-s10-smart-customer-service.md');
   const taskCenter = read('docs/task-center/s10-smart-customer-service.md');
@@ -63,6 +64,10 @@ test('S10 freezes Provider, search, admin and alert safety boundaries', () => {
   assert.match(design, /CSV 对公式前缀/);
   assert.match(design, /service-down:<incidentId>/);
   assert.match(design, /未来同一 fingerprint 再故障必须创建新 incident id/);
+  assert.match(blueprint, /稳定事件 key[^。]*不重复入队/);
+  assert.match(blueprint, /至少一次/);
+  assert.match(design, /非幂等 webhook[^。]*物理恰好一次/);
+  assert.doesNotMatch(blueprint, /重试不得重复通知/);
   assert.match(plan, /Invite lockout and admin lockout/);
   assert.match(plan, /ordinary chat, JD and routine quota/);
   assert.match(taskCenter, /两轮故障\/恢复/);
@@ -94,6 +99,13 @@ test('S10 environment contract has controls but no committed secret', () => {
     'BOCHA_API_KEY',
     'MORSE_ADMIN_PASSWORD_HASH',
     'MORSE_ADMIN_TOTP_SECRET',
+    'MORSE_ADMIN_ALLOWED_ORIGIN',
+    'MORSE_ADMIN_MAX_FAILED_ATTEMPTS',
+    'MORSE_INVITE_FINGERPRINT_SECRET',
+    'MORSE_INVITE_MAX_FAILED_ATTEMPTS',
+    'MORSE_INVITE_ATTEMPT_WINDOW_SECONDS',
+    'MORSE_INVITE_LOCK_SECONDS',
+    'MORSE_INVITE_TRUSTED_PROXY_HOPS',
     'MORSE_OFFICIAL_GITHUB_OWNERS',
     'FEISHU_WEBHOOK_URL',
   ]) {
@@ -101,6 +113,10 @@ test('S10 environment contract has controls but no committed secret', () => {
   }
 
   assert.doesNotMatch(example, /^MORSE_MONTHLY_BUDGET_USD=/m);
+  assert.doesNotMatch(example, /^MORSE_PUBLIC_ORIGIN=/m);
+  assert.doesNotMatch(example, /^MORSE_ADMIN_MAX_ATTEMPTS=/m);
+  assert.doesNotMatch(example, /^MORSE_INVITE_MAX_ATTEMPTS=/m);
+  assert.doesNotMatch(example, /^MORSE_INVITE_WINDOW_MINUTES=/m);
   assert.doesNotMatch(example, /^MORSE_OFFICIAL_SOURCE_DOMAINS=.*github\.com/m);
   assert.doesNotMatch(example, /sk-[A-Za-z0-9_-]{16,}/);
   assert.doesNotMatch(example, /FEISHU_WEBHOOK_URL=https?:\/\/.+/);

@@ -486,7 +486,7 @@ function injectCompletionCommitFault(mode: CompletionCommitMode): {
                     if (mode === 'commit_without_ack') {
                       await clientTarget.query(query, values);
                     }
-                    throw new Error(`ambiguous diagnosis completion commit: ${mode}`);
+                    throw new Error(`completion commit fault: ${mode}`);
                   }
                   const result = await clientTarget.query(query, values);
                   if (
@@ -1291,38 +1291,12 @@ test('runChat compensates when the assistant and usage transaction cannot commit
 }, async () => {
   const fixture = await createFailureFixture('s8-completion-commit-failure');
   const turnId = randomUUID();
-  let commitCount = 0;
-  const commitFailingPool = new Proxy(pool!, {
-    get(target, property) {
-      if (property === 'connect') {
-        return async () => {
-          const client = await target.connect();
-          return new Proxy(client, {
-            get(clientTarget, clientProperty) {
-              if (clientProperty === 'query') {
-                return async (query: string, values?: unknown[]) => {
-                  if (query === 'COMMIT') {
-                    commitCount += 1;
-                    if (commitCount === 2) throw new Error('completion commit failed');
-                  }
-                  return clientTarget.query(query, values);
-                };
-              }
-              const value = Reflect.get(clientTarget, clientProperty);
-              return typeof value === 'function' ? value.bind(clientTarget) : value;
-            },
-          });
-        };
-      }
-      const value = Reflect.get(target, property);
-      return typeof value === 'function' ? value.bind(target) : value;
-    },
-  }) as PgPool;
+  const { faultPool, wasInjected } = injectCompletionCommitFault('rollback_before_commit');
 
   try {
     const before = await readSessionSnapshot(fixture.accessSessionId);
     await assert.rejects(consumeChat({
-      pool: commitFailingPool,
+      pool: faultPool,
       provider: new FakeProvider(),
       accessSessionId: fixture.accessSessionId,
       request: {
@@ -1334,7 +1308,8 @@ test('runChat compensates when the assistant and usage transaction cannot commit
       },
       config,
       now,
-    }), /completion commit failed/);
+    }), /completion commit fault: rollback_before_commit/);
+    assert.equal(wasInjected(), true);
     assert.deepEqual(await readSessionSnapshot(fixture.accessSessionId), before);
     const interaction = await readInteraction(turnId);
     assert.equal(interaction.status, 'failed');
@@ -3852,7 +3827,7 @@ test('diagnosis completion preserves one diagnosis and Outbox across ambiguous C
         if (mode === 'commit_without_ack') {
           await firstRun;
         } else {
-          await assert.rejects(firstRun, /ambiguous diagnosis completion commit/);
+          await assert.rejects(firstRun, /completion commit fault/);
           const rolledBack = await pool!.query<{
             interaction_status: string;
             diagnoses: number;
@@ -4024,5 +3999,247 @@ test('ordinary diagnosis field labels do not trigger automatic web search', {
     });
   } finally {
     await cleanupFailureFixture(fixture);
+  }
+});
+
+test('runChat records provider down after three failures and recovers after one complete answer', {
+  skip: !pool,
+}, async () => {
+  const fixtures: FailureFixture[] = [];
+  await pool!.query("DELETE FROM alert_outbox WHERE category IN ('service_down', 'service_recovered') AND payload ->> 'dependency' = 'provider'");
+  await pool!.query("DELETE FROM service_incidents WHERE dependency = 'provider'");
+
+  try {
+    for (let index = 0; index < 3; index += 1) {
+      const eventTime = new Date(now.getTime() + index * 60_000);
+      const fixture = await createFailureFixture(`s10-provider-incident-${index}`, eventTime);
+      fixtures.push(fixture);
+      await assert.rejects(consumeChat({
+        pool: pool!,
+        provider: new FailingProvider(),
+        accessSessionId: fixture.accessSessionId,
+        request: {
+          message: 'Explain the Deep Research system.',
+          mode: 'general',
+          audienceIntent: 'general',
+          conversationId: null,
+          turnId: randomUUID(),
+        },
+        config,
+        now: eventTime,
+      }), (error: unknown) => (
+        error instanceof ChatServiceError && error.code === 'PROVIDER_UNAVAILABLE'
+      ));
+    }
+
+    const down = await pool!.query<{ id: string; status: string; failure_count: number }>(
+      `SELECT id::text, status, failure_count
+         FROM service_incidents
+        WHERE dependency = 'provider'`,
+    );
+    assert.equal(down.rowCount, 1);
+    assert.equal(down.rows[0].status, 'down');
+    assert.equal(down.rows[0].failure_count, 3);
+
+    const successTime = new Date(now.getTime() + 3 * 60_000);
+    const successFixture = await createFailureFixture('s10-provider-incident-recovery', successTime);
+    fixtures.push(successFixture);
+    await consumeChat({
+      pool: pool!,
+      provider: new FakeProvider(),
+      accessSessionId: successFixture.accessSessionId,
+      request: {
+        message: 'Explain the Deep Research system.',
+        mode: 'general',
+        audienceIntent: 'general',
+        conversationId: null,
+        turnId: randomUUID(),
+      },
+      config,
+      now: successTime,
+    });
+
+    const recovered = await pool!.query<{ status: string; recovered_at: Date; alerts: number }>(
+      `SELECT incident.status, incident.recovered_at,
+              (SELECT count(*)::integer
+                 FROM alert_outbox
+                WHERE payload ->> 'incidentId' = incident.id::text) AS alerts
+         FROM service_incidents AS incident
+        WHERE incident.id = $1`,
+      [down.rows[0].id],
+    );
+    assert.equal(recovered.rows[0].status, 'recovered');
+    assert.equal(recovered.rows[0].recovered_at.toISOString(), successTime.toISOString());
+    assert.equal(recovered.rows[0].alerts, 2);
+  } finally {
+    for (const fixture of fixtures) await cleanupFailureFixture(fixture);
+    await pool!.query("DELETE FROM alert_outbox WHERE category IN ('service_down', 'service_recovered') AND payload ->> 'dependency' = 'provider'");
+    await pool!.query("DELETE FROM service_incidents WHERE dependency = 'provider'");
+  }
+});
+
+test('runChat records search down after three failures and recovers after one completed search', {
+  skip: !pool,
+}, async () => {
+  const fixtures: FailureFixture[] = [];
+  await pool!.query("DELETE FROM alert_outbox WHERE category IN ('service_down', 'service_recovered') AND payload ->> 'dependency' = 'search'");
+  await pool!.query("DELETE FROM service_incidents WHERE dependency = 'search'");
+
+  const requestAt = (eventTime: Date) => ({
+    pool: pool!,
+    provider: new LowSimilarityProvider(),
+    accessSessionId: '',
+    request: {
+      message: 'What changed in the latest OpenAI API?',
+      mode: 'general' as const,
+      audienceIntent: 'general',
+      conversationId: null,
+      turnId: randomUUID(),
+    },
+    config: searchConfig,
+    now: eventTime,
+  });
+
+  try {
+    for (let index = 0; index < 3; index += 1) {
+      const eventTime = new Date(now.getTime() + index * 60_000);
+      const fixture = await createFailureFixture(`s10-search-incident-${index}`, eventTime);
+      fixtures.push(fixture);
+      const input = requestAt(eventTime);
+      input.accessSessionId = fixture.accessSessionId;
+      await consumeChat({
+        ...input,
+        searchProvider: new FakeSearchProvider({
+          status: 'failed',
+          results: [],
+          errorCode: 'SEARCH_FAILED',
+        }),
+      });
+    }
+
+    const down = await pool!.query<{ id: string; status: string; failure_count: number }>(
+      `SELECT id::text, status, failure_count
+         FROM service_incidents
+        WHERE dependency = 'search'`,
+    );
+    assert.equal(down.rowCount, 1);
+    assert.equal(down.rows[0].status, 'down');
+    assert.equal(down.rows[0].failure_count, 3);
+
+    const successTime = new Date(now.getTime() + 3 * 60_000);
+    const successFixture = await createFailureFixture('s10-search-incident-recovery', successTime);
+    fixtures.push(successFixture);
+    const input = requestAt(successTime);
+    input.accessSessionId = successFixture.accessSessionId;
+    await consumeChat({
+      ...input,
+      searchProvider: new FakeSearchProvider({
+        status: 'completed',
+        results: [],
+        errorCode: null,
+      }),
+    });
+
+    const recovered = await pool!.query<{ status: string; recovered_at: Date; alerts: number }>(
+      `SELECT incident.status, incident.recovered_at,
+              (SELECT count(*)::integer
+                 FROM alert_outbox
+                WHERE payload ->> 'incidentId' = incident.id::text) AS alerts
+         FROM service_incidents AS incident
+        WHERE incident.id = $1`,
+      [down.rows[0].id],
+    );
+    assert.equal(recovered.rows[0].status, 'recovered');
+    assert.equal(recovered.rows[0].recovered_at.toISOString(), successTime.toISOString());
+    assert.equal(recovered.rows[0].alerts, 2);
+  } finally {
+    for (const fixture of fixtures) await cleanupFailureFixture(fixture);
+    await pool!.query("DELETE FROM alert_outbox WHERE category IN ('service_down', 'service_recovered') AND payload ->> 'dependency' = 'search'");
+    await pool!.query("DELETE FROM service_incidents WHERE dependency = 'search'");
+  }
+});
+
+test('different provider error fingerprints do not combine into one outage and one success recovers all', {
+  skip: !pool,
+}, async () => {
+  const fixtures: FailureFixture[] = [];
+  await pool!.query("DELETE FROM alert_outbox WHERE category IN ('service_down', 'service_recovered') AND payload ->> 'dependency' = 'provider'");
+  await pool!.query("DELETE FROM service_incidents WHERE dependency = 'provider'");
+  const failures: AiProvider[] = [
+    new FailingProvider(),
+    new TimeoutAnswerProvider('PROVIDER_FIRST_BYTE_TIMEOUT'),
+    new EmptyAnswerProvider(),
+  ];
+
+  try {
+    for (let index = 0; index < failures.length; index += 1) {
+      const eventTime = new Date(now.getTime() + index * 60_000);
+      const fixture = await createFailureFixture(`s10-provider-fingerprint-${index}`, eventTime);
+      fixtures.push(fixture);
+      await assert.rejects(consumeChat({
+        pool: pool!,
+        provider: failures[index],
+        accessSessionId: fixture.accessSessionId,
+        request: {
+          message: 'Explain the Deep Research system.',
+          mode: 'general',
+          audienceIntent: 'general',
+          conversationId: null,
+          turnId: randomUUID(),
+        },
+        config,
+        now: eventTime,
+      }));
+    }
+
+    const observing = await pool!.query<{
+      status: string;
+      failure_count: number;
+      last_error_code: string;
+    }>(
+      `SELECT status, failure_count, last_error_code
+         FROM service_incidents
+        WHERE dependency = 'provider'
+        ORDER BY last_error_code`,
+    );
+    assert.equal(observing.rowCount, 3);
+    assert.ok(observing.rows.every((row) => row.status === 'observing'));
+    assert.ok(observing.rows.every((row) => row.failure_count === 1));
+    assert.deepEqual(observing.rows.map((row) => row.last_error_code), [
+      'PROVIDER_FIRST_BYTE_TIMEOUT',
+      'PROVIDER_INCOMPLETE',
+      'PROVIDER_UNAVAILABLE',
+    ]);
+    assert.equal((await pool!.query(
+      "SELECT count(*)::integer AS count FROM alert_outbox WHERE category = 'service_down' AND payload ->> 'dependency' = 'provider'",
+    )).rows[0].count, 0);
+
+    const successTime = new Date(now.getTime() + 3 * 60_000);
+    const successFixture = await createFailureFixture('s10-provider-fingerprint-recovery', successTime);
+    fixtures.push(successFixture);
+    await consumeChat({
+      pool: pool!,
+      provider: new FakeProvider(),
+      accessSessionId: successFixture.accessSessionId,
+      request: {
+        message: 'Explain the Deep Research system.',
+        mode: 'general',
+        audienceIntent: 'general',
+        conversationId: null,
+        turnId: randomUUID(),
+      },
+      config,
+      now: successTime,
+    });
+
+    const recovered = await pool!.query<{ status: string }>(
+      "SELECT status FROM service_incidents WHERE dependency = 'provider'",
+    );
+    assert.equal(recovered.rowCount, 3);
+    assert.ok(recovered.rows.every((row) => row.status === 'recovered'));
+  } finally {
+    for (const fixture of fixtures) await cleanupFailureFixture(fixture);
+    await pool!.query("DELETE FROM alert_outbox WHERE category IN ('service_down', 'service_recovered') AND payload ->> 'dependency' = 'provider'");
+    await pool!.query("DELETE FROM service_incidents WHERE dependency = 'provider'");
   }
 });

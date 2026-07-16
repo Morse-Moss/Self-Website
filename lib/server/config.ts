@@ -28,6 +28,56 @@ function positiveInteger(env: Env, name: string, fallback: number): number {
   return value;
 }
 
+function boundedNonNegativeInteger(
+  env: Env,
+  name: string,
+  fallback: number,
+  maximum: number,
+): number {
+  const raw = env[name]?.trim();
+  const value = raw ? Number(raw) : fallback;
+  if (!Number.isSafeInteger(value) || value < 0 || value > maximum) {
+    throw new Error(`${name} must be an integer between 0 and ${maximum}.`);
+  }
+  return value;
+}
+
+function boundedPositiveInteger(
+  env: Env,
+  name: string,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number {
+  const value = positiveInteger(env, name, fallback);
+  if (value < minimum || value > maximum) {
+    throw new Error(`${name} must be between ${minimum} and ${maximum}.`);
+  }
+  return value;
+}
+
+function exactApplicationOrigin(env: Env, name: string): string {
+  const raw = required(env, name);
+  try {
+    const url = new URL(raw);
+    const isLoopbackHttp = url.protocol === 'http:'
+      && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname);
+    if (
+      (url.protocol !== 'https:' && !isLoopbackHttp)
+      || url.username
+      || url.password
+      || url.pathname !== '/'
+      || url.search
+      || url.hash
+    ) {
+      throw new Error();
+    }
+    return url.origin;
+  } catch {
+    throw new Error(`${name} must be an exact credential-free HTTPS or loopback HTTP origin.`);
+  }
+}
+
 function interactionRetentionDays(env: Env): number {
   const name = 'MORSE_INTERACTION_RETENTION_DAYS';
   const value = positiveInteger(env, name, 10);
@@ -161,6 +211,76 @@ export function loadAccessConfig(env: Env = process.env) {
     cookieName: env.MORSE_ACCESS_COOKIE?.trim() || 'morse_access',
     sessionHours: positiveNumber(env, 'MORSE_SESSION_HOURS', 12),
     maxMessagesPerSession: positiveNumber(env, 'MORSE_MAX_MESSAGES_PER_SESSION', 30),
+  };
+}
+
+export function loadAdminConfig(env: Env = process.env) {
+  return {
+    databaseUrl: required(env, 'DATABASE_URL'),
+    cookieName: env.MORSE_ADMIN_COOKIE?.trim() || 'morse_admin',
+    passwordHash: required(env, 'MORSE_ADMIN_PASSWORD_HASH'),
+    totpSecret: required(env, 'MORSE_ADMIN_TOTP_SECRET'),
+    allowedOrigin: exactApplicationOrigin(env, 'MORSE_ADMIN_ALLOWED_ORIGIN'),
+    sessionMinutes: boundedPositiveInteger(
+      env,
+      'MORSE_ADMIN_SESSION_MINUTES',
+      30,
+      1,
+      30,
+    ),
+    maxFailedAttempts: boundedPositiveInteger(
+      env,
+      'MORSE_ADMIN_MAX_FAILED_ATTEMPTS',
+      5,
+      1,
+      5,
+    ),
+    lockMinutes: boundedPositiveInteger(env, 'MORSE_ADMIN_LOCK_MINUTES', 15, 1, 60),
+  };
+}
+
+export function loadInviteAbuseConfig(env: Env = process.env) {
+  const fingerprintSecret = required(env, 'MORSE_INVITE_FINGERPRINT_SECRET');
+  if (fingerprintSecret.length < 32) {
+    throw new Error('MORSE_INVITE_FINGERPRINT_SECRET must contain at least 32 characters.');
+  }
+  const attemptWindowSeconds = boundedPositiveInteger(
+    env,
+    'MORSE_INVITE_ATTEMPT_WINDOW_SECONDS',
+    600,
+    60,
+    3_600,
+  );
+  const lockSeconds = boundedPositiveInteger(
+    env,
+    'MORSE_INVITE_LOCK_SECONDS',
+    900,
+    60,
+    86_400,
+  );
+  if (lockSeconds < attemptWindowSeconds) {
+    throw new Error(
+      'MORSE_INVITE_LOCK_SECONDS must be at least MORSE_INVITE_ATTEMPT_WINDOW_SECONDS.',
+    );
+  }
+  return {
+    databaseUrl: required(env, 'DATABASE_URL'),
+    fingerprintSecret,
+    attemptWindowSeconds,
+    maxFailedAttempts: boundedPositiveInteger(
+      env,
+      'MORSE_INVITE_MAX_FAILED_ATTEMPTS',
+      5,
+      1,
+      5,
+    ),
+    lockSeconds,
+    trustedProxyHops: boundedNonNegativeInteger(
+      env,
+      'MORSE_INVITE_TRUSTED_PROXY_HOPS',
+      0,
+      5,
+    ),
   };
 }
 

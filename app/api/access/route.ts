@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-import { AccessError, authenticateSession, redeemInvite } from '@/lib/server/access';
-import { loadAccessConfig } from '@/lib/server/config';
+import {
+  AccessError,
+  authenticateSession,
+  redeemInviteProtected,
+  trustedInviteSource,
+} from '@/lib/server/access';
+import { loadAccessConfig, loadInviteAbuseConfig } from '@/lib/server/config';
 import { getPool } from '@/lib/server/db';
 import { hashSecret } from '@/lib/server/security';
 
@@ -18,8 +23,17 @@ export async function POST(request: NextRequest) {
     if (!code || code.length > 128) return unauthorized();
 
     const config = loadAccessConfig();
-    const session = await redeemInvite(getPool(config.databaseUrl), code, {
+    const abuse = loadInviteAbuseConfig();
+    const session = await redeemInviteProtected(getPool(config.databaseUrl), code, {
       sessionHours: config.sessionHours,
+      source: trustedInviteSource(
+        request.headers.get('x-forwarded-for'),
+        abuse.trustedProxyHops,
+      ),
+      fingerprintSecret: abuse.fingerprintSecret,
+      attemptWindowSeconds: abuse.attemptWindowSeconds,
+      maxFailedAttempts: abuse.maxFailedAttempts,
+      lockSeconds: abuse.lockSeconds,
     });
     const response = NextResponse.json({
       ok: true,

@@ -116,6 +116,8 @@ S10 不抓取搜索结果页，只消费博查返回的标题、摘要和 URL。
 - `service-recovered:<incidentId>`
 - `security:<category>:<fingerprint>:<window>`
 
+稳定 key 保证同一业务事件在事务重试或重复触发时不重复入队，但非幂等 webhook 无法提供物理恰好一次投递。Dispatcher 使用带 lease 的至少一次语义：失败和过期 claim 可恢复；若远端已接收而本地 `sent` 提交结果未知，允许极端重复并保留同一事件 key 供识别。严格恰好一次需要切换到支持服务端幂等键且完成真实验证的应用消息接口或投递中介，S10 不伪造这项保证。
+
 只发送首次邀请码使用、需求初诊、服务故障/恢复和安全攻击。普通对话、JD 匹配和常规额度不通知。飞书配置缺失时 Outbox 与 Mock 合同仍可验收，真实发送保持 `BLOCKED_EXTERNAL`。
 
 `service_incidents` 按依赖与错误 fingerprint 保存独立 incident。五分钟内连续三次失败才从 `observing` 转为 `down` 并为该 incident 入队一次故障通知；后续一次成功把同一 incident 转为 `recovered` 并入队一次恢复通知。未来同一 fingerprint 再故障必须创建新 incident id，不能被旧恢复键永久去重。Provider/Search 完成路径调用服务状态记录器；邀请码触发封禁与管理员登录锁定分别在各自数据库事务内写安全 Outbox。

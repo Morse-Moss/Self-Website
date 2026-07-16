@@ -284,33 +284,33 @@ Expected: focused PostgreSQL tests PASS, including replay and rollback.
 - Create: `tests/feishu-alert.test.ts`
 - Create: `tests/service-incidents-integration.test.ts`
 
-- [ ] **Step 1: Write RFC 6238 and auth RED tests**
+- [x] **Step 1: Write RFC 6238 and auth RED tests**
 
 Use published SHA-1 TOTP vectors. Cover password mismatch, valid ±1 window, replayed counter, lockout, expired/sliding session, visitor cookie denial and Strict admin cookie attributes.
 
-- [ ] **Step 2: Verify auth RED**
+- [x] **Step 2: Verify auth RED**
 
 Run: `node --test tests/admin-auth.test.ts tests/admin-api-contract.test.ts`
 
 Expected: FAIL because admin auth does not exist.
 
-- [ ] **Step 3: Implement isolated admin auth**
+- [x] **Step 3: Implement isolated admin auth**
 
 Use `crypto.scrypt`, constant-time comparison, base32 decoding and HMAC-SHA1 TOTP. Persist only hashed session tokens, last accepted counter, failure count and lock time. Validate configured Origin for writes and export.
 
-- [ ] **Step 4: Write query/export RED tests**
+- [x] **Step 4: Write query/export RED tests**
 
 Cover filters, pagination, detail, badcase update, 10-day boundary, fresh-TOTP export, JSON shape, CSV quoting/newlines/UTF-8 BOM and formula prefixes `= + - @`.
 
-- [ ] **Step 5: Implement admin APIs and streaming export**
+- [x] **Step 5: Implement admin APIs and streaming export**
 
 Return only admin-authorized records. Escape formula-like CSV cells with a leading apostrophe, quote RFC 4180 fields, and stream the response without temporary files.
 
-- [ ] **Step 6: Write and implement incident state plus Feishu dispatcher**
+- [x] **Step 6: Write and implement incident state plus Feishu dispatcher**
 
-Mock success, non-2xx, timeout, bounded retries, dedupe and recovered-service notification. Five-minute windows require three consecutive Provider/Search failures to open one incident; one later success recovers that incident. A second outage with the same fingerprint creates a new incident id. Invite lockout and admin lockout write security Outbox rows in their respective transactions. Dispatcher claims pending rows safely, updates attempt metadata, and never logs webhook or raw private payload.
+Mock success, HTTP 200 business error, malformed response, non-2xx, timeout, bounded retries, dedupe and recovered-service notification. Five-minute windows require three consecutive Provider/Search failures to open one incident; one later success recovers that incident. A second outage with the same fingerprint creates a new incident id. Invite lockout and admin lockout write security Outbox rows in their respective transactions. Dispatcher claims pending rows safely, updates attempt metadata, and never logs webhook or raw private payload. Stable event keys prevent duplicate Outbox rows; the non-idempotent custom webhook remains an honest at-least-once delivery boundary.
 
-- [ ] **Step 7: Verify admin/alerts GREEN and commit**
+- [x] **Step 7: Verify admin/alerts GREEN and commit**
 
 Run: `node --test tests/admin-auth.test.ts tests/admin-api-contract.test.ts tests/admin-export.test.ts tests/feishu-alert.test.ts tests/service-incidents-integration.test.ts`
 

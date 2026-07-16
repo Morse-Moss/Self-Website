@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import type { Pool, PoolClient } from 'pg';
 
@@ -35,6 +35,7 @@ import {
   retrieveKnowledge,
   type KnowledgeSource,
 } from './rag.ts';
+import { recordServiceFailure, recordServiceRecovery } from './service-incidents.ts';
 import {
   toPublicSearchSource,
   type SearchProvider,
@@ -1023,6 +1024,55 @@ function providerPhaseError(error: unknown): RuntimePhaseError {
   return new RuntimePhaseError('PROVIDER_UNAVAILABLE', 'PROVIDER_UNAVAILABLE', error);
 }
 
+type MonitoredDependency = 'provider' | 'search';
+
+function serviceFingerprint(dependency: MonitoredDependency, errorCode: string): string {
+  return createHash('sha256')
+    .update(`morse-service-incident:v1:${dependency}:${errorCode}`, 'utf8')
+    .digest('hex');
+}
+
+async function recordDependencyFailure(input: {
+  client: PoolClient;
+  dependency: MonitoredDependency;
+  errorCode: string;
+  now: Date;
+}): Promise<void> {
+  try {
+    await recordServiceFailure(input.client, {
+      dependency: input.dependency,
+      fingerprint: serviceFingerprint(input.dependency, input.errorCode),
+      errorCode: input.errorCode,
+      now: input.now,
+    });
+  } catch {
+    console.error(JSON.stringify({
+      event: 'morse_service_incident_record_failed',
+      code: 'SERVICE_INCIDENT_RECORD_FAILED',
+      dependency: input.dependency,
+    }));
+  }
+}
+
+async function recordDependencySuccess(input: {
+  client: PoolClient;
+  dependency: MonitoredDependency;
+  now: Date;
+}): Promise<void> {
+  try {
+    await recordServiceRecovery(input.client, {
+      dependency: input.dependency,
+      now: input.now,
+    });
+  } catch {
+    console.error(JSON.stringify({
+      event: 'morse_service_incident_record_failed',
+      code: 'SERVICE_INCIDENT_RECORD_FAILED',
+      dependency: input.dependency,
+    }));
+  }
+}
+
 function toLocalPublicSources(knowledge: KnowledgeSource[]): PublicChatSource[] {
   return knowledge.map((source, index) => ({
     id: `local-${index + 1}`,
@@ -1131,6 +1181,21 @@ async function resolveSearch(input: {
   }
   throwIfAborted(input.signal);
 
+  if (response.status === 'completed') {
+    await recordDependencySuccess({
+      client: input.client,
+      dependency: 'search',
+      now: input.now,
+    });
+  } else {
+    await recordDependencyFailure({
+      client: input.client,
+      dependency: 'search',
+      errorCode: response.errorCode,
+      now: input.now,
+    });
+  }
+
   try {
     if (response.status === 'completed') {
       await finalizeSearchCompleted({
@@ -1222,7 +1287,16 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
     try {
       [queryEmbedding] = await input.provider.embed([effectiveQuery], input.signal);
     } catch (error) {
-      if (input.signal?.aborted || error instanceof OperationTimeoutError) throw error;
+      if (input.signal?.aborted) throw error;
+      await recordDependencyFailure({
+        client: lockClient,
+        dependency: 'provider',
+        errorCode: error instanceof OperationTimeoutError
+          ? error.code
+          : 'EMBEDDING_UNAVAILABLE',
+        now: clock(),
+      });
+      if (error instanceof OperationTimeoutError) throw error;
       throw new RuntimePhaseError(
         'RETRIEVAL_UNAVAILABLE',
         'EMBEDDING_UNAVAILABLE',
@@ -1300,11 +1374,26 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
       try {
         next = await answerIterator.next();
       } catch (error) {
-        if (input.signal?.aborted || error instanceof OperationTimeoutError) throw error;
+        if (input.signal?.aborted) throw error;
+        await recordDependencyFailure({
+          client: lockClient,
+          dependency: 'provider',
+          errorCode: error instanceof OperationTimeoutError
+            ? error.code
+            : 'PROVIDER_UNAVAILABLE',
+          now: clock(),
+        });
+        if (error instanceof OperationTimeoutError) throw error;
         throw providerPhaseError(error);
       }
       throwIfAborted(input.signal);
       if (next.done) {
+        await recordDependencyFailure({
+          client: lockClient,
+          dependency: 'provider',
+          errorCode: 'PROVIDER_INCOMPLETE',
+          now: clock(),
+        });
         throw new RuntimePhaseError('PROVIDER_INCOMPLETE', 'PROVIDER_INCOMPLETE');
       }
 
@@ -1316,9 +1405,20 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
       }
 
       if (!answer.trim()) {
+        await recordDependencyFailure({
+          client: lockClient,
+          dependency: 'provider',
+          errorCode: 'PROVIDER_INCOMPLETE',
+          now: clock(),
+        });
         throw new RuntimePhaseError('PROVIDER_INCOMPLETE', 'PROVIDER_INCOMPLETE');
       }
       const completedAt = clock();
+      await recordDependencySuccess({
+        client: lockClient,
+        dependency: 'provider',
+        now: completedAt,
+      });
       try {
         await completeTurn({
           pool: input.pool,

@@ -4,7 +4,7 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**S10-CS-5 ADMIN + ALERTS**
+**S10-CS-6 UI + EVAL + CLOSEOUT**
 
 ## next_allowed_pointer
 按 `docs/task-center/s10-smart-customer-service.md` 的 Phase Registry 顺序推进。只有当前阶段 RED/GREEN、focused verification、审查和状态同步后才能进入下一阶段；不部署、不 push。博查/飞书缺少凭据时真实链保持 `BLOCKED_EXTERNAL`，不得用 Mock 冒充。
@@ -15,9 +15,19 @@
 - Runtime boundary:72 小时邀请码，12 小时可恢复 history；独立 interaction 表保存原始问答/搜索/来源 10 天。
 - Retrieval/Search:本地 BGE + PostgreSQL/pgvector；服务端自动调用唯一 Bocha Provider，每轮最多一次/每 Session 五次；只用标题/摘要/HTTPS URL，不抓网页正文。
 - Provider boundary:OpenAI-compatible 中转，协议显式选择且不自动跨协议重试；`/models` PASS，但 Responses/Chat Completions 两次短探测未取得 HTTP 响应，当前真实生成 `BLOCKED_EXTERNAL`。
-- Admin/alerts:独立密码+TOTP 管理认证、badcase 与 JSON/CSV 导出；首次邀请码、初诊、故障恢复和安全事件通过幂等 Outbox 发飞书。
+- Admin/alerts:独立密码+TOTP 管理认证、badcase 与 JSON/CSV 导出；首次邀请码、初诊、故障恢复和安全事件写稳定-key Outbox，飞书 custom webhook 按至少一次语义发送可识别事件 key 的卡片。
 - Cost/safety:无月预算硬门；保留 30 条消息、五次联网、并发、超时、限流、kill switch 和 usage 统计。
 - Contract:`docs/task-center/s10-smart-customer-service.md`;design/plan 位于 `docs/superpowers/{specs,plans}/2026-07-15-s10-smart-customer-service*.md`。
+
+### S10-CS-5 admin/alerts evidence(2026-07-16)
+
+- Auth PASS:Admin 与访客 cookie/API 物理隔离；scrypt、RFC 6238 TOTP 正负一窗、全局 counter 并发防重放、锁定与事务安全事件完成。浏览器使用 Session cookie，数据库以最后活动时间执行 30 分钟 idle TTL；写操作和导出精确检查 Origin。
+- Admin PASS:10 天边界、未来记录排除、workflow/status/search/badcase/时间筛选、稳定分页、详情与 badcase 完成；JSON/CSV 只输出白名单字段，CSV 含 UTF-8 BOM、RFC 4180 转义与公式注入防护，无临时文件；导出消耗一个未使用 TOTP。
+- Alert PASS:首次邀请码、初诊、邀请码 abuse、管理员锁定、Provider/Search 三连故障与恢复均通过事务 Outbox；security key 统一为 `security:<category>:<fingerprint>:<window>`。飞书按官方 `code === 0` 判断成功，输出只含白名单字段和稳定事件标识的 `interactive` 卡片；HTTP 200 业务错误、畸形 JSON、timeout、lease/reclaim 与 bounded retry 均通过 Mock。
+- Delivery boundary:稳定 key 保证业务重试不重复入队；非幂等 custom webhook 是至少一次投递，远端已收但本地提交未知时可能重复。严格恰好一次需支持服务端幂等键的应用消息接口或中介，S10 未伪造该能力。
+- Verification PASS:Task 5 affected 130/130；`DATABASE_URL=local npm test` 444/444、0 fail、0 skip；`npm run build` 16/16；`git diff --check` 与显式 secret scan PASS；CRITICAL compliance、quality/safety 双审查最终 PASS。
+- External boundary:参考 `E:\Two` 已验证卡片链路与飞书官方 Markdown 文档做只读核对；未读取其密钥或写入该项目。未调用真实 GPT、博查或飞书，未 push/部署；真实链继续 `BLOCKED_EXTERNAL`。
+- Follow-up:全局 Admin 锁定仍可能被远程错误登录触发；严格来源级 account-lockout DoS 防护与 webhook exactly-once 中介不在本地 MVP 阻塞集。
 
 ### S10-CS-4 workflow/diagnosis/outbox evidence(2026-07-16)
 
