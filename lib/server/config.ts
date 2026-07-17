@@ -116,6 +116,15 @@ function chatProtocol(env: Env): 'responses' | 'chat_completions' {
   return value;
 }
 
+function optionalHeaderValue(env: Env, name: string): string | undefined {
+  const value = env[name]?.trim();
+  if (!value) return undefined;
+  if (value.length > 256 || /[\u0000-\u001f\u007f]/u.test(value)) {
+    throw new Error(`${name} must be a single HTTP header value of at most 256 characters.`);
+  }
+  return value;
+}
+
 function commaSeparatedDomains(env: Env, name: string): string[] {
   const values = env[name]?.split(',').map((value) => value.trim()).filter(Boolean) ?? [];
   const unique = new Map<string, string>();
@@ -295,6 +304,7 @@ export function loadServerConfig(env: Env = process.env) {
     ...search,
     openaiApiKey,
     openaiBaseUrl,
+    openaiUserAgent: optionalHeaderValue(env, 'OPENAI_COMPAT_USER_AGENT'),
     chatModel: required(env, 'OPENAI_CHAT_MODEL'),
     chatProtocol: chatProtocol(env),
     embeddingApiKey: env.OPENAI_EMBEDDING_API_KEY?.trim() || openaiApiKey,

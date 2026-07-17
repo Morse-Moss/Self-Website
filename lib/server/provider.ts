@@ -15,6 +15,9 @@ export function createProvider(config: ServerConfig): OpenAIProvider {
     apiKey: config.openaiApiKey,
     baseURL: config.openaiBaseUrl,
     maxRetries: 0,
+    defaultHeaders: config.openaiUserAgent
+      ? { 'User-Agent': config.openaiUserAgent }
+      : undefined,
   });
   const embeddingClient = new OpenAI({
     apiKey: config.embeddingApiKey,

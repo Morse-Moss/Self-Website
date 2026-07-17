@@ -115,3 +115,13 @@ test('every S8 OpenAI client disables hidden SDK retries', () => {
     assert.equal((source.match(/maxRetries:\s*0/g) ?? []).length, expected, sourcePath);
   }
 });
+
+test('chat provider applies the configured compatibility user agent only to its remote client', () => {
+  const source = fs.readFileSync(providerFactoryPath, 'utf8');
+
+  assert.match(
+    source,
+    /defaultHeaders:\s*config\.openaiUserAgent\s*\?\s*\{\s*'User-Agent':\s*config\.openaiUserAgent\s*\}\s*:\s*undefined/,
+  );
+  assert.equal((source.match(/defaultHeaders:/g) ?? []).length, 1);
+});

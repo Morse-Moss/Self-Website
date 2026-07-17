@@ -14,6 +14,7 @@ const completeEnv: Record<string, string> = {
   OPENAI_BASE_URL: 'http://127.0.0.1:8080/v1',
   OPENAI_CHAT_MODEL: 'test-chat',
   OPENAI_CHAT_PROTOCOL: 'chat_completions',
+  OPENAI_COMPAT_USER_AGENT: 'Mozilla/5.0 MorsePortfolio/1.0',
   OPENAI_EMBEDDING_API_KEY: 'embedding-key',
   OPENAI_EMBEDDING_BASE_URL: 'http://127.0.0.1:18091/v1',
   OPENAI_EMBEDDING_MODEL: 'test-embedding',
@@ -36,6 +37,7 @@ test('loadServerConfig parses access, provider, lifecycle, and optional pricing 
   assert.equal(config.maxMessagesPerSession, 30);
   assert.equal(config.chatModel, 'test-chat');
   assert.equal(config.chatProtocol, 'chat_completions');
+  assert.equal(config.openaiUserAgent, 'Mozilla/5.0 MorsePortfolio/1.0');
   assert.equal(config.openaiBaseUrl, 'http://127.0.0.1:8080/v1');
   assert.equal(config.embeddingApiKey, 'embedding-key');
   assert.equal(config.embeddingBaseUrl, 'http://127.0.0.1:18091/v1');
@@ -80,6 +82,15 @@ test('loadServerConfig fails closed for missing secrets or model IDs', () => {
     const env = { ...completeEnv };
     delete env[key as keyof typeof env];
     assert.throws(() => loadServerConfig(env), new RegExp(key));
+  }
+});
+
+test('loadServerConfig rejects unsafe OpenAI compatibility user agents', () => {
+  for (const value of ['Morse\r\nX-Injected: true', 'x'.repeat(257)]) {
+    assert.throws(
+      () => loadServerConfig({ ...completeEnv, OPENAI_COMPAT_USER_AGENT: value }),
+      /OPENAI_COMPAT_USER_AGENT/,
+    );
   }
 });
 

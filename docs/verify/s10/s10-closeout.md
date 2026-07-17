@@ -28,10 +28,11 @@
 - 失败发生在 interaction 预留前，数据库没有新增 `interaction_turn`；没有 Provider HTTP 状态、延迟或 usage 证据，因此结论是 `BLOCKED_CONFIG`，不是 GPT PASS。
 - 原三次 Provider 尝试预算已关闭。用户于 2026-07-17 重新授权 1 次真实调用后，`gpt-5.4-mini` Responses 全链取得 HTTP 200、SSE `done` 和数据库 `completed` 证据，延迟 9872ms、`used_search=false`。
 - 中转没有返回 token usage，usage 与成本保持未知；回答有来源但没有遵守“一句话”长度要求，记为真实 badcase 观察点。真实博查和飞书仍未调用。
+- 用户实测后发现原模型连续空流。根因是运行进程继承错误项目 Key、中转 WAF 拦默认 SDK User-Agent，且 `gpt-5.4-mini` 已退出当前模型目录。新增受控 `OPENAI_COMPAT_USER_AGENT` 并切换当前可用的 `gpt-5.4` 后，最终站内 turn `4795eab1-8150-4178-91b2-65b5701891cd` 为 HTTP 200、5 个 RAG 来源、121 个 delta、200 字回答、SSE `done`、数据库 `completed`、4953ms、usage 1747/125。
 
 ## 关闭结论
 
-- S10 本地 DoD、CRITICAL 双审查和知识连续性门均已关闭，状态为 `MAINLINE_LOCAL_READY / KNOWLEDGE_RECONCILED`。
+- S10 本地 DoD、CRITICAL 双审查和知识连续性门均已关闭，状态为 `MAINLINE_PROVIDER_READY / KNOWLEDGE_RECONCILED`。
 - 真实 GPT 已为 `PASS`；真实博查与飞书仍是 `BLOCKED_EXTERNAL`。这些外部证据不由 Mock 替代，也不阻塞本地交付。
 - merge commit `e0a53f2` 已将 S10 吸收到本地 `master`；push、部署和其余真实外部联调仍需另行授权。
 

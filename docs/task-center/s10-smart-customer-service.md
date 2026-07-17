@@ -49,11 +49,11 @@ release_boundary:
 
 ## Current Pointer
 
-**S10 MAINLINE_LOCAL_READY**
+**S10 MAINLINE_PROVIDER_READY**
 
 ## Next Allowed Pointer
 
-S10 已由 merge commit `e0a53f2` 吸收到本地 `master`。push、部署、真实博查和真实飞书仍需单独授权与凭据。
+S10 Provider 修复已在本地 `master` 真实验收。push、部署、真实博查和真实飞书仍需单独授权与凭据。
 
 ## Phase Registry
 
@@ -67,6 +67,7 @@ S10 已由 merge commit `e0a53f2` 吸收到本地 `master`。push、部署、真
 | `S10-CS-5 ADMIN + ALERTS` | PASS | scrypt+TOTP、权限矩阵、10 天查询、badcase、导出、飞书卡片与 incident；Task 5 130/130、全套 444/444、build 16/16、CRITICAL 双审查 PASS |
 | `S10-CS-6 UI + EVAL + CLOSEOUT` | PASS | 17/17 双宽 Mock 浏览器、491/491 零 skip 全套、RAG 正负阈值、17/17 构建、CRITICAL 双审查与知识收口均通过 |
 | `S10-CS-7 REAL PROVIDER + MAINLINE` | PASS | 真实 `gpt-5.4-mini` 全链、491/491、17/17 构建和健康状态语义修复 PASS；merge commit `e0a53f2` 已吸收到本地 `master` |
+| `S10-CS-8 PROVIDER COMPATIBILITY REPAIR` | PASS | WAF User-Agent 兼容、当前模型目录校准、`gpt-5.4` 站内全链、493/493 与 17/17 构建 PASS |
 
 ## Fixed Controls
 
@@ -87,10 +88,11 @@ S10 已由 merge commit `e0a53f2` 吸收到本地 `master`。push、部署、真
 
 | ID | State | Evidence / next route |
 |---|---|---|
-| `S10-E1 GPT models` | PASS | configured endpoint `/models` HTTP 200，13 个模型，选定 `gpt-5.4-mini` |
+| `S10-E1 GPT models` | PASS | 受控兼容 User-Agent 下 `/models` HTTP 200，当前 12 个模型；`gpt-5.4-mini` 已不在目录，选定 `gpt-5.4` |
 | `S10-E2 GPT Responses` | BLOCKED_EXTERNAL | 1 次极短探测未取得 HTTP 响应；未记录正文/payload |
 | `S10-E3 GPT Chat Completions` | BLOCKED_EXTERNAL | 1 次极短探测未取得 HTTP 响应；不再自动跨协议重试 |
 | `S10-E6 GPT integrated smoke` | PASS | 用户重新授权后，`gpt-5.4-mini` Responses 全链 HTTP 200，SSE 到 `done`，数据库 interaction 为 `completed`、延迟 9872ms、未使用搜索；中转未返回 usage，成本保持未知 |
+| `S10-E7 GPT repaired integration` | PASS | User-Agent 兼容 + `gpt-5.4` 站内全链 HTTP 200，5 个 RAG 来源、SSE `done`、数据库 `completed`、4953ms、usage 1747/125 |
 | `S10-E4 Bocha` | BLOCKED_EXTERNAL | 未提供 API key；只允许 Mock/合同验收 |
 | `S10-E5 Feishu` | BLOCKED_EXTERNAL | 未提供 webhook；只允许 Outbox/Mock/合同验收 |
 
@@ -122,6 +124,7 @@ S10 已由 merge commit `e0a53f2` 吸收到本地 `master`。push、部署、真
 - 2026-07-16：`S10-CS-6` 进入 VERIFY BLOCKED。完成访客三 workflow、真实 Abort stop、原位 retry、12 小时 history、阶段状态、来源分组、独立 `/admin` 壳与双端管理 UI；离线 `chat:eval` 53/53、externalCalls 0；本地 CPU BGE 重摄取 9 documents/10 chunks、第二轮 9/9 skip，RAG top1 18/20、top3 20/20，最低正例 0.460884、最高负例 0.420975；Task 6 无子进程合同 74/74、PostgreSQL RAG 3/3、Mock production API 主链和 Admin 操作 PASS，build 17/17，diff/secret scan PASS。CRITICAL quality/safety 审查发现并修复 browser harness 在移动授权截图前提前过期 Session 的 blocker，新顺序合同 8/8。当前沙箱禁止 Node/Python 子进程，且内置浏览器拒绝本地验收 URL，故 `visual:s10`、四张截图、console/overflow 与当前 Task 6 零 skip 全套仍未验收；未 commit、未 push、未部署。
 - 2026-07-17：`visual:s10` 在一次性 production + Mock OpenAI/Bocha + disposable pgvector 环境通过 17/17，生成四张授权态 1440/390 截图，overflow、console error、page error 均为 0；内置浏览器实页复验三 workflow 与双宽布局通过。CRITICAL compliance 发现并关闭 Admin CSV 落入证据目录的 blocker，下载改用受控系统临时目录并在 `finally` 清理；两份空的 ignored E2E 日志一并精确删除。第三次真实 GPT 集成 smoke 搜索关闭，在 interaction 预留前失败并记为 `BLOCKED_CONFIG`，三次预算耗尽；未调用真实博查/飞书。恢复既有 `revolution-pgvector` 后，显式本地 `DATABASE_URL` 的全量测试为 491/491、0 fail、0 skip；CPU BGE `rag:eval` 为 top1 18/20、top3 20/20，最低正例 0.460884、最高负例 0.420975，0.45 正负阈值均通过。结合 `chat:eval` 53/53、externalCalls 0、build 17/17、diff/secret scan 与 CRITICAL 双审查，S10 达到 `LOCAL_READY` 并完成 `KNOWLEDGE_RECONCILED`；未 push、未部署。
 - 2026-07-17：用户重新授权合并与真实 API 调用。隔离端口关闭搜索后完成 1 次真实 `gpt-5.4-mini` Responses 集成：HTTP 200、SSE 正常到 `done`、5 个站内来源、消息额度 30→29；数据库记录 `completed`、9872ms、`used_search=false`。中转没有返回 token usage，成本保持未知；回答未遵守“一句话”长度要求，作为真实 badcase 观察点保留。联调同时发现 `/api/health` 将 Provider readiness 错绑到可选成本单价，已用失败测试拆分为 `configured` 与 `costConfigured`。
+- 2026-07-17：修复用户实测连续 `PROVIDER_INCOMPLETE`。布尔比对证明运行进程继承了错误项目 Key；本站 Key 配合默认 SDK User-Agent 仍被 WAF 403，而受控兼容 User-Agent 的 `/models` 返回 200。当前目录 12 个模型且已移除 `gpt-5.4-mini`，切换到 `gpt-5.4`。TDD 加入可选安全 User-Agent 配置后，最终站内 turn `4795eab1-8150-4178-91b2-65b5701891cd` 真实 PASS；全量 493/493、0 skip，build 17/17。
 
 ## Preauthorization Matrix
 
@@ -130,7 +133,7 @@ S10 已由 merge commit `e0a53f2` 吸收到本地 `master`。push、部署、真
 | 本地文件/测试/构建 | allowed |
 | 本地 PostgreSQL 既有项目容器 | inspect/start/migrate/test allowed；只清理本轮测试行 |
 | 本地 BGE | 复用既有环境，loopback start/eval allowed；禁止安装新包 |
-| 中转 GPT | 用户于 2026-07-17 重新授权 1 次真实集成调用；已使用并 PASS，不再自动追加调用 |
+| 中转 GPT | Provider 修复与最终真实验收已 PASS；不再自动追加调用 |
 | 博查 / 飞书 | 凭据缺失，真实调用 forbidden；Mock allowed |
 | 依赖安装 | forbidden；本轮零新增依赖 |
 | Git commit | allowed，必须精确 stage，排除 AGENTS.md 与未知文件 |
