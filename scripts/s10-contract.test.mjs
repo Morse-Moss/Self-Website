@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (relativePath) => fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
 
-test('S10 has one active blueprint override and a seven-stage task center', () => {
+test('S10 has one active blueprint override and an eight-stage task center', () => {
   const blueprint = read('docs/portfolio-blueprint.md');
   const design = read('docs/superpowers/specs/2026-07-15-s10-smart-customer-service-design.md');
   const plan = read('docs/superpowers/plans/2026-07-15-s10-smart-customer-service.md');
@@ -21,13 +21,13 @@ test('S10 has one active blueprint override and a seven-stage task center', () =
   assert.match(activeS10, /取消月预算硬熔断/);
   assert.doesNotMatch(activeS10, /月预算硬熔断机制保留/);
   assert.match(activeS10, /不抓任意网页正文/);
-  const runPointer = runState.match(/^\*\*((?:S10-CS-[0-6][^*]+)|S10 LOCAL_READY)\*\*$/m)?.[1];
-  const stagePointer = taskCenter.match(/^\*\*((?:S10-CS-[0-6][^*]+)|S10 LOCAL_READY)\*\*$/m)?.[1];
+  const runPointer = runState.match(/^\*\*((?:S10-CS-[0-7][^*]+)|S10 (?:LOCAL_READY|REAL_PROVIDER_VERIFIED \/ MAINLINE_ABSORPTION))\*\*$/m)?.[1];
+  const stagePointer = taskCenter.match(/^\*\*((?:S10-CS-[0-7][^*]+)|S10 (?:LOCAL_READY|REAL_PROVIDER_VERIFIED \/ MAINLINE_ABSORPTION))\*\*$/m)?.[1];
   assert.ok(runPointer);
   assert.equal(runPointer, stagePointer);
   assert.match(runState, /not applicable to S10/);
   assert.match(runState, /forbids push\/deploy/);
-  assert.equal((taskCenter.match(/^\| `S10-CS-[0-6]/gm) ?? []).length, 7);
+  assert.equal((taskCenter.match(/^\| `S10-CS-[0-7]/gm) ?? []).length, 8);
 
   for (const document of [design, plan, taskCenter]) {
     assert.match(document, /schema_migrations/);

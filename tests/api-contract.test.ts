@@ -77,9 +77,14 @@ test('health API reports database and knowledge readiness without provider secre
   const source = fs.readFileSync(healthRoutePath, 'utf8');
 
   assert.match(source, /knowledge_chunks/);
-  assert.match(source, /configured/);
-  assert.match(source, /OPENAI_EMBEDDING_MODEL/);
-  assert.match(source, /MORSE_INPUT_USD_PER_MILLION/);
+  assert.match(
+    source,
+    /configured:\s*Boolean\(\s*process\.env\.OPENAI_API_KEY\s*&&\s*process\.env\.OPENAI_CHAT_MODEL\s*&&\s*process\.env\.OPENAI_CHAT_PROTOCOL\s*&&\s*process\.env\.OPENAI_EMBEDDING_MODEL\s*\)/,
+  );
+  assert.match(
+    source,
+    /costConfigured:\s*Boolean\(\s*process\.env\.MORSE_INPUT_USD_PER_MILLION\s*&&\s*process\.env\.MORSE_OUTPUT_USD_PER_MILLION\s*\)/,
+  );
   assert.doesNotMatch(source, /OPENAI_API_KEY.*value|apiKey:/i);
 });
 

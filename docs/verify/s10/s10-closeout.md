@@ -26,13 +26,14 @@
 
 - 第 3 次且最后一次真实 GPT 集成 smoke 已在搜索关闭时执行；页面按设计失败回退，没有伪造回答。
 - 失败发生在 interaction 预留前，数据库没有新增 `interaction_turn`；没有 Provider HTTP 状态、延迟或 usage 证据，因此结论是 `BLOCKED_CONFIG`，不是 GPT PASS。
-- 三次 Provider 尝试预算已经耗尽，禁止继续自动重试；真实博查和飞书均未调用。
+- 原三次 Provider 尝试预算已关闭。用户于 2026-07-17 重新授权 1 次真实调用后，`gpt-5.4-mini` Responses 全链取得 HTTP 200、SSE `done` 和数据库 `completed` 证据，延迟 9872ms、`used_search=false`。
+- 中转没有返回 token usage，usage 与成本保持未知；回答有来源但没有遵守“一句话”长度要求，记为真实 badcase 观察点。真实博查和飞书仍未调用。
 
 ## 关闭结论
 
 - S10 本地 DoD、CRITICAL 双审查和知识连续性门均已关闭，状态为 `LOCAL_READY / KNOWLEDGE_RECONCILED`。
-- 真实 GPT 仍是 `BLOCKED_CONFIG`；真实博查与飞书仍是 `BLOCKED_EXTERNAL`。这些外部证据不由 Mock 替代，也不阻塞本地交付。
-- 主线吸收、push、部署和真实外部联调需要摩斯另行授权。
+- 真实 GPT 已为 `PASS`；真实博查与飞书仍是 `BLOCKED_EXTERNAL`。这些外部证据不由 Mock 替代，也不阻塞本地交付。
+- 用户已授权本地主线吸收；push、部署和其余真实外部联调仍需另行授权。
 
 ## 清理与保留
 

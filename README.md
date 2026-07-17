@@ -12,8 +12,8 @@
 - S7 多页作品集已完成：首页、作品索引、四个项目案例、共享导航/页脚/简历入口和唯一公开内容源均已进入正式站。
 - S8 智能客服文字对话闭环已完成并进入 `origin/master`：三类访客意图、失败补偿、幂等重放、公开来源、可恢复重试、双宽浏览器验证和分层评测均已通过。
 - S9 Morse 作品集重设计已完成并进入 `origin/master`：首页以 `Morse` 为主身份，作品集改为四项目单页折叠，企业内部项目只保留脱敏文字案例；全视口首屏、1440/390 双宽、减弱动画和 Lighthouse 门禁均已通过。
-- S10 数字摩斯智能客服已达到 `LOCAL_READY`：访客三流程、自动搜索、管理后台与离线评测完成；17/17 Mock E2E、1440/390 真实浏览器、491/491 零 skip 全量测试、BGE/pgvector 语义评测和 17/17 生产构建均已通过。真实 GPT 保持 `BLOCKED_CONFIG`，真实博查/飞书未验收；未 push、未部署。
-- M3-RAG 基础能力继续复用短期邀请码、PostgreSQL + pgvector、OpenAI 适配层、SSE、短期会话和费用门；本地 BGE 语义向量已接入。S8 的 3 次正式 `runChat` 未完成，真实 Provider 证据保持 `BLOCKED`，不能由 Mock 替代。
+- S10 数字摩斯智能客服已达到 `REAL_PROVIDER_VERIFIED`：访客三流程、自动搜索、管理后台与离线评测完成；17/17 Mock E2E、1440/390 真实浏览器、491/491 零 skip 全量测试、BGE/pgvector 语义评测和 17/17 生产构建均已通过。重新授权的真实 `gpt-5.4-mini` Responses 全链取得 HTTP 200、SSE `done` 和数据库 `completed` 证据；中转未返回 usage，费用保持未知。真实博查/飞书未验收；未 push、未部署。
+- M3-RAG 基础能力继续复用短期邀请码、PostgreSQL + pgvector、OpenAI 适配层、SSE、短期会话和费用门；本地 BGE 语义向量已接入。S8 的 3 次历史 `runChat` 未完成，但已由 2026-07-17 的 S10 真实 Provider 全链 PASS 更新当前结论；历史失败记录不删除，也不由 Mock 替代。
 - 部署和域名操作尚未执行，仍由摩斯决定并操作。
 
 ## 本地运行
@@ -64,6 +64,8 @@ npm run session:cleanup
 `MORSE_ALLOW_TEST_EMBEDDINGS=true` 只用于本地 pgvector 集成验证，生产环境禁止开启。它能验证迁移、摄取、幂等和 top-k 查询，但不能作为语义召回质量证据。
 
 当前受控访问、低并发和小规模知识库继续使用 PostgreSQL + pgvector，不额外部署 Milvus/Qdrant。只有基准测试证明检索延迟或写入吞吐不达标，或出现独立扩缩容、多租户强隔离、专用混合检索需求时，才评估外置向量库。
+
+`GET /api/health` 中 `provider.configured` 表示聊天 Key、模型、协议和 Embedding 模型配置齐全；`provider.costConfigured` 单独表示输入/输出单价齐全。未配置单价不会阻塞真实对话，但 usage 或成本缺失时仍保持未知。
 
 ## 验证
 

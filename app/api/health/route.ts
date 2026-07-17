@@ -17,8 +17,11 @@ export async function GET() {
         configured: Boolean(
           process.env.OPENAI_API_KEY
           && process.env.OPENAI_CHAT_MODEL
+          && process.env.OPENAI_CHAT_PROTOCOL
           && process.env.OPENAI_EMBEDDING_MODEL
-          && process.env.MORSE_INPUT_USD_PER_MILLION
+        ),
+        costConfigured: Boolean(
+          process.env.MORSE_INPUT_USD_PER_MILLION
           && process.env.MORSE_OUTPUT_USD_PER_MILLION
         ),
       },
