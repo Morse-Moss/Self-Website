@@ -1,7 +1,7 @@
 # 个人作品集网站 · 需求与创意蓝图
 
 > 项目代号:数字生命摩斯个人独立站
-> 状态:正式站 v1 本地就绪;S9 已进入 `origin/master`;S10 智能客服已达 `LOCAL_READY`,尚未部署
+> 状态:正式站 v1 本地就绪;S9 已进入 `origin/master`;S10 智能客服已达 `MAINLINE_PROVIDER_READY`,尚未部署
 > 记录日期:2026-07-07 · 状态同步:2026-07-17
 > 角色分工:Claude 负责对清需求、创造想法、设计框架;开发由摩斯本人 + AI 完成
 
@@ -277,4 +277,4 @@
 - **UI**：保留 S9 对话外观，只增加三个 workflow、服务端阶段状态、真实停止、12 小时历史恢复和站内/联网来源分组；不重设计作品集。
 - **本轮非目标**：语音、TTS、数字人视频、口型、跨 Session 长期记忆、自动知识发布、网页正文抓取、外置向量库、部署和 push。
 - **阶段合同**：`docs/task-center/s10-smart-customer-service.md`；详细设计：`docs/superpowers/specs/2026-07-15-s10-smart-customer-service-design.md`；实施计划：`docs/superpowers/plans/2026-07-15-s10-smart-customer-service.md`。
-- **实现状态（2026-07-17）**：S10 已达到 `MAINLINE_PROVIDER_READY` 并由 merge commit `e0a53f2` 吸收到本地 `master`。访客三流程、真实停止与恢复、自动搜索降级、独立 Admin、badcase、fresh-TOTP 导出和离线评测均已实现；17/17 Mock E2E、四张授权态 1440/390 截图、控制台/溢出、493/493 零 skip 全量测试、9 文档/10 chunk 的本地 CPU BGE + pgvector 评测与 17/17 生产构建通过。RAG 最终结果为 top1 18/20、top3 20/20，最低正例 0.460884、最高负例 0.420975，0.45 正负阈值均通过。中转默认 SDK 请求会被 WAF 403，且原 `gpt-5.4-mini` 已退出当前 12 模型目录；显式受控 User-Agent + `gpt-5.4` 的最终站内 Responses 全链取得 HTTP 200、5 个 RAG 来源、SSE `done` 和数据库 `completed`，延迟 4953ms、usage 1747 输入 / 125 输出 token。费用因未配置单价保持未知。真实博查/飞书未调用；未 push、未部署。
+- **实现状态（2026-07-17）**：S10 已达到 `MAINLINE_PROVIDER_READY` 并由 merge commit `e0a53f2` 吸收到本地 `master`。访客三流程、真实停止与恢复、自动搜索降级、独立 Admin、badcase、fresh-TOTP 导出和离线评测均已实现；17/17 Mock E2E、四张授权态 1440/390 截图、控制台/溢出、493/493 零 skip 全量测试、9 文档/10 chunk 的本地 CPU BGE + pgvector 评测与 17/17 生产构建通过。RAG 最终结果为 top1 18/20、top3 20/20，最低正例 0.460884、最高负例 0.420975，0.45 正负阈值均通过。修复诊断时中转默认 SDK 请求被 WAF 403，模型目录快照一度只有 12 个模型且不含 `gpt-5.4-mini`；同日收口前目录已变为 17 个并重新包含 `gpt-5.4-mini` 与 `gpt-5.4`，因此运行固定使用已验收的 `gpt-5.4`，部署时仍必须实时核对 `/models`。完整浏览器式受控 User-Agent 下的最终直连站内 turn `b8b3ec78-380d-4211-9baa-9633f1847d75` 取得 5 个 RAG 来源、SSE `done` 和数据库 `completed`，延迟 12546ms、usage 1779 输入 / 297 输出 token。费用因未配置单价保持未知。真实博查/飞书未调用；未 push、未部署。

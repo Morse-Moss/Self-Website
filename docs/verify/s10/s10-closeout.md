@@ -28,7 +28,7 @@
 - 失败发生在 interaction 预留前，数据库没有新增 `interaction_turn`；没有 Provider HTTP 状态、延迟或 usage 证据，因此结论是 `BLOCKED_CONFIG`，不是 GPT PASS。
 - 原三次 Provider 尝试预算已关闭。用户于 2026-07-17 重新授权 1 次真实调用后，`gpt-5.4-mini` Responses 全链取得 HTTP 200、SSE `done` 和数据库 `completed` 证据，延迟 9872ms、`used_search=false`。
 - 中转没有返回 token usage，usage 与成本保持未知；回答有来源但没有遵守“一句话”长度要求，记为真实 badcase 观察点。真实博查和飞书仍未调用。
-- 用户实测后发现原模型连续空流。根因是运行进程继承错误项目 Key、中转 WAF 拦默认 SDK User-Agent，且 `gpt-5.4-mini` 已退出当前模型目录。新增受控 `OPENAI_COMPAT_USER_AGENT` 并切换当前可用的 `gpt-5.4` 后，最终站内 turn `4795eab1-8150-4178-91b2-65b5701891cd` 为 HTTP 200、5 个 RAG 来源、121 个 delta、200 字回答、SSE `done`、数据库 `completed`、4953ms、usage 1747/125。
+- 用户实测后发现原模型连续空流。根因包含运行进程继承错误项目 Key，以及中转 WAF 对默认 SDK User-Agent 的拦截；修复时模型目录快照一度不含 `gpt-5.4-mini`，收口前实时目录已重新包含 mini 与 `gpt-5.4`，因此目录只能在运行或部署时实时核对。新增受控 `OPENAI_COMPAT_USER_AGENT` 并固定 `gpt-5.4` 后，移除诊断代理的最终直连站内 turn `b8b3ec78-380d-4211-9baa-9633f1847d75` 为 5 个 RAG 来源、480 字回答、SSE `done`、数据库 `completed`、12546ms、usage 1779/297。
 
 ## 关闭结论
 
@@ -39,5 +39,5 @@
 ## 清理与保留
 
 - 正式 harness 创建的 Next、Mock OpenAI、Mock Bocha、浏览器 profile、Admin 下载目录与 disposable 数据库均已清理，无 CSV/临时日志残留。
-- 用户验收用 `http://127.0.0.1:3010/` 首页继续保留；短期码为 `S10LOCAL-20260716-A`。
+- 用户验收用 `http://127.0.0.1:3010/` 首页继续保留；短期码按当次本地运行单独提供，不写入仓库。
 - 根 `AGENTS.md`、`.env.local` 和外部只读资产未修改、未 stage。

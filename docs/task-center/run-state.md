@@ -41,9 +41,9 @@ S10 Provider 修复已在本地 `master` 真实验收。下一步仅在明确授
 
 ### S10-CS-8 Provider compatibility repair(2026-07-17)
 
-- Root cause:运行进程曾继承错误项目 Key；使用本站 Key 后，默认 OpenAI Node SDK 请求仍被中转 WAF 403。浏览器式受控 User-Agent 的 `/models` 返回 200；当前目录为 12 个模型且不再包含 `gpt-5.4-mini`，`gpt-5.4` 可用。
+- Root cause:运行进程曾继承错误项目 Key；使用本站 Key 后，默认 OpenAI Node SDK 请求仍被中转 WAF 403。浏览器式受控 User-Agent 的 `/models` 返回 200；修复时目录快照为 12 个模型且不含 `gpt-5.4-mini`，收口前实时复查已变为 17 个并重新包含 `gpt-5.4-mini` 与 `gpt-5.4`，证明目录数量和成员不可作为持久配置。
 - Code PASS:新增可选 `OPENAI_COMPAT_USER_AGENT`，只注入远程聊天客户端；单行、最多 256 字符并拒绝控制字符，Embedding 本地客户端不受影响。协议仍显式为 Responses，不新增隐式重试或跨协议 fallback。
-- Real Provider PASS:最终站内 turn `4795eab1-8150-4178-91b2-65b5701891cd` 走短期码、本地 BGE、pgvector、5 个 RAG 来源、`gpt-5.4` Responses 和 SSE；HTTP 200、121 个 delta、200 字回答、引用存在、`done`，数据库 `completed`、4953ms、usage 1747/125、`used_search=false`。
+- Real Provider PASS:最终直连站内 turn `b8b3ec78-380d-4211-9baa-9633f1847d75` 走短期码、本地 BGE、pgvector、5 个 RAG 来源、`gpt-5.4` Responses 和 SSE；480 字回答带引用并到达 `done`，数据库 `completed`、12546ms、usage 1779/297、`used_search=false`。诊断代理已移除，最终运行态直连中转。
 - Verification PASS:focused 24/24；全量 493/493、0 fail、0 skip；生产构建 17/17；费用单价未配置，成本保持未知。真实博查/飞书未调用，未 push、未部署。
 
 ### S10-CS-5 admin/alerts evidence(2026-07-16)
