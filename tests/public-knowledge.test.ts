@@ -60,7 +60,7 @@ test('extractPublicKnowledge limits profile and project content to approved fiel
       content.profile.title,
       content.profile.role,
       content.profile.summary,
-      `工作原则:\n${content.profile.principles.join('\n')}`,
+      `Morse 的工作原则、事实边界与安全边界:\n${content.profile.principles.join('\n')}`,
     ].join('\n\n'),
   );
 

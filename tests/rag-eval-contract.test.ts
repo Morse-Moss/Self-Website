@@ -48,6 +48,25 @@ test('RAG evaluator reports top-1/top-3 metrics and fails missed top-3 cases', (
   assert.match(source, /process\.exitCode\s*=\s*1/);
 });
 
+test('RAG evaluator freezes negative calibration cases and enforces the local sufficiency threshold', () => {
+  const negativePath = path.join(process.cwd(), 'content', 'rag-negative-eval.json');
+  assert.ok(fs.existsSync(negativePath), 'negative RAG calibration set must exist');
+  const cases = JSON.parse(fs.readFileSync(negativePath, 'utf8')) as Array<{ query: string }>;
+  assert.equal(cases.length, 10);
+  assert.ok(cases.every((item) => item.query.trim().length > 0));
+
+  const source = fs.readFileSync(
+    path.join(process.cwd(), 'scripts', 'rag-eval.mjs'),
+    'utf8',
+  );
+  assert.match(source, /rag-negative-eval\.json/);
+  assert.match(source, /LOCAL_EVIDENCE_MIN_SCORE/);
+  assert.match(source, /minPositiveTopScore/);
+  assert.match(source, /maxNegativeTopScore/);
+  assert.match(source, /positiveThresholdPass/);
+  assert.match(source, /negativeThresholdPass/);
+});
+
 test('S8 chat evaluation covers answer safety, runtime errors, and source navigation', () => {
   const dataPath = path.join(process.cwd(), 'content', 'chat-eval.json');
   const runnerPath = path.join(process.cwd(), 'scripts', 'chat-eval.mjs');

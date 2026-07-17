@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { chunkKnowledge, knowledgeChecksum, stableChunkId } from '../lib/server/knowledge.ts';
+import {
+  chunkKnowledge,
+  knowledgeChecksum,
+  knowledgeChunkOptions,
+  stableChunkId,
+} from '../lib/server/knowledge.ts';
 
 test('chunkKnowledge keeps headings and creates bounded overlapping chunks', () => {
   const text = `# 数字摩斯\n\n${'这是公开知识。'.repeat(80)}\n\n## 项目证据\n\n${'回答必须引用来源。'.repeat(60)}`;
@@ -23,7 +28,15 @@ test('stableChunkId changes with content but not between identical ingestion run
   assert.match(first, /^public-profile:[a-f0-9]{16}$/);
 });
 
-test('knowledgeChecksum forces re-indexing when the embedding model or source changes', () => {
+test('knowledge chunk policy isolates the short profile principles without fragmenting projects', () => {
+  assert.deepEqual(knowledgeChunkOptions('about'), { maxChars: 100, overlapChars: 0 });
+  assert.deepEqual(knowledgeChunkOptions('project-deep-research'), {
+    maxChars: 900,
+    overlapChars: 120,
+  });
+});
+
+test('knowledgeChecksum forces re-indexing when the model, chunk policy, or source changes', () => {
   const base = {
     title: '深度研究系统',
     sourcePath: 'content/s3-content.json#gallery.deep-research',
@@ -31,9 +44,11 @@ test('knowledgeChecksum forces re-indexing when the embedding model or source ch
     content: '证据链是出厂闸门。',
   };
 
-  const first = knowledgeChecksum(base, 'openai:model-a:1536');
-  assert.equal(first, knowledgeChecksum(base, 'openai:model-a:1536'));
-  assert.notEqual(first, knowledgeChecksum(base, 'openai:model-b:1536'));
-  assert.notEqual(first, knowledgeChecksum({ ...base, sourcePath: `${base.sourcePath}.v2` }, 'openai:model-a:1536'));
-  assert.notEqual(first, knowledgeChecksum({ ...base, href: '/works' }, 'openai:model-a:1536'));
+  const chunkOptions = { maxChars: 900, overlapChars: 120 };
+  const first = knowledgeChecksum(base, 'openai:model-a:1536', chunkOptions);
+  assert.equal(first, knowledgeChecksum(base, 'openai:model-a:1536', chunkOptions));
+  assert.notEqual(first, knowledgeChecksum(base, 'openai:model-b:1536', chunkOptions));
+  assert.notEqual(first, knowledgeChecksum(base, 'openai:model-a:1536', { maxChars: 100, overlapChars: 0 }));
+  assert.notEqual(first, knowledgeChecksum({ ...base, sourcePath: `${base.sourcePath}.v2` }, 'openai:model-a:1536', chunkOptions));
+  assert.notEqual(first, knowledgeChecksum({ ...base, href: '/works' }, 'openai:model-a:1536', chunkOptions));
 });

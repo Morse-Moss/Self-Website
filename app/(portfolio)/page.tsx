@@ -6,7 +6,7 @@ import OpenChatButton from '@/components/site/OpenChatButton';
 import stats from '@/content/stats.json';
 import { getFeaturedProjects, siteContent } from '@/lib/site-content';
 
-import styles from './styles/hero.module.css';
+import styles from '../styles/hero.module.css';
 
 export default function Home() {
   return (

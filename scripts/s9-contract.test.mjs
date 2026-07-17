@@ -16,17 +16,21 @@ function readHarness() {
   return readFileSync(harnessUrl, 'utf8').replaceAll('\r\n', '\n');
 }
 
-test('S9 closeout is the single current mainline state across project docs', () => {
+test('S9 closeout remains recorded after the task center advances to S10', () => {
   const readme = readUtf8('README.md');
   const blueprint = readUtf8('docs/portfolio-blueprint.md');
   const runState = readUtf8('docs/task-center/run-state.md');
   const closeout = readUtf8('docs/verify/s9/s9-closeout.md');
 
   assert.equal(runState.match(/^## current_pointer$/gm)?.length, 1);
-  assert.ok(runState.includes('**S9 MORSE PORTFOLIO REDESIGN MAINLINE PASS**'));
+  assert.match(
+    runState,
+    /^\*\*(?:S10-CS-[0-7][^*]+|S10 (?:LOCAL_READY|REAL_PROVIDER_VERIFIED \/ MAINLINE_ABSORPTION))\*\*$/m,
+  );
   assert.ok(runState.includes('## S9 Morse portfolio closeout evidence(2026-07-15)'));
   assert.ok(readme.includes('S9 Morse 作品集重设计已完成并进入 `origin/master`'));
-  assert.ok(blueprint.includes('S9 作品集重设计已完成并进入 `origin/master`'));
+  assert.ok(blueprint.includes('## 14. S9 Morse 作品集重设计(2026-07-14)'));
+  assert.ok(blueprint.includes('merge commit `1fb7e28`'));
   assert.ok(closeout.includes('`MAINLINE PASS · PUSHED · NOT DEPLOYED`'));
   assert.ok(closeout.includes('merge commit `1fb7e28`'));
   assert.ok(closeout.includes('远端 `master` 已包含 `1fb7e28`'));

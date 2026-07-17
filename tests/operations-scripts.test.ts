@@ -18,11 +18,53 @@ test('invite creation reads plaintext only from a temporary environment variable
   assert.doesNotMatch(source, /console\.log\([^\n]*inviteCode/);
 });
 
-test('cleanup removes expired sessions and deactivates expired invite codes', () => {
+test('cleanup applies the complete retention policy with one injected clock', () => {
   const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
   const source = fs.readFileSync(cleanupPath, 'utf8');
 
   assert.equal(pkg.scripts['session:cleanup'], 'node scripts/cleanup-expired.mjs');
-  assert.match(source, /DELETE FROM access_sessions WHERE expires_at <= now\(\)/);
-  assert.match(source, /UPDATE invite_codes SET active = false WHERE expires_at <= now\(\)/);
+  assert.match(source, /MORSE_CLEANUP_NOW/);
+  assert.match(source, /await client\.query\('BEGIN'\)/);
+  assert.match(source, /await client\.query\('COMMIT'\)/);
+  assert.match(source, /await client\.query\('ROLLBACK'\)/);
+
+  const orderedStatements = [
+    'DELETE FROM interaction_searches',
+    'DELETE FROM diagnoses',
+    'DELETE FROM interaction_turns',
+    'DELETE FROM access_sessions',
+    'UPDATE invite_codes SET active = false',
+    'DELETE FROM admin_sessions',
+    'DELETE FROM alert_outbox',
+    'DELETE FROM access_attempts',
+  ];
+  let previousIndex = -1;
+  for (const statement of orderedStatements) {
+    const index = source.indexOf(statement);
+    assert.ok(index > previousIndex, `${statement} must appear in retention order`);
+    previousIndex = index;
+  }
+
+  const injectedTimePredicates = source.match(
+    /(?:expires_at|delete_after)\s*<=\s*\$1::timestamptz/gi,
+  ) ?? [];
+  assert.equal(injectedTimePredicates.length, orderedStatements.length);
+  assert.doesNotMatch(source, /(?:expires_at|delete_after)\s*<=\s*now\(\)/i);
+  assert.doesNotMatch(
+    source,
+    /DELETE\s+FROM\s+(?:invite_codes|knowledge_documents|knowledge_chunks|schema_migrations)/i,
+  );
+
+  for (const count of [
+    'deletedSessions',
+    'deactivatedInvites',
+    'deletedInteractionSearches',
+    'deletedDiagnoses',
+    'deletedInteractionTurns',
+    'deletedAdminSessions',
+    'deletedAlertOutbox',
+    'deletedAccessAttempts',
+  ]) {
+    assert.match(source, new RegExp(`\\b${count}\\b`));
+  }
 });

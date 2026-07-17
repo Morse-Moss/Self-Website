@@ -5,6 +5,12 @@ export interface ChunkOptions {
   overlapChars: number;
 }
 
+export function knowledgeChunkOptions(documentId: string): ChunkOptions {
+  return documentId === 'about'
+    ? { maxChars: 100, overlapChars: 0 }
+    : { maxChars: 900, overlapChars: 120 };
+}
+
 export function chunkKnowledge(text: string, options: ChunkOptions): string[] {
   const normalized = text.replace(/\r\n/g, '\n').trim();
   const { maxChars, overlapChars } = options;
@@ -57,10 +63,12 @@ export function stableChunkId(documentId: string, ordinal: number, content: stri
 export function knowledgeChecksum(
   document: { title: string; sourcePath: string; href: string; content: string },
   embeddingSignature: string,
+  chunkOptions: ChunkOptions,
 ): string {
   return createHash('sha256')
     .update(JSON.stringify([
       embeddingSignature,
+      chunkOptions,
       document.title,
       document.sourcePath,
       document.href,

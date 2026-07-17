@@ -5,6 +5,7 @@ import path from 'node:path';
 
 const DEVTOOLS_BROWSER_PATH = /^\/devtools\/browser\/[A-Za-z0-9._-]+$/;
 const ENDPOINT_POLL_MS = 50;
+const TRANSIENT_ENDPOINT_FILE_ERRORS = new Set(['ENOENT', 'EBUSY', 'EACCES', 'EPERM']);
 const MAX_RETIRED_NETWORK_LOADERS = 8;
 const PROFILE_POLL_MS = 100;
 const PROFILE_PROCESS_TIMEOUT_MS = 15_000;
@@ -578,7 +579,7 @@ export async function waitForOwnedDevToolsActivePort({
     try {
       return readOwnedDevToolsActivePort({ fsApi, profileDir, startedAtMs });
     } catch (error) {
-      if (error?.code !== 'ENOENT') throw error;
+      if (!TRANSIENT_ENDPOINT_FILE_ERRORS.has(error?.code)) throw error;
     }
 
     if (now() >= deadline) throw new S9CdpError('OWNED_ENDPOINT_TIMEOUT');

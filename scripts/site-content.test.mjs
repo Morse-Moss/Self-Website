@@ -11,8 +11,9 @@ const __filename = fileURLToPath(import.meta.url);
 const repoRoot = path.resolve(path.dirname(__filename), '..');
 const contentPath = path.join(repoRoot, 'content', 's3-content.json');
 const statsPath = path.join(repoRoot, 'content', 'stats.json');
-const layoutPath = path.join(repoRoot, 'app', 'layout.tsx');
-const pagePath = path.join(repoRoot, 'app', 'page.tsx');
+const rootLayoutPath = path.join(repoRoot, 'app', 'layout.tsx');
+const portfolioLayoutPath = path.join(repoRoot, 'app', '(portfolio)', 'layout.tsx');
+const pagePath = path.join(repoRoot, 'app', '(portfolio)', 'page.tsx');
 const s3SectionsPath = path.join(repoRoot, 'components', 'S3Sections.tsx');
 const packagePath = path.join(repoRoot, 'package.json');
 const visualSmokePath = path.join(repoRoot, 'scripts', 's3-visual-smoke.mjs');
@@ -88,16 +89,17 @@ test('S3 resume mode exposes stable persistence and print contract labels', () =
 });
 
 test('S7 resume mode keeps the pre-hydration body-class guard on the public content source', () => {
-  const layout = fs.readFileSync(layoutPath, 'utf8');
+  const rootLayout = fs.readFileSync(rootLayoutPath, 'utf8');
+  const portfolioLayout = fs.readFileSync(portfolioLayoutPath, 'utf8');
 
-  assert.match(layout, /suppressHydrationWarning/);
-  assert.match(layout, /next\/script/);
-  assert.match(layout, /strategy="beforeInteractive"/);
-  assert.match(layout, /siteContent\.site\.resumeMode\.storageKey/);
-  assert.match(layout, /siteContent\.site\.resumeMode\.bodyClass/);
-  assert.doesNotMatch(layout, /s3Content/);
-  assert.match(layout, /localStorage\.getItem/);
-  assert.match(layout, /document\.documentElement\.classList\.add/);
+  assert.match(rootLayout, /suppressHydrationWarning/);
+  assert.match(portfolioLayout, /next\/script/);
+  assert.match(portfolioLayout, /strategy="beforeInteractive"/);
+  assert.match(portfolioLayout, /siteContent\.site\.resumeMode\.storageKey/);
+  assert.match(portfolioLayout, /siteContent\.site\.resumeMode\.bodyClass/);
+  assert.doesNotMatch(portfolioLayout, /s3Content/);
+  assert.match(portfolioLayout, /localStorage\.getItem/);
+  assert.match(portfolioLayout, /document\.documentElement\.classList\.add/);
 });
 
 test('S3 visual smoke is repeatable and proves reduced-motion stillness', () => {
