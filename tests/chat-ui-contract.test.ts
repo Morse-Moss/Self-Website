@@ -16,6 +16,7 @@ const requiredChatFiles = [
   'useMorseChat.ts',
   'ChatWorkspace.tsx',
   'ChatTranscript.tsx',
+  'ChatMessageContent.tsx',
   'ChatPhaseStatus.tsx',
   'ChatComposer.tsx',
   'ChatSources.tsx',
@@ -129,14 +130,32 @@ test('transcript groups audited local sources separately from web sources', () =
   const transcript = readChatSource('ChatTranscript.tsx');
 
   assert.match(sources, /source\.kind === ['"]local['"]/);
-  assert.match(sources, /站内来源/);
-  assert.match(sources, /联网来源/);
+  assert.match(sources, /站内公开资料/);
+  assert.match(sources, /联网参考资料/);
   assert.match(sources, /target=\{external \? ['"]_blank['"] : undefined\}/);
   assert.match(sources, /rel=\{external \? ['"]noopener noreferrer['"] : undefined\}/);
   assert.match(sources, /citationIndex:\s*index \+ 1/);
-  assert.match(sources, /\[\{citationIndex\}\]/);
+  assert.match(sources, /extractCitationIndexes/);
+  assert.doesNotMatch(sources, /资料 \{citationIndex\}/);
+  assert.match(readChatSource('ChatMessageContent.tsx'), /依据：\{source\.title\}/);
+  assert.doesNotMatch(readChatSource('ChatMessageContent.tsx'), /资料 \{token\.index\}/);
+  assert.match(transcript, /<ChatMessageContent/);
   assert.match(transcript, /<ChatSources/);
+  assert.match(transcript, /message\.complete/);
   assert.doesNotMatch(transcript, /aria-live=/, 'streaming token text must not be an aria-live region');
+});
+
+test('starter questions send immediately and pending assistants replace the empty suggestions', () => {
+  const hook = readChatSource('useMorseChat.ts');
+  const workspace = readChatSource('ChatWorkspace.tsx');
+  const transcript = readChatSource('ChatTranscript.tsx');
+
+  assert.match(hook, /function sendStarter/);
+  assert.match(hook, /sendSnapshot\(\{[\s\S]*message:\s*input\.prompt/);
+  assert.match(workspace, /onClick=\{\(\) => chat\.sendStarter\(intent\)\}/);
+  assert.match(workspace, /type="button"/);
+  assert.match(transcript, /数字摩斯正在思考/);
+  assert.match(transcript, /!message\.text[\s\S]*!message\.error[\s\S]*!message\.stopped/);
 });
 
 test('structured intake supports 12,000-character JD and five-field diagnosis', () => {
@@ -249,6 +268,7 @@ test('visitor chat exposes stable selectors for deterministic browser acceptance
   const component = fs.readFileSync(componentPath, 'utf8');
   const workspace = readChatSource('ChatWorkspace.tsx');
   const transcript = readChatSource('ChatTranscript.tsx');
+  const messageContent = readChatSource('ChatMessageContent.tsx');
   const phase = readChatSource('ChatPhaseStatus.tsx');
   const sources = readChatSource('ChatSources.tsx');
   const jd = readChatSource('JdIntake.tsx');
@@ -261,6 +281,7 @@ test('visitor chat exposes stable selectors for deterministic browser acceptance
   }
   assert.match(transcript, /data-testid="morse-chat-transcript"/);
   assert.match(transcript, /data-message-role=\{message\.role\}/);
+  assert.match(messageContent, /data-testid="morse-chat-message-content"/);
   assert.match(phase, /data-testid="morse-chat-phase"/);
   assert.match(phase, /data-phase=\{visiblePhase \?\? undefined\}/);
   assert.match(sources, /data-source-group="local"/);

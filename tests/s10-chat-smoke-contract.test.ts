@@ -30,6 +30,8 @@ test('S10 locks the required desktop and mobile acceptance viewports', () => {
 test('S10 scenario registry covers the complete visitor and admin contract', () => {
   assert.deepEqual(S10_SCENARIOS, [
     'visitor-unlock',
+    'starter-direct-send',
+    'assistant-formatting',
     'chat',
     'jd-match',
     'diagnosis',
@@ -249,12 +251,14 @@ test('S10 keeps the mock provider held until stop compensation is durable', () =
   const visitorStart = source.indexOf('async function runVisitorScenarios');
   const mobileStart = source.indexOf('async function runMobileVisitor');
   const visitorSource = source.slice(visitorStart, mobileStart);
+  const stopHold = visitorSource.indexOf('const held = openAiProxy.holdNextResponse()');
   const stoppedUi = visitorSource.indexOf("'stop:ui-state'");
   const durableStop = visitorSource.indexOf("'stop:database-compensation'");
-  const releaseProvider = visitorSource.indexOf('openAiProxy.releaseHeldResponse()');
+  const releaseProvider = visitorSource.indexOf('openAiProxy.releaseHeldResponse()', stopHold);
 
   assert.ok(
-    stoppedUi >= 0
+    stopHold >= 0
+      && stopHold < stoppedUi
       && stoppedUi < durableStop
       && durableStop < releaseProvider,
     'provider response must remain held until the stopped turn is durable',

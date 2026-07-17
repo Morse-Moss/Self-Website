@@ -1,26 +1,34 @@
 # S10 本地验收账本
 
 > 日期：2026-07-17
-> 状态：`LOCAL_READY`
-> 分支：`codex/s10-smart-customer-service`
-> 基线：`2f56d4a` + Task 6 本地交付
-> 交付边界：LOCAL；精确本地提交，不 push、不部署
+> 状态：`MAINLINE_PROVIDER_READY / CHAT_UX_LOCAL_READY`
+> 分支：`master`
+> 基线：`514df87` + 本轮对话交互精确提交
+> 交付边界：LOCAL；当前修正提交到本地 `master`，未 push、未部署
 
 ## 已通过
 
 - 访客自由对话、JD 匹配、需求初诊、真实 Abort stop、原位 retry、12 小时 history、阶段状态、来源分组与独立 Admin UI 已实现。
-- 正式 `npm run visual:s10` 在一次性 production、Mock OpenAI/Bocha 和 disposable pgvector 环境通过 17/17；1440x900 与 390x844 均无横向溢出，console error 和 page error 为 0。
+- 正式 `npm run visual:s10` 在一次性 production、Mock OpenAI/Bocha 和 disposable pgvector 环境通过 19/19；1440x900 与 390x844 均无横向溢出，console error 和 page error 为 0。
 - 四张授权态截图已生成：`s10-chat-desktop-1440x900.png`、`s10-chat-mobile-390x844.png`、`s10-admin-desktop-1440x900.png`、`s10-admin-mobile-390x844.png`。
 - 内置浏览器实页复验覆盖 1440/390 布局和三种 workflow；390 页面 `scrollWidth <= clientWidth`，没有截断或重叠。
 - 离线对话评测 53/53，`externalCalls: 0`；生产构建 17/17；`git diff --check` PASS。
 - 2026-07-17 本地 CPU `BAAI/bge-small-zh-v1.5` 最终证据为 9 documents / 10 chunks、第二次摄取 9/9 skip；top1 18/20、top3 20/20，最低正例 0.460884、最高负例 0.420975，0.45 阈值双向通过。
-- 既有 `revolution-pgvector` 容器恢复 healthy 并监听 `127.0.0.1:55432`；显式本地 `DATABASE_URL` 下全量测试为 491/491、0 fail、0 skip。
+- 既有 `revolution-pgvector` 容器 healthy 并监听 `127.0.0.1:55432`；加载 ignored `.env.local` 的全量测试为 499/499、0 fail、0 skip。
+
+## 对话交互修正
+
+- 根因确认：助手正文此前没有解析 Markdown；默认问题只写入草稿；来源可在正文前出现；`[来源N]` 是每轮重新排序的内部索引，不能作为访客能理解的资料身份。
+- 访客行为：默认问题现在直接发问，候选立即退出；空回答显示“数字摩斯正在思考”；标题、段落、列表、粗体、行内代码和分隔线结构化渲染。
+- 来源行为：正文显示“依据：资料标题”，底部只显示正文实际引用的具名资料及站内/联网属性；内部 citation index 只用于本轮映射和锚点，不作为可见文案。
+- 失败恢复：2026-07-17 的两个失败 turn 均为空 `PROVIDER_INCOMPLETE`，无 partial answer 或 token；当前显式协议只在 `PROVIDER_RESPONSE_INCOMPLETE` 且零正文时自动重试一次，已有部分回答或明确 `response.failed/error` 时不重试，避免正文重复和额外请求。
+- 最新真实证据：turn `92102e75-47d5-47bc-a2da-644105d94ec3` 使用 `gpt-5.4`，SSE 到 `done`，数据库 `completed`、15290ms、usage 2612/73。页面仅列实际引用的《数字摩斯》，没有 `[来源N]`、`**` 或裸 `---`。
 
 ## CRITICAL 双审查
 
 - Compliance：PASS，开放 blocker 0。Admin CSV 已从 `docs/verify/s10` 移至系统临时目录下受控的 `revolution-s10-download-*`，路径边界校验后在 `finally` 删除；证据目录只保留四张 Mock 截图与本账本。
 - Quality/safety：PASS，开放 blocker 0。复核覆盖 auth/Origin/TOTP、12h/10d 生命周期、citation URL、Abort/compensation、Outbox、Admin badcase 成功态、前台截图、selection 清理和授权态 Session 顺序。
-- 两份空的 ignored `.tmp-s10-e2e.*.log` 已在不读取正文的前提下精确删除；`.env.local` 保持 ignored，未读取、未修改、未 stage。
+- 两份空的 ignored `.tmp-s10-e2e.*.log` 已在不读取正文的前提下精确删除；本次为 3010 重启创建的 `.env.local` 只保存本机数据库、模型、Embedding 和开关配置，不含 Provider Key，保持 ignored 且未 stage。
 
 ## 外部证据边界
 
@@ -40,4 +48,4 @@
 
 - 正式 harness 创建的 Next、Mock OpenAI、Mock Bocha、浏览器 profile、Admin 下载目录与 disposable 数据库均已清理，无 CSV/临时日志残留。
 - 用户验收用 `http://127.0.0.1:3010/` 首页继续保留；短期码按当次本地运行单独提供，不写入仓库。
-- 根 `AGENTS.md`、`.env.local` 和外部只读资产未修改、未 stage。
+- 根 `AGENTS.md` 与外部只读资产未修改、未 stage；`.env.local` 仅作为 ignored 本地运行配置保留，不进入 Git。

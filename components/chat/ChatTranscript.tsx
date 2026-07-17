@@ -1,5 +1,6 @@
 import type { RefObject, UIEvent } from 'react';
 
+import ChatMessageContent from './ChatMessageContent';
 import ChatSources from './ChatSources';
 import type { ChatMessage, ChatRequestSnapshot } from './useMorseChat';
 
@@ -40,12 +41,30 @@ export default function ChatTranscript({
             : undefined}
         >
           <span className={styles.messageRole}>{message.role === 'user' ? '你' : '数字摩斯'}</span>
-          {message.text ? <p>{message.text}</p> : null}
+          {message.role === 'user' && message.text ? <p>{message.text}</p> : null}
+          {message.role === 'assistant' && message.text ? (
+            <ChatMessageContent messageId={message.id} sources={message.sources} text={message.text} />
+          ) : null}
+          {message.role === 'assistant'
+            && !message.text
+            && !message.error
+            && !message.stopped ? (
+              <p className={styles.thinkingState}>
+                <span className={styles.thinkingDot} aria-hidden="true" />
+                数字摩斯正在思考
+              </p>
+            ) : null}
           {message.stopped ? <span className={styles.messageState}>已停止</span> : null}
           {message.diagnosisStatus === 'handoff_pending' ? (
             <span className={styles.messageState}>已进入转交队列</span>
           ) : null}
-          <ChatSources sources={message.sources} />
+          {message.complete ? (
+            <ChatSources
+              answerText={message.text}
+              messageId={message.id}
+              sources={message.sources}
+            />
+          ) : null}
           {message.retry ? (
             <button
               className={styles.retryButton}

@@ -257,17 +257,6 @@ export function useMorseChat() {
     clearConversation();
   }
 
-  function selectStarter(input: {
-    mode: ChatMode;
-    audienceIntent: ChatAudienceIntent;
-    prompt: string;
-  }) {
-    if (streaming) return;
-    setMode(input.mode);
-    setAudienceIntent(input.audienceIntent);
-    setDraft(input.prompt);
-  }
-
   function currentSnapshot(): ChatRequestSnapshot | null {
     const turnId = crypto.randomUUID();
     if (workflow === 'chat') {
@@ -435,6 +424,24 @@ export function useMorseChat() {
     if (snapshot) void sendSnapshot(snapshot);
   }
 
+  function sendStarter(input: {
+    mode: ChatMode;
+    audienceIntent: ChatAudienceIntent;
+    prompt: string;
+  }) {
+    if (streaming || abortControllerRef.current) return;
+    setMode(input.mode);
+    setAudienceIntent(input.audienceIntent);
+    void sendSnapshot({
+      workflow: 'chat',
+      mode: input.mode,
+      audienceIntent: input.audienceIntent,
+      turnId: crypto.randomUUID(),
+      displayText: input.prompt,
+      message: input.prompt,
+    });
+  }
+
   function retry(retryAssistantId: string, requestSnapshot: ChatRequestSnapshot) {
     void sendSnapshot(requestSnapshot, retryAssistantId);
   }
@@ -499,7 +506,7 @@ export function useMorseChat() {
     setWorkflow,
     mode,
     audienceIntent,
-    selectStarter,
+    sendStarter,
     messages,
     draft,
     setDraft,

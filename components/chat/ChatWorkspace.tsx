@@ -46,7 +46,12 @@ export default function ChatWorkspace({
       <p>想先了解哪一部分?</p>
       <div className={styles.starters}>
         {starterIntents.map((intent) => (
-          <button key={intent.label} type="button" onClick={() => chat.selectStarter(intent)}>
+          <button
+            key={intent.label}
+            type="button"
+            data-starter-intent={intent.audienceIntent}
+            onClick={() => chat.sendStarter(intent)}
+          >
             {intent.label}
           </button>
         ))}

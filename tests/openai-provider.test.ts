@@ -284,6 +284,40 @@ test('OpenAIProvider rejects a Responses incomplete terminal event', async () =>
   ));
 });
 
+test('OpenAIProvider retries one empty incomplete Responses attempt before emitting output', async () => {
+  let createCalls = 0;
+  const provider = new OpenAIProvider({
+    responses: {
+      create: async () => {
+        createCalls += 1;
+        if (createCalls === 1) {
+          return (async function* () {
+            yield { type: 'response.incomplete' as const, response: {} };
+          })();
+        }
+        return fakeResponseStream();
+      },
+    },
+  }, {
+    embeddings: { create: async () => ({ data: [] }) },
+  }, providerConfig);
+
+  const events = [];
+  for await (const event of provider.streamAnswer({
+    instructions: 'Use evidence only.',
+    messages: [{ role: 'user', content: 'Hello' }],
+  })) {
+    events.push(event);
+  }
+
+  assert.equal(createCalls, 2);
+  assert.deepEqual(events, [
+    { type: 'delta', text: 'Hello' },
+    { type: 'delta', text: ' Morse' },
+    { type: 'done', usage: { inputTokens: 120, outputTokens: 30 } },
+  ]);
+});
+
 test('OpenAIProvider rejects Responses EOF without response.completed', async () => {
   const provider = new OpenAIProvider({
     responses: {
@@ -341,14 +375,18 @@ test('OpenAIProvider does not expose raw SDK errors', async () => {
     && !(error as Error).message.includes('raw embedding payload')
   ));
 
+  let failedResponseCalls = 0;
   const failedResponseProvider = new OpenAIProvider({
     responses: {
-      create: async () => (async function* () {
-        yield {
-          type: 'response.failed' as const,
-          response: { error: { message: 'raw response failure payload' } },
-        };
-      })(),
+      create: async () => {
+        failedResponseCalls += 1;
+        return (async function* () {
+          yield {
+            type: 'response.failed' as const,
+            response: { error: { message: 'raw response failure payload' } },
+          };
+        })();
+      },
     },
   }, {
     embeddings: { create: async () => ({ data: [] }) },
@@ -362,6 +400,7 @@ test('OpenAIProvider does not expose raw SDK errors', async () => {
     && (error as { code?: string }).code === 'PROVIDER_RESPONSE_FAILED'
     && !(error as Error).message.includes('raw response failure payload')
   ));
+  assert.equal(failedResponseCalls, 1, 'explicit failed responses must not be retried');
 });
 
 test('OpenAIProvider limits generation across instances and aborts a queued waiter', async () => {

@@ -92,6 +92,12 @@ export interface OpenAIProviderConfig {
 
 const generationSemaphores = new Map<number, Semaphore>();
 const PROVIDER_STREAM_CLEANUP_GRACE_MS = 100;
+const EMPTY_STREAM_MAX_ATTEMPTS = 2;
+
+function isRetryableEmptyStreamError(error: unknown): boolean {
+  if (!(error instanceof OpenAIProviderError)) return false;
+  return error.code === 'PROVIDER_RESPONSE_INCOMPLETE';
+}
 
 function getGenerationSemaphore(capacity: number): Semaphore {
   let semaphore = generationSemaphores.get(capacity);
@@ -230,10 +236,35 @@ export class OpenAIProvider implements AiProvider {
 
     try {
       release = await this.generationSemaphore.acquire(totalTimeout.signal);
-      if (this.config.protocol === 'responses') {
-        usage = yield* this.streamResponses(request, totalTimeout.signal);
-      } else {
-        usage = yield* this.streamChatCompletions(request, totalTimeout.signal);
+      for (let attempt = 0; attempt < EMPTY_STREAM_MAX_ATTEMPTS; attempt += 1) {
+        const stream = this.config.protocol === 'responses'
+          ? this.streamResponses(request, totalTimeout.signal)
+          : this.streamChatCompletions(request, totalTimeout.signal);
+        const iterator = stream[Symbol.asyncIterator]();
+        let emittedOutput = false;
+        let completed = false;
+
+        try {
+          while (true) {
+            const next = await iterator.next();
+            if (next.done) {
+              usage = next.value;
+              completed = true;
+              break;
+            }
+            emittedOutput = true;
+            yield next.value;
+          }
+          break;
+        } catch (error) {
+          const canRetry = attempt + 1 < EMPTY_STREAM_MAX_ATTEMPTS
+            && !emittedOutput
+            && !totalTimeout.signal.aborted
+            && isRetryableEmptyStreamError(error);
+          if (!canRetry) throw error;
+        } finally {
+          if (!completed) await closeIterator(iterator);
+        }
       }
     } catch (error) {
       if (totalTimeout.signal.aborted) throw totalTimeout.signal.reason;

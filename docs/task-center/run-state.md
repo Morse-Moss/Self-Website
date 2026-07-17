@@ -7,7 +7,7 @@
 **S10 MAINLINE_PROVIDER_READY**
 
 ## next_allowed_pointer
-S10 Provider 修复已在本地 `master` 真实验收。下一步仅在明确授权与凭据齐全后执行 push、部署、真实博查或真实飞书联调；Mock 证据不得冒充真实外部证据。
+S10 Provider 与对话交互修正已在本地 `master` 真实验收并随本轮精确提交。当前修正尚未 push、部署；真实博查或真实飞书联调仍需明确授权与凭据，Mock 证据不得冒充真实外部证据。
 
 ## S10 smart customer service amendment(2026-07-15)
 
@@ -18,6 +18,14 @@ S10 Provider 修复已在本地 `master` 真实验收。下一步仅在明确授
 - Admin/alerts:独立密码+TOTP 管理认证、badcase 与 JSON/CSV 导出；首次邀请码、初诊、故障恢复和安全事件写稳定-key Outbox，飞书 custom webhook 按至少一次语义发送可识别事件 key 的卡片。
 - Cost/safety:无月预算硬门；保留 30 条消息、五次联网、并发、超时、限流、kill switch 和 usage 统计。
 - Contract:`docs/task-center/s10-smart-customer-service.md`;design/plan 位于 `docs/superpowers/{specs,plans}/2026-07-15-s10-smart-customer-service*.md`。
+
+### S10-CX-1 chat UX and empty-stream recovery(2026-07-17)
+
+- Root cause:助手正文原样放入单个 `<p>`，默认问题只写入草稿，来源在首个正文 Token 前显示，访客可见引用只暴露每轮重新排序的 `[来源N]`；2026-07-17 的两个失败 turn 均为中转在 2.7s/4.4s 后无任何 delta、usage 或终态的 `PROVIDER_INCOMPLETE`。
+- Code PASS:新增受限消息格式解析，结构化渲染标题、段落、列表、粗体、行内代码、分隔线和引用；默认问题直接发送，候选在提问后消失，空回答显示“数字摩斯正在思考”。引用正文显示“依据：资料标题”，底部只列实际引用的具名站内/联网资料，内部编号不再作为访客文案。当前显式协议仅在 `PROVIDER_RESPONSE_INCOMPLETE` 且尚未输出任何正文时自动重试一次；部分回答、`response.failed` 或 error 终态均不重试。
+- Real Provider PASS:最新生产构建真实 turn `92102e75-47d5-47bc-a2da-644105d94ec3` 使用 `gpt-5.4`，SSE 到 `done`，数据库 `completed`、15290ms、usage 2612/73；页面只显示《数字摩斯》这一实际引用资料，无 `[来源N]`、`**` 或裸 `---`。
+- Verification PASS:focused 62/62；`visual:s10` 19/19，1440x900/390x844、overflow/console/page error 全通过；加载 `.env.local` 的 PostgreSQL 全量测试 499/499、0 fail、0 skip；生产构建 17/17；`/api/health` 为 HTTP 200、database ready、10 chunks、Provider configured。
+- Delivery boundary:改动与本条知识同步随本轮精确提交进入本地 `master`，未 push、未部署；`.env.local` 受 ignore 保护且不含 Provider Key。
 
 ### S10-CS-6 UI/eval verification evidence(2026-07-17)
 

@@ -59,6 +59,7 @@ function mockResults(query) {
 export function createMockBochaServer({
   apiKey = 'mock-bocha-key',
   failFirst = false,
+  failQuery = '',
 } = {}) {
   let requests = 0;
   return http.createServer(async (request, response) => {
@@ -83,7 +84,7 @@ export function createMockBochaServer({
         return;
       }
       requests += 1;
-      if (failFirst && requests === 1) {
+      if ((failFirst && requests === 1) || (failQuery && body.query.includes(failQuery))) {
         sendJson(response, 503, { error: 'temporary_unavailable' });
         return;
       }
@@ -106,6 +107,7 @@ if (isMainModule()) {
   const server = createMockBochaServer({
     apiKey: process.env.MORSE_MOCK_BOCHA_KEY || 'mock-bocha-key',
     failFirst: process.env.MORSE_MOCK_BOCHA_FAIL_FIRST === 'true',
+    failQuery: process.env.MORSE_MOCK_BOCHA_FAIL_QUERY || '',
   });
   server.listen(port, '127.0.0.1', () => {
     console.log(`Mock Bocha listening on http://127.0.0.1:${port}/v1`);

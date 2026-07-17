@@ -1,3 +1,8 @@
+import {
+  extractCitationIndexes,
+  sourceAnchorId,
+} from '@/lib/client/chat-message-format';
+
 import type { ChatSource } from './useMorseChat';
 
 import styles from '../MorseChat.module.css';
@@ -7,18 +12,31 @@ interface IndexedSource {
   citationIndex: number;
 }
 
-function SourceList({ sources, external }: { sources: IndexedSource[]; external: boolean }) {
+function SourceList({
+  messageId,
+  sources,
+  external,
+}: {
+  messageId: string;
+  sources: IndexedSource[];
+  external: boolean;
+}) {
   return (
     <ol className={styles.sources}>
       {sources.map(({ source, citationIndex }) => (
-        <li key={`${source.kind}-${source.id}-${citationIndex}`}>
+        <li
+          id={sourceAnchorId(messageId, citationIndex)}
+          key={`${source.kind}-${source.id}-${citationIndex}`}
+        >
           <a
             href={source.href}
             target={external ? '_blank' : undefined}
             rel={external ? 'noopener noreferrer' : undefined}
           >
-            <span>[{citationIndex}]</span>
-            <span>{source.title}</span>
+            <span className={styles.sourceDetails}>
+              <strong>{source.title}</strong>
+              <small>{external ? `联网资料 · ${source.domain}` : '站内已审核公开知识'}</small>
+            </span>
           </a>
         </li>
       ))}
@@ -26,24 +44,35 @@ function SourceList({ sources, external }: { sources: IndexedSource[]; external:
   );
 }
 
-export default function ChatSources({ sources }: { sources: ChatSource[] }) {
-  const indexedSources = sources.map((source, index) => ({ source, citationIndex: index + 1 }));
+export default function ChatSources({
+  answerText,
+  messageId,
+  sources,
+}: {
+  answerText: string;
+  messageId: string;
+  sources: ChatSource[];
+}) {
+  const citedIndexes = new Set(extractCitationIndexes(answerText, sources.length));
+  const indexedSources = sources
+    .map((source, index) => ({ source, citationIndex: index + 1 }))
+    .filter(({ citationIndex }) => citedIndexes.has(citationIndex));
   const localSources = indexedSources.filter(({ source }) => source.kind === 'local');
   const webSources = indexedSources.filter(({ source }) => source.kind !== 'local');
-  if (sources.length === 0) return null;
+  if (indexedSources.length === 0) return null;
 
   return (
     <div className={styles.sourceGroups} aria-label="回答来源">
       {localSources.length ? (
         <section className={styles.sourceGroup} data-source-group="local">
-          <h4>站内来源</h4>
-          <SourceList sources={localSources} external={false} />
+          <h4>站内公开资料</h4>
+          <SourceList messageId={messageId} sources={localSources} external={false} />
         </section>
       ) : null}
       {webSources.length ? (
         <section className={styles.sourceGroup} data-source-group="web">
-          <h4>联网来源</h4>
-          <SourceList sources={webSources} external />
+          <h4>联网参考资料</h4>
+          <SourceList messageId={messageId} sources={webSources} external />
         </section>
       ) : null}
     </div>

@@ -342,6 +342,90 @@
   white-space: pre-wrap;
 }
 
+.messageContent {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  line-height: 1.65;
+}
+
+.messageContent h3 {
+  margin: var(--space-2) 0 0;
+  color: var(--ink);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+  letter-spacing: 0;
+}
+
+.messageContent p,
+.messageContent ul,
+.messageContent ol {
+  margin: 0;
+}
+
+.messageContent ul,
+.messageContent ol {
+  display: grid;
+  gap: var(--space-2);
+  padding-left: var(--space-5);
+}
+
+.messageContent li {
+  padding-left: var(--space-1);
+}
+
+.messageContent code {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+.messageDivider {
+  width: 100%;
+  margin: var(--space-2) 0;
+  border: 0;
+  border-top: 1px solid var(--line-faint);
+}
+
+.citationLink,
+.missingCitation {
+  display: inline;
+  margin-left: var(--space-1);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+}
+
+.citationLink {
+  color: var(--accent);
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: var(--space-1);
+}
+
+.citationLink:hover {
+  color: var(--ink);
+}
+
+.missingCitation {
+  color: var(--status-amber);
+}
+
+.thinkingState {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 32px;
+  color: var(--muted);
+}
+
+.thinkingDot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+
 .messageState {
   display: inline-flex;
   align-items: center;
@@ -372,6 +456,9 @@
 .sources {
   display: grid;
   gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
   color: var(--muted);
   font-size: var(--fs-xs);
 }
@@ -387,15 +474,21 @@
   text-underline-offset: var(--space-1);
 }
 
-.sources a span:first-child {
-  flex: 0 0 auto;
-  color: var(--accent);
-  font-family: var(--font-mono);
-}
-
-.sources a span:last-child {
+.sourceDetails {
+  display: grid;
+  gap: var(--space-1);
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.sourceDetails strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.sourceDetails small {
+  color: var(--faint);
+  font-size: var(--fs-3xs);
 }
 
 .sources a:hover {

@@ -46,7 +46,7 @@ const server = http.createServer(async (request, response) => {
     }
 
     if (request.method === 'POST' && request.url === '/v1/responses') {
-      await readJson(request);
+      const body = await readJson(request);
       responseRequests += 1;
       if (failFirstResponse && responseRequests === 1) {
         sendJson(response, 503, { error: { message: 'temporary_unavailable' } });
@@ -57,9 +57,12 @@ const server = http.createServer(async (request, response) => {
         'Cache-Control': 'no-cache',
         Connection: 'keep-alive',
       });
+      const webCitationIndex = /<web_search_result index="(\d+)">/u
+        .exec(typeof body.instructions === 'string' ? body.instructions : '')?.[1];
+      const citations = webCitationIndex ? `[来源1][来源${webCitationIndex}]` : '[来源1]';
       const events = [
-        { type: 'response.output_text.delta', delta: '深度研究系统把证据链作为报告出厂闸门', item_id: 'msg_1', output_index: 0, sequence_number: 1, logprobs: [] },
-        { type: 'response.output_text.delta', delta: '。[来源1]', item_id: 'msg_1', output_index: 0, sequence_number: 2, logprobs: [] },
+        { type: 'response.output_text.delta', delta: '**事实依据：**\n\n- 深度研究系统把证据链作为报告出厂闸门', item_id: 'msg_1', output_index: 0, sequence_number: 1, logprobs: [] },
+        { type: 'response.output_text.delta', delta: `。${citations}`, item_id: 'msg_1', output_index: 0, sequence_number: 2, logprobs: [] },
         { type: 'response.completed', sequence_number: 3, response: { usage: { input_tokens: 100, output_tokens: 20, total_tokens: 120 } } },
       ];
       for (const event of events) response.write(`data: ${JSON.stringify(event)}\n\n`);

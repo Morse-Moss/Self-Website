@@ -42,6 +42,8 @@ export const S10_VIEWPORTS = Object.freeze([
 
 export const S10_SCENARIOS = Object.freeze([
   'visitor-unlock',
+  'starter-direct-send',
+  'assistant-formatting',
   'chat',
   'jd-match',
   'diagnosis',
@@ -629,7 +631,7 @@ async function submitChatValue(page, inputSelector, value) {
     const last = messages.at(-1);
     return {
       state: last?.getAttribute('data-stream-state') ?? null,
-      text: last?.querySelector('p')?.textContent ?? '',
+      text: last?.querySelector('[data-testid="morse-chat-message-content"]')?.textContent ?? '',
       localSources: last?.querySelectorAll(${JSON.stringify(SELECTORS.localSources)}).length ?? 0,
       webSources: last?.querySelectorAll(${JSON.stringify(SELECTORS.webSources)}).length ?? 0,
     };
@@ -676,19 +678,68 @@ async function runVisitorScenarios({
   checks.add('visitor-unlock');
   await installPhaseProbe(page);
 
+  const starterBaseline = await page.evaluate(
+    `document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)}).length`,
+  );
+  const starterUrl = await page.evaluate('location.href');
+  const heldStarter = openAiProxy.holdNextResponse();
+  await click(page, '[data-starter-intent="recruiter"]');
+  await withTimeout(heldStarter, INTERACTION_TIMEOUT_MS, 'starter:provider-not-held');
+  await waitFor(page, `(() => {
+    const transcript = document.querySelector(${JSON.stringify(SELECTORS.chatTranscript)});
+    const assistants = transcript?.querySelectorAll('article[data-message-role="assistant"]') ?? [];
+    const pending = assistants[assistants.length - 1];
+    return assistants.length > ${starterBaseline}
+      && pending?.getAttribute('data-stream-state') === 'pending'
+      && pending.textContent?.includes('数字摩斯正在思考')
+      && !pending.querySelector('[aria-label="回答来源"]')
+      && !transcript?.querySelector('[data-starter-intent]');
+  })()`, 'starter:pending-state');
+  check(await page.evaluate('location.href') === starterUrl, 'starter:navigation');
+  check(await page.evaluate("document.querySelector('#morse-message')?.value === ''"), 'starter:draft-cleared');
+  openAiProxy.releaseHeldResponse();
+  await waitFor(page, `(() => {
+    const assistants = document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)});
+    return assistants.length > ${starterBaseline}
+      && assistants[assistants.length - 1].getAttribute('data-stream-state') === 'done';
+  })()`, 'starter:answer');
+  const starterFormat = await page.evaluate(`(() => {
+    const assistants = document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)});
+    const answer = assistants[assistants.length - 1];
+    return {
+      rawMarkers: answer?.textContent?.includes('**') ?? true,
+      section: answer?.querySelector('[data-testid="morse-chat-message-content"] h3')?.textContent ?? '',
+      listItems: answer?.querySelectorAll('[data-testid="morse-chat-message-content"] li').length ?? 0,
+      citation: answer?.querySelector('[data-citation-index="1"]')?.textContent ?? '',
+      citationCount: new Set(Array.from(answer?.querySelectorAll('[data-citation-index]') ?? [])
+        .map((node) => node.getAttribute('data-citation-index'))
+        .filter(Boolean)).size,
+      sourceItems: answer?.querySelectorAll('[aria-label="回答来源"] li').length ?? 0,
+    };
+  })()`);
+  check(!starterFormat.rawMarkers && starterFormat.section === '事实依据：', 'format:markdown');
+  check(starterFormat.listItems === 1, 'format:list');
+  check(starterFormat.citation.includes('依据：'), 'format:named-citation');
+  check(
+    starterFormat.sourceItems === starterFormat.citationCount,
+    'source:only-cited',
+  );
+  checks.add('starter-direct-send');
+  checks.add('assistant-formatting');
+
   const chatResult = await submitChatValue(page, '#morse-message', '请介绍 Morse 的 Deep Research 项目与可核验证据。');
   check(chatResult.state === 'done' && chatResult.localSources > 0, 'chat:local-answer');
   checks.add('chat');
 
   const beforeRefresh = await page.evaluate(`(() => ({
     messages: document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article`)}).length,
-    answer: [...document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"] p`)})].at(-1)?.textContent ?? ''
+    answer: [...document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"] [data-testid="morse-chat-message-content"]`)})].at(-1)?.textContent ?? ''
   }))()`);
   await reload(page);
   await openChat(page);
   await waitFor(page, `document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article`)}).length >= ${beforeRefresh.messages}`,
     'chat:history-restored');
-  const restoredAnswer = await page.evaluate(`([...document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"] p`)})].at(-1)?.textContent ?? '')`);
+  const restoredAnswer = await page.evaluate(`([...document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"] [data-testid="morse-chat-message-content"]`)})].at(-1)?.textContent ?? '')`);
   check(Boolean(beforeRefresh.answer) && restoredAnswer === beforeRefresh.answer, 'chat:history-mismatch');
   checks.add('refresh-history');
   await installPhaseProbe(page);
@@ -970,7 +1021,7 @@ export async function runS10MockE2E() {
         ...process.env,
         MORSE_MOCK_BOCHA_PORT: String(bochaPort),
         MORSE_MOCK_BOCHA_KEY: 'mock-bocha-key',
-        MORSE_MOCK_BOCHA_FAIL_FIRST: 'true',
+        MORSE_MOCK_BOCHA_FAIL_QUERY: 'OpenAI API 当前最新官方文档',
       },
     });
     ownedChildren.push(mockOpenAi, mockBocha);
