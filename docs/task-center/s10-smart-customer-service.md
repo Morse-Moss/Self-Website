@@ -14,7 +14,7 @@ delivery_priority: reliability-and-honest-evidence
 execution_mode: GOAL
 risk_profile: CRITICAL
 delivery_target: LOCAL
-current_lifecycle_state: VERIFY
+current_lifecycle_state: KNOWLEDGE_RECONCILED
 definition_of_done:
   - 本地 pgvector 零 skip 集成、三种 workflow、12h 恢复、10d 日志、搜索、停止、管理后台和导出通过
   - Provider/博查/飞书证据按 real 或 BLOCKED_EXTERNAL 分开标记
@@ -49,11 +49,11 @@ release_boundary:
 
 ## Current Pointer
 
-**S10 REAL_PROVIDER_VERIFIED / MAINLINE_ABSORPTION**
+**S10 MAINLINE_LOCAL_READY**
 
 ## Next Allowed Pointer
 
-完成全量回归、知识收口和本地 `master` 吸收；push、部署、真实博查和真实飞书仍需单独授权与凭据。
+S10 已由 merge commit `e0a53f2` 吸收到本地 `master`。push、部署、真实博查和真实飞书仍需单独授权与凭据。
 
 ## Phase Registry
 
@@ -66,7 +66,7 @@ release_boundary:
 | `S10-CS-4 JD + DIAGNOSIS` | PASS | 三 workflow 同主链、跨 turn 初诊、事务 Outbox；383/383、build 13/13、CRITICAL 双审查 PASS |
 | `S10-CS-5 ADMIN + ALERTS` | PASS | scrypt+TOTP、权限矩阵、10 天查询、badcase、导出、飞书卡片与 incident；Task 5 130/130、全套 444/444、build 16/16、CRITICAL 双审查 PASS |
 | `S10-CS-6 UI + EVAL + CLOSEOUT` | PASS | 17/17 双宽 Mock 浏览器、491/491 零 skip 全套、RAG 正负阈值、17/17 构建、CRITICAL 双审查与知识收口均通过 |
-| `S10-CS-7 REAL PROVIDER + MAINLINE` | PASS | 真实 `gpt-5.4-mini` 全链、491/491、17/17 构建和健康状态语义修复 PASS；等待本地 `master` 吸收 |
+| `S10-CS-7 REAL PROVIDER + MAINLINE` | PASS | 真实 `gpt-5.4-mini` 全链、491/491、17/17 构建和健康状态语义修复 PASS；merge commit `e0a53f2` 已吸收到本地 `master` |
 
 ## Fixed Controls
 
@@ -134,7 +134,7 @@ release_boundary:
 | 博查 / 飞书 | 凭据缺失，真实调用 forbidden；Mock allowed |
 | 依赖安装 | forbidden；本轮零新增依赖 |
 | Git commit | allowed，必须精确 stage，排除 AGENTS.md 与未知文件 |
-| 本地 merge | 用户于 2026-07-17 明确允许，完成验证和收口后执行 |
+| 本地 merge | PASS；merge commit `e0a53f2` |
 | Push / PR / deploy | forbidden |
 | 外部资产四目录 | read-only；本轮实现不需要继续读取 |
 | 破坏性数据库/文件操作 | forbidden；disposable test database 除外 |

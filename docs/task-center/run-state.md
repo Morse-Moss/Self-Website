@@ -4,10 +4,10 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**S10 REAL_PROVIDER_VERIFIED / MAINLINE_ABSORPTION**
+**S10 MAINLINE_LOCAL_READY**
 
 ## next_allowed_pointer
-完成全量回归、知识收口和本地 `master` 吸收；push、部署、真实博查和真实飞书仍需单独授权与凭据，Mock 证据不得冒充真实外部证据。
+S10 已由 merge commit `e0a53f2` 吸收到本地 `master`。下一步仅在明确授权与凭据齐全后执行 push、部署、真实博查或真实飞书联调；Mock 证据不得冒充真实外部证据。
 
 ## S10 smart customer service amendment(2026-07-15)
 
@@ -37,7 +37,7 @@
 - Persistence PASS:interaction `8fe61666-4d6f-4cdd-b5ae-ec6f3567a19f` 为 `completed`，provider/model 为 `openai/gpt-5.4-mini`，延迟 9872ms，`used_search=false`。中转未返回 input/output token usage，因此 usage 与成本保持空值，不伪造为 0。
 - Quality observation:回答带有效来源标记且没有越过公开知识边界，但没有遵守“一句话”长度要求；该样本作为真实 badcase 观察点，不把传输成功等同于回答质量完全通过。
 - Health correction:`/api/health` 原先把 Provider readiness 与可选价格环境变量绑定；失败测试证明误判后拆分为 `provider.configured` 与 `provider.costConfigured`。
-- Delivery boundary:用户允许本地合并；未授权 push、PR、部署。真实博查与飞书仍未调用。
+- Delivery boundary:merge commit `e0a53f2` 已将 S10 吸收到本地 `master`；未授权 push、PR、部署。真实博查与飞书仍未调用。
 
 ### S10-CS-5 admin/alerts evidence(2026-07-16)
 

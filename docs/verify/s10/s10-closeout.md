@@ -31,9 +31,9 @@
 
 ## 关闭结论
 
-- S10 本地 DoD、CRITICAL 双审查和知识连续性门均已关闭，状态为 `LOCAL_READY / KNOWLEDGE_RECONCILED`。
+- S10 本地 DoD、CRITICAL 双审查和知识连续性门均已关闭，状态为 `MAINLINE_LOCAL_READY / KNOWLEDGE_RECONCILED`。
 - 真实 GPT 已为 `PASS`；真实博查与飞书仍是 `BLOCKED_EXTERNAL`。这些外部证据不由 Mock 替代，也不阻塞本地交付。
-- 用户已授权本地主线吸收；push、部署和其余真实外部联调仍需另行授权。
+- merge commit `e0a53f2` 已将 S10 吸收到本地 `master`；push、部署和其余真实外部联调仍需另行授权。
 
 ## 清理与保留
 
