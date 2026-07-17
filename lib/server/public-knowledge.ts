@@ -53,7 +53,7 @@ export function extractPublicKnowledge(content: SiteContent): PublicKnowledgeDoc
       content.profile.role,
       content.profile.summary,
       content.profile.principles?.length
-        ? `工作原则:\n${content.profile.principles.join('\n')}`
+        ? `Morse 的工作原则、事实边界与安全边界:\n${content.profile.principles.join('\n')}`
         : undefined,
     ]);
 

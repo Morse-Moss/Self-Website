@@ -81,6 +81,17 @@ test('addressing Morse does not veto an unrelated current external question', ()
   }
 });
 
+test('addressing Morse still vetoes a current question about his own projects', () => {
+  assert.deepEqual(routeSearch({
+    ...baseInput,
+    question: 'Morse 当前有哪些项目？',
+  }), {
+    shouldSearch: false,
+    query: null,
+    reason: 'personal_fact_veto',
+  });
+});
+
 test('search router applies the frozen deterministic priority without a model call', () => {
   const cases = [
     {

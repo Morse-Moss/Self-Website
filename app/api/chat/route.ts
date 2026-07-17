@@ -2,54 +2,16 @@ import { NextRequest } from 'next/server';
 
 import { authenticateSession } from '@/lib/server/access';
 import { normalizeChatRequest } from '@/lib/server/chat-core';
-import {
-  ChatServiceError,
-  runChat,
-  type ChatServiceEvent,
-} from '@/lib/server/chat-service';
+import { createChatRouteStream } from '@/lib/server/chat-route-stream';
+import { runChat } from '@/lib/server/chat-service';
 import { loadServerConfig } from '@/lib/server/config';
 import { getPool } from '@/lib/server/db';
 import { createProvider, createSearchProvider } from '@/lib/server/provider';
-import {
-  createSseStream,
-  type SseScheduler,
-} from '@/lib/server/sse';
 
 export const runtime = 'nodejs';
 
 function jsonError(error: string, status: number) {
   return Response.json({ ok: false, error }, { status });
-}
-
-function publicErrorCode(error: unknown): string {
-  return error instanceof ChatServiceError ? error.code : 'CHAT_UNAVAILABLE';
-}
-
-export interface ChatRouteStreamInput {
-  requestSignal: AbortSignal;
-  heartbeatMs: number;
-  runChat(signal: AbortSignal): AsyncIterable<ChatServiceEvent>;
-  abortController?: AbortController;
-  scheduler?: SseScheduler;
-}
-
-export function createChatRouteStream(input: ChatRouteStreamInput): ReadableStream<Uint8Array> {
-  const abortController = input.abortController ?? new AbortController();
-  return createSseStream({
-    abortController,
-    parentSignal: input.requestSignal,
-    heartbeatMs: input.heartbeatMs,
-    scheduler: input.scheduler,
-    async run(signal, emit) {
-      try {
-        for await (const event of input.runChat(signal)) {
-          if (!emit(event.type, event)) return;
-        }
-      } catch (error) {
-        if (!signal.aborted) emit('error', { code: publicErrorCode(error) });
-      }
-    },
-  });
 }
 
 export async function POST(request: NextRequest) {

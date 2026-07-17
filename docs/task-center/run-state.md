@@ -4,10 +4,10 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**S10-CS-6 UI + EVAL + CLOSEOUT**
+**S10 LOCAL_READY**
 
 ## next_allowed_pointer
-按 `docs/task-center/s10-smart-customer-service.md` 的 Phase Registry 顺序推进。只有当前阶段 RED/GREEN、focused verification、审查和状态同步后才能进入下一阶段；不部署、不 push。博查/飞书缺少凭据时真实链保持 `BLOCKED_EXTERNAL`，不得用 Mock 冒充。
+S10 本地开发已关闭。下一步仅在摩斯明确授权后进入主线吸收、push、部署或真实 Provider/博查/飞书联调；Mock 证据不得冒充真实外部证据。
 
 ## S10 smart customer service amendment(2026-07-15)
 
@@ -18,6 +18,18 @@
 - Admin/alerts:独立密码+TOTP 管理认证、badcase 与 JSON/CSV 导出；首次邀请码、初诊、故障恢复和安全事件写稳定-key Outbox，飞书 custom webhook 按至少一次语义发送可识别事件 key 的卡片。
 - Cost/safety:无月预算硬门；保留 30 条消息、五次联网、并发、超时、限流、kill switch 和 usage 统计。
 - Contract:`docs/task-center/s10-smart-customer-service.md`;design/plan 位于 `docs/superpowers/{specs,plans}/2026-07-15-s10-smart-customer-service*.md`。
+
+### S10-CS-6 UI/eval verification evidence(2026-07-17)
+
+- Implementation PASS:访客自由对话、JD 匹配、需求初诊、真实停止、原位 retry、12 小时 history、阶段状态和站内/联网来源分组完成；`/admin` 使用独立 route shell，具备登录、筛选、分页、详情、badcase 与 fresh-TOTP JSON/CSV 导出，公共导航无 Admin 入口。
+- Evaluation PASS:`chat:eval` 53/53 且 externalCalls 0；本地 CPU BGE 重摄取 9 documents/10 chunks、第二次 9/9 skip，20 正例/10 负例为 top1 18/20、top3 20/20，最低正例 0.460884、最高负例 0.420975，0.45 正负阈值均通过。
+- Runtime/build PASS:隔离 production server + Mock OpenAI/Bocha 的直接 API 主链通过邀请码、站内回答、搜索失败降级、搜索恢复、6 条 history 和 Admin 登录/列表/详情/badcase/CSV 导出；生产 build 17/17，`git diff --check`、`.env.local` 忽略和密钥扫描通过。
+- Review correction:CRITICAL quality/safety 审查发现 browser harness 在移动授权验收前提前过期访客 Session，且移动截图落在过期页；已改为授权态截图后再过期，Admin 同样在全屏详情态截图，新顺序合同 8/8 PASS。
+- Browser PASS:`visual:s10` 在隔离 production + Mock OpenAI/Bocha + disposable pgvector 环境通过 17/17；四张授权态 1440/390 截图已生成，overflow、console error、page error 均为 0。内置浏览器实页复验双宽与三 workflow 通过；Admin 授权态由正式 harness 的生成凭据覆盖。
+- Review PASS:CRITICAL compliance 将 Admin CSV 从证据目录迁到受控系统临时目录并在 `finally` 清理，两份空 ignored E2E 日志亦精确删除；quality/safety 复核覆盖 stop compensation、前台截图、selection 清理、Admin badcase 成功态与 Session 过期顺序，开放 blocker 为 0。
+- Provider boundary:第 3 次且最后一次真实 GPT 集成 smoke 在关闭搜索后仍于 interaction 预留前失败；无 Provider HTTP/延迟/usage 证据，无伪造回答，记为 `BLOCKED_CONFIG`。三次 Provider 预算已耗尽；真实博查和飞书未调用。
+- Final PostgreSQL/RAG PASS:既有 `revolution-pgvector` 恢复为 healthy 并监听 `127.0.0.1:55432`；显式本地 `DATABASE_URL` 下 `npm test` 为 491/491、0 fail、0 skip。`rag:eval` 使用 loopback CPU `BAAI/bge-small-zh-v1.5` 取得 top1 18/20、top3 20/20，最低正例 0.460884、最高负例 0.420975，0.45 正负阈值均通过。
+- Cleanup/git:正式 harness 的 Next、Mock、浏览器、下载目录与 disposable 数据库均已清理；用户验收用 3010 首页在本地提交后重启。`.env.local` 未读取、未修改且受 ignore 保护；S10 精确本地提交，不 push、不部署。
 
 ### S10-CS-5 admin/alerts evidence(2026-07-16)
 

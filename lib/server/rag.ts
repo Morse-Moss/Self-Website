@@ -45,15 +45,26 @@ export async function retrieveKnowledge(
 
   const limit = Math.min(Math.max(Math.trunc(requestedLimit), 1), 10);
   const result = await pool.query<KnowledgeRow>(
-    `SELECT chunk.id AS chunk_id,
-            chunk.document_id,
-            chunk.metadata->>'title' AS title,
-            chunk.metadata->>'sourcePath' AS source_path,
-            chunk.metadata->>'href' AS href,
-            chunk.content,
-            1 - (chunk.embedding <=> $1::vector) AS score
-       FROM knowledge_chunks AS chunk
-      ORDER BY chunk.embedding <=> $1::vector
+    `SELECT ranked.chunk_id,
+            ranked.document_id,
+            ranked.title,
+            ranked.source_path,
+            ranked.href,
+            ranked.content,
+            1 - ranked.distance AS score
+       FROM (
+         SELECT DISTINCT ON (chunk.document_id)
+                chunk.id AS chunk_id,
+                chunk.document_id,
+                chunk.metadata->>'title' AS title,
+                chunk.metadata->>'sourcePath' AS source_path,
+                chunk.metadata->>'href' AS href,
+                chunk.content,
+                chunk.embedding <=> $1::vector AS distance
+           FROM knowledge_chunks AS chunk
+          ORDER BY chunk.document_id, chunk.embedding <=> $1::vector, chunk.id
+       ) AS ranked
+      ORDER BY ranked.distance, ranked.chunk_id
       LIMIT $2`,
     [serializeVector(queryEmbedding), limit],
   );

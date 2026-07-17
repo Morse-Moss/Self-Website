@@ -31,12 +31,12 @@ const englishPersonalFactPattern = /(?:\bwho\b|\byourself\b|\bwhat\s+do\s+you\s+
 const explicitVerificationPattern = /(?:核验|查证|事实核查|验证一下|verify|fact[ -]?check)/i;
 const recencyPattern = /(?:时效|最新|今天|当前|现在|近期|版本|latest|today|current version|up[ -]?to[ -]?date|release)/i;
 const externalTechnicalPattern = /(?:官方文档|技术文档|外部资料|API|SDK|GitHub|Next\.js|OpenAI|React|TypeScript|PostgreSQL|pgvector|Bocha|博查)/i;
+const morseAddressPattern = /^(?:(?:请问|你好)[，,]?\s*)?(?:Morse|摩斯)[，,:：\s]+/iu;
+const addressedPersonalContinuationPattern = /^(?:(?:当前|最近|目前|现在)(?:的)?\s*)?(?:(?:有(?:哪些|什么)(?:项目|系统|作品|能力|技能|技术栈))|(?:(?:在做|负责|做过|开发过|参与过)(?:什么|哪些(?:项目|系统|作品)?)))(?:[？?。.]|$)/iu;
 
 export function routeSearch(input: SearchRouteInput): SearchRouteDecision {
-  const subjectQuestion = input.question.replace(
-    /^(?:(?:请问|你好)[，,]?\s*)?(?:Morse|摩斯)[，,:：\s]+/iu,
-    '',
-  );
+  const addressedMorse = morseAddressPattern.test(input.question);
+  const subjectQuestion = input.question.replace(morseAddressPattern, '');
   const identityQuestion = subjectQuestion
     .replace(/摩斯电码/giu, '')
     .replace(/\bMorse\s+code\b/giu, '')
@@ -44,7 +44,8 @@ export function routeSearch(input: SearchRouteInput): SearchRouteDecision {
   const hasPersonalSubject = namedIdentityPattern.test(identityQuestion)
     || chineseSelfSubjectPattern.test(identityQuestion)
     || englishSelfSubjectPattern.test(identityQuestion)
-    || siteOwnerPattern.test(identityQuestion);
+    || siteOwnerPattern.test(identityQuestion)
+    || (addressedMorse && addressedPersonalContinuationPattern.test(identityQuestion));
   const hasPersonalFact = personalFactPattern.test(identityQuestion)
     || englishPersonalFactPattern.test(identityQuestion);
   if (hasPersonalSubject && hasPersonalFact) {

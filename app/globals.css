@@ -94,6 +94,10 @@ html.resume-mode :focus-visible {
   outline-color: var(--paper-accent);
 }
 
+html.morse-chat-open {
+  overflow: hidden;
+}
+
 /* 深夜屏幕:2-3 层超大弥散辉光(z:-2)+ 近不可见网格(z:-1) */
 body::before,
 body::after {

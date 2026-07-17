@@ -7,7 +7,19 @@ const accessRoutePath = path.resolve('app/api/access/route.ts');
 const chatRoutePath = path.resolve('app/api/chat/route.ts');
 const historyRoutePath = path.resolve('app/api/chat/history/route.ts');
 const healthRoutePath = path.resolve('app/api/health/route.ts');
+const chatRouteStreamPath = path.resolve('lib/server/chat-route-stream.ts');
+const chatHistoryRoutePath = path.resolve('lib/server/chat-history-route.ts');
 const providerFactoryPath = path.resolve('lib/server/provider.ts');
+const allowedRouteExports = new Set([
+  'runtime',
+  'GET',
+  'POST',
+  'PUT',
+  'PATCH',
+  'DELETE',
+  'HEAD',
+  'OPTIONS',
+]);
 
 test('access API uses an HttpOnly short-lived cookie and supports logout', () => {
   const source = fs.readFileSync(accessRoutePath, 'utf8');
@@ -27,7 +39,10 @@ test('access API uses an HttpOnly short-lived cookie and supports logout', () =>
 });
 
 test('chat API authenticates server-side and emits only the public SSE contract', () => {
-  const source = fs.readFileSync(chatRoutePath, 'utf8');
+  const source = [
+    fs.readFileSync(chatRoutePath, 'utf8'),
+    fs.readFileSync(chatRouteStreamPath, 'utf8'),
+  ].join('\n');
 
   assert.match(source, /authenticateSession/);
   assert.match(source, /normalizeChatRequest/);
@@ -46,7 +61,10 @@ test('chat API authenticates server-side and emits only the public SSE contract'
 });
 
 test('chat history API uses access-only config and cannot restore interaction logs', () => {
-  const source = fs.readFileSync(historyRoutePath, 'utf8');
+  const source = [
+    fs.readFileSync(historyRoutePath, 'utf8'),
+    fs.readFileSync(chatHistoryRoutePath, 'utf8'),
+  ].join('\n');
 
   assert.match(source, /loadAccessConfig/);
   assert.match(source, /authenticateSession/);
@@ -63,6 +81,21 @@ test('health API reports database and knowledge readiness without provider secre
   assert.match(source, /OPENAI_EMBEDDING_MODEL/);
   assert.match(source, /MORSE_INPUT_USD_PER_MILLION/);
   assert.doesNotMatch(source, /OPENAI_API_KEY.*value|apiKey:/i);
+});
+
+test('chat route modules export only Next.js route entrypoints', () => {
+  for (const routePath of [chatRoutePath, historyRoutePath]) {
+    const source = fs.readFileSync(routePath, 'utf8');
+    const exportedNames = [...source.matchAll(
+      /^export\s+(?:async\s+)?(?:function|const|interface|type|class)\s+([A-Za-z0-9_]+)/gmu,
+    )].map((match) => match[1]);
+
+    assert.deepEqual(
+      exportedNames.filter((name) => !allowedRouteExports.has(name)),
+      [],
+      routePath,
+    );
+  }
 });
 
 test('every S8 OpenAI client disables hidden SDK retries', () => {

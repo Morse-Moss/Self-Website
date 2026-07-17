@@ -14,7 +14,7 @@ registerHooks({
   },
 });
 
-const { createChatRouteStream } = await import('../app/api/chat/route.ts');
+const { createChatRouteStream } = await import('../lib/server/chat-route-stream.ts');
 
 class FakeScheduler {
   callback: (() => void) | null = null;

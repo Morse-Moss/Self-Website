@@ -344,49 +344,53 @@ Expected: PASS. Real Feishu remains `BLOCKED_EXTERNAL` without webhook.
 - Create: `tests/s10-admin-ui-contract.test.ts`
 - Create: `docs/verify/s10/s10-closeout.md`
 
-- [ ] **Step 1: Write visitor UI RED tests**
+- [x] **Step 1: Write visitor UI RED tests**
 
 Require three workflow controls, real AbortController stop, status region, history restore, grouped sources, 12,000-character JD handling, diagnosis handoff state, retry without duplicate user text, and removal of monthly budget UI.
 
-- [ ] **Step 2: Verify visitor UI RED**
+- [x] **Step 2: Verify visitor UI RED**
 
 Run: `node --test tests/chat-ui-contract.test.ts`
 
 Expected: FAIL on missing workflows, stop and recovery.
 
-- [ ] **Step 3: Implement visitor interaction without visual redesign**
+- [x] **Step 3: Implement visitor interaction without visual redesign**
 
 Keep the S9 panel shell. Extract state/SSE/history to `useMorseChat`; make the send control switch in place to stop; use service status events; group local and web sources; preserve focus and partial stopped output. All controls are at least 44px and all CSS uses existing tokens.
 
-- [ ] **Step 4: Split the route shells without changing public URLs**
+- [x] **Step 4: Split the route shells without changing public URLs**
 
 Keep global metadata/styles in the root layout. Move the existing page and works routes under the `(portfolio)` route group with the current Canvas/Header/Footer/Resume shell, and give `/admin` a separate layout with none of those public controls. Update route contract tests so `/`, `/works`, existing Hash redirects and static generation remain unchanged.
 
-- [ ] **Step 5: Write and implement admin UI**
+- [x] **Step 5: Write and implement admin UI**
 
 Require login, filters, paginated list, detail, badcase notes and an export dialog that asks for a fresh TOTP. Desktop uses list/detail; 390px uses list then full-screen detail. Do not add admin to public navigation.
 
-- [ ] **Step 6: Verify UI contract GREEN**
+- [x] **Step 6: Verify UI contract GREEN**
 
 Run: `node --test tests/chat-ui-contract.test.ts tests/s10-admin-ui-contract.test.ts tests/site-shell-contract.test.ts`
 
 Expected: PASS with no raw colors or external runtime assets.
 
-- [ ] **Step 7: Expand deterministic evaluation**
+- [x] **Step 7: Expand deterministic evaluation**
 
 Add at least 36 cases covering recruiter/collaboration/peer, three workflows, cross-project evidence, refusal, injection, malicious URL, recency routing, search degradation, oversized JD, auth/errors and duplicate diagnosis notification.
 
-- [ ] **Step 8: Run local PostgreSQL/BGE and Mock E2E**
+- [x] **Step 8: Run local PostgreSQL/BGE and Mock E2E**
 
 Run migrations and ingest audited `content/site-content.json`; run `npm run rag:eval` and `npm run chat:eval`; then run `scripts/s10-chat-smoke.mjs` against loopback Mock GPT/Bocha/Feishu at 1440x900 and 390x844.
 
 Expected browser assertions: unlock, all workflows, status, stop, refresh recovery, citation navigation, search degradation, Session expiry, admin login/list/detail/badcase/export, no overflow, no unexpected console/page errors.
 
-- [ ] **Step 9: Run the one remaining real GPT smoke only after Mock PASS**
+Current evidence: database ingestion、BGE/pgvector evaluation and Mock production API are PASS. The repeatable browser harness passed all 17 visitor/Admin scenarios at 1440x900 and 390x844, captured the four authorized-state screenshots under `docs/verify/s10/`, and reported zero overflow, console error and page error. Admin CSV is verified in an owned system-temp download directory and removed in `finally`; no private export remains in the evidence directory.
+
+- [x] **Step 9: Run the one remaining real GPT smoke only after Mock PASS**
 
 Use one short integrated request through the application. Record only model/protocol/status, latency, usage presence, citation validity and final PASS/BLOCKED label. Do not call real Bocha or Feishu without credentials.
 
-- [ ] **Step 10: Run final verification**
+Result: the third and final Provider attempt ran with search forced off and failed before interaction reservation. The UI returned the designed failure state without a fabricated answer; no `interaction_turn`, Provider HTTP status, latency or usage evidence exists. This is `BLOCKED_CONFIG`, not a real GPT PASS. The three-attempt budget is exhausted and no real Bocha or Feishu call was made.
+
+- [x] **Step 10: Run final verification**
 
 Run: `npm test`
 
@@ -400,10 +404,16 @@ Run: `git diff --check`
 
 Run a secret scan for key/token patterns and verify `.env.local` is ignored. PostgreSQL integration must have zero skip.
 
-- [ ] **Step 11: Perform CRITICAL split review**
+Result: `npm test` 491/491 with 0 fail and 0 skip; `rag:eval` top1 18/20 and top3 20/20 with both 0.45 calibration gates passing; `chat:eval` 53/53 with `externalCalls: 0`; production build 17/17; browser, diff and secret gates PASS.
+
+- [x] **Step 11: Perform CRITICAL split review**
 
 Compliance reviewer checks DoD, approvals, migrations, 12h/10d lifecycle, evidence labels and scope. Quality/safety reviewer checks auth, CSRF, TOTP replay, URL/citation safety, abort/compensation, Outbox, export and test quality. Close all admitted blockers within three correction cycles.
 
-- [ ] **Step 12: Reconcile knowledge and commit local result**
+Result: compliance and quality/safety both PASS with zero open blocker. The compliance correction moved private Admin downloads out of `docs/verify/s10` into an owned disposable system-temp directory and removed two empty ignored E2E logs without reading them. The quality/safety correction preserved authorized mobile screenshots, foregrounded capture/navigation, cleared automation selection, and kept the held Mock response until stop compensation was durable.
+
+- [x] **Step 12: Reconcile knowledge and commit local result**
 
 Update `docs/portfolio-blueprint.md`, `docs/task-center/run-state.md`, this task center, evidence and next pointer. Stage only intended S10 files, commit locally, and leave push/deploy forbidden.
+
+Result: project knowledge is reconciled to `LOCAL_READY`; the exact S10 change set is committed locally. Push, merge and deployment remain outside this stage.

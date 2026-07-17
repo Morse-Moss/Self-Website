@@ -182,18 +182,19 @@ test('owned DevToolsActivePort rejects malformed and stale profile files', async
   );
 });
 
-test('owned endpoint polling is bounded and retries only a missing file', async () => {
+test('owned endpoint polling is bounded and retries only transient startup file states', async () => {
   const { waitForOwnedDevToolsActivePort } = await loadHelpers();
   const profileDir = path.resolve('C:/Temp/revolution-s9-edge-owned');
   let reads = 0;
   let nowMs = 1_000;
   const waits = [];
+  const transientCodes = ['ENOENT', 'EBUSY', 'EACCES', 'EPERM'];
   const fsApi = {
     readFileSync() {
       reads += 1;
-      if (reads < 3) {
-        const error = new Error('missing');
-        error.code = 'ENOENT';
+      if (reads <= transientCodes.length) {
+        const error = new Error('transient startup state');
+        error.code = transientCodes[reads - 1];
         throw error;
       }
       return '43117\n/devtools/browser/id\n';
@@ -217,15 +218,15 @@ test('owned endpoint polling is bounded and retries only a missing file', async 
   });
 
   assert.equal(endpoint.browserWebSocketUrl, 'ws://127.0.0.1:43117/devtools/browser/id');
-  assert.equal(reads, 3);
-  assert.deepEqual(waits, [50, 50]);
+  assert.equal(reads, 5);
+  assert.deepEqual(waits, [50, 50, 50, 50]);
 
   await assert.rejects(
     waitForOwnedDevToolsActivePort({
       fsApi: {
         readFileSync() {
-          const error = new Error('missing');
-          error.code = 'ENOENT';
+          const error = new Error('busy');
+          error.code = 'EBUSY';
           throw error;
         },
         statSync() {
@@ -243,6 +244,25 @@ test('owned endpoint polling is bounded and retries only a missing file', async 
       timeoutMs: 100,
     }),
     (error) => error?.code === 'OWNED_ENDPOINT_TIMEOUT',
+  );
+
+  await assert.rejects(
+    waitForOwnedDevToolsActivePort({
+      fsApi: {
+        readFileSync() {
+          throw Object.assign(new Error('io failure'), { code: 'EIO' });
+        },
+        statSync() {
+          throw new Error('unreachable');
+        },
+      },
+      isProcessExited: () => false,
+      poll: async () => assert.fail('permanent endpoint errors must not be retried'),
+      profileDir,
+      startedAtMs: 0,
+      timeoutMs: 100,
+    }),
+    (error) => error?.code === 'EIO',
   );
 });
 

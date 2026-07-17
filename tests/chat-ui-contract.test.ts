@@ -5,178 +5,266 @@ import { test } from 'node:test';
 
 const componentPath = path.resolve('components/MorseChat.tsx');
 const stylePath = path.resolve('components/MorseChat.module.css');
-const layoutPath = path.resolve('app/layout.tsx');
-const worksLayoutPath = path.resolve('app/works/layout.tsx');
-const pagePath = path.resolve('app/page.tsx');
-const ssePath = path.resolve('lib/client/chat-sse.ts');
+const globalStylePath = path.resolve('app/globals.css');
+const chatDirectory = path.resolve('components/chat');
+const portfolioLayoutPath = path.resolve('app/(portfolio)/layout.tsx');
+const worksLayoutPath = path.resolve('app/(portfolio)/works/layout.tsx');
+const pagePath = path.resolve('app/(portfolio)/page.tsx');
 const scrollPath = path.resolve('lib/client/chat-scroll.ts');
 
-test('MorseChat exposes invite, mode, stream, source, error, and logout states', () => {
-  const component = fs.readFileSync(componentPath, 'utf8');
-  const sse = fs.readFileSync(ssePath, 'utf8');
+const requiredChatFiles = [
+  'useMorseChat.ts',
+  'ChatWorkspace.tsx',
+  'ChatTranscript.tsx',
+  'ChatPhaseStatus.tsx',
+  'ChatComposer.tsx',
+  'ChatSources.tsx',
+  'JdIntake.tsx',
+  'DiagnosisIntake.tsx',
+] as const;
 
-  assert.match(component, /data-testid="morse-chat"/);
-  assert.match(component, /\/api\/access/);
-  assert.match(component, /\/api\/chat/);
-  assert.match(component, /面试官模式/);
-  assert.match(component, /普通对话/);
-  assert.match(component, /event === 'meta'/);
-  assert.match(component, /event === 'delta'/);
-  assert.match(component, /event === 'done'/);
-  assert.match(sse, /event === 'error'/);
-  assert.match(component, /budgetLevel/);
-  assert.match(component, /本月对话额度/);
-  assert.match(component, /setRemainingMessages\(data\.remainingMessages/);
-  assert.match(component, /sources\.map/);
-  assert.match(component, /href=\{source\.href\}/);
-  assert.doesNotMatch(
-    component.match(/interface ChatSource \{[\s\S]*?\n\}/)?.[0] ?? '',
-    /sourcePath/,
-  );
-  assert.match(component, /audienceIntent/);
-  assert.match(component, /turnId:\s*crypto\.randomUUID\(\)/);
-  assert.match(component, /normalizeChatErrorCode/);
-  assert.match(component, /code === 'SESSION_INVALID'[\s\S]*setAccessState\('locked'\)/);
-  assert.match(component, /code === 'CONVERSATION_INVALID'[\s\S]*setConversationId\(null\)/);
-  assert.match(component, /setRemainingMessages\(payload\.remainingMessages\)/);
-  assert.match(component, /data-stream-state=/);
-  assert.match(component, /data-testid="morse-quota"/);
-  assert.match(component, /正在检索公开知识/);
-  assert.match(component, /正在组织回答/);
-  assert.match(component, /重试本次问题/);
-  assert.match(component, /退出会话/);
-  assert.match(component, /classList\.add\('morse-chat-open'\)/);
+function readIfPresent(filePath: string): string {
+  return fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : '';
+}
+
+function readChatSource(fileName: typeof requiredChatFiles[number]): string {
+  return readIfPresent(path.join(chatDirectory, fileName));
+}
+
+function allVisitorSource(): string {
+  return [
+    readIfPresent(componentPath),
+    ...requiredChatFiles.map(readChatSource),
+  ].join('\n');
+}
+
+test('visitor chat is split into the Task 6 interaction components', () => {
+  for (const fileName of requiredChatFiles) {
+    assert.ok(fs.existsSync(path.join(chatDirectory, fileName)), `missing components/chat/${fileName}`);
+  }
+  const component = fs.readFileSync(componentPath, 'utf8');
+  assert.match(component, /<ChatWorkspace/);
+  assert.match(component, /useMorseChat/);
 });
 
-test('MorseChat opens from the global event and exposes the three structured starter intents', () => {
-  const component = fs.readFileSync(componentPath, 'utf8');
+test('visitor chat exposes exactly three workflow controls without monthly budget UI', () => {
+  const source = allVisitorSource();
 
-  assert.match(component, /window\.addEventListener\(['"]morse-chat:open['"],\s*\w+\)/);
-  assert.match(component, /window\.removeEventListener\(['"]morse-chat:open['"],\s*\w+\)/);
-  assert.match(
-    component,
-    /label:\s*'招人的',\s*mode:\s*'interviewer',\s*audienceIntent:\s*'recruiter',\s*prompt:\s*'请从招聘方视角介绍最匹配的项目、能力证据和仍需补充的信息。'/s,
-  );
-  assert.match(
-    component,
-    /label:\s*'找人做事的',\s*mode:\s*'general',\s*audienceIntent:\s*'collaboration',\s*prompt:\s*'我想了解摩斯会如何分析并推进一个 AI 系统需求。'/s,
-  );
-  assert.match(
-    component,
-    /label:\s*'同行交流',\s*mode:\s*'general',\s*audienceIntent:\s*'peer',\s*prompt:\s*'请介绍摩斯在 Agent、RAG 和多 Agent 系统上的关键工程判断。'/s,
-  );
-  assert.equal((component.match(/label:\s*'/g) ?? []).length, 3);
-
-  const intentClick = component.match(
-    /onClick=\{\(\)\s*=>\s*\{\s*setMode\(intent\.mode\);\s*setAudienceIntent\(intent\.audienceIntent\);\s*setDraft\(intent\.prompt\);\s*\}\}/s,
-  )?.[0] ?? '';
-  assert.ok(intentClick, 'starter intent click must set mode and draft');
-  assert.doesNotMatch(intentClick, /sendMessage|submit|fetch/);
+  assert.match(source, /type ChatWorkflow = 'chat' \| 'jd_match' \| 'diagnosis'/);
+  assert.match(source, /自由对话/);
+  assert.match(source, /JD 匹配/);
+  assert.match(source, /需求初诊/);
+  assert.match(source, /aria-label="对话流程"/);
+  assert.match(source, /setWorkflow\(['"]chat['"]\)/);
+  assert.match(source, /setWorkflow\(['"]jd_match['"]\)/);
+  assert.match(source, /setWorkflow\(['"]diagnosis['"]\)/);
+  assert.doesNotMatch(source, /本月对话额度|budgetMessage|BudgetLevel|budgetNotice/);
 });
 
-test('MorseChat supports an embedded section without launcher, close, or dialog semantics', () => {
+test('send switches in place to a real AbortController stop action', () => {
+  const hook = readChatSource('useMorseChat.ts');
+  const composer = readChatSource('ChatComposer.tsx');
+
+  assert.match(hook, /new AbortController\(\)/);
+  assert.match(hook, /if \(streaming \|\| abortControllerRef\.current\) return/);
+  assert.match(hook, /signal:\s*abortController\.signal/);
+  assert.match(hook, /abortControllerRef\.current\s*=\s*abortController/);
+  assert.match(hook, /abortControllerRef\.current\?\.abort\(\)/);
+  assert.match(hook, /error\s+instanceof\s+DOMException[\s\S]*error\.name\s*===\s*['"]AbortError['"]/);
+  assert.match(hook, /stopped:\s*true/);
+  assert.match(composer, /streaming\s*\?\s*['"]停止['"]\s*:\s*['"]发送['"]/);
+  assert.match(composer, /streaming\s*\?\s*onStop\s*:\s*undefined/);
+  assert.equal((composer.match(/<button/g) ?? []).length, 1, 'send and stop must share one button');
+});
+
+test('service-driven stages use one status region and include diagnosis handoff', () => {
+  const hook = readChatSource('useMorseChat.ts');
+  const status = readChatSource('ChatPhaseStatus.tsx');
+
+  for (const stage of ['routing', 'knowledge', 'web', 'answering', 'handoff']) {
+    assert.match(hook, new RegExp(`${stage}:`));
+  }
+  assert.match(hook, /event === ['"]status['"]/);
+  assert.match(hook, /setPhase\(payload\.stage/);
+  assert.match(status, /role="status"/);
+  assert.match(status, /aria-live="polite"/);
+  assert.match(status, /正在判断是否需要联网/);
+  assert.match(status, /已进入转交队列/);
+});
+
+test('authorized access restores the newest 12-hour conversation history', () => {
+  const hook = readChatSource('useMorseChat.ts');
+
+  assert.match(hook, /fetch\(['"]\/api\/chat\/history['"],\s*\{\s*cache:\s*['"]no-store['"]/s);
+  assert.match(hook, /setConversationId\(history\.conversationId/);
+  assert.match(hook, /setWorkflowState\(history\.workflow/);
+  assert.match(
+    hook,
+    /setWorkflowState\(history\.workflow\)[\s\S]*setConversationId\(history\.conversationId\)/,
+    'workflow reset must happen before restoring the conversation id',
+  );
+  assert.match(hook, /setAudienceIntent\(restoredAudience/);
+  assert.match(hook, /history\.messages\.map/);
+  assert.match(hook, /setRemainingMessages\(history\.remainingMessages/);
+  assert.match(hook, /restoreHistory\(\)/);
+});
+
+test('authorized chat gates the workspace until history restoration settles', () => {
   const component = fs.readFileSync(componentPath, 'utf8');
+  const hook = readChatSource('useMorseChat.ts');
+
+  assert.match(hook, /const \[historyLoading, setHistoryLoading\] = useState\(true\)/);
+  assert.match(hook, /setHistoryLoading\(true\)[\s\S]*await fetch\(['"]\/api\/chat\/history['"]/);
+  assert.match(hook, /finally\s*\{\s*setHistoryLoading\(false\)/);
+  assert.match(hook, /setHistoryLoading\(true\)[\s\S]*setAccessState\(['"]authorized['"]\)/);
+  assert.match(hook, /historyLoading,[\s\S]*restoreHistory/);
+  assert.match(
+    component,
+    /chat\.historyLoading\s*\?\s*\([\s\S]*role="status"[\s\S]*<ChatWorkspace/,
+  );
+});
+
+test('transcript groups audited local sources separately from web sources', () => {
+  const sources = readChatSource('ChatSources.tsx');
+  const transcript = readChatSource('ChatTranscript.tsx');
+
+  assert.match(sources, /source\.kind === ['"]local['"]/);
+  assert.match(sources, /站内来源/);
+  assert.match(sources, /联网来源/);
+  assert.match(sources, /target=\{external \? ['"]_blank['"] : undefined\}/);
+  assert.match(sources, /rel=\{external \? ['"]noopener noreferrer['"] : undefined\}/);
+  assert.match(sources, /citationIndex:\s*index \+ 1/);
+  assert.match(sources, /\[\{citationIndex\}\]/);
+  assert.match(transcript, /<ChatSources/);
+  assert.doesNotMatch(transcript, /aria-live=/, 'streaming token text must not be an aria-live region');
+});
+
+test('structured intake supports 12,000-character JD and five-field diagnosis', () => {
+  const jd = readChatSource('JdIntake.tsx');
+  const diagnosis = readChatSource('DiagnosisIntake.tsx');
+  const hook = readChatSource('useMorseChat.ts');
+
+  assert.match(jd, /maxLength=\{12_000\}/);
+  assert.match(jd, /12,000/);
+  assert.match(hook, /jobDescription/);
+  assert.match(diagnosis, /name=\{field\.name\}/);
+  for (const field of ['problem', 'goal', 'currentState', 'constraints', 'expectedTimeline']) {
+    assert.match(diagnosis, new RegExp(`name:\\s*["']${field}["']`));
+    assert.match(hook, new RegExp(field));
+  }
+  assert.match(diagnosis, /totalCharacters/);
+  assert.match(diagnosis, /6_500/);
+  assert.match(diagnosis, /6,500/);
+  assert.match(hook, /diagnosisStatus:\s*['"]handoff_pending['"]/);
+  assert.match(diagnosis, /提交初诊/);
+});
+
+test('recoverable retry reuses the assistant row without a second user bubble', () => {
+  const hook = readChatSource('useMorseChat.ts');
+  const transcript = readChatSource('ChatTranscript.tsx');
+
+  assert.match(hook, /retryAssistantId\?:\s*string/);
+  assert.match(hook, /if\s*\(retryAssistantId\)[\s\S]*updateAssistant/);
+  assert.match(hook, /else\s*\{[\s\S]*role:\s*['"]user['"]/);
+  assert.match(hook, /retry:\s*requestSnapshot/);
+  assert.match(transcript, /onRetry\(message\.id,\s*message\.retry!?\)/);
+  assert.match(transcript, /已停止/);
+});
+
+test('MorseChat retains the S9 embedded and overlay shell behavior', () => {
+  const component = fs.readFileSync(componentPath, 'utf8');
+  const styles = fs.readFileSync(stylePath, 'utf8');
 
   assert.match(component, /type MorseChatProps = \{ variant\?: 'overlay' \| 'embedded' \};/);
   assert.match(component, /export default function MorseChat\(\{ variant = 'overlay' \}: MorseChatProps\)/);
   assert.match(component, /const embedded = variant === 'embedded'/);
   assert.match(component, /useState\(embedded\)/);
-  assert.match(component, /!embedded && !open/);
-  assert.match(component, /\{!embedded \? \([\s\S]*aria-label="关闭对话"/);
+  assert.match(component, /window\.addEventListener\(['"]morse-chat:open['"]/);
+  assert.match(component, /window\.removeEventListener\(['"]morse-chat:open['"]/);
   assert.match(component, /role=\{embedded \? undefined : 'dialog'\}/);
-  assert.match(component, /aria-labelledby=\{embedded \? 'morse-chat-title' : undefined\}/);
   assert.match(component, /embedded[\s\S]*scrollIntoView/);
   assert.match(component, /prefers-reduced-motion: reduce/);
-  assert.match(component, /\.focus\(\{ preventScroll: true \}\)/);
   assert.doesNotMatch(component, /video|audio|speech|tts|lipSync/i);
+  assert.match(styles, /\.panel\.embeddedPanel/);
+  assert.match(styles, /@media \(max-width: 640px\)/);
+  assert.match(styles, /100dvh/);
 });
 
-test('MorseChat keeps auto-follow inside the messages viewport and respects upward reading', () => {
+test('MorseChat document scroll lock stays in global CSS instead of a pure global module selector', () => {
+  const styles = fs.readFileSync(stylePath, 'utf8');
+  const globalStyles = fs.readFileSync(globalStylePath, 'utf8');
+
+  assert.doesNotMatch(styles, /:global\(html\.morse-chat-open\)/);
+  assert.match(globalStyles, /html\.morse-chat-open\s*\{[\s\S]*?overflow:\s*hidden;/);
+});
+
+test('MorseChat returns focus to the active intake after a stream settles', () => {
   const component = fs.readFileSync(componentPath, 'utf8');
+
+  assert.match(component, /const wasStreamingRef = useRef\(false\)/);
+  assert.match(component, /wasStreamingRef\.current && !chat\.streaming/);
+  assert.match(component, /messageInputRef\.current\?\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(component, /window\.requestAnimationFrame/);
+});
+
+test('chat scrolling keeps auto-follow inside the transcript viewport', () => {
+  const source = allVisitorSource();
 
   assert.ok(fs.existsSync(scrollPath), 'missing chat scroll helper');
-  assert.match(component, /from ['"]@\/lib\/client\/chat-scroll['"]/);
-  assert.match(component, /const messagesRef = useRef<HTMLDivElement>\(null\)/);
-  assert.match(component, /const autoFollowRef = useRef\(true\)/);
-  assert.match(component, /const forceAutoFollowRef = useRef\(true\)/);
-  assert.match(component, /ref=\{messagesRef\}/);
-  assert.match(component, /isNearChatBottom\(event\.currentTarget\)/);
-  assert.match(component, /scrollTo\(\{\s*top:\s*container\.scrollHeight,\s*behavior:\s*'auto',?\s*\}\)/s);
-  assert.doesNotMatch(component, /messageEndRef/);
-  assert.equal((component.match(/scrollIntoView/g) ?? []).length, 1);
+  assert.match(source, /from ['"]@\/lib\/client\/chat-scroll['"]/);
+  assert.match(source, /const messagesRef = useRef<HTMLDivElement>\(null\)/);
+  assert.match(source, /const autoFollowRef = useRef\(true\)/);
+  assert.match(source, /isNearChatBottom\(event\.currentTarget\)/);
+  assert.match(source, /!chat\.streaming && !forceAutoFollowRef\.current/);
+  assert.match(source, /scrollTo\(\{\s*top:\s*container\.scrollHeight,\s*behavior:\s*['"]auto['"],?\s*\}\)/s);
+  assert.equal((source.match(/scrollIntoView/g) ?? []).length, 1);
 });
 
-test('MorseChat preserves an open-event focus request until access checking resolves', () => {
-  const component = fs.readFileSync(componentPath, 'utf8');
+test('portfolio route group keeps one embedded chat and one works overlay', () => {
+  const portfolioLayout = readIfPresent(portfolioLayoutPath);
+  const worksLayout = readIfPresent(worksLayoutPath);
+  const page = readIfPresent(pagePath);
 
-  assert.match(component, /const pendingFocusRef = useRef\(false\)/);
-  assert.match(component, /pendingFocusRef\.current = true/);
-  assert.match(
-    component,
-    /if \(!open \|\| !pendingFocusRef\.current \|\| accessState === 'checking'\) return/,
-  );
-  assert.match(component, /accessState === 'authorized'[\s\S]*messageInputRef\.current[\s\S]*inviteInputRef\.current/);
-  assert.match(component, /focusTarget\.focus\(\{ preventScroll: true \}\)[\s\S]*pendingFocusRef\.current = false/);
-});
-
-test('MorseChat retries a recoverable turn without appending a second user bubble', () => {
-  const component = fs.readFileSync(componentPath, 'utf8');
-
-  assert.match(component, /interface ChatRequestSnapshot/);
-  assert.match(component, /retryAssistantId\?:\s*string/);
-  assert.match(component, /retryAssistantId\s*\?\s*retryAssistantId\s*:\s*crypto\.randomUUID\(\)/);
-  assert.match(component, /if\s*\(retryAssistantId\)\s*\{[\s\S]*updateAssistant/);
-  assert.match(component, /else\s*\{[\s\S]*role:\s*'user'/);
-  assert.match(
-    component,
-    /retry:\s*isRecoverableChatError\(code\)\s*\?\s*requestSnapshot\s*:\s*undefined/,
-  );
-  assert.match(
-    component,
-    /catch\s*\(error\)[\s\S]*error:\s*true,[\s\S]*sources:\s*\[\]/,
-  );
-  assert.match(
-    component,
-    /if\s*\(message\.retry\)[\s\S]*sendMessage\(message\.retry\.message,\s*message\.id,\s*message\.retry\)/,
-  );
-});
-
-test('home owns one embedded chat while works keeps one tokenized overlay instance', () => {
-  const layout = fs.readFileSync(layoutPath, 'utf8');
-  const worksLayout = fs.readFileSync(worksLayoutPath, 'utf8');
-  const page = fs.readFileSync(pagePath, 'utf8');
-  const styles = fs.readFileSync(stylePath, 'utf8');
-
-  assert.doesNotMatch(layout, /import MorseChat|<MorseChat\b/);
+  assert.match(portfolioLayout, /Canvas/);
   assert.match(page, /import MorseChat/);
   assert.equal((page.match(/<MorseChat variant="embedded"\s*\/>/g) ?? []).length, 1);
   assert.match(worksLayout, /import MorseChat/);
   assert.equal((worksLayout.match(/<MorseChat\s*\/>/g) ?? []).length, 1);
-  const launcherRule = styles.match(/\.launcher\s*\{([^}]*)\}/)?.[1] ?? '';
-  assert.match(launcherRule, /display:\s*none/);
-  assert.match(launcherRule, /pointer-events:\s*none/);
-  assert.match(styles, /var\(--z-chat\)/);
-  assert.match(styles, /@media \(max-width: 640px\)/);
-  assert.match(
-    styles,
-    /@media \(max-width: 640px\)[\s\S]*?\.root\s*{[\s\S]*?top:\s*var\(--space-4\)[\s\S]*?right:\s*calc\(var\(--space-4\) \+ 104px\)[\s\S]*?bottom:\s*auto/,
-  );
-  assert.match(
-    styles,
-    /@media \(max-width: 560px\)[\s\S]*?\.root\s*{[\s\S]*?top:\s*var\(--space-3\)[\s\S]*?right:\s*calc\(var\(--space-3\) \+ 92px\)/,
-  );
-  assert.match(styles, /inset:\s*0/);
-  assert.match(styles, /width:\s*100%/);
-  assert.match(styles, /100dvh/);
-  assert.match(styles, /html\.morse-chat-open/);
-  assert.match(styles, /overflow:\s*hidden/);
-  const embeddedRootRule = styles.match(/\.root\.embeddedRoot\s*\{([^}]*)\}/)?.[1] ?? '';
-  const embeddedPanelRule = styles.match(/\.panel\.embeddedPanel\s*\{([^}]*)\}/)?.[1] ?? '';
-  assert.match(embeddedRootRule, /position:\s*relative/);
-  assert.match(embeddedRootRule, /min-width:\s*0/);
-  assert.doesNotMatch(embeddedRootRule, /position:\s*fixed/);
-  assert.match(embeddedPanelRule, /width:\s*100%/);
-  assert.match(embeddedPanelRule, /min-width:\s*0/);
-  assert.doesNotMatch(embeddedPanelRule, /position:\s*fixed/);
+});
+
+test('visitor controls remain tokenized, at least 44px, and responsive at 390px', () => {
+  const styles = fs.readFileSync(stylePath, 'utf8');
+
   assert.doesNotMatch(styles, /#[0-9a-f]{3,8}|rgba?\(/i);
+  assert.doesNotMatch(styles, /letter-spacing:\s*-[^;]+/i);
+  assert.match(styles, /min-height:\s*44px/);
+  assert.match(styles, /min-width:\s*0/);
+  assert.match(styles, /max-width:\s*100%/);
+  assert.match(styles, /@media \(max-width: 640px\)/);
+  assert.match(styles, /overflow-wrap:\s*anywhere/);
+  assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
+});
+
+test('visitor chat exposes stable selectors for deterministic browser acceptance', () => {
+  const component = fs.readFileSync(componentPath, 'utf8');
+  const workspace = readChatSource('ChatWorkspace.tsx');
+  const transcript = readChatSource('ChatTranscript.tsx');
+  const phase = readChatSource('ChatPhaseStatus.tsx');
+  const sources = readChatSource('ChatSources.tsx');
+  const jd = readChatSource('JdIntake.tsx');
+  const diagnosis = readChatSource('DiagnosisIntake.tsx');
+
+  assert.match(component, /data-testid="morse-chat-panel"/);
+  assert.match(workspace, /data-testid="morse-chat-workspace"/);
+  for (const workflow of ['chat', 'jd_match', 'diagnosis']) {
+    assert.match(workspace, new RegExp(`data-workflow=["']${workflow}["']`));
+  }
+  assert.match(transcript, /data-testid="morse-chat-transcript"/);
+  assert.match(transcript, /data-message-role=\{message\.role\}/);
+  assert.match(phase, /data-testid="morse-chat-phase"/);
+  assert.match(phase, /data-phase=\{visiblePhase \?\? undefined\}/);
+  assert.match(sources, /data-source-group="local"/);
+  assert.match(sources, /data-source-group="web"/);
+  assert.match(jd, /data-testid="morse-jd-intake"/);
+  assert.match(diagnosis, /data-testid="morse-diagnosis-intake"/);
 });

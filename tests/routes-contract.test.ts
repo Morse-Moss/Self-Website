@@ -11,19 +11,20 @@ const files = {
   openChatButton: path.resolve('components/site/OpenChatButton.tsx'),
   siteHeader: path.resolve('components/site/SiteHeader.tsx'),
   rootLayout: path.resolve('app/layout.tsx'),
-  home: path.resolve('app/page.tsx'),
+  portfolioLayout: path.resolve('app/(portfolio)/layout.tsx'),
+  home: path.resolve('app/(portfolio)/page.tsx'),
   homeSections: path.resolve('components/home/MorseHomeSections.tsx'),
   homeStyles: path.resolve('app/styles/hero.module.css'),
   homeSectionStyles: path.resolve('components/home/MorseHomeSections.module.css'),
   tokens: path.resolve('app/styles/tokens.css'),
   siteContent: path.resolve('content/site-content.json'),
-  works: path.resolve('app/works/page.tsx'),
-  worksLayout: path.resolve('app/works/layout.tsx'),
-  worksStyles: path.resolve('app/works/page.module.css'),
+  works: path.resolve('app/(portfolio)/works/page.tsx'),
+  worksLayout: path.resolve('app/(portfolio)/works/layout.tsx'),
+  worksStyles: path.resolve('app/(portfolio)/works/page.module.css'),
   projectGallery: path.resolve('components/works/ProjectGallery.tsx'),
   projectGalleryStyles: path.resolve('components/works/ProjectGallery.module.css'),
-  caseRoute: path.resolve('app/works/[slug]/page.tsx'),
-  caseRouteStyles: path.resolve('app/works/[slug]/page.module.css'),
+  caseRoute: path.resolve('app/(portfolio)/works/[slug]/page.tsx'),
+  caseRouteStyles: path.resolve('app/(portfolio)/works/[slug]/page.module.css'),
 } as const;
 
 const prohibitedProductPattern = new RegExp(
@@ -88,6 +89,7 @@ test('CaseStudy keeps the six evidence sections in exact order and leads with ho
 test('home leads with Morse, one embedded chat, and the shared shell controls', () => {
   const home = readSource(files.home);
   const rootLayout = readSource(files.rootLayout);
+  const portfolioLayout = readSource(files.portfolioLayout);
   const siteHeader = readSource(files.siteHeader);
   const worksLayout = readSource(files.worksLayout);
 
@@ -106,7 +108,8 @@ test('home leads with Morse, one embedded chat, and the shared shell controls', 
     home,
     /DigitalHuman|RestoredHomeSections|系统展厅|高频问题|杠杆账本|ResumeMode|ResumeSheet|SiteFooter|ProjectCard|content\.faq|content\.projects\.map/,
   );
-  assert.match(rootLayout, /<SiteHeader\s+site=\{siteContent\.site\}\s*\/>/);
+  assert.doesNotMatch(rootLayout, /<SiteHeader\b|<SiteFooter\b|<ResumeSheet\b/);
+  assert.match(portfolioLayout, /<SiteHeader\s+site=\{siteContent\.site\}\s*\/>/);
   assert.match(siteHeader, /site\.nav\.map/);
   assert.match(siteHeader, /<OpenChatButton\b/);
   assert.match(siteHeader, /<ResumeModeToggle\b/);

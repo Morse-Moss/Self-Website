@@ -824,7 +824,7 @@ test('runChat retrieves sources, streams answer, and persists short-term memory 
   assert.equal(meta.sources[0].id, 'local-1');
   assert.equal(meta.sources[0].kind, 'local');
   assert.equal(meta.sources[0].domain, null);
-  assert.equal(meta.sources[0].href, '/works/deep-research');
+  assert.equal(meta.sources[0].href, '/works#deep-research');
   assert.equal('sourcePath' in meta.sources[0], false);
   assert.equal(meta.budgetLevel, 'normal');
   assert.match(meta.conversationId, /^[0-9a-f-]{36}$/);

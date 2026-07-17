@@ -14,7 +14,7 @@ delivery_priority: reliability-and-honest-evidence
 execution_mode: GOAL
 risk_profile: CRITICAL
 delivery_target: LOCAL
-current_lifecycle_state: EXECUTE
+current_lifecycle_state: KNOWLEDGE_RECONCILED
 definition_of_done:
   - 本地 pgvector 零 skip 集成、三种 workflow、12h 恢复、10d 日志、搜索、停止、管理后台和导出通过
   - Provider/博查/飞书证据按 real 或 BLOCKED_EXTERNAL 分开标记
@@ -36,10 +36,10 @@ verification:
 review_budget:
   correction_cycles: 3
   review_shape: split compliance + quality/safety
-  provider_attempts: S10 总计最多 3 次，已使用 2 次能力探测，Mock PASS 后最多剩 1 次集成 smoke
+  provider_attempts: S10 总计最多 3 次，3 次均已使用；第三次集成 smoke 为 BLOCKED_CONFIG，禁止自动重试
 knowledge_reconciliation:
   scope: code + blueprint + task center + evidence + continuation state
-  verdict: pending
+  verdict: updated
 release_boundary:
   push_pr_deploy: forbidden
   commit: 本地验证阶段可按显式范围提交
@@ -48,11 +48,11 @@ release_boundary:
 
 ## Current Pointer
 
-**S10-CS-6 UI + EVAL + CLOSEOUT**
+**S10 LOCAL_READY**
 
 ## Next Allowed Pointer
 
-只有当前阶段的 RED/GREEN、focused verification、审查和状态账本同步后才能推进下一阶段。缺少博查/飞书凭据不阻塞 Mock 实现，但真实链保持 `BLOCKED_EXTERNAL`。
+S10 本地阶段已关闭。下一步仅在摩斯明确授权后进入主线吸收、push、部署或真实外部联调；缺少博查/飞书凭据不影响本地完成，但真实链继续保持 `BLOCKED_EXTERNAL`。
 
 ## Phase Registry
 
@@ -64,7 +64,7 @@ release_boundary:
 | `S10-CS-3 RAG + AUTO SEARCH` | PASS | SearchRouter/Bocha Mock/六字段 citation；355/355；正负 RAG 阈值与 CRITICAL 双审查 PASS |
 | `S10-CS-4 JD + DIAGNOSIS` | PASS | 三 workflow 同主链、跨 turn 初诊、事务 Outbox；383/383、build 13/13、CRITICAL 双审查 PASS |
 | `S10-CS-5 ADMIN + ALERTS` | PASS | scrypt+TOTP、权限矩阵、10 天查询、badcase、导出、飞书卡片与 incident；Task 5 130/130、全套 444/444、build 16/16、CRITICAL 双审查 PASS |
-| `S10-CS-6 UI + EVAL + CLOSEOUT` | IN PROGRESS | 双宽浏览器、全量验证、CRITICAL 双审查、知识收尾 |
+| `S10-CS-6 UI + EVAL + CLOSEOUT` | PASS | 17/17 双宽 Mock 浏览器、491/491 零 skip 全套、RAG 正负阈值、17/17 构建、CRITICAL 双审查与知识收口均通过 |
 
 ## Fixed Controls
 
@@ -88,6 +88,7 @@ release_boundary:
 | `S10-E1 GPT models` | PASS | configured endpoint `/models` HTTP 200，13 个模型，选定 `gpt-5.4-mini` |
 | `S10-E2 GPT Responses` | BLOCKED_EXTERNAL | 1 次极短探测未取得 HTTP 响应；未记录正文/payload |
 | `S10-E3 GPT Chat Completions` | BLOCKED_EXTERNAL | 1 次极短探测未取得 HTTP 响应；不再自动跨协议重试 |
+| `S10-E6 GPT integrated smoke` | BLOCKED_CONFIG | 第 3 次且最后一次尝试在 interaction 预留前失败；无 Provider HTTP/延迟/usage 证据，无伪造回答，预算已耗尽 |
 | `S10-E4 Bocha` | BLOCKED_EXTERNAL | 未提供 API key；只允许 Mock/合同验收 |
 | `S10-E5 Feishu` | BLOCKED_EXTERNAL | 未提供 webhook；只允许 Outbox/Mock/合同验收 |
 
@@ -102,6 +103,7 @@ release_boundary:
 | `S10-F5` | CLOSED | 个人事实 veto、非公网 URL、六字段 citation、搜索事务/额度/降级与正负 RAG 阈值通过 |
 | `S10-F6` | CLOSED | 初诊、首次邀请码、两轮故障/恢复、统一安全事件 key、飞书卡片业务应答与 Outbox retry 通过；真实 webhook 仍按外部证据表阻塞 |
 | `S10-F7` | CLOSED | stop/abort/断线只写 10 天 interaction、不扣额度、不写 runtime assistant；12 小时 history 仅恢复已完成会话；事务、补偿与 orphan retry 测试通过 |
+| `S10-F8` | CLOSED | `revolution-pgvector` healthy；491/491、0 fail、0 skip；RAG top1 18/20、top3 20/20，0.45 正负阈值均通过 |
 
 ## Progress Ledger
 
@@ -115,6 +117,8 @@ release_boundary:
 - 2026-07-16：`S10-CS-3` PASS / `S10-CS-4` START。完成确定性 SearchRouter、Bocha one-shot Mock、搜索 claim/finalize 与五次额度、严格公网 HTTPS/六字段 citation、失败/禁用诚实降级和个人事实 veto；`0.45` 本地充分性阈值由冻结的 20 正例/10 负例共同硬门，实测最低正例 `0.4822101`、最高负例 `0.4209749`。`DATABASE_URL=local npm test` 355/355、0 skip，build 13/13，CRITICAL compliance 与 quality/safety correction-cycle-2 均 PASS；真实 Bocha 未调用，保持 `BLOCKED_EXTERNAL`。
 - 2026-07-16：`S10-CS-4` PASS / `S10-CS-5` START。完成 `chat / jd_match / diagnosis` 同主链、2,000/12,000 字合同、跨 turn 五字段合并、受控 prompt 与 workflow/replay 隔离；首次邀请码和初诊通过同事务幂等 Outbox 入队。诊断稳定 id 的 FK 与 deadline 始终推进并复用最新成功 interaction turn；Embedding/实际搜索使用合并摘要，SearchRouter 仅判断字段值，避免“当前状态”标签误触联网。focused 80/80、`DATABASE_URL=local npm test` 383/383、0 skip，build 13/13，CRITICAL compliance correction-cycle-2 与 quality/safety correction-cycle-3 均 PASS。未调用真实 GPT、博查或飞书，未 push/部署。
 - 2026-07-16：`S10-CS-5` PASS / `S10-CS-6` START。完成独立 Admin scrypt+RFC6238 TOTP、全局 counter 防重放、30 分钟 DB idle TTL + 浏览器 Session cookie、Origin/权限矩阵、10 天筛选详情、badcase、fresh-TOTP JSON/CSV 流式导出与公式防护；邀请码来源 abuse、管理员锁定、Provider/Search incident 和事务 Outbox 统一稳定 key。飞书 custom webhook 改为白名单 `interactive` 卡片并按官方 `code === 0` 判断业务成功，HTTP 200 业务错误、畸形响应、timeout、lease 和 bounded retry 均覆盖；投递边界诚实冻结为至少一次。Task 5 affected 130/130、`DATABASE_URL=local npm test` 444/444、0 skip，build 16/16，diff/secret scan 与 CRITICAL compliance、quality/safety 双审查 PASS。真实 GPT、博查、飞书均未调用，未 push/部署。
+- 2026-07-16：`S10-CS-6` 进入 VERIFY BLOCKED。完成访客三 workflow、真实 Abort stop、原位 retry、12 小时 history、阶段状态、来源分组、独立 `/admin` 壳与双端管理 UI；离线 `chat:eval` 53/53、externalCalls 0；本地 CPU BGE 重摄取 9 documents/10 chunks、第二轮 9/9 skip，RAG top1 18/20、top3 20/20，最低正例 0.460884、最高负例 0.420975；Task 6 无子进程合同 74/74、PostgreSQL RAG 3/3、Mock production API 主链和 Admin 操作 PASS，build 17/17，diff/secret scan PASS。CRITICAL quality/safety 审查发现并修复 browser harness 在移动授权截图前提前过期 Session 的 blocker，新顺序合同 8/8。当前沙箱禁止 Node/Python 子进程，且内置浏览器拒绝本地验收 URL，故 `visual:s10`、四张截图、console/overflow 与当前 Task 6 零 skip 全套仍未验收；未 commit、未 push、未部署。
+- 2026-07-17：`visual:s10` 在一次性 production + Mock OpenAI/Bocha + disposable pgvector 环境通过 17/17，生成四张授权态 1440/390 截图，overflow、console error、page error 均为 0；内置浏览器实页复验三 workflow 与双宽布局通过。CRITICAL compliance 发现并关闭 Admin CSV 落入证据目录的 blocker，下载改用受控系统临时目录并在 `finally` 清理；两份空的 ignored E2E 日志一并精确删除。第三次真实 GPT 集成 smoke 搜索关闭，在 interaction 预留前失败并记为 `BLOCKED_CONFIG`，三次预算耗尽；未调用真实博查/飞书。恢复既有 `revolution-pgvector` 后，显式本地 `DATABASE_URL` 的全量测试为 491/491、0 fail、0 skip；CPU BGE `rag:eval` 为 top1 18/20、top3 20/20，最低正例 0.460884、最高负例 0.420975，0.45 正负阈值均通过。结合 `chat:eval` 53/53、externalCalls 0、build 17/17、diff/secret scan 与 CRITICAL 双审查，S10 达到 `LOCAL_READY` 并完成 `KNOWLEDGE_RECONCILED`；未 push、未部署。
 
 ## Preauthorization Matrix
 
@@ -123,7 +127,7 @@ release_boundary:
 | 本地文件/测试/构建 | allowed |
 | 本地 PostgreSQL 既有项目容器 | inspect/start/migrate/test allowed；只清理本轮测试行 |
 | 本地 BGE | 复用既有环境，loopback start/eval allowed；禁止安装新包 |
-| 中转 GPT | 总计 3 次；已用 2，Mock PASS 后最多 1 次；同类失败立即停 |
+| 中转 GPT | 总计 3 次且已全部使用；第三次为 `BLOCKED_CONFIG`，禁止继续自动调用 |
 | 博查 / 飞书 | 凭据缺失，真实调用 forbidden；Mock allowed |
 | 依赖安装 | forbidden；本轮零新增依赖 |
 | Git commit | allowed，必须精确 stage，排除 AGENTS.md 与未知文件 |

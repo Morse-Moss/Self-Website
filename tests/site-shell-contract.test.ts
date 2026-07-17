@@ -4,8 +4,10 @@ import path from 'node:path';
 import { test } from 'node:test';
 
 const layoutPath = path.resolve('app/layout.tsx');
-const worksLayoutPath = path.resolve('app/works/layout.tsx');
-const pagePath = path.resolve('app/page.tsx');
+const portfolioLayoutPath = path.resolve('app/(portfolio)/layout.tsx');
+const worksLayoutPath = path.resolve('app/(portfolio)/works/layout.tsx');
+const pagePath = path.resolve('app/(portfolio)/page.tsx');
+const adminLayoutPath = path.resolve('app/admin/layout.tsx');
 const obsoleteShellPath = path.resolve('components/site/SiteShell.tsx');
 const headerPath = path.resolve('components/site/SiteHeader.tsx');
 const footerPath = path.resolve('components/site/SiteFooter.tsx');
@@ -33,15 +35,27 @@ function readRule(source: string, selector: string): string {
   return rule;
 }
 
-test('root layout owns the persistent visual shell and global resume surface', () => {
+test('root layout owns only global document metadata and styles', () => {
   const layout = readSource(layoutPath);
 
   assert.match(layout, /import\s+\{\s*siteContent\s*\}\s+from\s+["']@\/lib\/site-content["']/);
   assert.match(layout, /title:\s*siteContent\.site\.name/);
   assert.match(layout, /description:\s*siteContent\.site\.description/);
+  assert.match(layout, /import\s+["']\.\/globals\.css["']/);
+  assert.match(layout, /<html\s+lang=["']zh-CN["'][^>]*>/);
+  assert.match(layout, /<body>\s*\{children\}\s*<\/body>/s);
+  assert.doesNotMatch(layout, /s3-content/);
+  assert.doesNotMatch(
+    layout,
+    /MorseSignalCanvas|ScrollEffects|SiteHeader|SiteFooter|ResumeSheet|resume-mode-boot|data-standard-content/,
+  );
+});
+
+test('portfolio layout owns the persistent public shell and resume surface', () => {
+  const layout = readSource(portfolioLayoutPath);
+
   assert.match(layout, /siteContent\.site\.resumeMode\.storageKey/);
   assert.match(layout, /siteContent\.site\.resumeMode\.bodyClass/);
-  assert.doesNotMatch(layout, /s3-content/);
   assert.doesNotMatch(layout, /import\s+SiteShell|<SiteShell/);
 
   assert.equal(count(layout, /<MorseSignalCanvas\s*\/>/g), 1);
@@ -60,6 +74,7 @@ test('root layout owns the persistent visual shell and global resume surface', (
 test('route trees do not duplicate the global shell and each route keeps one chat presentation', () => {
   const page = readSource(pagePath);
   const worksLayout = readSource(worksLayoutPath);
+  const adminLayout = readSource(adminLayoutPath);
 
   assert.equal(fs.existsSync(obsoleteShellPath), false);
   assert.doesNotMatch(page, /<ResumeModeToggle\b|<ResumeSheet\b|<ScrollEffects\b|<SiteFooter\b/);
@@ -69,6 +84,10 @@ test('route trees do not duplicate the global shell and each route keeps one cha
   assert.match(worksLayout, /import MorseChat from ['"]@\/components\/MorseChat['"]/);
   assert.equal(count(worksLayout, /<MorseChat\s*\/>/g), 1);
   assert.match(worksLayout, /<>\s*\{children\}\s*<MorseChat\s*\/>\s*<\/>/s);
+  assert.doesNotMatch(
+    adminLayout,
+    /MorseSignalCanvas|ScrollEffects|SiteHeader|SiteFooter|ResumeSheet|MorseChat|data-standard-content/,
+  );
 });
 
 test('persistent ScrollEffects uses one native observer and rebuilds for each pathname', () => {

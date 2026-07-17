@@ -56,3 +56,21 @@ test('local evidence sufficiency rejects a non-empty low-similarity retrieval', 
   assert.equal(hasSufficientLocalEvidence(matching), true);
   assert.equal(hasSufficientLocalEvidence(unrelated), false);
 });
+
+test('retrieveKnowledge returns at most one citation per public document', {
+  skip: !pool,
+}, async () => {
+  const stored = await pool!.query<{ embedding: string }>(
+    `SELECT embedding::text AS embedding
+       FROM knowledge_chunks
+      WHERE document_id = 'about'
+      ORDER BY ordinal DESC
+      LIMIT 1`,
+  );
+  const query = JSON.parse(stored.rows[0].embedding) as number[];
+  const sources = await retrieveKnowledge(pool!, query, 5);
+  const documentIds = sources.map((source) => source.documentId);
+
+  assert.equal(sources[0].documentId, 'about');
+  assert.equal(new Set(documentIds).size, documentIds.length);
+});

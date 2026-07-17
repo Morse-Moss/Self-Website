@@ -11,7 +11,12 @@ import {
   EMBEDDING_DIMENSIONS,
   serializeVector,
 } from '../lib/server/embedding.ts';
-import { chunkKnowledge, knowledgeChecksum, stableChunkId } from '../lib/server/knowledge.ts';
+import {
+  chunkKnowledge,
+  knowledgeChecksum,
+  knowledgeChunkOptions,
+  stableChunkId,
+} from '../lib/server/knowledge.ts';
 import { extractPublicKnowledge } from '../lib/server/public-knowledge.ts';
 
 const { Client } = pg;
@@ -70,7 +75,8 @@ try {
   await client.query('BEGIN');
 
   for (const document of documents) {
-    const checksum = knowledgeChecksum(document, embeddingSignature);
+    const chunkOptions = knowledgeChunkOptions(document.id);
+    const checksum = knowledgeChecksum(document, embeddingSignature, chunkOptions);
     const existing = await client.query(
       'SELECT checksum FROM knowledge_documents WHERE id = $1',
       [document.id],
@@ -81,7 +87,7 @@ try {
       continue;
     }
 
-    const chunks = chunkKnowledge(document.content, { maxChars: 900, overlapChars: 120 });
+    const chunks = chunkKnowledge(document.content, chunkOptions);
     const embeddings = await embed(chunks);
 
     await client.query(

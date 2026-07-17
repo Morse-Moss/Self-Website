@@ -20,7 +20,7 @@ registerHooks({
 });
 
 const { NextRequest } = await import('next/server.js');
-const { getChatHistoryResponse } = await import('../app/api/chat/history/route.ts');
+const { getChatHistoryResponse } = await import('../lib/server/chat-history-route.ts');
 
 const { Pool } = pg;
 const connectionString = process.env.DATABASE_URL;

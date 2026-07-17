@@ -6,8 +6,8 @@ import { fileURLToPath } from 'node:url';
 import OpenAI from 'openai';
 import pg from 'pg';
 
-import { EMBEDDING_DIMENSIONS, serializeVector } from '../lib/server/embedding.ts';
-import { LOCAL_EVIDENCE_MIN_SCORE } from '../lib/server/rag.ts';
+import { EMBEDDING_DIMENSIONS } from '../lib/server/embedding.ts';
+import { LOCAL_EVIDENCE_MIN_SCORE, retrieveKnowledge } from '../lib/server/rag.ts';
 
 const { Client } = pg;
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -47,24 +47,16 @@ try {
       dimensions: EMBEDDING_DIMENSIONS,
       encoding_format: 'float',
     });
-    const queryVector = serializeVector(response.data[0].embedding);
-    const retrieved = await db.query(
-      `SELECT document_id, metadata->>'title' AS title,
-              1 - (embedding <=> $1::vector) AS score
-         FROM knowledge_chunks
-        ORDER BY embedding <=> $1::vector
-        LIMIT 3`,
-      [queryVector],
-    );
-    const ids = retrieved.rows.map((row) => row.document_id);
+    const retrieved = await retrieveKnowledge(db, response.data[0].embedding, 3);
+    const ids = retrieved.map((row) => row.documentId);
 
     results.push({
       query: goldCase.query,
       expectedDocumentId: goldCase.expectedDocumentId,
       top1: ids[0] === goldCase.expectedDocumentId,
       top3: ids.includes(goldCase.expectedDocumentId),
-      retrieved: retrieved.rows.map((row) => ({
-        documentId: row.document_id,
+      retrieved: retrieved.map((row) => ({
+        documentId: row.documentId,
         title: row.title,
         score: Number(row.score),
       })),
@@ -77,20 +69,12 @@ try {
       dimensions: EMBEDDING_DIMENSIONS,
       encoding_format: 'float',
     });
-    const queryVector = serializeVector(response.data[0].embedding);
-    const retrieved = await db.query(
-      `SELECT document_id, metadata->>'title' AS title,
-              1 - (embedding <=> $1::vector) AS score
-         FROM knowledge_chunks
-        ORDER BY embedding <=> $1::vector
-        LIMIT 3`,
-      [queryVector],
-    );
+    const retrieved = await retrieveKnowledge(db, response.data[0].embedding, 3);
     negativeResults.push({
       query: negativeCase.query,
-      topScore: Number(retrieved.rows[0]?.score ?? Number.NEGATIVE_INFINITY),
-      retrieved: retrieved.rows.map((row) => ({
-        documentId: row.document_id,
+      topScore: Number(retrieved[0]?.score ?? Number.NEGATIVE_INFINITY),
+      retrieved: retrieved.map((row) => ({
+        documentId: row.documentId,
         title: row.title,
         score: Number(row.score),
       })),
