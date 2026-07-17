@@ -16,8 +16,27 @@ const providerConfig = {
 };
 
 async function* fakeResponseStream() {
-  yield { type: 'response.output_text.delta' as const, delta: 'Hello' };
-  yield { type: 'response.output_text.delta' as const, delta: ' Morse' };
+  yield {
+    type: 'response.output_text.delta' as const,
+    delta: 'Hello',
+    item_id: 'msg_1',
+    output_index: 0,
+    content_index: 0,
+  };
+  yield {
+    type: 'response.output_text.delta' as const,
+    delta: ' Morse',
+    item_id: 'msg_1',
+    output_index: 0,
+    content_index: 0,
+  };
+  yield {
+    type: 'response.output_text.done' as const,
+    text: 'Hello Morse',
+    item_id: 'msg_1',
+    output_index: 0,
+    content_index: 0,
+  };
   yield {
     type: 'response.completed' as const,
     response: { usage: { input_tokens: 120, output_tokens: 30, total_tokens: 150 } },
@@ -101,6 +120,13 @@ test('OpenAIProvider sends safe Responses options and preserves missing usage', 
         responseBody = body;
         responseOptions = options;
         return (async function* () {
+          yield {
+            type: 'response.output_text.delta' as const,
+            delta: 'Hello',
+            item_id: 'msg_1',
+            output_index: 0,
+            content_index: 0,
+          };
           yield { type: 'response.completed' as const, response: {} };
         })();
       },
@@ -127,7 +153,10 @@ test('OpenAIProvider sends safe Responses options and preserves missing usage', 
     store: false,
   });
   assert.ok(responseOptions?.signal);
-  assert.deepEqual(events, [{ type: 'done', usage: null }]);
+  assert.deepEqual(events, [
+    { type: 'delta', text: 'Hello' },
+    { type: 'done', usage: null },
+  ]);
 });
 
 test('OpenAIProvider streams Chat Completions without falling back to Responses', async () => {
@@ -292,7 +321,12 @@ test('OpenAIProvider retries one empty incomplete Responses attempt before emitt
         createCalls += 1;
         if (createCalls === 1) {
           return (async function* () {
-            yield { type: 'response.incomplete' as const, response: {} };
+            yield {
+              type: 'response.incomplete' as const,
+              response: {
+                usage: { input_tokens: 15, output_tokens: 5, total_tokens: 20 },
+              },
+            };
           })();
         }
         return fakeResponseStream();
@@ -311,6 +345,292 @@ test('OpenAIProvider retries one empty incomplete Responses attempt before emitt
   }
 
   assert.equal(createCalls, 2);
+  assert.deepEqual(events, [
+    { type: 'delta', text: 'Hello' },
+    { type: 'delta', text: ' Morse' },
+    { type: 'done', usage: { inputTokens: 135, outputTokens: 35 } },
+  ]);
+});
+
+test('OpenAIProvider retries two empty completed Responses attempts and accounts for their usage', async () => {
+  let createCalls = 0;
+  const provider = new OpenAIProvider({
+    responses: {
+      create: async () => {
+        createCalls += 1;
+        if (createCalls <= 2) {
+          return (async function* () {
+            yield {
+              type: 'response.completed' as const,
+              response: {
+                usage: { input_tokens: 15, output_tokens: 5, total_tokens: 20 },
+              },
+            };
+          })();
+        }
+        return fakeResponseStream();
+      },
+    },
+  }, {
+    embeddings: { create: async () => ({ data: [] }) },
+  }, providerConfig);
+
+  const events = [];
+  for await (const event of provider.streamAnswer({
+    instructions: 'Use evidence only.',
+    messages: [{ role: 'user', content: 'Hello' }],
+  })) {
+    events.push(event);
+  }
+
+  assert.equal(createCalls, 3);
+  assert.deepEqual(events, [
+    { type: 'delta', text: 'Hello' },
+    { type: 'delta', text: ' Morse' },
+    { type: 'done', usage: { inputTokens: 150, outputTokens: 40 } },
+  ]);
+});
+
+test('OpenAIProvider retries a transient HTTP failure only before output starts', async () => {
+  let createCalls = 0;
+  const provider = new OpenAIProvider({
+    responses: {
+      create: async () => {
+        createCalls += 1;
+        if (createCalls === 1) {
+          throw Object.assign(new Error('private gateway payload'), { status: 502 });
+        }
+        return fakeResponseStream();
+      },
+    },
+  }, {
+    embeddings: { create: async () => ({ data: [] }) },
+  }, providerConfig);
+
+  const events = [];
+  for await (const event of provider.streamAnswer({
+    instructions: 'Use evidence only.',
+    messages: [{ role: 'user', content: 'Hello' }],
+  })) {
+    events.push(event);
+  }
+
+  assert.equal(createCalls, 2);
+  assert.deepEqual(events, [
+    { type: 'delta', text: 'Hello' },
+    { type: 'delta', text: ' Morse' },
+    { type: 'done', usage: { inputTokens: 120, outputTokens: 30 } },
+  ]);
+});
+
+test('OpenAIProvider retries every supported transient HTTP status before output starts', async () => {
+  for (const status of [408, 409, 429, 500, 599]) {
+    let createCalls = 0;
+    const provider = new OpenAIProvider({
+      responses: {
+        create: async () => {
+          createCalls += 1;
+          if (createCalls === 1) {
+            throw Object.assign(new Error('private transient payload'), { status });
+          }
+          return fakeResponseStream();
+        },
+      },
+    }, {
+      embeddings: { create: async () => ({ data: [] }) },
+    }, providerConfig);
+
+    const events = [];
+    for await (const event of provider.streamAnswer({
+      instructions: 'Use evidence only.',
+      messages: [{ role: 'user', content: 'Hello' }],
+    })) {
+      events.push(event);
+    }
+
+    assert.equal(createCalls, 2, `status ${status} should be retried once`);
+    assert.equal(events.at(-1)?.type, 'done');
+  }
+});
+
+test('OpenAIProvider never retries a transient HTTP failure after partial output', async () => {
+  let createCalls = 0;
+  const provider = new OpenAIProvider({
+    responses: {
+      create: async () => {
+        createCalls += 1;
+        return (async function* () {
+          yield {
+            type: 'response.output_text.delta' as const,
+            delta: 'Partial',
+            item_id: 'msg_1',
+            output_index: 0,
+            content_index: 0,
+          };
+          throw Object.assign(new Error('private gateway payload'), { status: 502 });
+        })();
+      },
+    },
+  }, {
+    embeddings: { create: async () => ({ data: [] }) },
+  }, providerConfig);
+  const iterator = provider.streamAnswer({
+    instructions: 'Use evidence only.',
+    messages: [{ role: 'user', content: 'Hello' }],
+  })[Symbol.asyncIterator]();
+
+  assert.deepEqual(await iterator.next(), {
+    done: false,
+    value: { type: 'delta', text: 'Partial' },
+  });
+  await assert.rejects(iterator.next(), (error: unknown) => (
+    (error as { code?: string }).code === 'PROVIDER_UNAVAILABLE'
+  ));
+  assert.equal(createCalls, 1);
+});
+
+test('OpenAIProvider stops after three empty completed attempts', async () => {
+  let createCalls = 0;
+  const provider = new OpenAIProvider({
+    responses: {
+      create: async () => {
+        createCalls += 1;
+        return (async function* () {
+          yield { type: 'response.completed' as const, response: {} };
+        })();
+      },
+    },
+  }, {
+    embeddings: { create: async () => ({ data: [] }) },
+  }, providerConfig);
+  const iterator = provider.streamAnswer({
+    instructions: 'Use evidence only.',
+    messages: [{ role: 'user', content: 'Hello' }],
+  })[Symbol.asyncIterator]();
+
+  await assert.rejects(iterator.next(), (error: unknown) => (
+    (error as { code?: string }).code === 'PROVIDER_RESPONSE_INCOMPLETE'
+  ));
+  assert.equal(createCalls, 3);
+});
+
+test('OpenAIProvider does not retry a permanent HTTP failure', async () => {
+  let createCalls = 0;
+  const provider = new OpenAIProvider({
+    responses: {
+      create: async () => {
+        createCalls += 1;
+        throw Object.assign(new Error('private request payload'), { status: 400 });
+      },
+    },
+  }, {
+    embeddings: { create: async () => ({ data: [] }) },
+  }, providerConfig);
+  const iterator = provider.streamAnswer({
+    instructions: 'Use evidence only.',
+    messages: [{ role: 'user', content: 'Hello' }],
+  })[Symbol.asyncIterator]();
+
+  await assert.rejects(iterator.next(), (error: unknown) => (
+    (error as { code?: string }).code === 'PROVIDER_UNAVAILABLE'
+    && !(error as Error).message.includes('private request payload')
+  ));
+  assert.equal(createCalls, 1);
+});
+
+test('OpenAIProvider restores every finalized Responses text part and suppresses duplicates', async () => {
+  const provider = new OpenAIProvider({
+    responses: {
+      create: async () => (async function* () {
+        yield {
+          type: 'response.output_text.done' as const,
+          text: 'Hello',
+          item_id: 'msg_1',
+          output_index: 0,
+          content_index: 0,
+        };
+        yield {
+          type: 'response.output_text.done' as const,
+          text: ' Morse',
+          item_id: 'msg_2',
+          output_index: 1,
+          content_index: 0,
+        };
+        yield {
+          type: 'response.output_text.done' as const,
+          text: 'Hello',
+          item_id: 'msg_1',
+          output_index: 0,
+          content_index: 0,
+        };
+        yield {
+          type: 'response.completed' as const,
+          response: { usage: { input_tokens: 120, output_tokens: 30, total_tokens: 150 } },
+        };
+      })(),
+    },
+  }, {
+    embeddings: { create: async () => ({ data: [] }) },
+  }, providerConfig);
+
+  const events = [];
+  for await (const event of provider.streamAnswer({
+    instructions: 'Use evidence only.',
+    messages: [{ role: 'user', content: 'Hello' }],
+  })) {
+    events.push(event);
+  }
+
+  assert.deepEqual(events, [
+    { type: 'delta', text: 'Hello' },
+    { type: 'delta', text: ' Morse' },
+    { type: 'done', usage: { inputTokens: 120, outputTokens: 30 } },
+  ]);
+});
+
+test('OpenAIProvider restores a done-only part after a different part streamed deltas', async () => {
+  const provider = new OpenAIProvider({
+    responses: {
+      create: async () => (async function* () {
+        yield {
+          type: 'response.output_text.delta' as const,
+          delta: 'Hello',
+          item_id: 'msg_1',
+          output_index: 0,
+          content_index: 0,
+        };
+        yield {
+          type: 'response.output_text.done' as const,
+          text: 'Hello',
+          item_id: 'msg_1',
+          output_index: 0,
+          content_index: 0,
+        };
+        yield {
+          type: 'response.output_text.done' as const,
+          text: ' Morse',
+          item_id: 'msg_2',
+          output_index: 1,
+          content_index: 0,
+        };
+        yield {
+          type: 'response.completed' as const,
+          response: { usage: { input_tokens: 120, output_tokens: 30, total_tokens: 150 } },
+        };
+      })(),
+    },
+  }, {
+    embeddings: { create: async () => ({ data: [] }) },
+  }, providerConfig);
+
+  const events = [];
+  for await (const event of provider.streamAnswer({
+    instructions: 'Use evidence only.',
+    messages: [{ role: 'user', content: 'Hello' }],
+  })) {
+    events.push(event);
+  }
+
   assert.deepEqual(events, [
     { type: 'delta', text: 'Hello' },
     { type: 'delta', text: ' Morse' },
@@ -419,6 +739,13 @@ test('OpenAIProvider limits generation across instances and aborts a queued wait
             markFirstStarted();
             await firstReleased;
           }
+          yield {
+            type: 'response.output_text.delta' as const,
+            delta: 'Hello',
+            item_id: `msg_${call}`,
+            output_index: 0,
+            content_index: 0,
+          };
           yield { type: 'response.completed' as const, response: {} };
         })();
       },
@@ -461,10 +788,18 @@ test('OpenAIProvider limits generation across instances and aborts a queued wait
     releaseFirst();
     assert.deepEqual(await guard(firstEvent), {
       done: false,
+      value: { type: 'delta', text: 'Hello' },
+    });
+    assert.deepEqual(await guard(first.next()), {
+      done: false,
       value: { type: 'done', usage: null },
     });
 
     const after = secondProvider.streamAnswer(request)[Symbol.asyncIterator]();
+    assert.deepEqual(await guard(after.next()), {
+      done: false,
+      value: { type: 'delta', text: 'Hello' },
+    });
     assert.deepEqual(await guard(after.next()), {
       done: false,
       value: { type: 'done', usage: null },

@@ -73,7 +73,7 @@ S10 Provider 与对话交互修正已在本地 `master` 真实验收并随本轮
 
 | Pointer | State | Exit evidence |
 |---|---|---|
-| `S10-CX-1 CHAT UX + EMPTY STREAM RECOVERY` | LOCAL_READY | 默认问题直发、思考态、结构化 Markdown、具名依据、空流单次重试；19/19 Mock 浏览器、499/499 零 skip、17/17 构建与真实 `gpt-5.4` turn PASS |
+| `S10-CX-1 CHAT UX + RELAY RECOVERY` | LOCAL_READY | 默认问题直发、思考态、结构化 Markdown、具名依据、done-only 正文恢复与零正文/瞬时 HTTP 最多 3 次总尝试；19/19 Mock 浏览器、507/507 零 skip、17/17 构建与真实 `gpt-5.4` turn PASS |
 
 ## Fixed Controls
 
@@ -100,6 +100,7 @@ S10 Provider 与对话交互修正已在本地 `master` 真实验收并随本轮
 | `S10-E6 GPT integrated smoke` | PASS | 用户重新授权后，`gpt-5.4-mini` Responses 全链 HTTP 200，SSE 到 `done`，数据库 interaction 为 `completed`、延迟 9872ms、未使用搜索；中转未返回 usage，成本保持未知 |
 | `S10-E7 GPT repaired integration` | PASS | 完整浏览器式 User-Agent + `gpt-5.4` 最终直连站内 turn `b8b3ec78-380d-4211-9baa-9633f1847d75`：5 个 RAG 来源、SSE `done`、数据库 `completed`、12546ms、usage 1779/297 |
 | `S10-E8 GPT named-source UX` | PASS | 最新生产构建 turn `92102e75-47d5-47bc-a2da-644105d94ec3`：SSE `done`、数据库 `completed`、15290ms、usage 2612/73；正文显示具名依据，底部只列实际引用资料，无裸 citation/Markdown |
+| `S10-E9 GPT relay recovery` | PASS | 2026-07-18 生产构建 turn `e9d03006-2cbd-40dd-a31c-1cd65c6b6e45`：SSE `done`、数据库 `completed`、19362ms、usage 5766/102；页面正文 174 字、1 个实际引用来源，Provider incident `recovered` |
 | `S10-E4 Bocha` | BLOCKED_EXTERNAL | 未提供 API key；只允许 Mock/合同验收 |
 | `S10-E5 Feishu` | BLOCKED_EXTERNAL | 未提供 webhook；只允许 Outbox/Mock/合同验收 |
 
@@ -115,7 +116,7 @@ S10 Provider 与对话交互修正已在本地 `master` 真实验收并随本轮
 | `S10-F6` | CLOSED | 初诊、首次邀请码、两轮故障/恢复、统一安全事件 key、飞书卡片业务应答与 Outbox retry 通过；真实 webhook 仍按外部证据表阻塞 |
 | `S10-F7` | CLOSED | stop/abort/断线只写 10 天 interaction、不扣额度、不写 runtime assistant；12 小时 history 仅恢复已完成会话；事务、补偿与 orphan retry 测试通过 |
 | `S10-F8` | CLOSED | `revolution-pgvector` healthy；491/491、0 fail、0 skip；RAG top1 18/20、top3 20/20，0.45 正负阈值均通过 |
-| `S10-F9` | CLOSED | 默认问题原位直发；候选、思考、正文与来源按流状态切换；访客不再看到不稳定来源编号；仅 `PROVIDER_RESPONSE_INCOMPLETE` 在零正文时自动重试一次，显式 failed/error 不重试 |
+| `S10-F9` | CLOSED | 默认问题原位直发；候选、思考、正文与来源按流状态切换；访客不再看到不稳定来源编号；done-only 可恢复正文，零正文 incomplete/空完成/明确瞬时 HTTP 最多 3 次总尝试，永久 4xx、显式 failed/error 和部分正文不重试 |
 
 ## Progress Ledger
 
@@ -133,7 +134,7 @@ S10 Provider 与对话交互修正已在本地 `master` 真实验收并随本轮
 - 2026-07-17：`visual:s10` 在一次性 production + Mock OpenAI/Bocha + disposable pgvector 环境通过 17/17，生成四张授权态 1440/390 截图，overflow、console error、page error 均为 0；内置浏览器实页复验三 workflow 与双宽布局通过。CRITICAL compliance 发现并关闭 Admin CSV 落入证据目录的 blocker，下载改用受控系统临时目录并在 `finally` 清理；两份空的 ignored E2E 日志一并精确删除。第三次真实 GPT 集成 smoke 搜索关闭，在 interaction 预留前失败并记为 `BLOCKED_CONFIG`，三次预算耗尽；未调用真实博查/飞书。恢复既有 `revolution-pgvector` 后，显式本地 `DATABASE_URL` 的全量测试为 491/491、0 fail、0 skip；CPU BGE `rag:eval` 为 top1 18/20、top3 20/20，最低正例 0.460884、最高负例 0.420975，0.45 正负阈值均通过。结合 `chat:eval` 53/53、externalCalls 0、build 17/17、diff/secret scan 与 CRITICAL 双审查，S10 达到 `LOCAL_READY` 并完成 `KNOWLEDGE_RECONCILED`；未 push、未部署。
 - 2026-07-17：用户重新授权合并与真实 API 调用。隔离端口关闭搜索后完成 1 次真实 `gpt-5.4-mini` Responses 集成：HTTP 200、SSE 正常到 `done`、5 个站内来源、消息额度 30→29；数据库记录 `completed`、9872ms、`used_search=false`。中转没有返回 token usage，成本保持未知；回答未遵守“一句话”长度要求，作为真实 badcase 观察点保留。联调同时发现 `/api/health` 将 Provider readiness 错绑到可选成本单价，已用失败测试拆分为 `configured` 与 `costConfigured`。
 - 2026-07-17：修复用户实测连续 `PROVIDER_INCOMPLETE`。布尔比对证明运行进程继承了错误项目 Key；本站 Key 配合默认 SDK User-Agent 仍被 WAF 403，而受控兼容 User-Agent 的 `/models` 返回 200。修复时目录快照为 12 个且不含 `gpt-5.4-mini`，因此切换到 `gpt-5.4`；收口前目录已变为 17 个并重新包含两个模型，运行仍固定使用已验收的 `gpt-5.4`，不做隐式模型或协议 fallback。TDD 加入可选安全 User-Agent 配置后，最终直连站内 turn `b8b3ec78-380d-4211-9baa-9633f1847d75` 真实 PASS；全量 493/493、0 skip，build 17/17。
-- 2026-07-17：修复访客实测的默认问题刷新感、等待态候选残留、Markdown 源码、双重编号、模糊 `[来源N]` 与偶发空流失败。具名依据直接绑定本轮资料标题，底部只列正文实际引用项；`PROVIDER_RESPONSE_INCOMPLETE` 在零正文时同协议重试一次，显式 failed/error 不重试。Mock 浏览器 19/19、focused 62/62、PostgreSQL 全量 499/499、build 17/17；真实 turn `92102e75-47d5-47bc-a2da-644105d94ec3` 为 `completed`、15290ms、usage 2612/73。本轮精确提交到本地 `master`，未 push、未部署。
+- 2026-07-18：继续修复真实中转间歇性零正文完成与 502。适配层消费 `response.output_text.done` 作为无 delta 时的正文兜底；仅在零正文且属于空完成/incomplete 或 408/409/429/5xx 时最多 3 次总尝试，永久 4xx、显式 failed/error、超时和部分正文不重试；空完成或 incomplete usage 与最终轮次累加。Provider/流链 40/40、PostgreSQL 全量 507/507、build 17/17；真实 turn `e9d03006-2cbd-40dd-a31c-1cd65c6b6e45` 为 `completed`、19362ms、usage 5766/102，页面正文与具名来源正常，incident `recovered`。未 push、未部署。
 
 ## Preauthorization Matrix
 

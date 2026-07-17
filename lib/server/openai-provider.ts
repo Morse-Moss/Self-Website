@@ -11,13 +11,34 @@ interface EmbeddingResponse {
   data: Array<{ embedding: number[] }>;
 }
 
+interface OpenAIResponseUsage {
+  input_tokens: number;
+  output_tokens: number;
+}
+
 type OpenAIResponseStreamEvent =
-  | { type: 'response.output_text.delta'; delta: string }
+  | {
+      type: 'response.output_text.delta';
+      delta: string;
+      item_id?: string;
+      output_index?: number;
+      content_index?: number;
+    }
+  | {
+      type: 'response.output_text.done';
+      text: string;
+      item_id?: string;
+      output_index?: number;
+      content_index?: number;
+    }
   | {
       type: 'response.completed';
-      response: { usage?: { input_tokens: number; output_tokens: number } | null };
+      response: { usage?: OpenAIResponseUsage | null };
     }
-  | { type: 'response.incomplete'; response?: unknown }
+  | {
+      type: 'response.incomplete';
+      response?: { usage?: OpenAIResponseUsage | null };
+    }
   | { type: 'response.failed'; response?: { error?: { message?: string } | null } }
   | { type: 'error'; message?: string };
 
@@ -70,11 +91,13 @@ export type OpenAIProviderErrorCode =
 
 export class OpenAIProviderError extends Error {
   readonly code: OpenAIProviderErrorCode;
+  readonly usage: TokenUsage | null;
 
-  constructor(code: OpenAIProviderErrorCode) {
+  constructor(code: OpenAIProviderErrorCode, usage: TokenUsage | null = null) {
     super(code);
     this.name = 'OpenAIProviderError';
     this.code = code;
+    this.usage = usage;
   }
 }
 
@@ -92,11 +115,33 @@ export interface OpenAIProviderConfig {
 
 const generationSemaphores = new Map<number, Semaphore>();
 const PROVIDER_STREAM_CLEANUP_GRACE_MS = 100;
-const EMPTY_STREAM_MAX_ATTEMPTS = 2;
+const OUTPUTLESS_MAX_ATTEMPTS = 3;
 
-function isRetryableEmptyStreamError(error: unknown): boolean {
-  if (!(error instanceof OpenAIProviderError)) return false;
-  return error.code === 'PROVIDER_RESPONSE_INCOMPLETE';
+function isRetryableBeforeOutputError(error: unknown): boolean {
+  if (error instanceof OpenAIProviderError) {
+    return error.code === 'PROVIDER_RESPONSE_INCOMPLETE';
+  }
+  if (!error || typeof error !== 'object' || !('status' in error)) return false;
+  const status = (error as { status?: unknown }).status;
+  return typeof status === 'number'
+    && (status === 408 || status === 409 || status === 429 || (status >= 500 && status < 600));
+}
+
+function addTokenUsage(current: TokenUsage | null, next: TokenUsage | null): TokenUsage | null {
+  if (!next) return current;
+  if (!current) return next;
+  return {
+    inputTokens: current.inputTokens + next.inputTokens,
+    outputTokens: current.outputTokens + next.outputTokens,
+  };
+}
+
+function responseTextPartKey(event: {
+  item_id?: string;
+  output_index?: number;
+  content_index?: number;
+}): string {
+  return `${event.item_id ?? ''}:${event.output_index ?? ''}:${event.content_index ?? ''}`;
 }
 
 function getGenerationSemaphore(capacity: number): Semaphore {
@@ -236,7 +281,7 @@ export class OpenAIProvider implements AiProvider {
 
     try {
       release = await this.generationSemaphore.acquire(totalTimeout.signal);
-      for (let attempt = 0; attempt < EMPTY_STREAM_MAX_ATTEMPTS; attempt += 1) {
+      for (let attempt = 0; attempt < OUTPUTLESS_MAX_ATTEMPTS; attempt += 1) {
         const stream = this.config.protocol === 'responses'
           ? this.streamResponses(request, totalTimeout.signal)
           : this.streamChatCompletions(request, totalTimeout.signal);
@@ -248,7 +293,10 @@ export class OpenAIProvider implements AiProvider {
           while (true) {
             const next = await iterator.next();
             if (next.done) {
-              usage = next.value;
+              usage = addTokenUsage(usage, next.value);
+              if (!emittedOutput) {
+                throw new OpenAIProviderError('PROVIDER_RESPONSE_INCOMPLETE');
+              }
               completed = true;
               break;
             }
@@ -257,10 +305,13 @@ export class OpenAIProvider implements AiProvider {
           }
           break;
         } catch (error) {
-          const canRetry = attempt + 1 < EMPTY_STREAM_MAX_ATTEMPTS
+          if (error instanceof OpenAIProviderError) {
+            usage = addTokenUsage(usage, error.usage);
+          }
+          const canRetry = attempt + 1 < OUTPUTLESS_MAX_ATTEMPTS
             && !emittedOutput
             && !totalTimeout.signal.aborted
-            && isRetryableEmptyStreamError(error);
+            && isRetryableBeforeOutputError(error);
           if (!canRetry) throw error;
         } finally {
           if (!completed) await closeIterator(iterator);
@@ -302,15 +353,27 @@ export class OpenAIProvider implements AiProvider {
 
     let completed = false;
     let usage: TokenUsage | null = null;
+    const streamedTextParts = new Set<string>();
 
     for await (const event of stream) {
       if (event.type === 'response.output_text.delta') {
+        if (!event.delta) continue;
+        streamedTextParts.add(responseTextPartKey(event));
         yield { type: 'delta', text: event.delta };
+      } else if (event.type === 'response.output_text.done') {
+        const partKey = responseTextPartKey(event);
+        if (event.text && !streamedTextParts.has(partKey)) {
+          streamedTextParts.add(partKey);
+          yield { type: 'delta', text: event.text };
+        }
       } else if (event.type === 'response.completed') {
         completed = true;
         usage = event.response.usage ? toResponseUsage(event.response.usage) : null;
       } else if (event.type === 'response.incomplete') {
-        throw new OpenAIProviderError('PROVIDER_RESPONSE_INCOMPLETE');
+        const incompleteUsage = event.response?.usage
+          ? toResponseUsage(event.response.usage)
+          : null;
+        throw new OpenAIProviderError('PROVIDER_RESPONSE_INCOMPLETE', incompleteUsage);
       } else if (event.type === 'response.failed') {
         throw new OpenAIProviderError('PROVIDER_RESPONSE_FAILED');
       } else if (event.type === 'error') {

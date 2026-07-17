@@ -19,13 +19,13 @@ S10 Provider 与对话交互修正已在本地 `master` 真实验收并随本轮
 - Cost/safety:无月预算硬门；保留 30 条消息、五次联网、并发、超时、限流、kill switch 和 usage 统计。
 - Contract:`docs/task-center/s10-smart-customer-service.md`;design/plan 位于 `docs/superpowers/{specs,plans}/2026-07-15-s10-smart-customer-service*.md`。
 
-### S10-CX-1 chat UX and empty-stream recovery(2026-07-17)
+### S10-CX-1 chat UX and relay recovery(2026-07-18)
 
-- Root cause:助手正文原样放入单个 `<p>`，默认问题只写入草稿，来源在首个正文 Token 前显示，访客可见引用只暴露每轮重新排序的 `[来源N]`；2026-07-17 的两个失败 turn 均为中转在 2.7s/4.4s 后无任何 delta、usage 或终态的 `PROVIDER_INCOMPLETE`。
-- Code PASS:新增受限消息格式解析，结构化渲染标题、段落、列表、粗体、行内代码、分隔线和引用；默认问题直接发送，候选在提问后消失，空回答显示“数字摩斯正在思考”。引用正文显示“依据：资料标题”，底部只列实际引用的具名站内/联网资料，内部编号不再作为访客文案。当前显式协议仅在 `PROVIDER_RESPONSE_INCOMPLETE` 且尚未输出任何正文时自动重试一次；部分回答、`response.failed` 或 error 终态均不重试。
-- Real Provider PASS:最新生产构建真实 turn `92102e75-47d5-47bc-a2da-644105d94ec3` 使用 `gpt-5.4`，SSE 到 `done`，数据库 `completed`、15290ms、usage 2612/73；页面只显示《数字摩斯》这一实际引用资料，无 `[来源N]`、`**` 或裸 `---`。
-- Verification PASS:focused 62/62；`visual:s10` 19/19，1440x900/390x844、overflow/console/page error 全通过；加载 `.env.local` 的 PostgreSQL 全量测试 499/499、0 fail、0 skip；生产构建 17/17；`/api/health` 为 HTTP 200、database ready、10 chunks、Provider configured。
-- Delivery boundary:改动与本条知识同步随本轮精确提交进入本地 `master`，未 push、未部署；`.env.local` 受 ignore 保护且不含 Provider Key。
+- Root cause:对话 UI 的 Markdown 与来源身份问题已在 2026-07-17 关闭；后续真实故障来自 OpenAI-compatible 中转间歇性返回零正文完成、仅终止文本事件或 502。旧适配只重试 `response.incomplete`，会把零正文 `response.completed` 当成功交给服务层，再被补偿为 `PROVIDER_INCOMPLETE`；非流式同请求实测 502，不能作为可靠 fallback。
+- Code PASS:保留结构化 Markdown、默认问题直发、思考态和具名来源；Responses 在没有 delta 时可从 `response.output_text.done` 恢复正文。尚未输出正文时，空完成/incomplete 和 408/409/429/5xx 在共享总超时内最多 3 次总尝试；永久 4xx、`response.failed/error`、超时和部分正文均不重试。空完成或 incomplete 如返回 usage，会与最终成功轮次累加，避免中转重试成本漏记。
+- Real Provider PASS:生产构建真实 turn `e9d03006-2cbd-40dd-a31c-1cd65c6b6e45` 使用 `gpt-5.4`，SSE 到 `done`，数据库 `completed`、19362ms、usage 5766/102；数据库保留 5 个检索来源，页面正文 174 字并只显示 1 个实际引用的具名来源，重试按钮消失，Provider incident 为 `recovered`。
+- Verification PASS:Provider/流链 focused 40/40；`visual:s10` 既有 19/19 仍有效且本轮无 UI 改动；加载 `.env.local` 的 PostgreSQL 全量测试 507/507、0 fail、0 skip；生产构建 17/17；`/api/health` 为 HTTP 200、database ready、10 chunks、Provider configured。测试邀请码和 disposable 数据库残留均为 0。
+- Delivery boundary:改动与本条知识同步在本地 `master` 收口，未 push、未部署；`.env.local` 受 ignore 保护且不含 Provider Key。
 
 ### S10-CS-6 UI/eval verification evidence(2026-07-17)
 
