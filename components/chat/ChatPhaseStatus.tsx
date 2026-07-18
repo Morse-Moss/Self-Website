@@ -1,4 +1,4 @@
-import type { ChatPhase, DiagnosisStatus } from './useMorseChat';
+import type { ChatPhase, DiagnosisUiStatus } from '@/lib/contracts/chat';
 
 import styles from '../MorseChat.module.css';
 
@@ -15,7 +15,7 @@ export default function ChatPhaseStatus({
   diagnosisStatus,
 }: {
   phase: ChatPhase | null;
-  diagnosisStatus: DiagnosisStatus;
+  diagnosisStatus: DiagnosisUiStatus;
 }) {
   const visiblePhase: ChatPhase | null = phase
     ?? (diagnosisStatus === 'handoff_pending' ? 'handoff' : null);

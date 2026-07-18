@@ -1,15 +1,21 @@
 import type { Pool } from 'pg';
 
-import { sanitizeTurnSources, type TurnSource } from './turn-codec.ts';
+import {
+  CHAT_WORKFLOWS,
+  type ChatAudienceIntent,
+  type ChatSource,
+  type ChatWorkflow,
+} from '../contracts/chat.ts';
+import { sanitizeTurnSources } from './turn-codec.ts';
 
-const WORKFLOWS = ['chat', 'jd_match', 'diagnosis'] as const;
+const WORKFLOWS = CHAT_WORKFLOWS;
 const STATUSES = ['running', 'completed', 'stopped', 'failed'] as const;
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
 const MAX_ADMIN_NOTE_LENGTH = 2_000;
 
-type Workflow = (typeof WORKFLOWS)[number];
+type Workflow = ChatWorkflow;
 type TurnStatus = (typeof STATUSES)[number];
 type BooleanFilter = boolean | string | null | undefined;
 type DateFilter = Date | string | null | undefined;
@@ -42,12 +48,12 @@ export interface AdminTurn {
   accessSessionId: string;
   conversationId: string | null;
   workflow: Workflow;
-  audienceIntent: string;
+  audienceIntent: ChatAudienceIntent;
   question: string;
   answer: string | null;
   status: TurnStatus;
   errorCode: string | null;
-  knowledgeSources: TurnSource[];
+  knowledgeSources: ChatSource[];
   inputTokens: number | null;
   outputTokens: number | null;
   estimatedCostUsd: number | null;
@@ -94,7 +100,7 @@ interface AdminTurnRow {
   access_session_id: string;
   conversation_id: string | null;
   workflow: Workflow;
-  audience_intent: string;
+  audience_intent: ChatAudienceIntent;
   question: string;
   answer: string | null;
   status: TurnStatus;

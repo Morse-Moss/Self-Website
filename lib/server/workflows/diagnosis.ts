@@ -1,21 +1,16 @@
-export const DIAGNOSIS_FIELD_NAMES = [
-  'problem',
-  'goal',
-  'currentState',
-  'constraints',
-  'expectedTimeline',
-] as const;
+import {
+  DIAGNOSIS_FIELD_NAMES,
+  type DiagnosisFieldName,
+  type DiagnosisFields,
+  type DiagnosisStatus,
+} from '../../contracts/chat.ts';
 
-export type DiagnosisFieldName = typeof DIAGNOSIS_FIELD_NAMES[number];
-export type DiagnosisStatus = 'collecting' | 'complete' | 'handoff_pending';
-
-export interface DiagnosisFields {
-  problem: string;
-  goal: string;
-  currentState: string;
-  constraints: string;
-  expectedTimeline: string;
-}
+export { DIAGNOSIS_FIELD_NAMES } from '../../contracts/chat.ts';
+export type {
+  DiagnosisFieldName,
+  DiagnosisFields,
+  DiagnosisStatus,
+} from '../../contracts/chat.ts';
 
 export interface DiagnosisTransitionInput {
   fields: DiagnosisFields;

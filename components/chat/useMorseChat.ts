@@ -8,30 +8,28 @@ import {
   publicErrorMessage,
 } from '@/lib/client/chat-errors';
 import { readChatSse, type ChatSsePayload } from '@/lib/client/chat-sse';
+import {
+  CHAT_PHASES,
+  type ChatAudienceIntent,
+  type ChatHistoryPayload,
+  type ChatMode,
+  type ChatPhase,
+  type ChatSource,
+  type ChatWorkflow,
+  type DiagnosisFields,
+  type DiagnosisUiStatus,
+} from '@/lib/contracts/chat';
 
 export type AccessState = 'checking' | 'locked' | 'authorized';
-export type ChatMode = 'general' | 'interviewer';
-export type ChatAudienceIntent = 'general' | 'recruiter' | 'collaboration' | 'peer';
-export type ChatWorkflow = 'chat' | 'jd_match' | 'diagnosis';
-export type ChatPhase = 'routing' | 'knowledge' | 'web' | 'answering' | 'handoff';
-export type DiagnosisStatus = 'idle' | 'collecting' | 'handoff_pending';
-
-export interface DiagnosisFields {
-  problem: string;
-  goal: string;
-  currentState: string;
-  constraints: string;
-  expectedTimeline: string;
-}
-
-export interface ChatSource {
-  id: string;
-  title: string;
-  href: string;
-  kind: 'local' | 'official' | 'github' | 'web';
-  domain: string | null;
-  score: number | null;
-}
+export type {
+  ChatAudienceIntent,
+  ChatMode,
+  ChatPhase,
+  ChatSource,
+  ChatWorkflow,
+  DiagnosisFields,
+} from '@/lib/contracts/chat';
+export type DiagnosisStatus = DiagnosisUiStatus;
 
 export interface ChatRequestSnapshot {
   workflow: ChatWorkflow;
@@ -56,28 +54,8 @@ export interface ChatMessage {
   diagnosisStatus?: DiagnosisStatus;
 }
 
-interface StreamPayload extends ChatSsePayload {
-  conversationId?: string;
-  sources?: ChatSource[];
-  text?: string;
-  stage?: ChatPhase;
-  remainingMessages?: number;
-}
-
-interface HistoryPayload {
-  ok?: boolean;
-  conversationId: string | null;
-  workflow: ChatWorkflow | null;
-  audienceIntent: ChatAudienceIntent | null;
-  messages: Array<{
-    role: 'user' | 'assistant';
-    turnId: string | null;
-    text: string;
-    sources: ChatSource[];
-  }>;
-  remainingMessages: number;
-  error?: string;
-}
+type StreamPayload = ChatSsePayload;
+type HistoryPayload = ChatHistoryPayload;
 
 const emptyDiagnosis: DiagnosisFields = {
   problem: '',
@@ -87,13 +65,7 @@ const emptyDiagnosis: DiagnosisFields = {
   expectedTimeline: '',
 };
 
-const validPhases: Record<ChatPhase, true> = {
-  routing: true,
-  knowledge: true,
-  web: true,
-  answering: true,
-  handoff: true,
-};
+const validPhases = new Set<ChatPhase>(CHAT_PHASES);
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError';
@@ -349,7 +321,7 @@ export function useMorseChat() {
       }
 
       await readChatSse<StreamPayload>(response, (event, payload) => {
-        if (event === 'status' && payload.stage && validPhases[payload.stage]) {
+        if (event === 'status' && payload.stage && validPhases.has(payload.stage)) {
           setPhase(payload.stage);
           if (payload.stage === 'handoff') {
             setDiagnosisStatus('handoff_pending');

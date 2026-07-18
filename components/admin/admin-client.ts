@@ -1,4 +1,10 @@
-export type AdminWorkflow = 'chat' | 'jd_match' | 'diagnosis';
+import type {
+  ChatAudienceIntent,
+  ChatSource,
+  ChatWorkflow,
+} from '@/lib/contracts/chat';
+
+export type AdminWorkflow = ChatWorkflow;
 export type AdminTurnStatus = 'running' | 'completed' | 'stopped' | 'failed';
 export type AdminExportFormat = 'json' | 'csv';
 
@@ -13,21 +19,14 @@ export interface AdminFilters {
   limit: number;
 }
 
-export interface AdminSource {
-  id: string;
-  title: string;
-  href: string;
-  kind: 'local' | 'official' | 'github' | 'web';
-  domain: string | null;
-  score: number | null;
-}
+export type AdminSource = ChatSource;
 
 export interface AdminTurnSummary {
   id: string;
   accessSessionId: string;
   conversationId: string | null;
   workflow: AdminWorkflow;
-  audienceIntent: string;
+  audienceIntent: ChatAudienceIntent;
   question: string;
   answer: string | null;
   status: AdminTurnStatus;

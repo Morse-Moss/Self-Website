@@ -2,17 +2,24 @@ import { createHash, randomUUID } from 'node:crypto';
 
 import type { Pool, PoolClient } from 'pg';
 
+import type {
+  BudgetLevel,
+  ChatAudienceIntent,
+  ChatMode,
+  ChatServiceErrorCode,
+  ChatServiceEvent,
+  ChatSource,
+  ChatWorkflow,
+  TokenUsage,
+} from '../contracts/chat.ts';
 import type { AiMessage, AiProvider, AnswerEvent } from './ai-provider.ts';
 import { enqueueAlert } from './alert-service.ts';
 import {
   estimateCostUsd,
-  type BudgetLevel,
   type TokenRates,
-  type TokenUsage,
 } from './budget.ts';
 import {
   buildSystemInstructions,
-  type ChatWorkflow,
   type NormalizedChatRequest,
 } from './chat-core.ts';
 import {
@@ -47,7 +54,6 @@ import { OperationTimeoutError } from './timeout.ts';
 import {
   decodeTurnMessage,
   encodeTurnMessage,
-  type TurnSource,
 } from './turn-codec.ts';
 import {
   DIAGNOSIS_FIELD_NAMES,
@@ -61,15 +67,7 @@ import {
 } from './workflows/diagnosis.ts';
 import { buildJdMatchPrompt } from './workflows/jd-match.ts';
 
-export type ChatServiceErrorCode =
-  | 'SESSION_INVALID'
-  | 'MESSAGE_LIMIT'
-  | 'CONVERSATION_INVALID'
-  | 'CONVERSATION_MODE_MISMATCH'
-  | 'CONVERSATION_BUSY'
-  | 'RETRIEVAL_UNAVAILABLE'
-  | 'PROVIDER_UNAVAILABLE'
-  | 'PROVIDER_INCOMPLETE';
+export type { ChatServiceErrorCode, ChatServiceEvent } from '../contracts/chat.ts';
 
 export class ChatServiceError extends Error {
   readonly code: ChatServiceErrorCode;
@@ -93,24 +91,7 @@ export interface ChatServiceConfig {
   model?: string;
 }
 
-export type PublicChatSource = TurnSource;
-
-export type ChatServiceEvent =
-  | { type: 'status'; stage: 'routing' | 'knowledge' | 'web' | 'answering' | 'handoff' }
-  | {
-      type: 'meta';
-      conversationId: string;
-      budgetLevel: BudgetLevel;
-      sources: PublicChatSource[];
-    }
-  | { type: 'delta'; text: string }
-  | {
-      type: 'done';
-      usage: TokenUsage | null;
-      budgetLevel: BudgetLevel;
-      consumed: boolean;
-      remainingMessages: number;
-    };
+export type PublicChatSource = ChatSource;
 
 export interface RunChatInput {
   pool: Pool;
@@ -149,9 +130,9 @@ interface SessionLockRow {
 }
 
 interface ConversationRow {
-  mode: string;
-  workflow: string;
-  audience_intent: string;
+  mode: ChatMode;
+  workflow: ChatWorkflow;
+  audience_intent: ChatAudienceIntent;
 }
 
 interface ConversationMessageRow {

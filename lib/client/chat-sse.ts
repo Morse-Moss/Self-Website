@@ -1,6 +1,6 @@
-export interface ChatSsePayload {
-  code?: string;
-}
+import type { ChatSsePayload } from '../contracts/chat.ts';
+
+export type { ChatSsePayload } from '../contracts/chat.ts';
 
 class ChatSseError extends Error {
   constructor(code: string) {

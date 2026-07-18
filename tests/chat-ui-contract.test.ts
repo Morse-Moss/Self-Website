@@ -11,6 +11,7 @@ const portfolioLayoutPath = path.resolve('app/(portfolio)/layout.tsx');
 const worksLayoutPath = path.resolve('app/(portfolio)/works/layout.tsx');
 const pagePath = path.resolve('app/(portfolio)/page.tsx');
 const scrollPath = path.resolve('lib/client/chat-scroll.ts');
+const chatContractPath = path.resolve('lib/contracts/chat.ts');
 
 const requiredChatFiles = [
   'useMorseChat.ts',
@@ -50,8 +51,10 @@ test('visitor chat is split into the Task 6 interaction components', () => {
 
 test('visitor chat exposes exactly three workflow controls without monthly budget UI', () => {
   const source = allVisitorSource();
+  const contract = readIfPresent(chatContractPath);
 
-  assert.match(source, /type ChatWorkflow = 'chat' \| 'jd_match' \| 'diagnosis'/);
+  assert.match(source, /from ['"]@\/lib\/contracts\/chat['"]/);
+  assert.match(contract, /CHAT_WORKFLOWS\s*=\s*\[['"]chat['"],\s*['"]jd_match['"],\s*['"]diagnosis['"]\]/);
   assert.match(source, /自由对话/);
   assert.match(source, /JD 匹配/);
   assert.match(source, /需求初诊/);
@@ -81,10 +84,13 @@ test('send switches in place to a real AbortController stop action', () => {
 test('service-driven stages use one status region and include diagnosis handoff', () => {
   const hook = readChatSource('useMorseChat.ts');
   const status = readChatSource('ChatPhaseStatus.tsx');
+  const contract = readIfPresent(chatContractPath);
 
   for (const stage of ['routing', 'knowledge', 'web', 'answering', 'handoff']) {
-    assert.match(hook, new RegExp(`${stage}:`));
+    assert.match(contract, new RegExp(`['"]${stage}['"]`));
   }
+  assert.match(hook, /new Set<ChatPhase>\(CHAT_PHASES\)/);
+  assert.match(hook, /validPhases\.has\(payload\.stage\)/);
   assert.match(hook, /event === ['"]status['"]/);
   assert.match(hook, /setPhase\(payload\.stage/);
   assert.match(status, /role="status"/);

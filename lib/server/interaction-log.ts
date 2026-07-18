@@ -1,7 +1,12 @@
 import type { Pool, PoolClient } from 'pg';
 
+import type {
+  ChatAudienceIntent,
+  ChatSource,
+  ChatWorkflow,
+} from '../contracts/chat.ts';
 import type { TokenUsage } from './budget.ts';
-import { sanitizeTurnSources, type TurnSource } from './turn-codec.ts';
+import { sanitizeTurnSources } from './turn-codec.ts';
 
 export type InteractionStatus = 'running' | 'completed' | 'stopped' | 'failed';
 
@@ -9,13 +14,13 @@ export interface InteractionTurn {
   id: string;
   accessSessionId: string;
   conversationId: string | null;
-  workflow: 'chat' | 'jd_match' | 'diagnosis';
-  audienceIntent: string;
+  workflow: ChatWorkflow;
+  audienceIntent: ChatAudienceIntent;
   question: string;
   answer: string | null;
   status: string;
   errorCode: string | null;
-  sources: TurnSource[];
+  sources: ChatSource[];
   usedSearch: boolean;
 }
 
@@ -24,7 +29,7 @@ interface InteractionRow {
   access_session_id: string;
   conversation_id: string | null;
   workflow: InteractionTurn['workflow'];
-  audience_intent: string;
+  audience_intent: ChatAudienceIntent;
   question: string;
   answer: string | null;
   status: string;
@@ -99,7 +104,7 @@ export async function insertRunningInteraction(input: {
   accessSessionId: string;
   conversationId: string;
   workflow: InteractionTurn['workflow'];
-  audienceIntent: string;
+  audienceIntent: ChatAudienceIntent;
   question: string;
   now: Date;
   deleteAfter: Date;
@@ -149,7 +154,7 @@ export async function completeInteraction(input: {
   client: PoolClient;
   turnId: string;
   answer: string;
-  sources: TurnSource[];
+  sources: ChatSource[];
   usage: TokenUsage | null;
   estimatedCostUsd: number | null;
   provider: string;
@@ -193,7 +198,7 @@ export async function terminateInteraction(input: {
   status: Exclude<InteractionStatus, 'running' | 'completed'>;
   answer: string | null;
   errorCode: string;
-  sources: TurnSource[];
+  sources: ChatSource[];
   provider: string;
   model: string;
   latencyMs: number;

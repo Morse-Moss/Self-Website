@@ -1,15 +1,12 @@
+import {
+  CHAT_SOURCE_KINDS,
+  type ChatSource,
+  type ChatSourceKind,
+} from '../contracts/chat.ts';
 import { normalizePublicHttpsUrl } from './search-safety.ts';
 
-export type TurnSourceKind = 'local' | 'official' | 'github' | 'web';
-
-export interface TurnSource {
-  id: string;
-  title: string;
-  href: string;
-  kind: TurnSourceKind;
-  domain: string | null;
-  score: number | null;
-}
+export type TurnSourceKind = ChatSourceKind;
+export type TurnSource = ChatSource;
 
 export interface DecodedTurnMessage {
   turnId: string | null;
@@ -18,7 +15,7 @@ export interface DecodedTurnMessage {
 }
 
 const STORED_MESSAGE_PREFIX = 'morse-turn-v1:';
-const publicKinds = new Set<TurnSourceKind>(['local', 'official', 'github', 'web']);
+const publicKinds = new Set<TurnSourceKind>(CHAT_SOURCE_KINDS);
 
 function sanitizeTurnSource(value: unknown): TurnSource | null {
   if (!value || typeof value !== 'object') return null;

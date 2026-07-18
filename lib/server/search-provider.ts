@@ -1,4 +1,4 @@
-import type { TurnSource } from './turn-codec.ts';
+import type { ChatSource } from '../contracts/chat.ts';
 
 export const MAX_SEARCH_RESULTS = 5;
 
@@ -23,7 +23,7 @@ export interface SearchProvider {
   search(query: string, signal?: AbortSignal): Promise<SearchResponse>;
 }
 
-export function toPublicSearchSource(result: SearchResult): TurnSource {
+export function toPublicSearchSource(result: SearchResult): ChatSource {
   return {
     id: result.id,
     title: result.title,

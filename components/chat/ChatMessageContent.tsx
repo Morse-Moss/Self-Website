@@ -5,9 +5,9 @@ import {
   parseChatMessageBlocks,
   sourceAnchorId,
 } from '@/lib/client/chat-message-format';
+import type { ChatSource } from '@/lib/contracts/chat';
 
 import styles from '../MorseChat.module.css';
-import type { ChatSource } from './useMorseChat';
 
 function renderInline(
   value: string,

@@ -1,16 +1,11 @@
-const stableChatErrorCodes = new Set([
-  'ACCESS_REQUIRED',
-  'SESSION_INVALID',
-  'MESSAGE_LIMIT',
-  'BUDGET_EXHAUSTED',
-  'RETRIEVAL_UNAVAILABLE',
-  'PROVIDER_UNAVAILABLE',
-  'PROVIDER_INCOMPLETE',
-  'CONVERSATION_BUSY',
-  'CONVERSATION_INVALID',
-  'CONVERSATION_MODE_MISMATCH',
-  'CHAT_UNAVAILABLE',
-]);
+import {
+  CHAT_ERROR_CODES,
+  RECOVERABLE_CHAT_ERROR_CODES,
+  type ChatErrorCode,
+} from '../contracts/chat.ts';
+
+const stableChatErrorCodes = new Set<string>(CHAT_ERROR_CODES);
+const recoverableChatErrorCodes = new Set<string>(RECOVERABLE_CHAT_ERROR_CODES);
 
 export function publicErrorMessage(code?: string): string {
   if (code === 'MESSAGE_LIMIT') return '本次邀请码的对话额度已用完,请联系摩斯获取新码。';
@@ -34,16 +29,10 @@ export function publicErrorMessage(code?: string): string {
 }
 
 export function isRecoverableChatError(code?: string): boolean {
-  return code === 'RETRIEVAL_UNAVAILABLE'
-    || code === 'PROVIDER_UNAVAILABLE'
-    || code === 'PROVIDER_INCOMPLETE'
-    || code === 'CONVERSATION_BUSY'
-    || code === 'CONVERSATION_INVALID'
-    || code === 'CONVERSATION_MODE_MISMATCH'
-    || code === 'CHAT_UNAVAILABLE';
+  return typeof code === 'string' && recoverableChatErrorCodes.has(code);
 }
 
-export function normalizeChatErrorCode(error: unknown): string {
+export function normalizeChatErrorCode(error: unknown): ChatErrorCode {
   const code = error instanceof Error ? error.message : '';
-  return stableChatErrorCodes.has(code) ? code : 'CHAT_UNAVAILABLE';
+  return stableChatErrorCodes.has(code) ? code as ChatErrorCode : 'CHAT_UNAVAILABLE';
 }

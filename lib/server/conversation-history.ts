@@ -1,25 +1,30 @@
 import type { Pool } from 'pg';
 
-import { decodeTurnMessage, type TurnSource } from './turn-codec.ts';
+import type {
+  ChatAudienceIntent,
+  ChatSource,
+  ChatWorkflow,
+} from '../contracts/chat.ts';
+import { decodeTurnMessage } from './turn-codec.ts';
 
 export interface ConversationHistoryMessage {
   role: 'user' | 'assistant';
   turnId: string | null;
   text: string;
-  sources: TurnSource[];
+  sources: ChatSource[];
 }
 
 export interface ConversationHistory {
   conversationId: string;
-  workflow: 'chat' | 'jd_match' | 'diagnosis';
-  audienceIntent: string;
+  workflow: ChatWorkflow;
+  audienceIntent: ChatAudienceIntent;
   messages: ConversationHistoryMessage[];
 }
 
 interface ConversationRow {
   id: string;
   workflow: ConversationHistory['workflow'];
-  audience_intent: string;
+  audience_intent: ChatAudienceIntent;
 }
 
 export async function loadConversationHistory(input: {

@@ -1,6 +1,6 @@
+import type { ChatServiceEvent } from '../contracts/chat.ts';
 import {
   ChatServiceError,
-  type ChatServiceEvent,
 } from '@/lib/server/chat-service';
 import {
   createSseStream,

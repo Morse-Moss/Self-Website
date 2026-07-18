@@ -1,17 +1,23 @@
+import {
+  CHAT_AUDIENCE_INTENTS,
+  CHAT_MODES,
+  CHAT_WORKFLOWS,
+  type ChatAudienceIntent,
+  type ChatMode,
+  type ChatWorkflow,
+  type DiagnosisFields,
+  type DiagnosisStatus,
+} from '../contracts/chat.ts';
 import type { KnowledgeSource } from './rag.ts';
 import type { SearchResponse } from './search-provider.ts';
 import {
   buildDiagnosisSummary,
   getDiagnosisCollectionStatus,
   normalizeDiagnosisFields,
-  type DiagnosisFields,
-  type DiagnosisStatus,
 } from './workflows/diagnosis.ts';
 import { normalizeJobDescription } from './workflows/jd-match.ts';
 
-export type ChatMode = 'general' | 'interviewer';
-export type ChatAudienceIntent = 'general' | 'recruiter' | 'collaboration' | 'peer';
-export type ChatWorkflow = 'chat' | 'jd_match' | 'diagnosis';
+export type { ChatAudienceIntent, ChatMode, ChatWorkflow } from '../contracts/chat.ts';
 
 export interface NormalizedChatRequest {
   message: string;
@@ -43,6 +49,13 @@ const requestFields = new Set([
   'turnId',
 ]);
 
+function isAllowedValue<Value extends string>(
+  values: readonly Value[],
+  value: unknown,
+): value is Value {
+  return typeof value === 'string' && (values as readonly string[]).includes(value);
+}
+
 function escapeKnowledge(value: string): string {
   return value
     .replaceAll('&', '&amp;')
@@ -60,7 +73,7 @@ export function normalizeChatRequest(input: unknown): NormalizedChatRequest {
   if (unknownField) throw new TypeError(`Unknown request field: ${unknownField}.`);
 
   const workflow = body.workflow ?? 'chat';
-  if (workflow !== 'chat' && workflow !== 'jd_match' && workflow !== 'diagnosis') {
+  if (!isAllowedValue(CHAT_WORKFLOWS, workflow)) {
     throw new TypeError('workflow must be chat, jd_match, or diagnosis.');
   }
 
@@ -107,15 +120,10 @@ export function normalizeChatRequest(input: unknown): NormalizedChatRequest {
   const conversationId = body.conversationId ?? null;
   const turnId = body.turnId ?? null;
 
-  if (mode !== 'general' && mode !== 'interviewer') {
+  if (!isAllowedValue(CHAT_MODES, mode)) {
     throw new TypeError('mode must be general or interviewer.');
   }
-  if (
-    audienceIntent !== 'general'
-    && audienceIntent !== 'recruiter'
-    && audienceIntent !== 'collaboration'
-    && audienceIntent !== 'peer'
-  ) {
+  if (!isAllowedValue(CHAT_AUDIENCE_INTENTS, audienceIntent)) {
     throw new TypeError('audienceIntent must be general, recruiter, collaboration, or peer.');
   }
   if (conversationId !== null && typeof conversationId !== 'string') {

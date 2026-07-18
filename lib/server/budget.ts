@@ -1,9 +1,6 @@
-export type BudgetLevel = 'normal' | 'notice' | 'warning' | 'critical' | 'exhausted';
+import type { BudgetLevel, TokenUsage } from '../contracts/chat.ts';
 
-export interface TokenUsage {
-  inputTokens: number;
-  outputTokens: number;
-}
+export type { BudgetLevel, TokenUsage } from '../contracts/chat.ts';
 
 export interface TokenRates {
   inputUsdPerMillion: number;

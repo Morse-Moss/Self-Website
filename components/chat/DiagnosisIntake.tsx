@@ -1,6 +1,6 @@
 import type { FormEvent, RefObject } from 'react';
 
-import type { DiagnosisFields, DiagnosisStatus } from './useMorseChat';
+import type { DiagnosisFields, DiagnosisUiStatus } from '@/lib/contracts/chat';
 
 import styles from '../MorseChat.module.css';
 
@@ -31,7 +31,7 @@ export default function DiagnosisIntake({
   onSubmit(): void;
   onStop(): void;
   streaming: boolean;
-  status: DiagnosisStatus;
+  status: DiagnosisUiStatus;
   inputRef: RefObject<HTMLTextAreaElement | null>;
 }) {
   const completedFields = fields.filter((field) => value[field.name].trim()).length;
