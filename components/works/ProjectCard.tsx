@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { MouseEvent, TransitionEvent } from 'react';
 
 import type { Project, ProjectSlug } from '@/lib/site-content';
+import OpenChatButton from '@/components/site/OpenChatButton';
 
 import CaseStudy from './CaseStudy';
 import styles from './ProjectCard.module.css';
@@ -154,12 +155,19 @@ export default function ProjectCard({
         </div>
         <h2 id={titleId}>{project.name}</h2>
         <p className={styles.summary}>{project.summary}</p>
+        {project.ownership ? (
+          <p className={styles.ownership}>{project.ownership}</p>
+        ) : null}
 
         <ul className={styles.capabilities} aria-label={`${project.name}能力`}>
           {project.capabilities.map((capability) => (
             <li key={capability}>{capability}</li>
           ))}
         </ul>
+
+        {project.futureDirection ? (
+          <p className={styles.futureDirection}>{project.futureDirection}</p>
+        ) : null}
 
         <div className={styles.actions} aria-label={`${project.name}操作`}>
           <button
@@ -171,6 +179,12 @@ export default function ProjectCard({
           >
             {expanded ? '收起详情' : '展开详情'}
           </button>
+
+          {project.askMorse ? (
+            <OpenChatButton className={styles.action} prompt={project.askMorse.prompt}>
+              {project.askMorse.label}
+            </OpenChatButton>
+          ) : null}
 
           {project.actions.map((action) => (
             <a

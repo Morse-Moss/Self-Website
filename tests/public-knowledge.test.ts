@@ -3,7 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 
-import { extractPublicKnowledge } from '../lib/server/public-knowledge.ts';
+import {
+  extractPublicKnowledge,
+  publicKnowledgeHref,
+} from '../lib/server/public-knowledge.ts';
 
 const contentPath = path.resolve('content/site-content.json');
 
@@ -11,7 +14,7 @@ function loadSiteContent() {
   return JSON.parse(fs.readFileSync(contentPath, 'utf8'));
 }
 
-test('extractPublicKnowledge produces the nine approved site-content documents', () => {
+test('extractPublicKnowledge produces the approved site-content and content-agent topic documents', () => {
   const documents = extractPublicKnowledge(loadSiteContent());
 
   assert.deepEqual(
@@ -23,6 +26,11 @@ test('extractPublicKnowledge produces the nine approved site-content documents',
         sourcePath: 'content/site-content.json#projects.content-agent',
         href: '/works#content-agent',
       },
+      ...['overview', 'experience', 'models', 'engineering', 'role', 'roadmap'].map((topic) => ({
+        id: `project-content-agent-${topic}`,
+        sourcePath: `content/site-content.json#projects.content-agent.knowledge.${topic}`,
+        href: '/works#content-agent',
+      })),
       {
         id: 'project-auto-operations',
         sourcePath: 'content/site-content.json#projects.auto-operations',
@@ -46,6 +54,24 @@ test('extractPublicKnowledge produces the nine approved site-content documents',
   );
   assert.ok(documents.every((document) => document.title.length > 0));
   assert.ok(documents.every((document) => document.content.length > 0));
+});
+
+test('content-agent knowledge topics stay independently retrievable and share one case href', () => {
+  const content = loadSiteContent();
+  const project = content.projects.find((item: { slug: string }) => item.slug === 'content-agent');
+  const documents = extractPublicKnowledge(content);
+
+  assert.ok(project);
+  for (const topic of project.knowledgeTopics) {
+    const documentId = `project-content-agent-${topic.id}`;
+    const document = documents.find((item) => item.id === documentId);
+
+    assert.ok(document);
+    assert.equal(document.title, `${project.name}：${topic.title}`);
+    assert.equal(document.content, `${project.name}\n\n${topic.title}\n\n${topic.content}`);
+    assert.equal(document.href, '/works#content-agent');
+    assert.equal(publicKnowledgeHref(documentId), '/works#content-agent');
+  }
 });
 
 test('extractPublicKnowledge limits profile and project content to approved fields', () => {
@@ -116,14 +142,15 @@ test('extractPublicKnowledge excludes drafts, paths, media, actions, and sanitiz
   for (const document of documents) {
     assert.doesNotMatch(document.content, /content[\\/]drafts|[A-Za-z]:[\\/]/i);
   }
-  assert.doesNotMatch(serialized, /generated-image\.png|生成图|截图待补/i);
+  assert.doesNotMatch(serialized, /generated-image\.png|截图待补/i);
   assert.doesNotMatch(serialized, /sanitization metadata|sanitization/i);
   assert.doesNotMatch(serialized, /无人值守运营|disabled-operation/i);
   assert.doesNotMatch(serialized, /\/works\/auto-operations\/login-workbench-2026-07-13\.png/i);
 
   const internalKnowledge = JSON.stringify(
     extractPublicKnowledge(loadSiteContent()).filter((document) =>
-      ['project-content-agent', 'project-auto-operations'].includes(document.id),
+      document.id.startsWith('project-content-agent')
+        || document.id === 'project-auto-operations',
     ),
   );
   assert.doesNotMatch(

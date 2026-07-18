@@ -18,6 +18,11 @@ interface SiteContent {
     name?: string;
     status?: string;
     summary?: string;
+    knowledgeTopics?: Array<{
+      id?: string;
+      title?: string;
+      content?: string;
+    }>;
     capabilities?: string[];
     techStack?: Array<{ label?: string; items?: string[] }>;
     caseStudy?: {
@@ -38,6 +43,9 @@ function joinParts(parts: Array<string | undefined>): string {
 
 export function publicKnowledgeHref(documentId: string): string {
   if (documentId === 'about' || documentId.startsWith('faq-')) return '/';
+  if (documentId.startsWith('project-content-agent-')) {
+    return '/works#content-agent';
+  }
   if (documentId.startsWith('project-')) {
     return `/works#${documentId.slice('project-'.length)}`;
   }
@@ -96,6 +104,19 @@ export function extractPublicKnowledge(content: SiteContent): PublicKnowledgeDoc
         ...(project.caseStudy?.boundaries ?? []),
       ]),
     });
+
+    for (const topic of project.knowledgeTopics ?? []) {
+      if (!topic.id || !topic.title || !topic.content) continue;
+
+      const id = `project-${project.slug}-${topic.id}`;
+      documents.push({
+        id,
+        title: `${project.name}：${topic.title}`,
+        sourcePath: `content/site-content.json#projects.${project.slug}.knowledge.${topic.id}`,
+        href: publicKnowledgeHref(id),
+        content: joinParts([project.name, topic.title, topic.content]),
+      });
+    }
   }
 
   for (const [index, item] of (content.faq ?? []).entries()) {

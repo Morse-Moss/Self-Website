@@ -16,6 +16,12 @@ test('RAG gold set covers every approved public document', () => {
     new Set([
       'about',
       'project-content-agent',
+      'project-content-agent-overview',
+      'project-content-agent-experience',
+      'project-content-agent-models',
+      'project-content-agent-engineering',
+      'project-content-agent-role',
+      'project-content-agent-roadmap',
       'project-auto-operations',
       'project-deep-research',
       'project-digital-morse',
@@ -27,11 +33,21 @@ test('RAG gold set covers every approved public document', () => {
   );
   assert.ok(cases.every((item) => item.query.trim().length > 0));
   assert.equal(
-    cases.find((item) => item.query === '数字摩斯为什么还没有访问系统按钮?')
+    cases.find((item) => item.query === '数字摩斯现在如何访问，公开作品和实时对话分别需要什么条件？')
       ?.expectedDocumentId,
     'project-digital-morse',
   );
   assert.ok(cases.some((item) => item.expectedDocumentId === 'project-auto-operations'));
+  for (const expectedDocumentId of [
+    'project-content-agent-overview',
+    'project-content-agent-experience',
+    'project-content-agent-models',
+    'project-content-agent-engineering',
+    'project-content-agent-role',
+    'project-content-agent-roadmap',
+  ]) {
+    assert.ok(cases.some((item) => item.expectedDocumentId === expectedDocumentId));
+  }
 });
 
 test('RAG evaluator reports top-1/top-3 metrics and fails missed top-3 cases', () => {

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const repoRoot = new URL('../', import.meta.url);
@@ -132,6 +133,58 @@ test('S9 supersedes historical S7 live-page requirements', () => {
     currentHarness,
     /['"]\/works\/(?:content-agent|auto-operations|deep-research|digital-morse)['"]/,
     'S9 current browser gate must use /works#slug instead of legacy detail routes',
+  );
+});
+
+test('content agent uses the approved black-gold main-page design', () => {
+  const content = JSON.parse(readUtf8('content/site-content.json'));
+  const project = content.projects.find((item) => item.slug === 'content-agent');
+  const blueprint = readUtf8('docs/portfolio-blueprint.md');
+  const evidenceMatrix = readUtf8(
+    'docs/research/project-evidence-matrix-2026-07-13.md',
+  );
+  const designUrl = new URL(
+    'public/works/content-agent/atelier-main-design-2026-07-18.jpg',
+    repoRoot,
+  );
+
+  assert.ok(project, 'content-agent project must exist');
+  assert.equal(
+    project.media?.src,
+    '/works/content-agent/atelier-main-design-2026-07-18.jpg',
+  );
+  assert.equal(project.media?.width, 1280);
+  assert.equal(project.media?.height, 1486);
+  assert.match(project.media?.caption ?? '', /黑金新版主页面设计图/);
+  assert.match(project.media?.caption ?? '', /示例数据/);
+  assert.match(project.media?.caption ?? '', /不是生产运行截图/);
+  assert.match(project.caseStudy.boundaries.join('\n'), /独立前端视觉壳/);
+  assert.ok(existsSync(designUrl), 'approved atelier design image must exist');
+  assert.equal(
+    createHash('sha256').update(readFileSync(designUrl)).digest('hex'),
+    'f0e4c854e331bf5f3137a9c8b422664f6d2cf57796110863111847894d690668',
+  );
+  assertIncludesAll(
+    blueprint,
+    [
+      '## 17. 内容创作 Agent 信息完善与设计图授权(2026-07-18)',
+      '`frontend-atelier`',
+      '黑金新版主页面设计图',
+      '示例数据',
+      '1440×900',
+    ],
+    'content-agent blueprint approval',
+  );
+  assertIncludesAll(
+    evidenceMatrix,
+    [
+      '`frontend-atelier`',
+      '黑金、有艺术感的新版主页面设计图',
+      '不是生产运行截图',
+      '示例数据',
+      '1440×900',
+    ],
+    'content-agent evidence record',
   );
 });
 

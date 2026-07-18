@@ -21,7 +21,7 @@ const expectedSlugs = [
 const expectedProjects = {
   "content-agent": {
     name: "内容创作 Agent 系统",
-    status: "企业内部项目 · 脱敏展示",
+    status: "企业内部项目 · 核心系统运行中 · 新版视觉壳已验证",
     actions: [],
   },
   "auto-operations": {
@@ -42,7 +42,7 @@ const expectedProjects = {
   },
   "digital-morse": {
     name: "数字摩斯",
-    status: "本地闭环已验证 · 尚未部署",
+    status: "腾讯云生产已上线 · 持续完善中",
     actions: [
       {
         kind: "external",
@@ -92,20 +92,73 @@ test("S9 publishes Morse identity and only public featured projects", () => {
   ]);
 });
 
-test("internal projects have no public media or external action", () => {
+test("internal projects have no external action and disclose approved design media", () => {
   for (const slug of ["content-agent", "auto-operations"]) {
     const project = getProjectBySlug(slug);
     assert.ok(project);
     assert.equal(project.disclosure, "internal-redacted");
-    assert.equal(project.media, null);
     assert.deepEqual(project.actions, []);
 
     const serialized = JSON.stringify(project);
     assert.doesNotMatch(
       serialized,
-      /https?:\/\/|Railway|login-workbench|capturedAt|commit|生产环境|内网已部署|RUNNING/,
+      /https?:\/\/|Railway|login-workbench|生产环境|内网已部署|RUNNING/,
     );
   }
+
+  const contentAgent = getProjectBySlug("content-agent");
+  const autoOperations = getProjectBySlug("auto-operations");
+  assert.ok(contentAgent?.media);
+  assert.equal(
+    contentAgent.media.src,
+    "/works/content-agent/atelier-main-design-2026-07-18.jpg",
+  );
+  assert.match(contentAgent.media.caption, /设计图/);
+  assert.match(contentAgent.media.caption, /不是生产运行截图/);
+  assert.equal(autoOperations?.media, null);
+  assert.doesNotMatch(
+    JSON.stringify(autoOperations),
+    /capturedAt|commit/,
+  );
+});
+
+test("content agent leads with a concise operator pitch and solo technical delivery", () => {
+  const project = getProjectBySlug("content-agent") as ReturnType<typeof getProjectBySlug> & {
+    ownership?: string;
+    futureDirection?: string;
+    askMorse?: { label: string; prompt: string };
+    knowledgeTopics?: Array<{ id: string; title: string; content: string }>;
+  };
+
+  assert.ok(project);
+  assert.equal(
+    project.summary,
+    "一套面向电商内容生产的多模态创作系统。用户可以像使用 GPT 一样，通过对话调用 GPT Image 2、Seedance 2 等模型生成图片和视频。",
+  );
+  assert.ok(project.summary.length <= 90, "public project summary must stay quickly scannable");
+  assert.equal(
+    project.ownership,
+    "业务需求来自实际对接；Agent 编排、多模型接入、前后端、任务系统和部署交付均由摩斯独立完成。",
+  );
+  assert.match(project.futureDirection ?? "", /未来.*自进化 Agent/);
+  assert.deepEqual(project.capabilities, [
+    "GPT 式对话创作",
+    "GPT Image 2 / Seedance 2",
+    "多参考图生成",
+    "任务恢复与资产管理",
+  ]);
+  assert.deepEqual(project.askMorse, {
+    label: "问数字摩斯",
+    prompt: "我想了解内容创作 Agent 系统：它如何通过对话生成图片和视频，哪些模型已经真实验证，以及摩斯独立完成了哪些技术实现？",
+  });
+  assert.deepEqual(
+    project.knowledgeTopics?.map((topic) => topic.id),
+    ["overview", "experience", "models", "engineering", "role", "roadmap"],
+  );
+  assert.ok(project.knowledgeTopics?.every((topic) => topic.title && topic.content));
+  assert.match(project.caseStudy.role, /业务需求与产品想法来自真实对接/);
+  assert.match(project.caseStudy.role, /唯一开发者/);
+  assert.doesNotMatch(project.caseStudy.role, /独自提出全部业务|独立完成产品设计/);
 });
 
 test("every project has grouped stack and capability evidence", () => {
@@ -146,10 +199,16 @@ test("provides six case-study fields for every project", () => {
   }
 });
 
-test("publishes no project media before assets are separately approved", () => {
-  for (const project of getAllProjects()) {
-    assert.equal(project.media, null);
-  }
+test("publishes only the separately approved content-agent design media", () => {
+  const mediaProjects = getAllProjects().filter((project) => project.media);
+
+  assert.deepEqual(
+    mediaProjects.map((project) => project.slug),
+    ["content-agent"],
+  );
+  assert.equal(mediaProjects[0]?.media?.width, 1280);
+  assert.equal(mediaProjects[0]?.media?.height, 1486);
+  assert.match(mediaProjects[0]?.media?.evidence.runMode ?? "", /非运行态/);
 });
 
 test("keeps the approved global copy and four FAQ topics", () => {
@@ -185,7 +244,22 @@ test("keeps the approved global copy and four FAQ topics", () => {
   assert.match(siteContent.faq[0].question, /技术栈/);
   assert.match(siteContent.faq[1].question, /AI native/i);
   assert.match(siteContent.faq[2].question, /职责/);
+  assert.match(siteContent.faq[2].answer, /唯一开发者.*全部技术实现/);
+  assert.match(siteContent.faq[2].answer, /业务需求.*沟通/);
   assert.match(siteContent.faq[3].question, /快速了解/);
+});
+
+test("publishes the observed Digital Morse production status without stale launch claims", () => {
+  const project = getProjectBySlug("digital-morse");
+
+  assert.ok(project);
+  assert.equal(project.status, "腾讯云生产已上线 · 持续完善中");
+  assert.match(project.caseStudy.evidence.join("\n"), /腾讯云.*生产环境已上线/);
+  assert.match(project.caseStudy.evidence.join("\n"), /live.*ready.*release smoke/i);
+  assert.doesNotMatch(
+    JSON.stringify(project),
+    /网站尚未部署|真实 Provider 仅部分通过|不提供公开访问入口/,
+  );
 });
 
 test("keeps all public JSON free of placeholders and private-source leakage", () => {

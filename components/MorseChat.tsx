@@ -50,7 +50,15 @@ export default function MorseChat({ variant = 'overlay' }: MorseChatProps) {
 
   useEffect(() => {
     let focusFrame = 0;
-    const handleOpen = () => {
+    const handleOpen = (event: Event) => {
+      const prompt = event instanceof CustomEvent
+        && typeof event.detail?.prompt === 'string'
+        ? event.detail.prompt.trim()
+        : '';
+      if (prompt) {
+        chat.setWorkflow('chat');
+        chat.setDraft(prompt);
+      }
       pendingFocusRef.current = true;
       forceAutoFollowRef.current = true;
       if (!embedded) {
@@ -73,7 +81,13 @@ export default function MorseChat({ variant = 'overlay' }: MorseChatProps) {
       window.removeEventListener('morse-chat:open', handleOpen);
       window.cancelAnimationFrame(focusFrame);
     };
-  }, [chat.accessState, chat.historyLoading, embedded]);
+  }, [
+    chat.accessState,
+    chat.historyLoading,
+    chat.streaming,
+    chat.workflow,
+    embedded,
+  ]);
 
   useEffect(() => {
     if (!open || !pendingFocusRef.current || chat.accessState === 'checking' || chat.historyLoading) return;

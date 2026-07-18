@@ -45,18 +45,31 @@ export type CaseStudy = {
   boundaries: string[];
 };
 
+export type ProjectKnowledgeTopic = {
+  id: string;
+  title: string;
+  content: string;
+};
+
 export type Project = {
   slug: ProjectSlug;
   name: string;
   type: string;
   status: string;
   summary: string;
+  ownership?: string;
+  futureDirection?: string;
   featured: boolean;
   disclosure: ProjectDisclosure;
   capabilities: string[];
   techStack: TechStackGroup[];
   media: ProjectMedia | null;
   actions: ProjectAction[];
+  askMorse?: {
+    label: string;
+    prompt: string;
+  };
+  knowledgeTopics?: ProjectKnowledgeTopic[];
   caseStudy: CaseStudy;
 };
 

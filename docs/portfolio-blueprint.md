@@ -1,7 +1,7 @@
 # 个人作品集网站 · 需求与创意蓝图
 
 > 项目代号:数字生命摩斯个人独立站
-> 状态:正式站 v1 本地就绪;S9 已进入 `origin/master`;S10 智能客服已达 `MAINLINE_PROVIDER_READY / CHAT_UX_LOCAL_READY`,尚未部署
+> 状态:正式站已在腾讯云生产上线并持续完善;S10 智能客服主链可用;当前发布状态以 `docs/task-center/run-state.md` 为准
 > 记录日期:2026-07-07 · 状态同步:2026-07-18
 > 角色分工:Claude 负责对清需求、创造想法、设计框架;开发由摩斯本人 + AI 完成
 
@@ -290,3 +290,19 @@
 - **S11-5A 发布基础**：同一 Node 24 非 root 应用镜像提供 Web、Worker、Migration、Ingest 四个显式角色；生产预检、数据库 TLS/Pool、generic live/ready、安全响应头、Outbox/cleanup Worker 与重建式恢复合同由 `docs/runbooks/production.md` 固化。Node 应用镜像不包含 PostgreSQL、BGE 或 TLS edge，不得冒充完整 RAG 拓扑。
 - **上线状态边界**：S11-5A 目标只到 `LOCAL_RELEASE_CANDIDATE`。生产 BGE 与真实 Embedding smoke、数据库最小角色/证书、edge body/rate/SSE 限制、CSP、监控、托管备份和真实外部调用完成前，不得标记 `ONLINE_READY`。短期交互采用重建式恢复，不承诺长期备份；Feishu 保持至少一次投递。
 - **S11-5A 实现状态**：本地全量测试 543/543、生产构建 19/19、隔离恢复/发布冒烟与 CRITICAL 双审通过；本地镜像 `revolution:s11-5a-local` 使用 Node 24、UID 1001，镜像层与文件边界检查通过。构建审计仍有 2 个 moderate advisory；现有长期本地主库 migration checksum 漂移继续 fail closed，均不得被写成已解决或已上线。
+
+## 17. 内容创作 Agent 信息完善与设计图授权(2026-07-18)
+
+- **范围**：本轮主体只完善 `/works#content-agent`、对应公共知识与站内数字摩斯入口，其他三个项目的内容、图片与状态不顺带修改；全局职责问答仅同步摩斯已确认的统一开发责任口径。
+- **最新图片决定**：摩斯提供并明确指定黑金新版主页面设计图（Future Designer Atelier）作为内容创作 Agent 的展示图。此决定仅覆盖 §14 对该项目“无获批图片时不展示界面”的限制；企业信息安全、无公开访问入口和无业务效果数字的边界保持不变。
+- **展示口径**：正式图为 `public/works/content-agent/atelier-main-design-2026-07-18.jpg`。页面必须明确标注“设计图 / 不是生产运行截图”，图中的商品、参考图、提示词、任务和参数统一按“示例数据”披露。
+- **公开边界**：图片与文案不得包含客户、雇主、真实账号、历史任务、内网地址、额度、Provider 配置、密钥、工作流 ID 或业务数据；案例页不得提供系统访问按钮。
+- **能力表述**：核心生产系统已有素材包、提示词版本、OperationRun、对话式创作、模型能力约束、异步状态与失败恢复的代码和验证记录；黑金设计方向已做成并验证独立 `frontend-atelier` 视觉壳，是否接入既有后端仍待确认，不能写成已完成后端 API、任务派发或旧前端迁移。
+- **公开简介**：首层使用两句简介和四个亮点，明确展示 GPT 式对话创作、GPT Image 2 / Seedance 2、多参考图生成、任务恢复与资产管理，不把完整技术栈或长篇工程说明堆在卡片首层。
+- **职责口径**：项目业务需求、产品方向和部分创意来自真实业务对接；摩斯作为唯一开发者，负责整个项目的开发，并独立完成 Agent 编排、多模型接入、前后端、数据与任务系统、部署交付和故障恢复等全部技术实现。不得写成摩斯独自提出全部业务需求或独立完成全部产品设计。
+- **模型边界**：GPT Image 2、GPT Image 2 Edit、Seedance 2 Fast 已完成真实生成链路验证；Nano Banana 2、Gemini 2.5 Flash Image Edit、Veo 3.1、Kling、PixVerse V6 与 Wan 已适配。实际可用性仍受 Provider 账号、额度和模型权限约束。
+- **知识与对话**：公共知识除项目聚合文档外，新增定位、体验、模型、工程、职责、路线图六个独立主题，统一链接 `/works#content-agent`；项目卡片的“问数字摩斯”只打开现有站内对话并预填获批问题，不自动发送，也不是内部系统访问入口。
+- **未来方向**：自进化 Agent 仅作为下一阶段规划，目标是基于历史任务、人工反馈和质量评估优化提示词、模型选择与创作策略；当前不得表述为已实现能力。
+- **视觉核对证据**：本轮从当前 `frontend-atelier` 源码启动本地服务器复核设计实现；1440×900 下无横向溢出，背景素材加载成功，控制台与页面错误均为 0，运行工件为 `docs/verify/content-agent/frontend-atelier-runtime-1440x900.png`。该运行核对不改变正式媒体仍是设计图的披露性质。
+- **作品集验收证据**：生产构建后的本地站点在 1440×900 与 390×844 均加载获批主图、无横向溢出、控制台错误和页面错误；“问数字摩斯”在两个视口均打开现有对话并预填获批问题。验收截图为 `docs/verify/content-agent/portfolio-content-agent-*.png`，访问与历史接口仅在浏览器验收中使用本地 fixture，未调用对话或生成 Provider。
+- **知识同步**：本地 CPU BGE + pgvector 重摄取首轮更新 8 文档 / 9 分块、跳过 7 文档，第二轮 15/15 全量跳过；26 例语义评测 top-1 为 21/26、top-3 为 26/26，正负阈值均通过。Embedding 与数据库均为 loopback 服务，未调用付费 Provider，未写生产数据库。

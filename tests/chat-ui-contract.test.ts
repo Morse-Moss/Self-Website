@@ -11,6 +11,8 @@ const chatDirectory = path.resolve('components/chat');
 const portfolioLayoutPath = path.resolve('app/(portfolio)/layout.tsx');
 const worksLayoutPath = path.resolve('app/(portfolio)/works/layout.tsx');
 const pagePath = path.resolve('app/(portfolio)/page.tsx');
+const projectCardPath = path.resolve('components/works/ProjectCard.tsx');
+const openChatButtonPath = path.resolve('components/site/OpenChatButton.tsx');
 const scrollPath = path.resolve('lib/client/chat-scroll.ts');
 const chatContractPath = path.resolve('lib/contracts/chat.ts');
 
@@ -180,6 +182,26 @@ test('starter questions send immediately and pending assistants replace the empt
   assert.match(workspace, /type="button"/);
   assert.match(transcript, /数字摩斯正在思考/);
   assert.match(transcript, /!message\.text[\s\S]*!message\.error[\s\S]*!message\.stopped/);
+});
+
+test('project CTA opens Digital Morse with the approved content-agent question prefilled', () => {
+  const component = readIfPresent(componentPath);
+  const projectCard = readIfPresent(projectCardPath);
+  const openChatButton = readIfPresent(openChatButtonPath);
+
+  assert.match(openChatButton, /prompt\?:\s*string/);
+  assert.match(openChatButton, /new CustomEvent\(['"]morse-chat:open['"]/);
+  assert.match(openChatButton, /detail:\s*\{\s*prompt\s*\}/);
+  assert.match(projectCard, /import OpenChatButton/);
+  assert.match(projectCard, /project\.askMorse/);
+  assert.match(
+    projectCard,
+    /<OpenChatButton[\s\S]*prompt=\{project\.askMorse\.prompt\}[\s\S]*project\.askMorse\.label/,
+  );
+  assert.match(component, /event\s+instanceof\s+CustomEvent/);
+  assert.match(component, /event\.detail\?\.prompt/);
+  assert.match(component, /chat\.setWorkflow\(['"]chat['"]\)/);
+  assert.match(component, /chat\.setDraft\(prompt\)/);
 });
 
 test('structured intake supports 12,000-character JD and five-field diagnosis', () => {

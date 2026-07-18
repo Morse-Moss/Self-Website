@@ -114,6 +114,14 @@
   overflow-wrap: anywhere;
 }
 
+.ownership {
+  margin-top: var(--space-3);
+  color: var(--ink);
+  font-size: var(--fs-sm);
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
 .capabilities {
   display: flex;
   flex-wrap: wrap;
@@ -139,6 +147,16 @@
   height: var(--space-1);
   background: var(--accent);
   content: '';
+}
+
+.futureDirection {
+  margin-top: var(--space-4);
+  padding-left: var(--space-3);
+  border-left: 1px solid var(--status-amber-line);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  line-height: 1.7;
+  overflow-wrap: anywhere;
 }
 
 .actions {

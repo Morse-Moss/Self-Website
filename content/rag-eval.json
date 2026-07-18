@@ -5,14 +5,38 @@
   },
   {
     "query": "内容创作 Agent 如何管理素材和生成任务？",
-    "expectedDocumentId": "project-content-agent"
+    "expectedDocumentId": "project-content-agent-overview"
+  },
+  {
+    "query": "内容创作 Agent 面向谁，解决电商内容生产里的什么问题？",
+    "expectedDocumentId": "project-content-agent-overview"
+  },
+  {
+    "query": "用户如何像 GPT 一样通过对话和参考图生成图片或视频？",
+    "expectedDocumentId": "project-content-agent-experience"
+  },
+  {
+    "query": "哪些图片和视频模型已经真实跑通，哪些只是完成适配？",
+    "expectedDocumentId": "project-content-agent-models"
+  },
+  {
+    "query": "OperationRun 如何记录生成任务状态并支持失败恢复和结果归档？",
+    "expectedDocumentId": "project-content-agent-engineering"
+  },
+  {
+    "query": "内容创作 Agent 的业务想法来自哪里，摩斯独立完成了哪些技术实现？",
+    "expectedDocumentId": "project-content-agent-role"
+  },
+  {
+    "query": "自进化 Agent 现在实现了吗，未来准备怎样优化提示词和模型选择？",
+    "expectedDocumentId": "project-content-agent-roadmap"
   },
   {
     "query": "自动运营 Agent 系统如何保持发布受控？",
     "expectedDocumentId": "project-auto-operations"
   },
   {
-    "query": "数字摩斯为什么还没有访问系统按钮?",
+    "query": "数字摩斯现在如何访问，公开作品和实时对话分别需要什么条件？",
     "expectedDocumentId": "project-digital-morse"
   },
   {
@@ -32,7 +56,7 @@
     "expectedDocumentId": "faq-4"
   },
   {
-    "query": "摩斯的工作原则是什么？",
+    "query": "摩斯为什么先定义事实和安全边界，再让 AI 加速？",
     "expectedDocumentId": "about"
   },
   {
@@ -72,7 +96,7 @@
     "expectedDocumentId": "faq-4"
   },
   {
-    "query": "作品集对话如何同时控制访问、费用和知识来源？",
+    "query": "数字摩斯如何用短期邀请码、消息预算和 RAG 来源控制作品集对话？",
     "expectedDocumentId": "project-digital-morse"
   },
   {
