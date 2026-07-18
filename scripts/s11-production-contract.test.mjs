@@ -27,6 +27,14 @@ test('server-generated database role secrets stay private and readable by Postgr
   );
 });
 
+test('migration exclusively owns pgvector schema initialization', () => {
+  const roleInit = read('deploy/postgres/init/01-roles.sh');
+  const initialMigration = read('db/migrations/001_morse_rag.sql');
+
+  assert.doesNotMatch(roleInit, /CREATE EXTENSION/i);
+  assert.match(initialMigration, /^CREATE EXTENSION IF NOT EXISTS vector;$/m);
+});
+
 test('Docker build context excludes local secrets, state, evidence and generated output', () => {
   const source = read('.dockerignore');
   for (const pattern of [

@@ -31,8 +31,6 @@ psql --set=runtime_password="$runtime_password" \
   --set=ingest_password="$ingest_password" \
   --set=backup_password="$backup_password" \
   --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<'SQL'
-CREATE EXTENSION IF NOT EXISTS vector;
-
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'runtime') THEN
