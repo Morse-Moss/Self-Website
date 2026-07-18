@@ -4,22 +4,33 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**S11-5B PRODUCTION_OBSERVED / LIMITED_LAUNCH**
+**S11-5C PRODUCTION_OBSERVED / LIMITED_LAUNCH**
 
 ## next_allowed_pointer
-当前生产实例已观察到真实 HTTPS、live/ready、release smoke、公开页面和真实 Provider 主链。下一步只允许冻结并发布经人工确认的最终内容，或进入监控/备份/edge 限流等硬化阶段；在 Lighthouse、内容同步和剩余运维门关闭前不得宣称完整 `ONLINE_READY`。
+当前生产实例已观察到真实 HTTPS、live/ready、release smoke、公开页面、内容创作 Agent CTA 授权流程和真实 Provider 主链。下一步只允许从另一条开发线冻结新的明确提交后再发布，或进入监控/备份/edge 限流等硬化阶段；在 Lighthouse 和剩余运维门关闭前不得宣称完整 `ONLINE_READY`。
 
-## S11-5B Tencent production deployment (2026-07-18)
+## S11-5C production content release (2026-07-19)
+
+- Mode: `STAGED / CRITICAL / DEPLOYED`；状态：`OBSERVED / LIMITED_LAUNCH`。
+- Release: `/opt/revolution/current` 指向 `/opt/revolution/releases/b15be68/revolution`；`master` 与 `origin/master` 均包含该生产修订。发布只使用冻结提交，没有从脏工作区复制文件；旧 release `39849e1` 与 `b8d6d88` 未清理。
+- Content/Data PASS: `b8d6d88` 发布内容创作 Agent 简介、黑金设计图与六主题公开知识；`b15be68` 收紧证据口径并修复 CTA 授权竞态。最终 ingest 为 0 document 更新、0 chunk 更新、15 documents 跳过，migration 仍为 001/002。
+- Verification PASS: `b15be68` 独立归档全量测试 557/557、定向测试 48/48、生产构建 19 routes、敏感信息扫描无命中；公网 live/ready、首页、作品页、正式图片均为 HTTP 200，release smoke 返回 `{"ok":true}`。
+- Runtime PASS: PostgreSQL/pgvector、CPU BGE、Next.js Web、Worker 与 Caddy 均运行；DB、Embedding、Web healthy，内部端口仍未映射公网。
+- Browser PASS: 1440x900 与 390x844 均无横向溢出，正式图片加载完成，控制台 error 0；从内容创作 Agent CTA 进入、输入邀请码后，预填问题保留在输入框且未自动发送。`b8d6d88` 上的真实 Provider 对话已完整返回并展示公开来源。
+- Residual: 生产 Lighthouse 未复测；监控、托管备份、独立 edge 速率/连接限制、真实 Bocha/Feishu 和 moderate dependency advisory 处置仍未完成。数字摩斯内容、样式、知识、测试与素材已形成本地提交 `7c4c2a0`，但尚未 push 或部署；其余工作区改动和未跟踪证据同样未纳入生产。
+- Knowledge reconciliation: README、`CLAUDE.md`、腾讯云运行手册、本运行状态与 S11 生产证据按当前 release 同步；Codex durable memory 未获用户授权，不更新。
+
+## S11-5B Tencent production deployment (2026-07-18, superseded by S11-5C)
 
 - Mode: `STAGED / CRITICAL / DEPLOYED`；状态：`OBSERVED / LIMITED_LAUNCH`。
 - Runtime: 腾讯云 Lighthouse 首尔实例 `lhins-0oly57x8`，公网 `43.133.68.202`；`aimorse.tech` 与 `www.aimorse.tech` 已解析并由 Caddy 提供有效 HTTPS。
-- Release: `/opt/revolution/current` 指向 commit `39849e1` 对应 release；本轮部署提交为 `3fdd7ee`、`d486b20`、`6c1af6c`、`39849e1`，均在本地 `master`，未 push。
+- Release（截至 2026-07-18）: `/opt/revolution/current` 当时指向 commit `39849e1` 对应 release；该阶段部署提交为 `3fdd7ee`、`d486b20`、`6c1af6c`、`39849e1`，当时均在本地 `master`，未 push。
 - Services PASS: PostgreSQL/pgvector、CPU BGE、Next.js Web、Worker 和 Caddy 均运行；DB、Embedding、Web healthy。migration 001/002、独立角色 grants、migration 超级用户撤销、9 documents/10 chunks ingest 与第二次全跳过均通过。
 - Network PASS: 腾讯云与 UFW 已放行 TCP `22/80/443`；`5432/18091/3000` 未映射公网。公网 live/ready/health、首页和作品页均 HTTP 200；HTTP 与 `www` 正确重定向到主域 HTTPS。
 - Release/Provider PASS: `MORSE_RELEASE_BASE_URL=https://aimorse.tech npm run release:smoke` 返回 `{"ok":true}`；受控真实 Provider smoke HTTP 200、4 个 delta、消息额度 30 -> 29。
 - Browser PASS: 1440x900 与 390x844 首页/作品页无横向溢出，控制台 error 0，未观察到页面重叠；2026-07-18 生产验收的 15 分钟日志窗口内，五个容器的 error/exception/panic/fatal 关键词计数均为 0。
 - Security review: 密钥仅保存在本机受限凭据文件和服务器受限配置；PasswordAuthentication 已关闭，root 无 authorized key；公网响应已验证 CSP、HSTS 与基础安全头。CRITICAL compliance 与 quality/safety 无 admitted blocker。
-- Residual: 当前生产 Lighthouse 未复测；监控、托管备份、独立 edge 速率/连接限制、真实 Bocha/Feishu 和 moderate dependency advisory 处置仍未完成。内容更新提交 `b8d6d88` 已进入 `origin/master`，但线上仍运行 `39849e1`，尚未包含新的内容创作 Agent 简介、黑金设计图和六主题知识；不得把主线已提交误报为已经部署。
+- Residual（截至 2026-07-18）: 当时生产 Lighthouse 未复测，监控、托管备份、独立 edge 速率/连接限制、真实 Bocha/Feishu 和 moderate dependency advisory 处置仍未完成；内容更新提交 `b8d6d88` 已进入 `origin/master`，但当时线上仍运行 `39849e1`，尚未包含新的内容创作 Agent 简介、黑金设计图和六主题知识。
 - Knowledge reconciliation: README、`CLAUDE.md`、生产运行手册、腾讯云手册、本运行状态与 S11 部署证据已同步；用户正在编辑的蓝图、证据矩阵、站点内容、页面样式、测试和 `public/` 素材保持不动。
 
 ## S11-5A production foundation (2026-07-18)

@@ -96,7 +96,7 @@ npm run production:worker
 
 ## 8. 当前生产状态与硬化余项
 
-腾讯云首个实例已完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实 GPT smoke 和公网 live/ready/release smoke。该证据只适用于 `39849e1` 对应的当前实例。
+腾讯云首个实例在 `39849e1` 完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实 GPT smoke 和公网 live/ready/release smoke。当前 release 为 `b15be68`，沿用同一生产拓扑，并已重新观察容器健康、公网 live/ready、release smoke、公开页面与正式图片；实例细节和内容发布证据以腾讯云手册及 S11 closeout 为准。
 
 以下事项完成前保持 `LIMITED_LAUNCH`，不标记完整 `ONLINE_READY`：
 

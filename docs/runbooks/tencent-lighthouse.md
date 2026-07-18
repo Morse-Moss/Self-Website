@@ -2,18 +2,18 @@
 
 本文对应 `aimorse.tech` 的生产部署。当前实例为腾讯云 Lighthouse 首尔节点，公网地址为 `43.133.68.202`。境外节点不需要 ICP 备案；DNS 解析和 HTTPS 证书签发已完成，域名实名状态继续由腾讯云注册控制台维护。
 
-## 当前生产状态（2026-07-18）
+## 当前生产状态（2026-07-19）
 
-- 状态：`PRODUCTION_OBSERVED / LIMITED_LAUNCH`，运行修订 `39849e1`。
-- 实例：`lhins-0oly57x8`；`/opt/revolution/current` 指向 `/opt/revolution/releases/39849e1/revolution`。
+- 状态：`PRODUCTION_OBSERVED / LIMITED_LAUNCH`，运行修订 `b15be68`，`origin/master` 已包含该生产修订。
+- 实例：`lhins-0oly57x8`；`/opt/revolution/current` 指向 `/opt/revolution/releases/b15be68/revolution`；`39849e1` 与 `b8d6d88` release 继续保留用于回退。
 - 拓扑：Caddy edge、Next.js Web、Worker、PostgreSQL 16 + pgvector、CPU BGE/Embedding 均已启动；DB、Embedding 与 Web health 为 healthy。
 - 域名：`aimorse.tech` 与 `www.aimorse.tech` 均解析到 `43.133.68.202`；Let's Encrypt 证书已签发，HTTP 和 `www` 均重定向到主域 HTTPS。
 - 防火墙：腾讯云入站允许 TCP `22/80/443` 与 ICMP；UFW 允许 `22/80/443`，数据库、Embedding 和 Next 内部端口未映射到公网。
-- 数据：migration 001/002 已执行并通过幂等复验；公开知识为 9 documents / 10 chunks，第二次 ingest 全量跳过；migration 临时超级用户权限已撤销。
-- 验证：公网 live、ready、兼容 health、根页和作品页均为 HTTP 200；`release:smoke` 通过；真实 Provider smoke 为 HTTP 200 并完成 SSE 输出。
-- 浏览器：1440x900 与 390x844 的首页/作品页无横向溢出、控制台 error 为 0。
+- 数据：migration 001/002 已执行并通过幂等复验；内容发布后公开知识共 15 documents，`b15be68` 最终 ingest 为 0 document 更新、0 chunk 更新、15 documents 跳过；migration 临时超级用户权限已撤销。
+- 验证：公网 live、ready、兼容 health、根页、作品页与内容创作 Agent 正式图片均为 HTTP 200；`release:smoke` 通过；真实 Provider smoke 为 HTTP 200 并完成 SSE 输出。
+- 浏览器：1440x900 与 390x844 的作品页和对话框均无横向溢出、控制台 error 为 0；正式图片加载完成；从项目 CTA 输入邀请码后，预填问题保留在输入框且不会自动发送。
 
-仍需保持诚实边界：当前生产域名的 Lighthouse 分数未复测；监控、托管备份、独立 edge 速率/连接限制和真实 Bocha/Feishu smoke 尚未完成。内容更新提交 `b8d6d88` 已进入 `origin/master`，但当前 release 仍为 `39849e1`，尚未吸收新的内容创作 Agent 简介、黑金设计图和六主题知识。
+仍需保持诚实边界：当前生产域名的 Lighthouse 分数未复测；监控、托管备份、独立 edge 速率/连接限制和真实 Bocha/Feishu smoke 尚未完成。当前 `b15be68` 已吸收内容创作 Agent 简介、黑金设计图、六主题知识和 CTA 修复；本地数字摩斯提交 `7c4c2a0` 及剩余工作区改动尚未 push 或部署，没有进入该 release。
 
 ## 发布边界
 

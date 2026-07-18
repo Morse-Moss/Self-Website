@@ -52,8 +52,15 @@
 
 - `b8d6d88 feat: publish content agent portfolio slice` 已位于本地 `master` 与 `origin/master`，但它在并行收尾期间同时吸收了 Digital Morse 的生产状态、证据和边界同步，不能描述为纯 content-agent 提交。
 - 本轮 follow-up 只收口慢 history 竞态、卡片首层披露、知识合同、验收脚本、必要截图与文档口径；其他线程和不明归属文件继续排除。
-- 生产仍运行 `39849e1`，未包含 `b8d6d88` 及本轮 follow-up；主线已提交不等于已经部署。
-- 本轮未调用聊天或生成 Provider，未写生产数据库，未 push、未部署、未创建 PR。
+- 截至 2026-07-18 本地收尾时，生产仍运行 `39849e1`，未包含 `b8d6d88` 及本轮 follow-up；该条只记录当时边界。
+- 该本地收尾阶段未调用聊天或生成 Provider，未写生产数据库，未 push、未部署、未创建 PR。
+
+## Production Addendum (2026-07-19)
+
+- 当前生产 release 为 `b15be68`，已包含 `b8d6d88` 的内容创作 Agent 简介、黑金设计图与六主题知识，以及 follow-up 的公开证据收紧和 CTA 授权竞态修复；`origin/master` 已包含该生产修订。
+- 公网 live/ready、首页、作品页与正式图片均为 HTTP 200，release smoke 返回 `{"ok":true}`；DB、Embedding、Web healthy，Worker 与 Caddy running。
+- 1440x900 与 390x844 均无横向溢出，正式图片加载完成，控制台 error 0；从项目 CTA 输入邀请码后，预填问题保留且未自动发送。
+- 最终生产 ingest 为 0 document 更新、0 chunk 更新、15 documents 跳过。线上只使用冻结提交；后续本地数字摩斯提交 `7c4c2a0` 及剩余工作区改动没有纳入或部署。
 
 ## Review Gate
 
