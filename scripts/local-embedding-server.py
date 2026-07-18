@@ -8,7 +8,7 @@ import torch
 from sentence_transformers import SentenceTransformer
 
 
-HOST = "127.0.0.1"
+HOST = os.environ.get("MORSE_EMBEDDING_HOST", "127.0.0.1")
 PORT = int(os.environ.get("MORSE_EMBEDDING_PORT", "18091"))
 MODEL_ID = os.environ.get("MORSE_EMBEDDING_MODEL_PATH", "BAAI/bge-small-zh-v1.5")
 SOURCE_DIMENSIONS = 512

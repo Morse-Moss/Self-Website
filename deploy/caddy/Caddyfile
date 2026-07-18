@@ -1,0 +1,28 @@
+{
+  admin off
+}
+
+http://aimorse.tech, http://www.aimorse.tech {
+  redir https://aimorse.tech{uri} permanent
+}
+
+https://www.aimorse.tech {
+  redir https://aimorse.tech{uri} permanent
+}
+
+https://aimorse.tech {
+  encode zstd gzip
+
+  request_body {
+    max_size 2MB
+  }
+
+  log {
+    output stdout
+    format json
+  }
+
+  reverse_proxy web:3000 {
+    flush_interval -1
+  }
+}

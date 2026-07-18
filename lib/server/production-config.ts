@@ -51,6 +51,41 @@ function exactHttpsUrl(value: string | undefined, originOnly = false): URL | nul
   }
 }
 
+function isPrivateIpv4(hostname: string): boolean {
+  const parts = hostname.split('.');
+  if (parts.length !== 4 || !parts.every((part) => /^\d{1,3}$/u.test(part))) return false;
+  const octets = parts.map(Number);
+  if (octets.some((octet) => octet > 255)) return false;
+  return octets[0] === 10
+    || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31)
+    || (octets[0] === 192 && octets[1] === 168)
+    || octets[0] === 127;
+}
+
+function privateHttpUrl(value: string | undefined): URL | null {
+  if (!value?.trim()) return null;
+  try {
+    const url = new URL(value.trim());
+    const hostname = url.hostname.toLowerCase();
+    const internalHostname = hostname === 'localhost'
+      || isPrivateIpv4(hostname)
+      || /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u.test(hostname);
+    if (
+      url.protocol !== 'http:'
+      || !internalHostname
+      || url.username
+      || url.password
+      || url.search
+      || url.hash
+    ) {
+      return null;
+    }
+    return url;
+  } catch {
+    return null;
+  }
+}
+
 function validateDatabase(env: Env, role: ProductionRole): void {
   const connectionString = env.DATABASE_URL?.trim();
   if (!connectionString) fail('PRODUCTION_DATABASE_CONFIG_INVALID');
@@ -83,7 +118,13 @@ function validateEmbedding(env: Env): void {
   const baseUrl = env.OPENAI_EMBEDDING_BASE_URL?.trim()
     || env.OPENAI_BASE_URL?.trim()
     || 'https://api.openai.com/v1';
-  if (!apiKey || !model || !exactHttpsUrl(baseUrl)) {
+  const privateHttpFlag = env.MORSE_EMBEDDING_ALLOW_PRIVATE_HTTP?.trim();
+  if (privateHttpFlag && !['true', 'false'].includes(privateHttpFlag)) {
+    fail('PRODUCTION_EMBEDDING_CONFIG_INVALID');
+  }
+  const baseUrlValid = Boolean(exactHttpsUrl(baseUrl))
+    || (privateHttpFlag === 'true' && Boolean(privateHttpUrl(baseUrl)));
+  if (!apiKey || !model || !baseUrlValid) {
     fail('PRODUCTION_EMBEDDING_CONFIG_INVALID');
   }
 }

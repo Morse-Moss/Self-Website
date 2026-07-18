@@ -76,6 +76,38 @@ test('production preflight validates only the configuration owned by each role',
   });
 });
 
+test('production preflight permits only explicitly opted-in private HTTP embeddings', () => {
+  const internal = {
+    ...webEnv,
+    OPENAI_EMBEDDING_BASE_URL: 'http://embedding:18091/v1',
+    MORSE_EMBEDDING_ALLOW_PRIVATE_HTTP: 'true',
+  };
+  assert.deepEqual(validateProductionRole('web', internal), {
+    alertsEnabled: null,
+    role: 'web',
+  });
+  assert.throws(
+    () => validateProductionRole('web', {
+      ...internal,
+      MORSE_EMBEDDING_ALLOW_PRIVATE_HTTP: 'false',
+    }),
+    (error: unknown) => (
+      error instanceof ProductionConfigError
+      && error.code === 'PRODUCTION_EMBEDDING_CONFIG_INVALID'
+    ),
+  );
+  assert.throws(
+    () => validateProductionRole('web', {
+      ...internal,
+      OPENAI_EMBEDDING_BASE_URL: 'http://embedding.example/v1',
+    }),
+    (error: unknown) => (
+      error instanceof ProductionConfigError
+      && error.code === 'PRODUCTION_EMBEDDING_CONFIG_INVALID'
+    ),
+  );
+});
+
 test('production preflight fails closed with stable codes and never echoes values', () => {
   const cases = [
     ['PRODUCTION_NODE_ENV_REQUIRED', { ...webEnv, NODE_ENV: 'development' }],

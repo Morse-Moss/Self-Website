@@ -1,0 +1,208 @@
+name: revolution
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: revolution
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_admin_password
+      MORSE_DB_RUNTIME_PASSWORD_FILE: /run/secrets/db_runtime_password
+      MORSE_DB_MIGRATION_PASSWORD_FILE: /run/secrets/db_migration_password
+      MORSE_DB_INGEST_PASSWORD_FILE: /run/secrets/db_ingest_password
+      MORSE_DB_BACKUP_PASSWORD_FILE: /run/secrets/db_backup_password
+    secrets:
+      - db_admin_password
+      - db_runtime_password
+      - db_migration_password
+      - db_ingest_password
+      - db_backup_password
+    volumes:
+      - revolution_pgdata:/var/lib/postgresql/data
+      - ./deploy/postgres/init:/docker-entrypoint-initdb.d:ro
+      - ./deploy/postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./deploy/postgres/tls/server.crt:/var/lib/postgresql/server.crt:ro
+      - ./deploy/postgres/tls/server.key:/var/lib/postgresql/server.key:ro
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d revolution"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  embedding:
+    build:
+      context: .
+      dockerfile: deploy/embedding/Dockerfile
+    restart: unless-stopped
+    environment:
+      MORSE_EMBEDDING_HOST: 0.0.0.0
+      MORSE_EMBEDDING_PORT: 18091
+      MORSE_EMBEDDING_DEVICE: cpu
+      MORSE_EMBEDDING_MODEL_PATH: ${MORSE_EMBEDDING_MODEL_PATH:-BAAI/bge-small-zh-v1.5}
+      HF_HOME: /models
+    volumes:
+      - revolution_embedding_models:/models
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:18091/health', timeout=3)\"" ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  migration:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: "no"
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL_MIGRATION}
+      MORSE_DATABASE_SSL_MODE: require
+      MORSE_LOCAL_RELEASE_SMOKE: "false"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal
+    command: ["node", "scripts/run-production.mjs", "migration"]
+
+  ingest:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: "no"
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL_INGEST}
+      MORSE_DATABASE_SSL_MODE: require
+      MORSE_LOCAL_RELEASE_SMOKE: "false"
+      OPENAI_EMBEDDING_BASE_URL: http://embedding:18091/v1
+      OPENAI_EMBEDDING_API_KEY: ${EMBEDDING_API_KEY}
+      MORSE_EMBEDDING_ALLOW_PRIVATE_HTTP: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+      embedding:
+        condition: service_healthy
+    networks:
+      - internal
+    command: ["node", "scripts/run-production.mjs", "ingest"]
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: ${DATABASE_URL_RUNTIME}
+      MORSE_DATABASE_SSL_MODE: require
+      MORSE_LOCAL_RELEASE_SMOKE: "false"
+      MORSE_DATABASE_POOL_MAX: ${MORSE_WEB_POOL_MAX:-6}
+      OPENAI_EMBEDDING_BASE_URL: http://embedding:18091/v1
+      OPENAI_EMBEDDING_API_KEY: ${EMBEDDING_API_KEY}
+      MORSE_EMBEDDING_ALLOW_PRIVATE_HTTP: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+      embedding:
+        condition: service_healthy
+    expose:
+      - "3000"
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:3000/api/health/live | grep -q '\"ok\":true'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    command: ["node", "scripts/run-production.mjs", "web"]
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL_RUNTIME}
+      MORSE_DATABASE_SSL_MODE: require
+      MORSE_LOCAL_RELEASE_SMOKE: "false"
+      MORSE_DATABASE_POOL_MAX: ${MORSE_WORKER_POOL_MAX:-3}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal
+    command: ["node", "scripts/run-production.mjs", "worker"]
+
+  grants:
+    image: pgvector/pgvector:pg16
+    profiles: ["ops"]
+    restart: "no"
+    environment:
+      PGPASSWORD_FILE: /run/secrets/db_admin_password
+    secrets:
+      - db_admin_password
+    volumes:
+      - ./deploy/postgres/grant-runtime.sql:/grant-runtime.sql:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal
+    command: ["sh", "-eu", "-c", "export PGPASSWORD=\"$(cat /run/secrets/db_admin_password)\"; psql --host=db --username=postgres --dbname=revolution --file=/grant-runtime.sql"]
+
+  edge:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - revolution_caddy_data:/data
+      - revolution_caddy_config:/config
+    networks:
+      - internal
+
+volumes:
+  revolution_pgdata:
+  revolution_embedding_models:
+  revolution_caddy_data:
+  revolution_caddy_config:
+
+secrets:
+  db_admin_password:
+    file: ./deploy/secrets/db_admin_password
+  db_runtime_password:
+    file: ./deploy/secrets/db_runtime_password
+  db_migration_password:
+    file: ./deploy/secrets/db_migration_password
+  db_ingest_password:
+    file: ./deploy/secrets/db_ingest_password
+  db_backup_password:
+    file: ./deploy/secrets/db_backup_password
+
+networks:
+  internal:
+    driver: bridge

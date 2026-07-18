@@ -9,3 +9,7 @@ out/
 output/
 tmp/
 scripts/.tmp-*
+deploy/postgres/tls/*
+!deploy/postgres/tls/.gitkeep
+deploy/secrets/*
+!deploy/secrets/.gitkeep

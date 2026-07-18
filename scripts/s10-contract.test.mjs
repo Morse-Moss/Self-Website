@@ -122,3 +122,8 @@ test('S10 environment contract has controls but no committed secret', () => {
   assert.doesNotMatch(example, /sk-[A-Za-z0-9_-]{16,}/);
   assert.doesNotMatch(example, /FEISHU_WEBHOOK_URL=https?:\/\/.+/);
 });
+
+test('S10 production runtime snapshot carries the migration manifest for readiness', () => {
+  const smoke = read('scripts/s10-chat-smoke.mjs');
+  assert.match(smoke, /const RUNTIME_COPY_ENTRIES = \[[\s\S]*['"]db['"]/);
+});

@@ -77,6 +77,7 @@ const RUNTIME_COPY_ENTRIES = [
   'app',
   'components',
   'content',
+  'db',
   'lib',
   'public',
   'next-env.d.ts',

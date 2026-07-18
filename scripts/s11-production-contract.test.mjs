@@ -67,7 +67,30 @@ test('production roles, health routes and release checks have explicit commands'
   }
 });
 
-test('Next production responses use the frozen baseline headers without an unverified CSP', () => {
+test('production topology keeps stateful services private and preserves SSE streaming', () => {
+  const compose = read('compose.production.yaml');
+  const caddy = read('deploy/caddy/Caddyfile');
+  for (const file of [
+    'compose.production.yaml',
+    'deploy/caddy/Caddyfile',
+    'deploy/embedding/Dockerfile',
+    'deploy/embedding/requirements.txt',
+    'deploy/postgres/init/01-roles.sh',
+    'deploy/postgres/grant-runtime.sql',
+    'deploy/postgres/postgresql.conf',
+  ]) {
+    assert.ok(fs.existsSync(path.resolve(file)), `missing ${file}`);
+  }
+  assert.match(compose, /pgvector\/pgvector:pg16/);
+  assert.match(compose, /caddy:2\.10-alpine/);
+  assert.match(caddy, /flush_interval -1/);
+  assert.match(compose, /MORSE_EMBEDDING_ALLOW_PRIVATE_HTTP/);
+  assert.match(compose, /condition: service_healthy/);
+  assert.doesNotMatch(compose, /ports:\s*\n\s*- ["']?5432:/);
+  assert.doesNotMatch(compose, /ports:\s*\n\s*- ["']?18091:/);
+});
+
+test('Next production responses use the frozen baseline headers with an explicit CSP', () => {
   const source = read('next.config.mjs');
   assert.match(source, /poweredByHeader:\s*false/);
   for (const header of [
@@ -79,7 +102,7 @@ test('Next production responses use the frozen baseline headers without an unver
   ]) {
     assert.match(source, new RegExp(header));
   }
-  assert.doesNotMatch(source, /Content-Security-Policy/);
+  assert.match(source, /Content-Security-Policy/);
 });
 
 test('production environment contract exposes controls but no committed credentials', () => {
@@ -98,9 +121,11 @@ test('production environment contract exposes controls but no committed credenti
     'MORSE_WORKER_POLL_MS',
     'MORSE_WORKER_BACKOFF_MAX_MS',
     'MORSE_CLEANUP_INTERVAL_MS',
+    'MORSE_EMBEDDING_ALLOW_PRIVATE_HTTP',
   ]) {
     assert.match(source, new RegExp(`^${name}=`, 'm'));
   }
+  assert.doesNotMatch(source, /MORSE_EMBEDDING_ALLOW_PRIVATE_HTTP=true/);
   assert.doesNotMatch(source, /sk-[A-Za-z0-9_-]{16,}/);
   assert.doesNotMatch(source, /^FEISHU_WEBHOOK_URL=https?:\/\/.+/m);
 });

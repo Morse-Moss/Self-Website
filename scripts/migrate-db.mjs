@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
@@ -7,6 +6,10 @@ import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 
 import { createDatabaseClientConfig } from '../lib/server/db.ts';
+import {
+  canonicalizeMigrationText,
+  migrationChecksum,
+} from '../lib/server/migration-checksum.ts';
 
 const { Client } = pg;
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -156,8 +159,8 @@ async function readMigrations() {
       return {
         version: match[1],
         fileName: entry.name,
-        checksum: createHash('sha256').update(bytes).digest('hex'),
-        sql: bytes.toString('utf8'),
+        checksum: migrationChecksum(bytes),
+        sql: canonicalizeMigrationText(bytes),
       };
     }));
   migrations.sort(compareVersions);

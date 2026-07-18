@@ -339,6 +339,27 @@ test('migration runner rejects checksum drift in an applied migration', async ()
   }
 });
 
+test('migration runner accepts an equivalent CRLF and BOM checkout after registration', async () => {
+  const database = await createDisposablePostgresDatabase();
+  const directory = await copyMigrations();
+  try {
+    const first = await runMigrations(database.connectionString, directory);
+    assert.equal(first.code, 0, first.stderr);
+    for (const fileName of ['001_morse_rag.sql', '002_s10_customer_service.sql']) {
+      const filePath = path.join(directory, fileName);
+      const text = await fs.readFile(filePath, 'utf8');
+      const crlf = `\uFEFF${text.replace(/\r?\n/gu, '\r\n')}`;
+      await fs.writeFile(filePath, crlf, 'utf8');
+    }
+
+    const second = await runMigrations(database.connectionString, directory);
+    assert.equal(second.code, 0, second.stderr);
+  } finally {
+    await fs.rm(directory, { force: true, recursive: true });
+    await database.dispose();
+  }
+});
+
 test('a failed 002 migration rolls back its schema and registration together', async () => {
   const database = await createDisposablePostgresDatabase();
   const directory = await copyMigrations();

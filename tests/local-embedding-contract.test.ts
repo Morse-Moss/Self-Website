@@ -10,6 +10,7 @@ test('local embedding server is loopback-only and emits normalized padded BGE ve
 
   assert.match(source, /BAAI\/bge-small-zh-v1\.5/);
   assert.match(source, /127\.0\.0\.1/);
+  assert.match(source, /MORSE_EMBEDDING_HOST/);
   assert.match(source, /normalize_embeddings\s*=\s*True/);
   assert.match(source, /SOURCE_DIMENSIONS\s*=\s*512/);
   assert.match(source, /TARGET_DIMENSIONS\s*=\s*1536/);

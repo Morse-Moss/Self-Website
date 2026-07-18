@@ -1,6 +1,7 @@
-import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+
+import { migrationChecksum } from './migration-checksum.ts';
 
 export interface MigrationManifestEntry {
   checksum: string;
@@ -18,7 +19,7 @@ export async function readMigrationManifest(
       if (!match) throw new Error('MIGRATION_MANIFEST_INVALID');
       const bytes = await fs.readFile(path.join(directory, entry.name));
       return {
-        checksum: createHash('sha256').update(bytes).digest('hex'),
+        checksum: migrationChecksum(bytes),
         version: match[1],
       };
     }));
