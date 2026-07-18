@@ -60,5 +60,5 @@
 
 - 当前为有限生产发布，不标记完整 `ONLINE_READY`。
 - 仍需生产 Lighthouse `>= 90`、监控、托管备份与恢复演练、入口层速率/连接限制、真实 Bocha/Feishu smoke 和 moderate dependency advisory 处置。
-- 线上 release 只来自冻结提交，没有复制本地脏工作区。生产运行 `b15be68`，本地 `master` 与 `origin/master` 均包含该修订；本地 `master` 另含尚未 push/部署的数字摩斯提交 `7c4c2a0`，其余工作区改动也未纳入生产。
+- 线上 release 只来自冻结提交，没有复制本地脏工作区。生产运行 `b15be68`，本地与远端 `master` 另含尚未部署的数字摩斯提交 `7c4c2a0`；其余工作区改动也未纳入生产。
 - `b15be68` 已 push；未创建 PR，未清理旧 release、上传包或持久卷。

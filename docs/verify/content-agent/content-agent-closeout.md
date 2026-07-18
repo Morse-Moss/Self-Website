@@ -60,7 +60,7 @@
 - 当前生产 release 为 `b15be68`，已包含 `b8d6d88` 的内容创作 Agent 简介、黑金设计图与六主题知识，以及 follow-up 的公开证据收紧和 CTA 授权竞态修复；`origin/master` 已包含该生产修订。
 - 公网 live/ready、首页、作品页与正式图片均为 HTTP 200，release smoke 返回 `{"ok":true}`；DB、Embedding、Web healthy，Worker 与 Caddy running。
 - 1440x900 与 390x844 均无横向溢出，正式图片加载完成，控制台 error 0；从项目 CTA 输入邀请码后，预填问题保留且未自动发送。
-- 最终生产 ingest 为 0 document 更新、0 chunk 更新、15 documents 跳过。线上只使用冻结提交；后续本地数字摩斯提交 `7c4c2a0` 及剩余工作区改动没有纳入或部署。
+- 最终生产 ingest 为 0 document 更新、0 chunk 更新、15 documents 跳过。线上只使用冻结提交；后续数字摩斯提交 `7c4c2a0` 已进入 `origin/master` 但尚未部署，剩余工作区改动也没有纳入生产。
 
 ## Review Gate
 

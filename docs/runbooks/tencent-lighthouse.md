@@ -13,7 +13,7 @@
 - 验证：公网 live、ready、兼容 health、根页、作品页与内容创作 Agent 正式图片均为 HTTP 200；`release:smoke` 通过；真实 Provider smoke 为 HTTP 200 并完成 SSE 输出。
 - 浏览器：1440x900 与 390x844 的作品页和对话框均无横向溢出、控制台 error 为 0；正式图片加载完成；从项目 CTA 输入邀请码后，预填问题保留在输入框且不会自动发送。
 
-仍需保持诚实边界：当前生产域名的 Lighthouse 分数未复测；监控、托管备份、独立 edge 速率/连接限制和真实 Bocha/Feishu smoke 尚未完成。当前 `b15be68` 已吸收内容创作 Agent 简介、黑金设计图、六主题知识和 CTA 修复；本地数字摩斯提交 `7c4c2a0` 及剩余工作区改动尚未 push 或部署，没有进入该 release。
+仍需保持诚实边界：当前生产域名的 Lighthouse 分数未复测；监控、托管备份、独立 edge 速率/连接限制和真实 Bocha/Feishu smoke 尚未完成。当前 `b15be68` 已吸收内容创作 Agent 简介、黑金设计图、六主题知识和 CTA 修复；数字摩斯提交 `7c4c2a0` 已进入 `origin/master` 但尚未部署，剩余工作区改动同样没有进入该 release。
 
 ## 发布边界
 
