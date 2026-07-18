@@ -13,7 +13,7 @@
 - 验证：公网 live、ready、兼容 health、根页和作品页均为 HTTP 200；`release:smoke` 通过；真实 Provider smoke 为 HTTP 200 并完成 SSE 输出。
 - 浏览器：1440x900 与 390x844 的首页/作品页无横向溢出、控制台 error 为 0。
 
-仍需保持诚实边界：当前生产域名的 Lighthouse 分数未复测；监控、托管备份、独立 edge 速率/连接限制和真实 Bocha/Feishu smoke 尚未完成。当前 release 只包含冻结提交，没有吸收本地未提交的最终内容和素材。
+仍需保持诚实边界：当前生产域名的 Lighthouse 分数未复测；监控、托管备份、独立 edge 速率/连接限制和真实 Bocha/Feishu smoke 尚未完成。内容更新提交 `b8d6d88` 已进入 `origin/master`，但当前 release 仍为 `39849e1`，尚未吸收新的内容创作 Agent 简介、黑金设计图和六主题知识。
 
 ## 发布边界
 

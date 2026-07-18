@@ -19,7 +19,7 @@
 - Release/Provider PASS: `MORSE_RELEASE_BASE_URL=https://aimorse.tech npm run release:smoke` 返回 `{"ok":true}`；受控真实 Provider smoke HTTP 200、4 个 delta、消息额度 30 -> 29。
 - Browser PASS: 1440x900 与 390x844 首页/作品页无横向溢出，控制台 error 0，未观察到页面重叠；2026-07-18 生产验收的 15 分钟日志窗口内，五个容器的 error/exception/panic/fatal 关键词计数均为 0。
 - Security review: 密钥仅保存在本机受限凭据文件和服务器受限配置；PasswordAuthentication 已关闭，root 无 authorized key；公网响应已验证 CSP、HSTS 与基础安全头。CRITICAL compliance 与 quality/safety 无 admitted blocker。
-- Residual: 当前生产 Lighthouse 未复测；监控、托管备份、独立 edge 速率/连接限制、真实 Bocha/Feishu 和 moderate dependency advisory 处置仍未完成。线上冻结提交未吸收本地未提交的内容与素材，因此仍显示“尚未部署”和“截图待补”的旧内容；不得把该差异伪报为已发布。
+- Residual: 当前生产 Lighthouse 未复测；监控、托管备份、独立 edge 速率/连接限制、真实 Bocha/Feishu 和 moderate dependency advisory 处置仍未完成。内容更新提交 `b8d6d88` 已进入 `origin/master`，但线上仍运行 `39849e1`，尚未包含新的内容创作 Agent 简介、黑金设计图和六主题知识；不得把主线已提交误报为已经部署。
 - Knowledge reconciliation: README、`CLAUDE.md`、生产运行手册、腾讯云手册、本运行状态与 S11 部署证据已同步；用户正在编辑的蓝图、证据矩阵、站点内容、页面样式、测试和 `public/` 素材保持不动。
 
 ## S11-5A production foundation (2026-07-18)

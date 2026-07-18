@@ -56,5 +56,5 @@
 
 - 当前为有限生产发布，不标记完整 `ONLINE_READY`。
 - 仍需生产 Lighthouse `>= 90`、监控、托管备份与恢复演练、入口层速率/连接限制、真实 Bocha/Feishu smoke 和 moderate dependency advisory 处置。
-- 线上 release 只来自冻结提交，没有复制本地脏工作区。用户正在收尾的内容、样式、测试、研究文档和 `public/` 素材未部署；因此当前页面仍有“尚未部署”和“截图待补”的旧内容。
+- 线上 release 只来自冻结提交，没有复制本地脏工作区。内容更新提交 `b8d6d88` 已进入 `origin/master`，但生产仍运行 `39849e1`，因此新的内容创作 Agent 简介、黑金设计图和六主题知识尚未部署。
 - 未 push、未创建 PR、未清理旧 release、上传包或持久卷。

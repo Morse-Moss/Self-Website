@@ -27,6 +27,7 @@ export type ProjectMedia = {
   width: number;
   height: number;
   alt: string;
+  label: string;
   caption: string;
   evidence: {
     capturedAt: string;

@@ -113,6 +113,10 @@ test("internal projects have no external action and disclose approved design med
     contentAgent.media.src,
     "/works/content-agent/atelier-main-design-2026-07-18.jpg",
   );
+  assert.equal(
+    contentAgent.media.label,
+    "设计图 · 示例数据 · 非生产运行截图",
+  );
   assert.match(contentAgent.media.caption, /设计图/);
   assert.match(contentAgent.media.caption, /不是生产运行截图/);
   assert.equal(autoOperations?.media, null);

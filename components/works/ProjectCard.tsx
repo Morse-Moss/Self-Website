@@ -128,23 +128,28 @@ export default function ProjectCard({
       aria-labelledby={titleId}
       onClick={handleCardClick}
     >
-      <div className={styles.media}>
+      <div className={styles.mediaColumn}>
+        <div className={styles.media}>
+          {project.media ? (
+            <Image
+              className={styles.image}
+              src={project.media.src}
+              width={project.media.width}
+              height={project.media.height}
+              alt={project.media.alt}
+              sizes="(max-width: 640px) 34vw, (max-width: 1100px) 22vw, 220px"
+            />
+          ) : (
+            <div
+              className={styles.mediaPlaceholder}
+              role="img"
+              aria-label={`${project.name}暂无可公开截图`}
+            >截图待补</div>
+          )}
+        </div>
         {project.media ? (
-          <Image
-            className={styles.image}
-            src={project.media.src}
-            width={project.media.width}
-            height={project.media.height}
-            alt={project.media.alt}
-            sizes="(max-width: 640px) 34vw, (max-width: 1100px) 22vw, 220px"
-          />
-        ) : (
-          <div
-            className={styles.mediaPlaceholder}
-            role="img"
-            aria-label={`${project.name}暂无可公开截图`}
-          >截图待补</div>
-        )}
+          <p className={styles.mediaDisclosure}>{project.media.label}</p>
+        ) : null}
       </div>
 
       <div className={styles.content}>

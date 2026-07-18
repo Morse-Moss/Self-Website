@@ -30,6 +30,7 @@ export default function MorseChat({ variant = 'overlay' }: MorseChatProps) {
   const autoFollowRef = useRef(true);
   const forceAutoFollowRef = useRef(true);
   const pendingFocusRef = useRef(false);
+  const pendingPromptRef = useRef<string | null>(null);
   const wasStreamingRef = useRef(false);
 
   function followMessages() {
@@ -56,8 +57,16 @@ export default function MorseChat({ variant = 'overlay' }: MorseChatProps) {
         ? event.detail.prompt.trim()
         : '';
       if (prompt) {
-        chat.setWorkflow('chat');
-        chat.setDraft(prompt);
+        pendingPromptRef.current = prompt;
+        if (
+          chat.accessState === 'authorized'
+          && !chat.historyLoading
+          && !chat.streaming
+        ) {
+          chat.setWorkflow('chat');
+          chat.setDraft(prompt);
+          pendingPromptRef.current = null;
+        }
       }
       pendingFocusRef.current = true;
       forceAutoFollowRef.current = true;
@@ -87,6 +96,25 @@ export default function MorseChat({ variant = 'overlay' }: MorseChatProps) {
     chat.streaming,
     chat.workflow,
     embedded,
+  ]);
+
+  useEffect(() => {
+    const prompt = pendingPromptRef.current;
+    if (
+      !prompt
+      || chat.accessState !== 'authorized'
+      || chat.historyLoading
+      || chat.streaming
+    ) return;
+
+    chat.setWorkflow('chat');
+    chat.setDraft(prompt);
+    pendingPromptRef.current = null;
+  }, [
+    chat.accessState,
+    chat.historyLoading,
+    chat.streaming,
+    chat.workflow,
   ]);
 
   useEffect(() => {

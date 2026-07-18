@@ -21,6 +21,10 @@
   grid-column: 1 / -1;
 }
 
+.mediaColumn {
+  min-width: 0;
+}
+
 .media {
   min-width: 0;
   aspect-ratio: 51 / 58;
@@ -111,6 +115,15 @@
   margin-top: var(--space-3);
   color: var(--muted);
   line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+
+.mediaDisclosure {
+  margin-top: var(--space-2);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  line-height: 1.5;
   overflow-wrap: anywhere;
 }
 
