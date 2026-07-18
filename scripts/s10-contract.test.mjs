@@ -21,10 +21,11 @@ test('S10 has one active blueprint override and a nine-stage task center', () =>
   assert.match(activeS10, /取消月预算硬熔断/);
   assert.doesNotMatch(activeS10, /月预算硬熔断机制保留/);
   assert.match(activeS10, /不抓任意网页正文/);
-  const runPointer = runState.match(/^\*\*((?:S10-CS-[0-8][^*]+)|S10 (?:LOCAL_READY|REAL_PROVIDER_VERIFIED \/ MAINLINE_ABSORPTION|MAINLINE_LOCAL_READY|MAINLINE_PROVIDER_READY))\*\*$/m)?.[1];
+  const runPointer = runState.match(/^\*\*([^*]+)\*\*$/m)?.[1];
   const stagePointer = taskCenter.match(/^\*\*((?:S10-CS-[0-8][^*]+)|S10 (?:LOCAL_READY|REAL_PROVIDER_VERIFIED \/ MAINLINE_ABSORPTION|MAINLINE_LOCAL_READY|MAINLINE_PROVIDER_READY))\*\*$/m)?.[1];
   assert.ok(runPointer);
-  assert.equal(runPointer, stagePointer);
+  if (runPointer.startsWith('S10')) assert.equal(runPointer, stagePointer);
+  else assert.match(runPointer, /^S11-/);
   assert.match(runState, /not applicable to S10/);
   assert.match(runState, /forbids push\/deploy/);
   assert.equal((taskCenter.match(/^\| `S10-CS-[0-8]/gm) ?? []).length, 9);
@@ -113,7 +114,7 @@ test('S10 environment contract has controls but no committed secret', () => {
   }
 
   assert.doesNotMatch(example, /^MORSE_MONTHLY_BUDGET_USD=/m);
-  assert.doesNotMatch(example, /^MORSE_PUBLIC_ORIGIN=/m);
+  assert.match(example, /^MORSE_PUBLIC_ORIGIN=/m);
   assert.doesNotMatch(example, /^MORSE_ADMIN_MAX_ATTEMPTS=/m);
   assert.doesNotMatch(example, /^MORSE_INVITE_MAX_ATTEMPTS=/m);
   assert.doesNotMatch(example, /^MORSE_INVITE_WINDOW_MINUTES=/m);

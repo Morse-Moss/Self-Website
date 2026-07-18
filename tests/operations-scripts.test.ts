@@ -23,6 +23,9 @@ test('cleanup applies the complete retention policy with one injected clock', ()
   const source = fs.readFileSync(cleanupPath, 'utf8');
 
   assert.equal(pkg.scripts['session:cleanup'], 'node scripts/cleanup-expired.mjs');
+  assert.match(source, /export async function cleanupExpired/);
+  assert.match(source, /pg_try_advisory_xact_lock/);
+  assert.match(source, /isMain/);
   assert.match(source, /MORSE_CLEANUP_NOW/);
   assert.match(source, /await client\.query\('BEGIN'\)/);
   assert.match(source, /await client\.query\('COMMIT'\)/);

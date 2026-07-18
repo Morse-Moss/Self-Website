@@ -271,6 +271,10 @@ function parseScryptHash(encodedHash: string): {
   return { parameters, salt, expected };
 }
 
+export function isSupportedAdminPasswordHash(encodedHash: string): boolean {
+  return parseScryptHash(encodedHash) !== null;
+}
+
 export async function hashAdminPassword(password: string): Promise<string> {
   const parameters = {
     cost: SCRYPT_COST,
@@ -328,6 +332,16 @@ function decodeBase32(secret: string): Buffer {
   if (bits > 0 && value !== 0) throw new Error('TOTP secret has non-zero Base32 padding bits.');
   if (bytes.length === 0) throw new Error('TOTP secret must not be empty.');
   return Buffer.from(bytes);
+}
+
+export function isCanonicalAdminTotpSecret(secret: string): boolean {
+  const value = secret.trim();
+  if (value !== secret || value.length < 16 || /[\s=-]/u.test(value)) return false;
+  try {
+    return decodeBase32(value).length >= 10;
+  } catch {
+    return false;
+  }
 }
 
 function normalizeTotpOptions(options: TotpOptions | undefined): {

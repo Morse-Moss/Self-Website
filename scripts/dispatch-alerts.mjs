@@ -2,11 +2,9 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-import pg from 'pg';
-
+import { createDatabasePool } from '../lib/server/db.ts';
 import { FeishuAlertProvider } from '../lib/server/feishu-alert-provider.ts';
 
-const { Pool } = pg;
 const MAX_RETRY_DELAY_MS = 60 * 60 * 1000;
 
 function boundedInteger(value, name, fallback, minimum, maximum) {
@@ -211,7 +209,7 @@ export async function dispatchNextAlert({
 export async function dispatchAvailableAlerts({
   pool,
   provider,
-  now,
+  now = undefined,
   clock = () => new Date(),
   limit = 20,
   maxDeliveryAttempts = 5,
@@ -244,7 +242,7 @@ export async function main({ env = process.env, logger = console, fetcher = fetc
   if (!connectionString) throw new Error('DATABASE_URL is required.');
   if (!webhookUrl) throw new Error('FEISHU_WEBHOOK_URL is required.');
 
-  const pool = new Pool({ connectionString });
+  const pool = createDatabasePool(connectionString, { env, role: 'worker' });
   try {
     const provider = new FeishuAlertProvider({ webhookUrl, timeoutMs: 5_000 }, fetcher);
     const summary = await dispatchAvailableAlerts({

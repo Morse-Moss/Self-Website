@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import pg from 'pg';
 
@@ -59,6 +60,17 @@ export async function createDisposablePostgresDatabase(): Promise<DisposablePost
       const cleanup = new Client({ connectionString: adminConnectionString });
       await cleanup.connect();
       try {
+        const drainDeadline = Date.now() + 5_000;
+        while (Date.now() < drainDeadline) {
+          const sessions = await cleanup.query<{ count: number }>(
+            `SELECT count(*)::integer AS count
+               FROM pg_stat_activity
+              WHERE datname = $1 AND backend_type = 'client backend'`,
+            [name],
+          );
+          if (sessions.rows[0].count === 0) break;
+          await delay(25);
+        }
         await cleanup.query(`DROP DATABASE ${quoteIdentifier(name)} WITH (FORCE)`);
         disposed = true;
       } finally {

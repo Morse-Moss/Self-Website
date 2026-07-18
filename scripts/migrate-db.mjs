@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url';
 
 import pg from 'pg';
 
+import { createDatabaseClientConfig } from '../lib/server/db.ts';
+
 const { Client } = pg;
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const migrationsDirectory = process.env.MORSE_MIGRATIONS_DIR
@@ -308,7 +310,10 @@ function validateAppliedMigrations(applied, migrations) {
   }
 }
 
-const client = new Client({ connectionString });
+const client = new Client(createDatabaseClientConfig(connectionString, {
+  env: process.env,
+  role: 'migration',
+}));
 let migrationLockKey = null;
 let migrationLockAcquired = false;
 

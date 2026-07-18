@@ -12,7 +12,8 @@
 - S7 多页作品集已完成：首页、作品索引、四个项目案例、共享导航/页脚/简历入口和唯一公开内容源均已进入正式站。
 - S8 智能客服文字对话闭环已完成并进入 `origin/master`：三类访客意图、失败补偿、幂等重放、公开来源、可恢复重试、双宽浏览器验证和分层评测均已通过。
 - S9 Morse 作品集重设计已完成并进入 `origin/master`：首页以 `Morse` 为主身份，作品集改为四项目单页折叠，企业内部项目只保留脱敏文字案例；全视口首屏、1440/390 双宽、减弱动画和 Lighthouse 门禁均已通过。
-- S10 数字摩斯智能客服已达到 `MAINLINE_PROVIDER_READY / CHAT_UX_LOCAL_READY`：访客三流程、自动搜索、管理后台与离线评测完成；19/19 Mock E2E、1440/390 真实浏览器、517/517 零 skip 全量测试、BGE/pgvector 语义评测和 17/17 生产构建均已通过。2026-07-17 针对中转 WAF 和易变模型目录加入显式兼容 User-Agent，并固定使用已验收的 `gpt-5.4`；随后修复默认问题只填框、等待态仍显示建议、Markdown 源码外露、来源编号不清和 OpenAI-compatible 中转间歇性空输出/502。聊天区已扩大；正文“依据”和底部来源统一遵循不打断合同：当前页资料静态显示，项目案例和联网资料在新标签页打开，不能改变当前对话 URL、消息或 transcript 滚动位置。Responses 只有在尚未输出正文且属于空完成、incomplete 或明确瞬时 HTTP 状态时才进行最多 3 次总尝试，永久 4xx、显式 failed/error 和已有部分回答均不重试。空完成或 incomplete 轮次如返回 usage，会计入最终真实用量。最新持久化 usage 证据 turn `e9d03006-2cbd-40dd-a31c-1cd65c6b6e45` 到达 SSE `done` 和数据库 `completed`，usage 为 5766 输入 / 102 输出 token；本轮另有三个真实浏览器 turn `45d91a62-38b9-4505-9a80-5e7b563a2cb2`、`3023fc9a-af03-45e0-91c6-3994022a1fc5` 与 `389f9ccd-9f42-451f-a641-050bad5f1106` 均为 `completed`，额度各从 30 降到 29；最新一轮延迟 15706ms、5 个检索来源、`used_search=false`。中转未返回 usage，费用保持未知。真实博查/飞书未验收；当前修正位于本地 `master`，未 push、未部署。
+- S10 数字摩斯智能客服已达到 `MAINLINE_PROVIDER_READY / CHAT_UX_LOCAL_READY`：访客三流程、自动搜索、管理后台与离线评测完成；19/19 Mock E2E、1440/390 真实浏览器、543/543 零 skip 全量测试、BGE/pgvector 语义评测和 19/19 生产构建均已通过。2026-07-17 针对中转 WAF 和易变模型目录加入显式兼容 User-Agent，并固定使用已验收的 `gpt-5.4`；随后修复默认问题只填框、等待态仍显示建议、Markdown 源码外露、来源编号不清和 OpenAI-compatible 中转间歇性空输出/502。聊天区已扩大；正文“依据”和底部来源统一遵循不打断合同：当前页资料静态显示，项目案例和联网资料在新标签页打开，不能改变当前对话 URL、消息或 transcript 滚动位置。Responses 只有在尚未输出正文且属于空完成、incomplete 或明确瞬时 HTTP 状态时才进行最多 3 次总尝试，永久 4xx、显式 failed/error 和已有部分回答均不重试。空完成或 incomplete 轮次如返回 usage，会计入最终真实用量。最新持久化 usage 证据 turn `e9d03006-2cbd-40dd-a31c-1cd65c6b6e45` 到达 SSE `done` 和数据库 `completed`，usage 为 5766 输入 / 102 输出 token；本轮另有三个真实浏览器 turn `45d91a62-38b9-4505-9a80-5e7b563a2cb2`、`3023fc9a-af03-45e0-91c6-3994022a1fc5` 与 `389f9ccd-9f42-451f-a641-050bad5f1106` 均为 `completed`，额度各从 30 降到 29；最新一轮延迟 15706ms、5 个检索来源、`used_search=false`。中转未返回 usage，费用保持未知。真实博查/飞书未验收；当前修正位于本地 `master`，未 push、未部署。
+- S11-5A 生产基础已达到 `LOCAL_RELEASE_CANDIDATE / LOCAL_READY`：Web、Worker、Migration、Ingest 四角色预检，集中 PostgreSQL TLS/Pool/timeout，通用 live/ready、安全响应头、长期 Worker、重建式恢复和 Node 24 非 root 应用镜像均已验证。镜像只在本地生成，未部署；生产 BGE、TLS edge、最小数据库角色、代理限制、监控、托管备份、真实外部调用和 2 个 moderate dependency advisory 仍是 `ONLINE_READY` 前门禁。
 - M3-RAG 基础能力继续复用短期邀请码、PostgreSQL + pgvector、OpenAI 适配层、SSE、短期会话和费用门；本地 BGE 语义向量已接入。S8 的 3 次历史 `runChat` 未完成，但已由 2026-07-17 的 S10 真实 Provider 全链 PASS 更新当前结论；历史失败记录不删除，也不由 Mock 替代。
 - 部署和域名操作尚未执行，仍由摩斯决定并操作。
 
@@ -65,7 +66,7 @@ npm run session:cleanup
 
 当前受控访问、低并发和小规模知识库继续使用 PostgreSQL + pgvector，不额外部署 Milvus/Qdrant。只有基准测试证明检索延迟或写入吞吐不达标，或出现独立扩缩容、多租户强隔离、专用混合检索需求时，才评估外置向量库。
 
-`GET /api/health` 中 `provider.configured` 表示聊天 Key、模型、协议和 Embedding 模型配置齐全；`provider.costConfigured` 单独表示输入/输出单价齐全。未配置单价不会阻塞真实对话，但 usage 或成本缺失时仍保持未知。
+`GET /api/health/live` 只报告进程存活；`GET /api/health/ready` 与兼容入口 `GET /api/health` 只返回通用 `{ "ok": true|false }`，并以运行配置、数据库、migration checksum 和非空公开知识为就绪条件，不公开 Provider、费用、表名或 chunk 数。完整生产边界见 `docs/runbooks/production.md`。
 
 部分 OpenAI-compatible 中转会拦截 SDK 默认 User-Agent。仅在模型列表用默认 SDK 请求返回 403、而同凭据的受控兼容请求返回 200 时，设置 `OPENAI_COMPAT_USER_AGENT`；值必须是单行且不超过 256 字符。2026-07-17 本地直连验收使用 `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Revolution/1.0`，该值不含秘密，但属于当前中转兼容配置，部署时仍需重新验证。模型 ID 必须以中转实时 `/models` 返回为准，不能把某次目录快照当作持久事实。
 

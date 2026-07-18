@@ -99,7 +99,7 @@ node --test scripts/architecture-contract.test.mjs
 - 本地 `compose.yaml` 的 loopback、`trust`、超级用户和无 SSL 只允许开发使用，不得复制为生产配置。
 - 生产 runtime、migration、backup 使用不同角色和最小权限。普通 runtime 无 DDL、建库、建角色和超级用户权限。
 - 生产数据库使用强凭据与 TLS，不暴露给任意公网来源，只允许应用与 Worker 的受控网络访问。
-- Web、Worker、migration 是三种显式命令；migration 不随每个 Web replica 并发启动。
+- Web、Worker、migration、ingest 是四种显式命令；migration 不随每个 Web replica 并发启动，ingest 使用受控 Embedding 与独立数据库权限边界。
 - PostgreSQL pool 必须配置连接上限、连接/statement/idle timeout 和可识别的 `application_name`。
 - Worker 的 Outbox 与 cleanup 必须具备 lease/idempotency，并能从进程崩溃中恢复。
 - 上线前必须在隔离数据库完成空库 migration、公开知识重摄取、新邀请码与对话 smoke 的恢复演练。

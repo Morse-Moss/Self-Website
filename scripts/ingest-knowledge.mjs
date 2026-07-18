@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url';
 import OpenAI from 'openai';
 import pg from 'pg';
 
+import { createDatabaseClientConfig } from '../lib/server/db.ts';
+
 import {
   createDeterministicTestEmbedding,
   EMBEDDING_DIMENSIONS,
@@ -64,7 +66,10 @@ const liveContent = JSON.parse(
   await fs.readFile(path.join(repoRoot, 'content', 'site-content.json'), 'utf8'),
 );
 const documents = extractPublicKnowledge(liveContent);
-const client = new Client({ connectionString });
+const client = new Client(createDatabaseClientConfig(connectionString, {
+  env: process.env,
+  role: 'ingest',
+}));
 
 await client.connect();
 let indexedDocuments = 0;

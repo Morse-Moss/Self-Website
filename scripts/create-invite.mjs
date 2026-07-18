@@ -3,6 +3,8 @@ import process from 'node:process';
 
 import pg from 'pg';
 
+import { createDatabaseClientConfig } from '../lib/server/db.ts';
+
 import { hashSecret } from '../lib/server/security.ts';
 
 const { Client } = pg;
@@ -34,7 +36,10 @@ if (!label?.trim()) throw new Error('--label must not be empty.');
 
 const id = randomUUID();
 const expiresAt = new Date(Date.now() + hours * 60 * 60 * 1000);
-const client = new Client({ connectionString });
+const client = new Client(createDatabaseClientConfig(connectionString, {
+  env: process.env,
+  role: 'migration',
+}));
 
 try {
   await client.connect();

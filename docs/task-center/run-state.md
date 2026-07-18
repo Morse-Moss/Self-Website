@@ -4,10 +4,26 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**S10 MAINLINE_PROVIDER_READY**
+**S11-5A LOCAL_RELEASE_CANDIDATE / LOCAL_READY**
 
 ## next_allowed_pointer
-S10 Provider 与对话交互修正已在本地 `master` 真实验收并随本轮精确提交。当前修正尚未 push、部署；真实博查或真实飞书联调仍需明确授权与凭据，Mock 证据不得冒充真实外部证据。
+S11-5A 已达到平台无关的本地发布候选，下一步只允许进入 S11-5B staging 设计或用户明确指定的新阶段。不得宣称 `ONLINE_READY`；真实 BGE、TLS edge、生产 DB 权限、代理 body/rate/SSE 限制、监控、真实飞书/博查、托管备份、push 和部署仍是后续显式门。
+
+## S11-5A production foundation (2026-07-18)
+
+- Mode: `STAGED / CRITICAL / LOCAL`；状态：`LOCAL_READY`。
+- Outcome: 形成 `LOCAL_RELEASE_CANDIDATE` 应用生产基础，不绑定 Railway 或国内云厂商，不执行真实部署。
+- Contract: `docs/superpowers/plans/2026-07-18-s11-5a-production-foundation.md`；架构源仍为 `docs/superpowers/specs/2026-07-18-s11-architecture-hardening-design.md`。
+- Hard boundary: Node 应用镜像不冒充完整 RAG 拓扑；生产 BGE/Embedding 未部署与真实 smoke 前，系统不能进入 `ONLINE_READY`。
+- Data/alert boundary: 灾备采用 migration + 公开知识重摄取 + 新邀请码的重建式恢复，不长期备份 10 天交互正文；飞书继续是至少一次投递，ack 丢失窗口可能重复。
+- External boundary: 不调用真实 GPT、博查或飞书，不安装新依赖，不 push、不部署。
+- Verification PASS: PostgreSQL 全量测试 `543/543`、0 fail、0 skip；生产构建 `19/19`；隔离恢复/发布冒烟完成 migration 001/002、9 documents/10 chunks、72 小时测试邀请码、live/ready/health alias HTTP 200、安全头与 retention cleanup，且未调用外部 API。密钥扫描、`git diff --check`、`docker build --check` 与临时资源清理通过。
+- Review PASS: CRITICAL compliance 与 quality/safety 的 admitted blocker 均为 0。Docker context 已排除 `.env*`、`content/drafts/**`、本地规则、证据和生成物；并行全测暴露的测试库强制断连竞态已按 RED (`57P01`) / GREEN 修复。
+- Residual: 长期本地主库虽登记 001/002，但两个 checksum 均与当前工作树 migration 原始字节不一致，readiness 正确 fail closed；禁止擅自改登记或重建。Windows/Linux SQL 换行与 checksum 语义尚未冻结，列为首次跨平台生产迁移前阻塞项。
+- Image PASS: 用户授权后从 scoped staged tree `d7e29743d14fcee04bbba4e692a293a90570e990` 构建本地 `revolution:s11-5a-local`，镜像 ID `sha256:4535533d811f...`；Node `24.16.0`、UID `1001`、默认 Web 角色、缺配置稳定 fail closed。镜像不含 `.env*`、`content/drafts/**`、`AGENTS.md`、docs/tests/prototype，包含 `.next`、公开内容、migration、Worker、角色启动器与 server contracts；层历史密钥扫描和临时 context 清理通过。
+- Vulnerability boundary: 本次 lockfile `npm ci` 审计报告 2 个 moderate、0 high/critical；未执行自动升级或 `audit fix`。具体 advisory 与升级兼容性必须在 `ONLINE_READY` 前复核，不把本地镜像构建通过等同于零漏洞。
+- Knowledge reconciliation PASS: README、`CLAUDE.md`、工程准则、唯一需求源、S11 架构源、production runbook 与 Task Center 已按最终代码和证据对齐；历史阶段证据保持原口径。用户未明确要求更新 Codex durable memory，本轮未写记忆扩展。
+- Delivery boundary: 本阶段只生成本地镜像与本地提交；未 push、未部署、未调用真实 GPT/博查/飞书，既有 3010 服务未重启。
 
 ## S10 smart customer service amendment(2026-07-15)
 

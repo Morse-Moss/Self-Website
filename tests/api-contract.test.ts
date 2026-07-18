@@ -7,6 +7,9 @@ const accessRoutePath = path.resolve('app/api/access/route.ts');
 const chatRoutePath = path.resolve('app/api/chat/route.ts');
 const historyRoutePath = path.resolve('app/api/chat/history/route.ts');
 const healthRoutePath = path.resolve('app/api/health/route.ts');
+const liveHealthRoutePath = path.resolve('app/api/health/live/route.ts');
+const readyHealthRoutePath = path.resolve('app/api/health/ready/route.ts');
+const readinessPath = path.resolve('lib/server/readiness.ts');
 const chatRouteStreamPath = path.resolve('lib/server/chat-route-stream.ts');
 const chatHistoryRoutePath = path.resolve('lib/server/chat-history-route.ts');
 const providerFactoryPath = path.resolve('lib/server/provider.ts');
@@ -73,19 +76,25 @@ test('chat history API uses access-only config and cannot restore interaction lo
   assert.doesNotMatch(source, /loadServerConfig|createProvider|OPENAI_|interaction_turns/);
 });
 
-test('health API reports database and knowledge readiness without provider secrets', () => {
-  const source = fs.readFileSync(healthRoutePath, 'utf8');
+test('health APIs separate dependency-free liveness from generic readiness', () => {
+  const alias = fs.readFileSync(healthRoutePath, 'utf8');
+  const live = fs.readFileSync(liveHealthRoutePath, 'utf8');
+  const ready = fs.readFileSync(readyHealthRoutePath, 'utf8');
+  const readiness = fs.readFileSync(readinessPath, 'utf8');
 
-  assert.match(source, /knowledge_chunks/);
-  assert.match(
-    source,
-    /configured:\s*Boolean\(\s*process\.env\.OPENAI_API_KEY\s*&&\s*process\.env\.OPENAI_CHAT_MODEL\s*&&\s*process\.env\.OPENAI_CHAT_PROTOCOL\s*&&\s*process\.env\.OPENAI_EMBEDDING_MODEL\s*\)/,
+  assert.match(live, /Response\.json\(\{ ok: true \}/);
+  assert.doesNotMatch(live, /DATABASE_URL|knowledge_chunks|schema_migrations|getPool/);
+  assert.match(alias, /readinessResponse/);
+  assert.match(ready, /readinessResponse/);
+  assert.match(readiness, /schema_migrations/);
+  assert.match(readiness, /knowledge_chunks/);
+  assert.match(readiness, /validateProductionRole\('web'/);
+  assert.match(readiness, /Response\.json\(\{ ok: true \}/);
+  assert.match(readiness, /Response\.json\(\{ ok: false \}/);
+  assert.doesNotMatch(
+    [alias, live, ready, readiness].join('\n'),
+    /indexedChunks|costConfigured|OPENAI_API_KEY.*value|apiKey:/i,
   );
-  assert.match(
-    source,
-    /costConfigured:\s*Boolean\(\s*process\.env\.MORSE_INPUT_USD_PER_MILLION\s*&&\s*process\.env\.MORSE_OUTPUT_USD_PER_MILLION\s*\)/,
-  );
-  assert.doesNotMatch(source, /OPENAI_API_KEY.*value|apiKey:/i);
 });
 
 test('chat route modules export only Next.js route entrypoints', () => {
