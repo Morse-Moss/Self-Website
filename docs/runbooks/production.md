@@ -1,6 +1,6 @@
 # Revolution 生产运行手册
 
-> 状态：S11-5A 本地发布候选。本文冻结平台无关的应用运行合同，不代表系统已经部署或达到 `ONLINE_READY`。
+> 状态：平台无关运行合同。腾讯云实现已于 2026-07-18 达到 `PRODUCTION_OBSERVED / LIMITED_LAUNCH`；这不等于全部 `ONLINE_READY` 硬化完成，实例细节与证据见 `docs/runbooks/tencent-lighthouse.md` 和 `docs/verify/s11/production-closeout.md`。
 
 ## 1. 运行拓扑与边界
 
@@ -35,7 +35,7 @@ npm run production:worker
 | Migration | migration DB 凭据与 TLS | Provider、Admin、Feishu |
 | Ingest | ingest DB、Embedding 配置与 TLS | Chat、Admin、Feishu |
 
-部署平台必须给 runtime、migration 和未来 backup 注入不同的数据库角色。S11-5A 只验证应用配置合同，实际 role/grant、证书和网络 ACL 是 staging 阻塞项。
+部署平台必须给 runtime、migration、ingest 和 backup 注入不同的数据库角色。腾讯云首个生产实例已完成独立凭据、PostgreSQL TLS、最小 grants 和内部网络隔离；其他平台仍必须独立验证，不能复用该结论。
 
 ## 3. 生产配置
 
@@ -94,20 +94,19 @@ npm run production:worker
 - S11-5A 没有 schema 变化，因此本切片可以按应用镜像整体回滚。
 - 不从脏工作树构建或部署；发布必须指向已冻结 commit。
 
-## 8. Staging 阻塞项
+## 8. 当前生产状态与硬化余项
 
-以下全部完成前只能称 `LOCAL_RELEASE_CANDIDATE`，不能称 `ONLINE_READY`：
+腾讯云首个实例已完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实 GPT smoke 和公网 live/ready/release smoke。该证据只适用于 `39849e1` 对应的当前实例。
 
-- 选择实际平台、域名和 TLS edge，并验证国内目标访客的真实可达性。
-- 部署生产 BGE/Embedding 并完成真实 Embedding smoke。
-- 建立 runtime/migration/backup 数据库角色、最小 grants、TLS certificate 和网络 ACL。
-- 在首个跨平台生产迁移前固定 `db/migrations/*.sql` 的换行与 checksum 语义，并证明 Windows/Linux 干净检出产生相同 manifest；S11-5A 当前只验证本机原始字节 checksum。
-- 在 edge 配置请求体、速率、连接数和 SSE idle timeout 限制。
-- 设计并在真实 Next render 验证 CSP。
+以下事项完成前保持 `LIMITED_LAUNCH`，不标记完整 `ONLINE_READY`：
+
+- 从更多国内网络复核可达性，并在当前生产域名上重新取得 Lighthouse performance `>= 90` 证据。
+- 在 edge 增加独立的速率、连接数和异常流量限制；应用层现有限流不能代替入口层保护。
 - 接入监控与日志平台，覆盖 5xx、Provider/Embedding/Search、pool、Outbox、cleanup 和容量。
-- 决定托管备份范围并完成隔离恢复演练。
-- 获得当次授权后分别执行真实 GPT、Bocha 和 Feishu smoke。
-- 构建并检查应用镜像 user、文件、层历史和漏洞；当前 Docker build 会执行 `npm ci`，仍需单独安装审批。
+- 冻结托管备份范围并完成一次独立恢复演练；当前只承诺公开知识可重建。
+- 获得当次授权后分别执行真实 Bocha 和 Feishu smoke。
+- 复核并处置当前生产依赖审计中的 moderate advisory，不执行无评估的 `audit fix`。
+- 将经人工确认的最终内容与素材冻结成新提交后再发布；不得从当前脏工作区直接覆盖生产。
 
 ## 9. 故障定位顺序
 

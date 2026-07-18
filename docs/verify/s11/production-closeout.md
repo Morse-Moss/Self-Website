@@ -1,0 +1,60 @@
+# S11 腾讯云生产部署 Closeout
+
+## Outcome
+
+- 日期：2026-07-18
+- 模式：`STAGED / CRITICAL / DEPLOYED`
+- 状态：`PRODUCTION_OBSERVED / LIMITED_LAUNCH`
+- 公网入口：`https://aimorse.tech`
+- 运行修订：`39849e1`
+- 实例：腾讯云 Lighthouse 首尔 `lhins-0oly57x8`，公网 `43.133.68.202`
+
+## Release And Runtime
+
+- `/opt/revolution/current` 指向 `/opt/revolution/releases/39849e1/revolution`。
+- `db`、`embedding`、`web` 为 healthy；`worker` 与 `edge` 为 running。
+- PostgreSQL 16 + pgvector 使用 TLS 和独立 admin/runtime/migration/ingest/backup 凭据。
+- migration 001/002 首次执行和幂等复验通过；grants 完成后 migration 角色不再拥有超级用户权限。
+- 公开知识摄取结果为 9 documents / 10 chunks；第二次 ingest 全量跳过。
+- 首个生产邀请码已创建，但邀请码明文、管理员凭据、TOTP、Provider key、数据库密码和私钥不进入本证据或 Git。
+
+## Public Observation
+
+- `GET https://aimorse.tech/api/health/live` -> `200 {"ok":true}`。
+- `GET https://aimorse.tech/api/health/ready` -> `200 {"ok":true}`。
+- `GET https://aimorse.tech/api/health` -> HTTP 200。
+- `GET https://aimorse.tech/` 与 `/works` -> HTTP 200。
+- `http://aimorse.tech` -> 301 到主域 HTTPS。
+- `https://www.aimorse.tech/works` -> 301 到 `https://aimorse.tech/works`。
+- `MORSE_RELEASE_BASE_URL=https://aimorse.tech npm run release:smoke` -> `{"ok":true}`，同时验证 HSTS、frame、content-type、referrer、permissions policy 和无 `X-Powered-By`。
+- 受控真实 Provider smoke -> HTTP 200、4 个 delta、消息额度 30 -> 29；不保存原始 prompt、回答、header 或 key。
+
+## Browser Observation
+
+- 首页：1440x900 与 390x844 均无横向溢出，console error 为 0。
+- 作品页：1440x900 与 390x844 均无横向溢出，console error 为 0。
+- 桌面和移动首屏未观察到控件重叠或不可读文字。
+- 生产域名 Lighthouse 未复测：本机没有 Lighthouse 可执行文件，离线 npm 缓存也不可用；依赖安装不在本阶段授权内。
+
+## Network And Security
+
+- 腾讯云入站允许 TCP `22/80/443` 与 ICMP；UFW 允许 `22/80/443`。
+- PostgreSQL `5432`、Embedding `18091` 和 Next.js `3000` 只在 Docker 内部网络可见。
+- 公网根页面响应已验证 CSP、HSTS、Permissions Policy、Referrer Policy、X-Content-Type-Options 和 X-Frame-Options。
+- Password SSH authentication 已关闭；root 没有 authorized key。`PermitRootLogin` 仍是系统默认 `yes`，当前没有有效 root 登录通道，后续可在独立 SSH hardening 变更中改为 `no` 并完成防锁出演练。
+- 2026-07-18 生产验收的 15 分钟日志窗口内，五个运行容器的 `error|exception|panic|fatal` 关键词计数均为 0。
+- 敏感凭据只保存在受限本机凭据文件和服务器受限配置，不进入仓库、镜像说明或本证据。
+
+## Deployment Fixes
+
+- `d486b20`：强制生产 shell 脚本使用 LF，修复 Linux 容器中的 CRLF 启动失败。
+- `6c1af6c`：数据库 Secret 设为 PostgreSQL UID/GID 999、权限 0600。
+- `39849e1`：pgvector schema 创建只由 migration 管理，init 脚本只管理数据库角色。
+- 部署前 S11 生产合同 10/10、migration 集成 13/13、最终 Docker build 19 routes 均通过。
+
+## Residual Boundaries
+
+- 当前为有限生产发布，不标记完整 `ONLINE_READY`。
+- 仍需生产 Lighthouse `>= 90`、监控、托管备份与恢复演练、入口层速率/连接限制、真实 Bocha/Feishu smoke 和 moderate dependency advisory 处置。
+- 线上 release 只来自冻结提交，没有复制本地脏工作区。用户正在收尾的内容、样式、测试、研究文档和 `public/` 素材未部署；因此当前页面仍有“尚未部署”和“截图待补”的旧内容。
+- 未 push、未创建 PR、未清理旧 release、上传包或持久卷。

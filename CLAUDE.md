@@ -19,10 +19,11 @@
 - Lighthouse 性能 ≥ 90(上线前验收)
 
 ## 生产运行边界
-- `docs/runbooks/production.md` 是生产角色、配置、健康检查、恢复与回滚的运行源;S11-5A 当前只到 `LOCAL_RELEASE_CANDIDATE`,不得写成已上线
+- `docs/runbooks/production.md` 是平台无关的生产合同,`docs/runbooks/tencent-lighthouse.md` 是当前腾讯云实例运行源;2026-07-18 已到 `PRODUCTION_OBSERVED / LIMITED_LAUNCH`,但不得写成已完成全部 `ONLINE_READY` 硬化
 - 同一 Node 24 非 root 应用镜像提供 Web、Worker、Migration、Ingest 四个显式角色;Node 镜像不包含 PostgreSQL、BGE、TLS edge 或托管备份
 - `/api/health/live` 无依赖;`/api/health/ready` 与 `/api/health` 只返回通用 `{ ok }`,并要求配置、数据库、migration checksum 与公开知识就绪
-- 现有长期本地主库 001/002 checksum 与当前 migration 原始字节不一致,必须保持 fail closed;未经明确破坏性授权不得改登记或重建
+- 当前生产 release 固定为 commit `39849e1`,域名为 `aimorse.tech`;再次部署、push、清理旧 release 或远端安全配置变更仍需明确授权
+- 生产数据库 001/002 migration 与 checksum 已验证;历史长期本地主库的 checksum 漂移仍是本地边界,未经明确破坏性授权不得改登记或重建
 
 ## 红线
 - git:本地 init/commit 已授权(2026-07-08);push 仅跨设备同步且等摩斯指令;不自动部署

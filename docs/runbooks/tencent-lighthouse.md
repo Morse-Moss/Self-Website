@@ -1,6 +1,19 @@
 # 腾讯云 Lighthouse 上线手册
 
-本文对应 `aimorse.tech` 的生产部署。当前目标实例为腾讯云 Lighthouse 首尔节点，公网地址为 `43.133.68.202`。境外节点不需要 ICP 备案；域名仍需完成实名、DNS 解析和 HTTPS 证书签发。
+本文对应 `aimorse.tech` 的生产部署。当前实例为腾讯云 Lighthouse 首尔节点，公网地址为 `43.133.68.202`。境外节点不需要 ICP 备案；DNS 解析和 HTTPS 证书签发已完成，域名实名状态继续由腾讯云注册控制台维护。
+
+## 当前生产状态（2026-07-18）
+
+- 状态：`PRODUCTION_OBSERVED / LIMITED_LAUNCH`，运行修订 `39849e1`。
+- 实例：`lhins-0oly57x8`；`/opt/revolution/current` 指向 `/opt/revolution/releases/39849e1/revolution`。
+- 拓扑：Caddy edge、Next.js Web、Worker、PostgreSQL 16 + pgvector、CPU BGE/Embedding 均已启动；DB、Embedding 与 Web health 为 healthy。
+- 域名：`aimorse.tech` 与 `www.aimorse.tech` 均解析到 `43.133.68.202`；Let's Encrypt 证书已签发，HTTP 和 `www` 均重定向到主域 HTTPS。
+- 防火墙：腾讯云入站允许 TCP `22/80/443` 与 ICMP；UFW 允许 `22/80/443`，数据库、Embedding 和 Next 内部端口未映射到公网。
+- 数据：migration 001/002 已执行并通过幂等复验；公开知识为 9 documents / 10 chunks，第二次 ingest 全量跳过；migration 临时超级用户权限已撤销。
+- 验证：公网 live、ready、兼容 health、根页和作品页均为 HTTP 200；`release:smoke` 通过；真实 Provider smoke 为 HTTP 200 并完成 SSE 输出。
+- 浏览器：1440x900 与 390x844 的首页/作品页无横向溢出、控制台 error 为 0。
+
+仍需保持诚实边界：当前生产域名的 Lighthouse 分数未复测；监控、托管备份、独立 edge 速率/连接限制和真实 Bocha/Feishu smoke 尚未完成。当前 release 只包含冻结提交，没有吸收本地未提交的最终内容和素材。
 
 ## 发布边界
 
@@ -76,6 +89,8 @@ curl -fsS https://aimorse.tech/api/health/ready
 MORSE_RELEASE_BASE_URL=https://aimorse.tech npm run release:smoke
 docker compose --env-file .env.production -f compose.production.yaml ps
 ```
+
+执行 Compose 运维命令时必须带 `--env-file .env.production`；省略后出现的空变量警告不代表现有容器丢失配置，但会让新建、重建或一次性角色使用错误配置。
 
 `/api/health/ready` 返回 `503` 时，按顺序检查数据库 TLS、migration checksum、知识入库、BGE health 和 Web 日志；不要通过打开测试 embedding 或复制本地数据库来绕过预检。
 

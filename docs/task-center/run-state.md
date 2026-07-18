@@ -1,13 +1,26 @@
 # 正式站 v1 · Task Center(唯一运行事实源)
 
-> Goal:在已通过的 S9 作品集上完成 S10 数字摩斯智能客服本地系统。
+> Goal:在已通过的 S9/S10 作品集与数字摩斯系统上完成可观察、可回滚的腾讯云生产发布。
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**S11-5A LOCAL_RELEASE_CANDIDATE / LOCAL_READY**
+**S11-5B PRODUCTION_OBSERVED / LIMITED_LAUNCH**
 
 ## next_allowed_pointer
-S11-5A 已达到平台无关的本地发布候选，下一步只允许进入 S11-5B staging 设计或用户明确指定的新阶段。不得宣称 `ONLINE_READY`；真实 BGE、TLS edge、生产 DB 权限、代理 body/rate/SSE 限制、监控、真实飞书/博查、托管备份、push 和部署仍是后续显式门。
+当前生产实例已观察到真实 HTTPS、live/ready、release smoke、公开页面和真实 Provider 主链。下一步只允许冻结并发布经人工确认的最终内容，或进入监控/备份/edge 限流等硬化阶段；在 Lighthouse、内容同步和剩余运维门关闭前不得宣称完整 `ONLINE_READY`。
+
+## S11-5B Tencent production deployment (2026-07-18)
+
+- Mode: `STAGED / CRITICAL / DEPLOYED`；状态：`OBSERVED / LIMITED_LAUNCH`。
+- Runtime: 腾讯云 Lighthouse 首尔实例 `lhins-0oly57x8`，公网 `43.133.68.202`；`aimorse.tech` 与 `www.aimorse.tech` 已解析并由 Caddy 提供有效 HTTPS。
+- Release: `/opt/revolution/current` 指向 commit `39849e1` 对应 release；本轮部署提交为 `3fdd7ee`、`d486b20`、`6c1af6c`、`39849e1`，均在本地 `master`，未 push。
+- Services PASS: PostgreSQL/pgvector、CPU BGE、Next.js Web、Worker 和 Caddy 均运行；DB、Embedding、Web healthy。migration 001/002、独立角色 grants、migration 超级用户撤销、9 documents/10 chunks ingest 与第二次全跳过均通过。
+- Network PASS: 腾讯云与 UFW 已放行 TCP `22/80/443`；`5432/18091/3000` 未映射公网。公网 live/ready/health、首页和作品页均 HTTP 200；HTTP 与 `www` 正确重定向到主域 HTTPS。
+- Release/Provider PASS: `MORSE_RELEASE_BASE_URL=https://aimorse.tech npm run release:smoke` 返回 `{"ok":true}`；受控真实 Provider smoke HTTP 200、4 个 delta、消息额度 30 -> 29。
+- Browser PASS: 1440x900 与 390x844 首页/作品页无横向溢出，控制台 error 0，未观察到页面重叠；2026-07-18 生产验收的 15 分钟日志窗口内，五个容器的 error/exception/panic/fatal 关键词计数均为 0。
+- Security review: 密钥仅保存在本机受限凭据文件和服务器受限配置；PasswordAuthentication 已关闭，root 无 authorized key；公网响应已验证 CSP、HSTS 与基础安全头。CRITICAL compliance 与 quality/safety 无 admitted blocker。
+- Residual: 当前生产 Lighthouse 未复测；监控、托管备份、独立 edge 速率/连接限制、真实 Bocha/Feishu 和 moderate dependency advisory 处置仍未完成。线上冻结提交未吸收本地未提交的内容与素材，因此仍显示“尚未部署”和“截图待补”的旧内容；不得把该差异伪报为已发布。
+- Knowledge reconciliation: README、`CLAUDE.md`、生产运行手册、腾讯云手册、本运行状态与 S11 部署证据已同步；用户正在编辑的蓝图、证据矩阵、站点内容、页面样式、测试和 `public/` 素材保持不动。
 
 ## S11-5A production foundation (2026-07-18)
 

@@ -12,10 +12,11 @@
 - S7 多页作品集已完成：首页、作品索引、四个项目案例、共享导航/页脚/简历入口和唯一公开内容源均已进入正式站。
 - S8 智能客服文字对话闭环已完成并进入 `origin/master`：三类访客意图、失败补偿、幂等重放、公开来源、可恢复重试、双宽浏览器验证和分层评测均已通过。
 - S9 Morse 作品集重设计已完成并进入 `origin/master`：首页以 `Morse` 为主身份，作品集改为四项目单页折叠，企业内部项目只保留脱敏文字案例；全视口首屏、1440/390 双宽、减弱动画和 Lighthouse 门禁均已通过。
-- S10 数字摩斯智能客服已达到 `MAINLINE_PROVIDER_READY / CHAT_UX_LOCAL_READY`：访客三流程、自动搜索、管理后台与离线评测完成；19/19 Mock E2E、1440/390 真实浏览器、543/543 零 skip 全量测试、BGE/pgvector 语义评测和 19/19 生产构建均已通过。2026-07-17 针对中转 WAF 和易变模型目录加入显式兼容 User-Agent，并固定使用已验收的 `gpt-5.4`；随后修复默认问题只填框、等待态仍显示建议、Markdown 源码外露、来源编号不清和 OpenAI-compatible 中转间歇性空输出/502。聊天区已扩大；正文“依据”和底部来源统一遵循不打断合同：当前页资料静态显示，项目案例和联网资料在新标签页打开，不能改变当前对话 URL、消息或 transcript 滚动位置。Responses 只有在尚未输出正文且属于空完成、incomplete 或明确瞬时 HTTP 状态时才进行最多 3 次总尝试，永久 4xx、显式 failed/error 和已有部分回答均不重试。空完成或 incomplete 轮次如返回 usage，会计入最终真实用量。最新持久化 usage 证据 turn `e9d03006-2cbd-40dd-a31c-1cd65c6b6e45` 到达 SSE `done` 和数据库 `completed`，usage 为 5766 输入 / 102 输出 token；本轮另有三个真实浏览器 turn `45d91a62-38b9-4505-9a80-5e7b563a2cb2`、`3023fc9a-af03-45e0-91c6-3994022a1fc5` 与 `389f9ccd-9f42-451f-a641-050bad5f1106` 均为 `completed`，额度各从 30 降到 29；最新一轮延迟 15706ms、5 个检索来源、`used_search=false`。中转未返回 usage，费用保持未知。真实博查/飞书未验收；当前修正位于本地 `master`，未 push、未部署。
-- S11-5A 生产基础已达到 `LOCAL_RELEASE_CANDIDATE / LOCAL_READY`：Web、Worker、Migration、Ingest 四角色预检，集中 PostgreSQL TLS/Pool/timeout，通用 live/ready、安全响应头、长期 Worker、重建式恢复和 Node 24 非 root 应用镜像均已验证。镜像只在本地生成，未部署；生产 BGE、TLS edge、最小数据库角色、代理限制、监控、托管备份、真实外部调用和 2 个 moderate dependency advisory 仍是 `ONLINE_READY` 前门禁。
+- S10 数字摩斯智能客服已达到 `MAINLINE_PROVIDER_READY / CHAT_UX_LOCAL_READY`：访客三流程、自动搜索、管理后台与离线评测完成；19/19 Mock E2E、1440/390 真实浏览器、543/543 零 skip 全量测试、BGE/pgvector 语义评测和 19/19 生产构建均已通过。2026-07-17 针对中转 WAF 和易变模型目录加入显式兼容 User-Agent，并固定使用已验收的 `gpt-5.4`；随后修复默认问题只填框、等待态仍显示建议、Markdown 源码外露、来源编号不清和 OpenAI-compatible 中转间歇性空输出/502。聊天区已扩大；正文“依据”和底部来源统一遵循不打断合同：当前页资料静态显示，项目案例和联网资料在新标签页打开，不能改变当前对话 URL、消息或 transcript 滚动位置。Responses 只有在尚未输出正文且属于空完成、incomplete 或明确瞬时 HTTP 状态时才进行最多 3 次总尝试，永久 4xx、显式 failed/error 和已有部分回答均不重试。空完成或 incomplete 轮次如返回 usage，会计入最终真实用量。最新持久化 usage 证据 turn `e9d03006-2cbd-40dd-a31c-1cd65c6b6e45` 到达 SSE `done` 和数据库 `completed`，usage 为 5766 输入 / 102 输出 token；本轮另有三个真实浏览器 turn `45d91a62-38b9-4505-9a80-5e7b563a2cb2`、`3023fc9a-af03-45e0-91c6-3994022a1fc5` 与 `389f9ccd-9f42-451f-a641-050bad5f1106` 均为 `completed`，额度各从 30 降到 29；最新一轮延迟 15706ms、5 个检索来源、`used_search=false`。中转未返回 usage，费用保持未知。真实博查/飞书未验收；S10 当时未部署，当前生产状态以 S11 条目为准。
+- S11 腾讯云生产部署已于 2026-07-18 达到 `PRODUCTION_OBSERVED / LIMITED_LAUNCH`：`aimorse.tech` 与 `www.aimorse.tech` 已指向首尔 Lighthouse，Caddy/HTTPS、Web、Worker、PostgreSQL/pgvector 和 CPU BGE 均在运行；生产 migration、最小数据库 grants、公开知识摄取、真实 Provider smoke、live/ready 与 release smoke 已通过。当前运行修订为 `39849e1`。
+- 当前仍不标记 `ONLINE_READY`：生产 Lighthouse 性能分数尚未复测，监控、托管备份、edge 速率/连接限制及真实 Bocha/Feishu smoke 仍待完成；已部署冻结提交也未包含本地未提交的最终内容与素材，因此线上仍有“尚未部署”和“截图待补”的旧文案。
 - M3-RAG 基础能力继续复用短期邀请码、PostgreSQL + pgvector、OpenAI 适配层、SSE、短期会话和费用门；本地 BGE 语义向量已接入。S8 的 3 次历史 `runChat` 未完成，但已由 2026-07-17 的 S10 真实 Provider 全链 PASS 更新当前结论；历史失败记录不删除，也不由 Mock 替代。
-- 部署和域名操作尚未执行，仍由摩斯决定并操作。
+- 本次部署为用户明确授权的生产发布；后续 push、再次部署和远端变更仍需单独授权。
 
 ## 本地运行
 
@@ -84,6 +85,7 @@ UI 改动还需检查 1440 与 390 双宽、浏览器控制台、横向溢出和
 S6 最终验收证据位于 `docs/verify/v1/s6-*`；桌面 Lighthouse 性能分数为 100。
 S8 最终验收与真实/Mock 证据边界位于 `docs/verify/s8/s8-closeout.md`。
 S9 最终验收、公开内容边界与主线吸收记录位于 `docs/verify/s9/s9-closeout.md`。
+S11 腾讯云生产部署证据与剩余边界位于 `docs/verify/s11/production-closeout.md`。
 
 ## 目录
 
