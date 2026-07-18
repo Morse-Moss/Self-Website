@@ -6,6 +6,14 @@ import { test } from 'node:test';
 
 const read = (relativePath) => fs.readFileSync(path.resolve(relativePath), 'utf8');
 
+test('Git checkout preserves LF for executable shell scripts', () => {
+  const attributes = read('.gitattributes');
+  const initScript = fs.readFileSync(path.resolve('deploy/postgres/init/01-roles.sh'));
+
+  assert.match(attributes, /^\*\.sh text eol=lf$/m);
+  assert.equal(initScript.includes(Buffer.from('\r\n')), false);
+});
+
 test('Docker build context excludes local secrets, state, evidence and generated output', () => {
   const source = read('.dockerignore');
   for (const pattern of [
