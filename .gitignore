@@ -6,3 +6,6 @@ out/
 !.env.example
 *.log
 .DS_Store
+output/
+tmp/
+scripts/.tmp-*

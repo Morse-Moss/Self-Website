@@ -278,3 +278,12 @@
 - **本轮非目标**：语音、TTS、数字人视频、口型、跨 Session 长期记忆、自动知识发布、网页正文抓取、外置向量库、部署和 push。
 - **阶段合同**：`docs/task-center/s10-smart-customer-service.md`；详细设计：`docs/superpowers/specs/2026-07-15-s10-smart-customer-service-design.md`；实施计划：`docs/superpowers/plans/2026-07-15-s10-smart-customer-service.md`。
 - **实现状态（2026-07-18）**：S10 已达到 `MAINLINE_PROVIDER_READY / CHAT_UX_LOCAL_READY`，既有主体由 merge commit `e0a53f2` 吸收到本地 `master`，对话交互和中转恢复修正继续在本地 `master` 收口。访客三流程、真实停止与恢复、自动搜索降级、独立 Admin、badcase、fresh-TOTP 导出和离线评测均已实现；当前 19/19 Mock E2E、四张授权态 1440/390 截图、控制台/溢出、507/507 零 skip 全量测试、9 文档/10 chunk 的本地 CPU BGE + pgvector 评测与 17/17 生产构建通过。RAG 最终结果为 top1 18/20、top3 20/20，最低正例 0.460884、最高负例 0.420975，0.45 正负阈值均通过。运行固定使用已验收的 `gpt-5.4`，部署时仍必须实时核对中转 `/models`。默认问题直接发送，流式等待时只显示“数字摩斯正在思考”；内部 `[来源N]` 不作为访客文案，正文显示“依据：资料标题”，底部只列实际引用的具名资料。OpenAI-compatible 中转若仅返回 `output_text.done`，适配层会恢复最终正文；若尚未输出正文且发生空完成、incomplete、408/409/429 或 5xx，则在共享总超时内进行最多 3 次总尝试，并累计空完成或 incomplete 轮次返回的 usage。永久 4xx、明确 failed/error 或已有部分回答均不重试。最新真实 turn `e9d03006-2cbd-40dd-a31c-1cd65c6b6e45` 为 SSE `done`、数据库 `completed`、19362ms、usage 5766/102；页面显示 174 字正文和 1 个实际引用来源，Provider incident 同步恢复。费用因未配置单价保持未知。真实博查/飞书未调用；当前修正未 push、未部署。
+
+## 16. S11 模块化架构、工程治理与上线安全（2026-07-18）
+
+- **目标架构**：继续采用模块化单体，即 Next.js 主服务 + PostgreSQL/pgvector + 同仓库独立后台 Worker；Embedding 独立进程运行或通过受控远端适配器接入。不拆网络微服务，不引入 ORM、依赖注入容器或第二套状态真相源。
+- **实施方式**：增量治理而非一次性重写。S11-0/S11-1 先建立自动化架构门禁、纯聊天合同和工程准则；服务端运行时、客户端运行时、输出 badcase 与部署安全分别作为后续可独立回滚阶段。
+- **不可破坏语义**：页面、API、SSE、数据库 envelope、邀请码、三类 workflow、来源展示、12 小时运行态历史、10 天交互分析、事务、幂等、补偿和停止语义保持不变。
+- **工程准则**：`docs/engineering-standards.md` 是本项目开发与评审规则源；架构依赖由 `node --test scripts/architecture-contract.test.mjs` 自动执行，不允许以 allowlist 掩盖循环或分层越界。
+- **交付边界**：S11 不新增产品功能，不自动部署、不 push、不调用真实 Provider，不修改外部只读项目。生产配置必须与当前只适合本地的 PostgreSQL compose 明确分离。
+- **设计与计划**：完整设计为 `docs/superpowers/specs/2026-07-18-s11-architecture-hardening-design.md`；首个实施切片为 `docs/superpowers/plans/2026-07-18-s11-foundation-guardrails-and-contracts.md`。
