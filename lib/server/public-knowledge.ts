@@ -6,6 +6,13 @@ export interface PublicKnowledgeDocument {
   content: string;
 }
 
+const publicProjectSlugs = [
+  'content-agent',
+  'auto-operations',
+  'deep-research',
+  'digital-morse',
+] as const;
+
 interface SiteContent {
   profile?: {
     title?: string;
@@ -43,11 +50,12 @@ function joinParts(parts: Array<string | undefined>): string {
 
 export function publicKnowledgeHref(documentId: string): string {
   if (documentId === 'about' || documentId.startsWith('faq-')) return '/';
-  if (documentId.startsWith('project-content-agent-')) {
-    return '/works#content-agent';
-  }
   if (documentId.startsWith('project-')) {
-    return `/works#${documentId.slice('project-'.length)}`;
+    const projectId = documentId.slice('project-'.length);
+    const slug = publicProjectSlugs.find(
+      (candidate) => projectId === candidate || projectId.startsWith(`${candidate}-`),
+    );
+    return `/works#${slug ?? projectId}`;
   }
   return '/';
 }

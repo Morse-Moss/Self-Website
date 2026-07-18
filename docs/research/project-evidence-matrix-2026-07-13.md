@@ -194,38 +194,38 @@
 
 ### 摩斯的角色（已确认）
 
-- 项目发起人和开发负责人，负责整体架构、网站与数字摩斯能力的开发。
+- 项目发起人和唯一开发者；从作品集、RAG、对话工作流、管理后台到生产部署，全部技术实现均由摩斯独立完成。
 
 ### 事实来源
 
-- 当前公开状态：`E:\Revolution\README.md:1-13`。
-- M3-RAG 本地验收：`docs/task-center/run-state.md:26-37`。
-- M3 阶段边界：`docs/task-center/m3-rag-mvp.md`。
-- 实现提交：`5bdbd92`；本地 BGE 语义向量提交：`3a9cba2`。
-- 当前分支与远端：`codex/m3-rag-mvp` 已同步；本地和远端 `master` 尚未吸收，未部署。
+- 唯一公开事实源：`content/site-content.json#projects.digital-morse`。
+- 最新展示与知识决策：`docs/portfolio-blueprint.md` §18。
+- 本轮信息完善验收：`docs/verify/digital-morse/digital-morse-closeout.md`。
+- 生产运行证据：`docs/verify/s11/production-closeout.md`。
+- 历史 M3-RAG 阶段边界：`docs/task-center/m3-rag-mvp.md`。
 
 ### 已验证能力
 
-- Next.js 正式站 v1 已通过本地测试、生产构建、1440/390、reduced motion、简历打印和 Lighthouse 验收。
-- 短期邀请码只解锁普通对话和面试官模式，公开作品内容无需邀请码。
-- PostgreSQL + pgvector 保存公开知识、向量、访问会话、短期消息和用量。
-- API 支持短期访问、流式 `meta/delta/done/error`、来源、普通/面试官 prompt 和费用门。
-- 本地 PostgreSQL 集成、62 项测试、生产构建和双宽浏览器验证通过。
-- 本地 `BAAI/bge-small-zh-v1.5` 语义向量与 gold set 已跑通：top-1 7/8，top-3 8/8；实际为 CPU，不是 GPU 验证。
+- 自由对话、JD 匹配和需求初诊三类访客工作流已实现；公开作品无需邀请码，实时对话使用短期邀请码。
+- BGE Embeddings + PostgreSQL/pgvector 提供公开知识检索，回答展示服务端确认的站内或联网来源。
+- SSE 流式回答支持停止、原位重试、12 小时会话恢复、同一 Turn 幂等重放和失败补偿。
+- 私有管理后台支持筛选、详情、badcase 和 fresh-TOTP JSON/CSV 导出；Worker 负责告警投递与保留期清理。
+- 腾讯云生产拓扑已运行 Caddy、Next.js Web、Worker、PostgreSQL/pgvector 和 CPU BGE，受控真实 Chat Provider smoke 已完成。
+- 2026-07-19 本地信息完善通过 560/560 全量测试、19 页面生产构建、1440/390 双视口和 30/30 top-3 RAG 评测。
 
 ### 必须保留的验证限定
 
-- 浏览器截图来自 loopback Mock Provider，不能标成真实 GPT UI 端到端证据。
-- 真实 Provider 只有部分通过：受信本地网关的 `gpt-5.4-mini` Responses 成功一次；另有模型 502 和 Embeddings 404。
-- `api.openai.com` 直连未通过。
-- 腾讯云生产站已通过 HTTPS、live/ready、release smoke 和受控真实 Chat Provider smoke；公开作品无需邀请码，实时对话继续使用短期邀请码。
+- 2026-07-19 主图与双视口截图来自本地 production build 和受控 fixture，不是生产访客或真实对话数据，也没有调用 Provider。
+- 腾讯云生产站已通过 HTTPS、live/ready、release smoke 和受控真实 Chat Provider smoke；真实 Bocha、真实 Feishu、监控、托管备份和独立 edge 限流仍需单独验收。
+- 生产仍运行 `39849e1`；2026-07-19 的简介、新版主图和六主题知识只在本地收口，尚未 push 或部署。
+- 语音、视频、跨 Session 长期记忆和自动知识更新尚未实现，不能写成当前能力。
 - `content/drafts/**` 未经摩斯终审，不属于公开知识。
 
 ### 图片结论
 
-- `docs/verify/m3-rag-desktop-1440.png` 是真实本地页面截图，但同时出现“示例数据”指标和 Mock Provider 对话。
-- 可以作为内部验收证据，不能原样用作公开项目封面。
-- 后续应在删除/隐藏示例指标、明确运行层级后重新截图；也可只裁取聊天区域并在案例页标注“本地闭环验证”。
+- 公开项目封面使用 `public/works/digital-morse/digital-morse-main-local-2026-07-19.png`。
+- 首层必须标注“本地验收截图 · 示例会话 · 非生产访客数据”；完整脱敏与运行模式记录见数字摩斯 closeout。
+- `docs/verify/m3-rag-desktop-1440.png` 只保留为历史内部验收，不再作为公开项目封面。
 - `docs/verify/concepts/imagegen-*.png` 全部是概念素材，不得进入项目证据区。
 
 ### 对外链接

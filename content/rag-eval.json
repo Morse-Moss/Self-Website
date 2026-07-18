@@ -37,7 +37,7 @@
   },
   {
     "query": "数字摩斯现在如何访问，公开作品和实时对话分别需要什么条件？",
-    "expectedDocumentId": "project-digital-morse"
+    "expectedDocumentId": "project-digital-morse-overview"
   },
   {
     "query": "AI native 和会用工具有什么区别？",
@@ -72,8 +72,8 @@
     "expectedDocumentId": "project-auto-operations"
   },
   {
-    "query": "短期邀请码只解锁什么功能？",
-    "expectedDocumentId": "project-digital-morse"
+    "query": "数字摩斯的自由对话、JD 匹配和需求初诊分别解决什么问题？",
+    "expectedDocumentId": "project-digital-morse-workflows"
   },
   {
     "query": "摩斯做系统时如何划定事实和安全边界？",
@@ -96,8 +96,24 @@
     "expectedDocumentId": "faq-4"
   },
   {
-    "query": "数字摩斯如何用短期邀请码、消息预算和 RAG 来源控制作品集对话？",
+    "query": "数字摩斯如何处理停止、重试、12 小时会话恢复和同一 Turn 幂等重放？",
+    "expectedDocumentId": "project-digital-morse-reliability"
+  },
+  {
+    "query": "数字摩斯的整体结构如何连接 Next.js、Chat Service、PostgreSQL、Worker、Admin 和 Caddy？",
     "expectedDocumentId": "project-digital-morse"
+  },
+  {
+    "query": "数字摩斯如何用 BGE、pgvector、引用来源和受控联网保证回答可追溯？",
+    "expectedDocumentId": "project-digital-morse-knowledge"
+  },
+  {
+    "query": "数字摩斯是谁发起和开发的，摩斯独立完成了哪些技术实现？",
+    "expectedDocumentId": "project-digital-morse-role"
+  },
+  {
+    "query": "数字摩斯未来会加入语音视频、长期记忆和自动知识更新吗？",
+    "expectedDocumentId": "project-digital-morse-roadmap"
   },
   {
     "query": "想做电商内容生产，摩斯有哪些系统经验？",

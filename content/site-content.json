@@ -280,26 +280,50 @@
       "name": "数字摩斯",
       "type": "个人作品集 × AI 分身",
       "status": "腾讯云生产已上线 · 持续完善中",
-      "summary": "让个人作品集与 AI 分身共用同一份审核公开知识、来源展示和受控对话入口。",
+      "summary": "一套嵌入个人作品集的 AI 数字分身系统。访客可以直接与数字摩斯对话，了解项目、生成 JD 匹配报告或完成需求初诊，并获得带来源的可追溯回答。",
+      "ownership": "摩斯是项目发起人和唯一开发者；从作品集、RAG、对话工作流、管理后台到生产部署，全部技术实现均由摩斯独立完成。",
+      "futureDirection": "未来将加入语音与视频表达、授权式长期记忆和人工审核的知识更新，让数字摩斯从会回答的作品集演进为可持续工作的数字分身。",
       "featured": true,
       "disclosure": "public",
-      "capabilities": ["受控文字对话", "RAG 来源展示", "短期访问与预算治理"],
+      "capabilities": [
+        "自由对话 / JD 匹配 / 需求初诊",
+        "BGE + pgvector RAG",
+        "可追溯来源与受控联网",
+        "停止、重试与会话恢复"
+      ],
       "techStack": [
         {
           "label": "前端",
-          "items": ["Next.js", "React", "TypeScript", "CSS Modules"]
+          "items": ["Next.js 16", "React 19", "TypeScript", "CSS Modules"]
         },
         {
           "label": "后端",
-          "items": ["Next.js Route Handlers", "OpenAI Responses API", "SSE"]
+          "items": ["Next.js Route Handlers", "OpenAI-compatible Responses", "SSE", "Worker"]
         },
-        { "label": "数据", "items": ["PostgreSQL", "pgvector"] },
+        { "label": "数据", "items": ["PostgreSQL 16", "pgvector", "BGE Embeddings"] },
         {
           "label": "AI / Agent",
-          "items": ["RAG", "Embedding", "引用来源", "费用门"]
+          "items": ["RAG", "SearchRouter", "JD Match", "Diagnosis State Machine"]
+        },
+        {
+          "label": "工程与部署",
+          "items": ["Docker", "Caddy / HTTPS", "Transactional Outbox", "Health / Release Smoke"]
         }
       ],
-      "media": null,
+      "media": {
+        "src": "/works/digital-morse/digital-morse-main-local-2026-07-19.png",
+        "width": 576,
+        "height": 648,
+        "alt": "数字摩斯当前对话主界面",
+        "label": "本地验收截图 · 示例会话 · 非生产访客数据",
+        "caption": "数字摩斯当前主界面（本地生产构建），对话状态由验收数据驱动；不含真实访客或生产会话数据。",
+        "evidence": {
+          "capturedAt": "2026-07-19",
+          "commit": "b15be68（本轮截图基线）",
+          "runMode": "本地 production build + 受控 fixture",
+          "sanitization": "无真实访客、生产会话、邀请码、密钥、内部地址或 Provider payload"
+        }
+      },
       "actions": [
         {
           "kind": "external",
@@ -307,28 +331,70 @@
           "href": "https://github.com/Morse-Moss/Self-Website"
         }
       ],
+      "askMorse": {
+        "label": "问数字摩斯",
+        "prompt": "请介绍数字摩斯的三种对话流程、RAG 与可靠性设计，以及摩斯独立完成的技术实现。"
+      },
+      "knowledgeTopics": [
+        {
+          "id": "overview",
+          "title": "项目定位与价值",
+          "content": "数字摩斯是一套嵌入个人作品集的 AI 数字分身系统，面向招聘方、潜在客户和同行。访客无需翻完所有页面，就能通过对话了解摩斯的项目、能力和工程判断；公开作品可直接阅读，实时对话使用短期邀请码控制访问。"
+        },
+        {
+          "id": "workflows",
+          "title": "三类对话工作流",
+          "content": "自由对话用于了解项目、经历和技术决策；JD 匹配会基于公开证据拆解岗位要求、对应项目与诚实缺口，不生成虚构匹配百分比；需求初诊通过五项结构化信息逐步收集问题、目标、现状、约束和时间预期，再形成初步判断与下一步。"
+        },
+        {
+          "id": "knowledge",
+          "title": "RAG 与可追溯回答",
+          "content": "数字摩斯以审核后的站点内容为唯一公开事实源，使用 BGE Embeddings 和 PostgreSQL/pgvector 检索相关证据。回答只展示服务端确认的站内或联网来源；受控联网只补充外部背景，不能改写摩斯的履历、项目状态、数字或联系方式。"
+        },
+        {
+          "id": "reliability",
+          "title": "可靠性与访问治理",
+          "content": "系统使用 SSE 流式输出，并支持真实停止、原位重试、12 小时会话恢复、同一 Turn 幂等重放和失败补偿。短期邀请码、每 Session 30 条消息、最多五次联网、并发与超时限制共同约束成本和滥用；Provider 已输出部分正文后不会自动重试，避免重复回答。"
+        },
+        {
+          "id": "role",
+          "title": "个人贡献与工程范围",
+          "content": "摩斯是数字摩斯的项目发起人和唯一开发者，负责产品方向、工程决策和全部技术实现，包括作品集前端、RAG 与模型适配、三类对话工作流、事务与幂等、私有管理后台、badcase 与导出、Worker、生产安全配置和腾讯云部署。AI 工具用于研究、编程和验证，不构成人类协作团队。"
+        },
+        {
+          "id": "roadmap",
+          "title": "未来方向：更完整的数字分身",
+          "content": "语音与视频表达、跨 Session 长期记忆和自动知识更新当前尚未实现。下一阶段计划在用户明确授权、记忆可查看可撤销、知识变更需人工审核的前提下逐步加入这些能力，让数字摩斯从会回答的作品集演进为可持续工作的数字分身。"
+        }
+      ],
       "caseStudy": {
-        "problem": "个人作品内容、公开知识与 AI 对话需要共享同一事实来源，同时保留访问、费用和发布边界。",
-        "role": "摩斯是项目发起人和开发负责人，负责整个项目的开发，包括整体架构、网站与数字摩斯能力。",
+        "problem": "传统作品集只能被动展示内容，招聘方和潜在客户仍要自己翻页、拼接证据；普通聊天机器人又容易脱离事实、无法恢复失败，也难以把高价值咨询沉淀为可跟进线索。",
+        "role": "摩斯是项目发起人和唯一开发者，负责整个项目的开发、产品方向与整体架构，并独立完成网站、RAG、对话工作流、后台治理和生产部署等全部技术实现。",
         "decisions": [
-          "让公开作品内容无需邀请码即可访问，短期邀请码只解锁普通对话和面试官模式。",
-          "用 PostgreSQL 与 pgvector 保存公开知识、向量、访问会话、短期消息和用量。",
-          "为对话 API 保留来源、流式事件、模式提示词和费用门。"
+          "让站点内容与 RAG 共用同一份审核公开事实源，回答必须带服务端确认的来源，不让模型补造履历或项目状态。",
+          "把自由对话、JD 匹配和需求初诊放在同一条受控运行链上，但由服务端分别约束输入、状态与输出结构。",
+          "公开作品无需邀请码；实时对话使用短期访问、消息与联网额度，运行态历史保留 12 小时，私有分析数据保留 10 天。",
+          "把停止、超时、重试、幂等重放、事务补偿和来源导航当成产品能力，而不是只追求一次回答成功。",
+          "用私有管理后台、badcase、导出和事务 Outbox 形成质量回看与需求线索闭环。"
         ],
         "structure": [
-          "Next.js 正式站承载作品集与受控对话入口。",
-          "PostgreSQL 与 pgvector 组成公开知识和语义检索层。",
-          "API 使用 meta、delta、done、error 流式事件，并区分普通与面试官模式。"
+          "Next.js 正式站承载公开作品、三类对话工作流和私有管理后台。",
+          "Chat Service 编排 BGE Embedding、pgvector 检索、受控 SearchRouter、OpenAI-compatible Provider 与 SSE 输出。",
+          "PostgreSQL 保存公开知识、向量、访问会话、短期消息、交互分析、诊断状态、用量与 Outbox。",
+          "Worker 负责告警投递和保留期清理；Admin 支持筛选、详情、badcase 与 fresh-TOTP JSON/CSV 导出。",
+          "腾讯云生产拓扑由 Caddy、Next.js Web、Worker、PostgreSQL/pgvector 和 CPU BGE 组成。"
         ],
         "evidence": [
-          "正式站 v1 已通过本地测试、生产构建、1440 与 390 双宽、reduced motion、简历打印和 Lighthouse 验收。",
+          "访客三流程、停止与重试、历史恢复、来源分组和私有 Admin 均有自动化测试与 1440/390 浏览器证据。",
+          "本地 CPU BGE + pgvector 已通过知识幂等摄取、语义正例与负例阈值评测。",
           "腾讯云 Lighthouse 生产环境已上线，Caddy、Next.js、Worker、PostgreSQL/pgvector 与 CPU BGE 均在运行。",
-          "公网 live、ready 与 release smoke 已通过；受控真实 Chat Provider smoke 到达 HTTP 200 和 SSE 完成。"
+          "公网 live、ready 与 release smoke 已通过；受控真实 Chat Provider smoke 到达 HTTP 200、SSE 完成和数据库 completed。"
         ],
         "boundaries": [
           "公开作品无需邀请码；实时对话使用短期邀请码，当前生产入口为本站主域。",
-          "当前 Chat Provider 已通过生产 smoke；搜索、通知等可选 Provider 和不同模型能力仍需按实际配置单独验证。",
-          "未经终审的草稿不属于公开知识；不公开私有知识、密钥、访问凭据或内部运行材料。"
+          "当前 Chat Provider 已通过生产 smoke；真实 Bocha、真实 Feishu、监控、托管备份和独立 edge 限流仍需单独验收。",
+          "语音、视频、跨 Session 长期记忆和自动知识更新尚未实现，不能写成当前能力。",
+          "未经终审的草稿不属于公开知识；不公开私有知识、真实访客对话、密钥、访问凭据或内部运行材料。"
         ]
       }
     }

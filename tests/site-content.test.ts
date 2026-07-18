@@ -203,16 +203,20 @@ test("provides six case-study fields for every project", () => {
   }
 });
 
-test("publishes only the separately approved content-agent design media", () => {
+test("publishes only the two separately approved project media assets", () => {
   const mediaProjects = getAllProjects().filter((project) => project.media);
 
   assert.deepEqual(
     mediaProjects.map((project) => project.slug),
-    ["content-agent"],
+    ["content-agent", "digital-morse"],
   );
   assert.equal(mediaProjects[0]?.media?.width, 1280);
   assert.equal(mediaProjects[0]?.media?.height, 1486);
   assert.match(mediaProjects[0]?.media?.evidence.runMode ?? "", /非运行态/);
+  assert.equal(mediaProjects[1]?.media?.width, 576);
+  assert.equal(mediaProjects[1]?.media?.height, 648);
+  assert.match(mediaProjects[1]?.media?.evidence.runMode ?? "", /本地 production build/);
+  assert.match(mediaProjects[1]?.media?.label ?? "", /示例会话.*非生产访客数据/);
 });
 
 test("keeps the approved global copy and four FAQ topics", () => {
@@ -264,6 +268,48 @@ test("publishes the observed Digital Morse production status without stale launc
     JSON.stringify(project),
     /网站尚未部署|真实 Provider 仅部分通过|不提供公开访问入口/,
   );
+});
+
+test("digital Morse leads with visitor value, solo delivery, and honest future scope", () => {
+  const project = getProjectBySlug("digital-morse");
+
+  assert.ok(project);
+  assert.equal(
+    project.summary,
+    "一套嵌入个人作品集的 AI 数字分身系统。访客可以直接与数字摩斯对话，了解项目、生成 JD 匹配报告或完成需求初诊，并获得带来源的可追溯回答。",
+  );
+  assert.equal(
+    project.ownership,
+    "摩斯是项目发起人和唯一开发者；从作品集、RAG、对话工作流、管理后台到生产部署，全部技术实现均由摩斯独立完成。",
+  );
+  assert.match(project.futureDirection ?? "", /未来.*语音.*视频.*长期记忆.*人工审核/);
+  assert.deepEqual(project.capabilities, [
+    "自由对话 / JD 匹配 / 需求初诊",
+    "BGE + pgvector RAG",
+    "可追溯来源与受控联网",
+    "停止、重试与会话恢复",
+  ]);
+  assert.ok(project.media);
+  assert.equal(
+    project.media.src,
+    "/works/digital-morse/digital-morse-main-local-2026-07-19.png",
+  );
+  assert.equal(
+    project.media.label,
+    "本地验收截图 · 示例会话 · 非生产访客数据",
+  );
+  assert.match(project.media.caption, /当前主界面/);
+  assert.match(project.media.caption, /不含真实访客或生产会话数据/);
+  assert.deepEqual(project.askMorse, {
+    label: "问数字摩斯",
+    prompt: "请介绍数字摩斯的三种对话流程、RAG 与可靠性设计，以及摩斯独立完成的技术实现。",
+  });
+  assert.deepEqual(
+    project.knowledgeTopics?.map((topic) => topic.id),
+    ["overview", "workflows", "knowledge", "reliability", "role", "roadmap"],
+  );
+  assert.match(project.caseStudy.role, /唯一开发者.*全部技术实现/);
+  assert.match(project.caseStudy.boundaries.join("\n"), /语音.*视频.*长期记忆.*尚未实现/);
 });
 
 test("keeps all public JSON free of placeholders and private-source leakage", () => {

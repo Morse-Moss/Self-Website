@@ -8,6 +8,8 @@ const assetDirectory = path.join(publicRoot, 'works', 'auto-operations');
 const approvedFilename = 'login-workbench-2026-07-13.png';
 const sourceFilename =
   'auto-operations-railway-login-desktop-1440-2026-07-13.png';
+const digitalMorseAssetDirectory = path.join(publicRoot, 'works', 'digital-morse');
+const digitalMorseFilename = 'digital-morse-main-local-2026-07-19.png';
 
 async function listFiles(directory: string): Promise<string[]> {
   let entries;
@@ -37,4 +39,13 @@ test('does not publish the internal-project login workbench asset', async () => 
     publicFiles.some((file) => path.basename(file) === sourceFilename),
     false,
   );
+});
+
+test('publishes one approved Digital Morse interface screenshot', async () => {
+  const files = await listFiles(digitalMorseAssetDirectory);
+
+  assert.deepEqual(files.map((file) => path.basename(file)), [digitalMorseFilename]);
+  const image = await readFile(path.join(digitalMorseAssetDirectory, digitalMorseFilename));
+  assert.ok(image.length > 10_000);
+  assert.deepEqual([...image.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
 });

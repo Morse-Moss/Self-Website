@@ -25,6 +25,12 @@ test('RAG gold set covers every approved public document', () => {
       'project-auto-operations',
       'project-deep-research',
       'project-digital-morse',
+      'project-digital-morse-overview',
+      'project-digital-morse-workflows',
+      'project-digital-morse-knowledge',
+      'project-digital-morse-reliability',
+      'project-digital-morse-role',
+      'project-digital-morse-roadmap',
       'faq-1',
       'faq-2',
       'faq-3',
@@ -35,7 +41,7 @@ test('RAG gold set covers every approved public document', () => {
   assert.equal(
     cases.find((item) => item.query === '数字摩斯现在如何访问，公开作品和实时对话分别需要什么条件？')
       ?.expectedDocumentId,
-    'project-digital-morse',
+    'project-digital-morse-overview',
   );
   assert.ok(cases.some((item) => item.expectedDocumentId === 'project-auto-operations'));
   for (const expectedDocumentId of [
@@ -45,6 +51,12 @@ test('RAG gold set covers every approved public document', () => {
     'project-content-agent-engineering',
     'project-content-agent-role',
     'project-content-agent-roadmap',
+    'project-digital-morse-overview',
+    'project-digital-morse-workflows',
+    'project-digital-morse-knowledge',
+    'project-digital-morse-reliability',
+    'project-digital-morse-role',
+    'project-digital-morse-roadmap',
   ]) {
     assert.ok(cases.some((item) => item.expectedDocumentId === expectedDocumentId));
   }

@@ -766,6 +766,10 @@
   .workflowSwitch button {
     padding: 0 var(--space-1);
   }
+
+  .composer textarea {
+    min-height: 96px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

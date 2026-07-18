@@ -46,6 +46,11 @@ test('extractPublicKnowledge produces the approved site-content and content-agen
         sourcePath: 'content/site-content.json#projects.digital-morse',
         href: '/works#digital-morse',
       },
+      ...['overview', 'workflows', 'knowledge', 'reliability', 'role', 'roadmap'].map((topic) => ({
+        id: `project-digital-morse-${topic}`,
+        sourcePath: `content/site-content.json#projects.digital-morse.knowledge.${topic}`,
+        href: '/works#digital-morse',
+      })),
       { id: 'faq-1', sourcePath: 'content/site-content.json#faq.1', href: '/' },
       { id: 'faq-2', sourcePath: 'content/site-content.json#faq.2', href: '/' },
       { id: 'faq-3', sourcePath: 'content/site-content.json#faq.3', href: '/' },
@@ -71,6 +76,25 @@ test('content-agent knowledge topics stay independently retrievable and share on
     assert.equal(document.content, `${project.name}\n\n${topic.title}\n\n${topic.content}`);
     assert.equal(document.href, '/works#content-agent');
     assert.equal(publicKnowledgeHref(documentId), '/works#content-agent');
+  }
+});
+
+test('digital-Morse knowledge topics stay independently retrievable and share one case href', () => {
+  const content = loadSiteContent();
+  const project = content.projects.find((item: { slug: string }) => item.slug === 'digital-morse');
+  const documents = extractPublicKnowledge(content);
+
+  assert.ok(project);
+  assert.equal(project.knowledgeTopics.length, 6);
+  for (const topic of project.knowledgeTopics) {
+    const documentId = `project-digital-morse-${topic.id}`;
+    const document = documents.find((item) => item.id === documentId);
+
+    assert.ok(document);
+    assert.equal(document.title, `${project.name}：${topic.title}`);
+    assert.equal(document.content, `${project.name}\n\n${topic.title}\n\n${topic.content}`);
+    assert.equal(document.href, '/works#digital-morse');
+    assert.equal(publicKnowledgeHref(documentId), '/works#digital-morse');
   }
 });
 
