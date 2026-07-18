@@ -22,7 +22,7 @@
     "rag:smoke": "node scripts/rag-smoke.mjs",
     "session:cleanup": "node scripts/cleanup-expired.mjs",
     "stats": "node scripts/collect-stats.mjs",
-    "test": "node --test \"scripts/*.test.mjs\" \"tests/*.test.ts\"",
+    "test": "node --env-file-if-exists=.env.local --test \"scripts/*.test.mjs\" \"tests/*.test.ts\"",
     "visual:s3": "node scripts/s3-visual-smoke.mjs http://localhost:3000",
     "visual:s7": "node scripts/s7-visual-smoke.mjs http://127.0.0.1:3010",
     "visual:s6-restore": "node scripts/s6-restoration-smoke.mjs http://127.0.0.1:3010",
