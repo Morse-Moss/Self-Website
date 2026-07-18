@@ -14,6 +14,19 @@ test('Git checkout preserves LF for executable shell scripts', () => {
   assert.equal(initScript.includes(Buffer.from('\r\n')), false);
 });
 
+test('server-generated database role secrets stay private and readable by PostgreSQL', () => {
+  const runbook = read('docs/runbooks/tencent-lighthouse.md');
+
+  assert.match(
+    runbook,
+    /^chown 999:999 \/opt\/revolution\/deploy\/secrets\/db_\*_password$/m,
+  );
+  assert.match(
+    runbook,
+    /^chmod 600 \/opt\/revolution\/deploy\/secrets\/db_\*_password$/m,
+  );
+});
+
 test('Docker build context excludes local secrets, state, evidence and generated output', () => {
   const source = read('.dockerignore');
   for (const pattern of [

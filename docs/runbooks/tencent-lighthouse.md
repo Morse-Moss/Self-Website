@@ -22,6 +22,8 @@ openssl rand -hex 32 > /opt/revolution/deploy/secrets/db_runtime_password
 openssl rand -hex 32 > /opt/revolution/deploy/secrets/db_migration_password
 openssl rand -hex 32 > /opt/revolution/deploy/secrets/db_ingest_password
 openssl rand -hex 32 > /opt/revolution/deploy/secrets/db_backup_password
+chown 999:999 /opt/revolution/deploy/secrets/db_*_password
+chmod 600 /opt/revolution/deploy/secrets/db_*_password
 openssl req -x509 -newkey rsa:2048 -nodes -days 825 \
   -subj /CN=revolution-db \
   -keyout /opt/revolution/deploy/postgres/tls/server.key \
