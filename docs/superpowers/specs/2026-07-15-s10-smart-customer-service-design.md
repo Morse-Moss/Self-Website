@@ -144,7 +144,7 @@ S10 不抓取搜索结果页，只消费博查返回的标题、摘要和 URL。
 - 站内来源与联网来源分组。
 - 12 小时历史恢复、可恢复错误和搜索降级文案。
 
-停止后保留当前部分回答并标记“已停止”，但不写入 runtime assistant history、不扣额度；可以立即重试。外部来源新窗口打开并带 `noopener noreferrer`。状态区使用 `role=status`，逐 Token 正文不使用整体 `aria-live`。
+停止后保留当前部分回答并标记“已停止”，但不写入 runtime assistant history、不扣额度；可以立即重试。没有独立页面的当前站点资料显示为静态依据；站内项目案例与外部来源均在新标签页打开并带 `noopener noreferrer`，不得替换当前对话页面。状态区使用 `role=status`，逐 Token 正文不使用整体 `aria-live`。
 
 ## 12. 验收标准
 

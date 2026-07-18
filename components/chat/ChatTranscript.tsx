@@ -43,7 +43,7 @@ export default function ChatTranscript({
           <span className={styles.messageRole}>{message.role === 'user' ? '你' : '数字摩斯'}</span>
           {message.role === 'user' && message.text ? <p>{message.text}</p> : null}
           {message.role === 'assistant' && message.text ? (
-            <ChatMessageContent messageId={message.id} sources={message.sources} text={message.text} />
+            <ChatMessageContent sources={message.sources} text={message.text} />
           ) : null}
           {message.role === 'assistant'
             && !message.text

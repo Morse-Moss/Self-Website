@@ -22,9 +22,10 @@ S10 Provider 与对话交互修正已在本地 `master` 真实验收并随本轮
 ### S10-CX-1 chat UX and relay recovery(2026-07-18)
 
 - Root cause:对话 UI 的 Markdown 与来源身份问题已在 2026-07-17 关闭；后续真实故障来自 OpenAI-compatible 中转间歇性返回零正文完成、仅终止文本事件或 502。旧适配只重试 `response.incomplete`，会把零正文 `response.completed` 当成功交给服务层，再被补偿为 `PROVIDER_INCOMPLETE`；非流式同请求实测 502，不能作为可靠 fallback。
-- Code PASS:保留结构化 Markdown、默认问题直发、思考态和具名来源；Responses 在没有 delta 时可从 `response.output_text.done` 恢复正文。尚未输出正文时，空完成/incomplete 和 408/409/429/5xx 在共享总超时内最多 3 次总尝试；永久 4xx、`response.failed/error`、超时和部分正文均不重试。空完成或 incomplete 如返回 usage，会与最终成功轮次累加，避免中转重试成本漏记。
+- Code PASS:保留结构化 Markdown、默认问题直发、思考态和具名来源；聊天区扩大，正文依据与底部来源统一为当前页资料静态显示、项目与联网资料新标签打开，不改变原对话 URL、消息或 transcript 滚动位置。Responses 在没有 delta 时可从 `response.output_text.done` 恢复正文。尚未输出正文时，空完成/incomplete 和 408/409/429/5xx 在共享总超时内最多 3 次总尝试；永久 4xx、`response.failed/error`、超时和部分正文均不重试。空完成或 incomplete 如返回 usage，会与最终成功轮次累加，避免中转重试成本漏记。
 - Real Provider PASS:生产构建真实 turn `e9d03006-2cbd-40dd-a31c-1cd65c6b6e45` 使用 `gpt-5.4`，SSE 到 `done`，数据库 `completed`、19362ms、usage 5766/102；数据库保留 5 个检索来源，页面正文 174 字并只显示 1 个实际引用的具名来源，重试按钮消失，Provider incident 为 `recovered`。
-- Verification PASS:Provider/流链 focused 40/40；`visual:s10` 既有 19/19 仍有效且本轮无 UI 改动；加载 `.env.local` 的 PostgreSQL 全量测试 507/507、0 fail、0 skip；生产构建 17/17；`/api/health` 为 HTTP 200、database ready、10 chunks、Provider configured。测试邀请码和 disposable 数据库残留均为 0。
+- Real browser PASS:用户授权后通过 3010 正式页面完成三个 `gpt-5.4` turn：`45d91a62-38b9-4505-9a80-5e7b563a2cb2` 为 `completed`/10165ms，`3023fc9a-af03-45e0-91c6-3994022a1fc5` 为 `completed`/16633ms，重启当前构建后 `389f9ccd-9f42-451f-a641-050bad5f1106` 为 `completed`/15706ms、5 个检索来源；三次均无错误、额度 30→29、`used_search=false`。最新页面实测候选 3→0、思考态出现、URL/消息与 transcript 保持连续。中转未返回 usage，成本保持未知。
+- Verification PASS:Provider/流链 focused 40/40；更新后的 `visual:s10` 19/19、1440/390、四张截图、0 console/page error 且命令自行退出；加载 `.env.local` 的 PostgreSQL 全量测试 517/517、0 fail、0 skip；生产构建 17/17；`/api/health` 为 HTTP 200、database ready、10 chunks、Provider configured。测试浏览器按主 PID 与专属 profile 双层清理，Windows `EACCES` 仅在有界窗口内重试。
 - Delivery boundary:改动与本条知识同步在本地 `master` 收口，未 push、未部署；`.env.local` 受 ignore 保护且不含 Provider Key。
 
 ### S10-CS-6 UI/eval verification evidence(2026-07-17)

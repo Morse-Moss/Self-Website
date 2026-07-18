@@ -5,12 +5,14 @@ import test from 'node:test';
 import {
   S10_SCENARIOS,
   S10_VIEWPORTS,
+  cleanupS10Browser,
   createS10Summary,
   validateLoopbackHttpUrl,
 } from '../scripts/s10-chat-smoke.mjs';
 
 const repoRoot = new URL('../', import.meta.url);
 const harnessUrl = new URL('scripts/s10-chat-smoke.mjs', repoRoot);
+const legacyHarnessUrl = new URL('scripts/s8-chat-smoke.mjs', repoRoot);
 const packageJson = JSON.parse(readFileSync(new URL('package.json', repoRoot), 'utf8')) as {
   scripts: Record<string, string>;
 };
@@ -150,6 +152,103 @@ test('S10 harness uses stable UI observability for every required workflow', () 
     source.includes('document.querySelector(${JSON.stringify(SELECTORS.chatPanel)})?.getBoundingClientRect()'),
     'mobile panel geometry must use the shared chat panel selector',
   );
+});
+
+test('source navigation keeps the active chat while project evidence opens separately', () => {
+  const source = readFileSync(harnessUrl, 'utf8');
+  const visitorStart = source.indexOf('async function runVisitorScenarios');
+  const mobileStart = source.indexOf('async function runMobileVisitor');
+  const visitorSource = source.slice(visitorStart, mobileStart);
+
+  assert.ok(visitorStart >= 0 && mobileStart > visitorStart);
+  assert.match(visitorSource, /localStaticCount/u);
+  assert.match(visitorSource, /inlineLocalHref/u);
+  assert.match(visitorSource, /inlineStaticCount/u);
+  assert.match(visitorSource, /data-citation-index/u);
+  assert.match(visitorSource, /data-citation-static/u);
+  assert.match(visitorSource, /localTarget === '_blank'/u);
+  assert.match(visitorSource, /localRel\.includes\('noopener'\)/u);
+  assert.match(visitorSource, /beforeSourceClick/u);
+  assert.match(visitorSource, /afterSourceClick/u);
+  assert.match(visitorSource, /source:original-url/u);
+  assert.match(visitorSource, /source:original-messages/u);
+  assert.match(visitorSource, /source:original-scroll/u);
+  assert.match(visitorSource, /Target\.getTargets/u);
+  assert.match(visitorSource, /Target\.closeTarget/u);
+  assert.match(visitorSource, /source:new-tab/u);
+  assert.doesNotMatch(visitorSource, /location\.pathname === ['"]\/works['"]/u);
+
+  const scrollTarget = visitorSource.indexOf("source.scrollIntoView({ block: 'center', behavior: 'auto' })");
+  const beforeClick = visitorSource.indexOf('const beforeSourceClick');
+  const click = visitorSource.indexOf('await click(page, inlineSourceSelector)');
+  assert.ok(scrollTarget >= 0 && scrollTarget < beforeClick && beforeClick < click);
+});
+
+test('historical S8 smoke follows the current non-disruptive source contract', () => {
+  const source = readFileSync(legacyHarnessUrl, 'utf8');
+
+  assert.match(source, /data-source-static/u);
+  assert.match(source, /sourceTarget !== '_blank'/u);
+  assert.match(source, /originalLocation/u);
+  assert.match(source, /originalMessageCount/u);
+  assert.match(source, /\/json\/list/u);
+  assert.match(source, /\/json\/close\//u);
+  assert.match(source, /finally[\s\S]*openedSourceTarget[\s\S]*closeTabTarget/u);
+  assert.doesNotMatch(source, /Timed out waiting for source navigation/u);
+  assert.doesNotMatch(source, /location\.pathname === \$\{JSON\.stringify\(sourcePathname\)\}/u);
+});
+
+test('S10 browser cleanup falls back to the owned profile and releases stale child handles', async () => {
+  const calls: string[] = [];
+  const browserProcess = {
+    unref() {
+      calls.push('unref');
+    },
+  };
+
+  await cleanupS10Browser({
+    browserProcess,
+    profileDir: 'C:/Temp/revolution-s9-edge-owned',
+  }, {
+    cleanupBrowser: async () => {
+      calls.push('primary');
+      throw new Error('primary cleanup failed');
+    },
+    removeProfile: async () => {
+      calls.push('remove');
+    },
+    terminateProfileProcesses: () => {
+      calls.push('profile');
+    },
+  });
+
+  assert.deepEqual(calls, ['primary', 'profile', 'unref', 'remove']);
+});
+
+test('S10 browser cleanup exposes a stable failure after every owned fallback fails', async () => {
+  let unrefs = 0;
+
+  await assert.rejects(
+    cleanupS10Browser({
+      browserProcess: { unref: () => { unrefs += 1; } },
+      profileDir: 'C:/Temp/revolution-s9-edge-owned',
+    }, {
+      cleanupBrowser: async () => {
+        throw new Error('primary cleanup failed');
+      },
+      removeProfile: async () => {},
+      terminateProfileProcesses: () => {
+        throw new Error('profile cleanup failed');
+      },
+    }),
+    (error: unknown) => (
+      error instanceof Error
+      && 'code' in error
+      && error.code === 'browser:owned-cleanup-failed'
+    ),
+  );
+
+  assert.equal(unrefs, 1);
 });
 
 test('S10 export acceptance clicks the visible format option instead of the hidden radio', () => {

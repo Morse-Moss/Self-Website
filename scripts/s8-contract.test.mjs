@@ -108,10 +108,12 @@ test('S8 has a repeatable dual-width customer-service recovery smoke', () => {
     'quotaPresent',
     'pageErrorCount',
     'projectSlugs',
-    "sourceUrl.pathname === '/works'",
+    "sourceUrl.pathname !== '/works'",
     'projectSlugs.includes(sourceSlug)',
-    'location.pathname ===',
-    'location.hash ===',
+    'data-source-static',
+    "sourceTarget !== '_blank'",
+    'sourceNavigation.href !== originalLocation',
+    'sourceNavigation.messages !== originalMessageCount',
     'Promise.race',
   ]) {
     assert.ok(harness.includes(value), `S8 browser smoke must include: ${value}`);

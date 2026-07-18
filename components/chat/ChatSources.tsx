@@ -22,23 +22,41 @@ function SourceList({
 }) {
   return (
     <ol className={styles.sources}>
-      {sources.map(({ source, citationIndex }) => (
-        <li
-          id={sourceAnchorId(messageId, citationIndex)}
-          key={`${source.kind}-${source.id}-${citationIndex}`}
-        >
-          <a
-            href={source.href}
-            target={external ? '_blank' : undefined}
-            rel={external ? 'noopener noreferrer' : undefined}
+      {sources.map(({ source, citationIndex }) => {
+        const navigable = external || source.href !== '/';
+        const sourceLabel = external
+          ? `联网资料 · ${source.domain} · 新标签页`
+          : navigable
+            ? '站内案例 · 新标签页'
+            : '当前对话引用的公开资料';
+        const sourceContent = (
+          <span className={styles.sourceDetails}>
+            <strong>{source.title}</strong>
+            <small>{sourceLabel}</small>
+          </span>
+        );
+
+        return (
+          <li
+            id={sourceAnchorId(messageId, citationIndex)}
+            key={`${source.kind}-${source.id}-${citationIndex}`}
           >
-            <span className={styles.sourceDetails}>
-              <strong>{source.title}</strong>
-              <small>{external ? `联网资料 · ${source.domain}` : '站内已审核公开知识'}</small>
-            </span>
-          </a>
-        </li>
-      ))}
+            {navigable ? (
+              <a
+                href={source.href}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {sourceContent}
+              </a>
+            ) : (
+              <span className={styles.sourceStatic} data-source-static="true">
+                {sourceContent}
+              </span>
+            )}
+          </li>
+        );
+      })}
     </ol>
   );
 }

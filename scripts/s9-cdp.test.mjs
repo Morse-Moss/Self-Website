@@ -1582,9 +1582,8 @@ test('profile cleanup retries only transient Windows locks and remains bounded',
     },
     removeProfile: () => {
       attempts += 1;
-      if (attempts < 3) {
-        throw Object.assign(new Error('private locked path'), { code: 'EPERM' });
-      }
+      if (attempts === 1) throw Object.assign(new Error('private locked path'), { code: 'EPERM' });
+      if (attempts === 2) throw Object.assign(new Error('private locked path'), { code: 'EACCES' });
     },
     timeoutMs: 500,
   });
@@ -1613,11 +1612,11 @@ test('profile cleanup retries only transient Windows locks and remains bounded',
       poll: async () => assert.fail('permanent errors must not be retried'),
       removeProfile: () => {
         permanentAttempts += 1;
-        throw Object.assign(new Error('private invalid path'), { code: 'EACCES' });
+        throw Object.assign(new Error('private invalid path'), { code: 'EINVAL' });
       },
       timeoutMs: 500,
     }),
-    (error) => error?.code === 'EACCES',
+    (error) => error?.code === 'EINVAL',
   );
   assert.equal(permanentAttempts, 1);
 });

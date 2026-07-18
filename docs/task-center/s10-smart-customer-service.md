@@ -73,7 +73,7 @@ S10 Provider 与对话交互修正已在本地 `master` 真实验收并随本轮
 
 | Pointer | State | Exit evidence |
 |---|---|---|
-| `S10-CX-1 CHAT UX + RELAY RECOVERY` | LOCAL_READY | 默认问题直发、思考态、结构化 Markdown、具名依据、done-only 正文恢复与零正文/瞬时 HTTP 最多 3 次总尝试；19/19 Mock 浏览器、507/507 零 skip、17/17 构建与真实 `gpt-5.4` turn PASS |
+| `S10-CX-1 CHAT UX + RELAY RECOVERY` | LOCAL_READY | 默认问题直发、思考态、结构化 Markdown、具名依据、扩大聊天区、来源不打断、done-only 正文恢复与零正文/瞬时 HTTP 最多 3 次总尝试；19/19 Mock 浏览器、517/517 零 skip、17/17 构建与真实 `gpt-5.4` turn PASS |
 
 ## Fixed Controls
 
@@ -117,6 +117,7 @@ S10 Provider 与对话交互修正已在本地 `master` 真实验收并随本轮
 | `S10-F7` | CLOSED | stop/abort/断线只写 10 天 interaction、不扣额度、不写 runtime assistant；12 小时 history 仅恢复已完成会话；事务、补偿与 orphan retry 测试通过 |
 | `S10-F8` | CLOSED | `revolution-pgvector` healthy；491/491、0 fail、0 skip；RAG top1 18/20、top3 20/20，0.45 正负阈值均通过 |
 | `S10-F9` | CLOSED | 默认问题原位直发；候选、思考、正文与来源按流状态切换；访客不再看到不稳定来源编号；done-only 可恢复正文，零正文 incomplete/空完成/明确瞬时 HTTP 最多 3 次总尝试，永久 4xx、显式 failed/error 和部分正文不重试 |
+| `S10-F10` | CLOSED | 正文依据和底部来源都不会替换当前对话：`/` 静态，项目与联网资料新标签；S8/S10 smoke 覆盖异常清理、URL/消息/transcript 滚动保持和自有 Edge/profile 回收 |
 
 ## Progress Ledger
 
@@ -135,6 +136,7 @@ S10 Provider 与对话交互修正已在本地 `master` 真实验收并随本轮
 - 2026-07-17：用户重新授权合并与真实 API 调用。隔离端口关闭搜索后完成 1 次真实 `gpt-5.4-mini` Responses 集成：HTTP 200、SSE 正常到 `done`、5 个站内来源、消息额度 30→29；数据库记录 `completed`、9872ms、`used_search=false`。中转没有返回 token usage，成本保持未知；回答未遵守“一句话”长度要求，作为真实 badcase 观察点保留。联调同时发现 `/api/health` 将 Provider readiness 错绑到可选成本单价，已用失败测试拆分为 `configured` 与 `costConfigured`。
 - 2026-07-17：修复用户实测连续 `PROVIDER_INCOMPLETE`。布尔比对证明运行进程继承了错误项目 Key；本站 Key 配合默认 SDK User-Agent 仍被 WAF 403，而受控兼容 User-Agent 的 `/models` 返回 200。修复时目录快照为 12 个且不含 `gpt-5.4-mini`，因此切换到 `gpt-5.4`；收口前目录已变为 17 个并重新包含两个模型，运行仍固定使用已验收的 `gpt-5.4`，不做隐式模型或协议 fallback。TDD 加入可选安全 User-Agent 配置后，最终直连站内 turn `b8b3ec78-380d-4211-9baa-9633f1847d75` 真实 PASS；全量 493/493、0 skip，build 17/17。
 - 2026-07-18：继续修复真实中转间歇性零正文完成与 502。适配层消费 `response.output_text.done` 作为无 delta 时的正文兜底；仅在零正文且属于空完成/incomplete 或 408/409/429/5xx 时最多 3 次总尝试，永久 4xx、显式 failed/error、超时和部分正文不重试；空完成或 incomplete usage 与最终轮次累加。Provider/流链 40/40、PostgreSQL 全量 507/507、build 17/17；真实 turn `e9d03006-2cbd-40dd-a31c-1cd65c6b6e45` 为 `completed`、19362ms、usage 5766/102，页面正文与具名来源正常，incident `recovered`。未 push、未部署。
+- 2026-07-18：放大桌面、嵌入式与移动端聊天区；正文依据和底部来源统一执行 `/` 静态、项目/联网新标签合同。S10 Mock 真实点击正文依据后，原 URL、消息与 transcript 滚动不变；S8 异常路径关闭新 target。清理器在主 PID 失败后按专属 profile 清零，Windows `EACCES` 有界重试；最终 `visual:s10` 19/19 自行退出，PostgreSQL 全量 517/517、0 skip。真实浏览器 turn `45d91a62-38b9-4505-9a80-5e7b563a2cb2`、`3023fc9a-af03-45e0-91c6-3994022a1fc5` 与重启当前构建后的 `389f9ccd-9f42-451f-a641-050bad5f1106` 均 `completed`、额度 30→29；最新一轮候选 3→0、思考态出现、15706ms、5 个检索来源、`used_search=false`。未 push、未部署。
 
 ## Preauthorization Matrix
 

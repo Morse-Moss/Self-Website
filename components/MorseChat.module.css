@@ -53,8 +53,8 @@
 .panel {
   display: flex;
   flex-direction: column;
-  width: min(430px, calc(100vw - var(--space-6)));
-  height: min(700px, calc(100dvh - var(--space-6)));
+  width: min(560px, calc(100vw - var(--space-6)));
+  height: min(760px, calc(100dvh - var(--space-6)));
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
@@ -73,7 +73,8 @@
   z-index: auto;
   width: 100%;
   min-width: 0;
-  max-width: 100%;
+  max-width: 46rem;
+  margin-left: auto;
 }
 
 .panel.embeddedPanel {
@@ -82,8 +83,8 @@
   width: 100%;
   min-width: 0;
   max-width: 100%;
-  height: min(590px, 66svh);
-  min-height: 500px;
+  height: min(680px, 72svh);
+  min-height: 620px;
   box-shadow: var(--shadow-card);
 }
 
@@ -388,6 +389,7 @@
 }
 
 .citationLink,
+.citationStatic,
 .missingCitation {
   display: inline;
   margin-left: var(--space-1);
@@ -403,6 +405,10 @@
 
 .citationLink:hover {
   color: var(--ink);
+}
+
+.citationStatic {
+  color: var(--accent);
 }
 
 .missingCitation {
@@ -463,13 +469,17 @@
   font-size: var(--fs-xs);
 }
 
-.sources a {
+.sources a,
+.sourceStatic {
   display: flex;
   align-items: center;
   gap: var(--space-1);
   min-width: 0;
   min-height: 44px;
   color: inherit;
+}
+
+.sources a {
   text-decoration-color: var(--line-strong);
   text-underline-offset: var(--space-1);
 }
@@ -723,8 +733,8 @@
     position: relative;
     inset: auto;
     width: 100%;
-    height: min(620px, calc(100svh - var(--space-5)));
-    min-height: 520px;
+    height: min(720px, calc(100svh - var(--space-3)));
+    min-height: 620px;
     border: 1px solid var(--line-strong);
     border-radius: var(--radius-sm);
   }

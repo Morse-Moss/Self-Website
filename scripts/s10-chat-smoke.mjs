@@ -31,6 +31,8 @@ import {
   cleanupOwnedBrowser,
   connectCdpTransport,
   dispatchPrimaryClick,
+  removeOwnedProfileWithRetry,
+  terminateOwnedProfileProcesses,
   terminateOwnedProcessTree,
   waitForOwnedDevToolsActivePort,
 } from './lib/s9-cdp.mjs';
@@ -110,6 +112,26 @@ class HarnessError extends Error {
     super(code, cause ? { cause } : undefined);
     this.name = 'HarnessError';
     this.code = code;
+  }
+}
+
+export async function cleanupS10Browser(browser, {
+  cleanupBrowser = cleanupOwnedBrowser,
+  removeProfile = removeOwnedProfileWithRetry,
+  terminateProfileProcesses = terminateOwnedProfileProcesses,
+} = {}) {
+  if (!browser) return;
+  try {
+    await cleanupBrowser(browser);
+  } catch (error) {
+    try {
+      await terminateProfileProcesses(browser.profileDir);
+      browser.browserProcess?.unref?.();
+      await removeProfile(browser.profileDir);
+    } catch (fallbackError) {
+      browser.browserProcess?.unref?.();
+      throw new HarnessError('browser:owned-cleanup-failed', fallbackError ?? error);
+    }
   }
 }
 
@@ -668,6 +690,7 @@ async function capture(page, outputDirectory, fileName) {
 async function runVisitorScenarios({
   page,
   targetUrl,
+  browserTransport,
   inviteCode,
   connectionString,
   openAiProxy,
@@ -756,21 +779,82 @@ async function runVisitorScenarios({
   check(searched.state === 'done' && searched.localSources > 0 && searched.webSources > 0, 'search:sources-missing');
   const sourceContract = await page.evaluate(`(() => {
     const assistant = [...document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)})].at(-1);
-    const local = assistant?.querySelector(${JSON.stringify(`${SELECTORS.localSources} a`)});
+    const local = assistant?.querySelector(${JSON.stringify(`${SELECTORS.localSources} a[href^="/works#"]`)});
+    const inlineLocal = assistant?.querySelector('[data-testid="morse-chat-message-content"] a[data-citation-index][href^="/works#"]');
     const web = assistant?.querySelector(${JSON.stringify(`${SELECTORS.webSources} a`)});
     return {
+      inlineLocalHref: inlineLocal?.getAttribute('href') ?? '',
+      inlineLocalTarget: inlineLocal?.getAttribute('target') ?? '',
+      inlineLocalRel: inlineLocal?.getAttribute('rel') ?? '',
+      inlineStaticCount: document.querySelectorAll('[data-testid="morse-chat-message-content"] [data-citation-static="true"]').length,
       localHref: local?.getAttribute('href') ?? '',
+      localTarget: local?.getAttribute('target') ?? '',
+      localRel: local?.getAttribute('rel') ?? '',
+      localStaticCount: document.querySelectorAll(${JSON.stringify(`${SELECTORS.localSources} [data-source-static="true"]`)}).length,
       webHref: web?.getAttribute('href') ?? '',
       webTarget: web?.getAttribute('target') ?? '',
       webRel: web?.getAttribute('rel') ?? '',
     };
   })()`);
-  check(sourceContract.localHref.startsWith('/'), 'source:local-href');
+  check(sourceContract.inlineLocalHref.startsWith('/works#'), 'source:inline-local-href');
+  check(
+    sourceContract.inlineLocalTarget === '_blank' && sourceContract.inlineLocalRel.includes('noopener'),
+    'source:inline-local-isolation',
+  );
+  check(sourceContract.inlineStaticCount > 0, 'source:inline-static-evidence');
+  check(sourceContract.localHref.startsWith('/works#'), 'source:local-href');
+  check(sourceContract.localTarget === '_blank' && sourceContract.localRel.includes('noopener'), 'source:local-isolation');
+  check(sourceContract.localStaticCount > 0, 'source:static-evidence');
   check(sourceContract.webHref.startsWith('https://'), 'source:web-https');
   check(sourceContract.webTarget === '_blank' && sourceContract.webRel.includes('noopener'), 'source:web-isolation');
-  await click(page, `${SELECTORS.chatTranscript} article[data-message-role="assistant"]:last-of-type ${SELECTORS.localSources} a`);
-  await waitFor(page, "location.pathname === '/works'", 'source:local-navigation');
-  check((await page.evaluate('location.hash')).startsWith('#'), 'source:local-hash');
+  const inlineSourceSelector = `${SELECTORS.chatTranscript} article[data-message-role="assistant"]:last-of-type [data-testid="morse-chat-message-content"] a[data-citation-index][href^="/works#"]`;
+  check(await page.evaluate(`(() => {
+    const source = document.querySelector(${JSON.stringify(inlineSourceSelector)});
+    if (!source) return false;
+    source.scrollIntoView({ block: 'center', behavior: 'auto' });
+    return true;
+  })()`), 'source:inline-scroll-target');
+  const beforeSourceClick = await page.evaluate(`(() => {
+    const transcript = document.querySelector(${JSON.stringify(SELECTORS.chatTranscript)});
+    return {
+      url: location.href,
+      messages: transcript?.querySelectorAll('article').length ?? 0,
+      scrollTop: transcript?.scrollTop ?? 0,
+    };
+  })()`);
+  const targetsBeforeSourceClick = await browserTransport.send('Target.getTargets');
+  const existingTargetIds = new Set(
+    (targetsBeforeSourceClick.targetInfos ?? []).map((target) => target.targetId),
+  );
+  const expectedSourceUrl = new URL(sourceContract.inlineLocalHref, targetUrl).href;
+  await click(page, inlineSourceSelector);
+  const openedSourceTarget = await withTimeout((async () => {
+    while (true) {
+      const { targetInfos = [] } = await browserTransport.send('Target.getTargets');
+      const target = targetInfos.find((candidate) => (
+        candidate.type === 'page'
+          && candidate.url === expectedSourceUrl
+          && !existingTargetIds.has(candidate.targetId)
+      ));
+      if (target) return target;
+      await delay(50);
+    }
+  })(), INTERACTION_TIMEOUT_MS, 'source:new-tab');
+  const afterSourceClick = await page.evaluate(`(() => {
+    const transcript = document.querySelector(${JSON.stringify(SELECTORS.chatTranscript)});
+    return {
+      url: location.href,
+      messages: transcript?.querySelectorAll('article').length ?? 0,
+      scrollTop: transcript?.scrollTop ?? 0,
+    };
+  })()`);
+  check(afterSourceClick.url === beforeSourceClick.url, 'source:original-url');
+  check(afterSourceClick.messages === beforeSourceClick.messages, 'source:original-messages');
+  check(afterSourceClick.scrollTop === beforeSourceClick.scrollTop, 'source:original-scroll');
+  const closedSourceTarget = await browserTransport.send('Target.closeTarget', {
+    targetId: openedSourceTarget.targetId,
+  });
+  check(closedSourceTarget.success !== false, 'source:new-tab-close');
   checks.add('source-navigation');
 
   await navigate(page, targetUrl, '/');
@@ -1094,6 +1178,7 @@ export async function runS10MockE2E() {
     await runVisitorScenarios({
       page: visitorDesktop,
       targetUrl,
+      browserTransport,
       inviteCode,
       connectionString: database.connectionString,
       openAiProxy,
@@ -1144,15 +1229,23 @@ export async function runS10MockE2E() {
       pageErrors: browserErrors.pageErrors,
     });
   } finally {
+    let browserCleanupError = null;
     openAiProxy?.releaseHeldResponse();
     for (const page of pages.reverse()) await closeTab(page).catch(() => undefined);
     browserTransport?.dispose();
-    if (browser) await cleanupOwnedBrowser(browser).catch(() => undefined);
+    if (browser) {
+      try {
+        await cleanupS10Browser(browser);
+      } catch (error) {
+        browserCleanupError = error;
+      }
+    }
     await closeServer(openAiProxy?.server).catch(() => undefined);
     for (const child of ownedChildren.reverse()) await terminateOwnedChild(child).catch(() => undefined);
     if (database) await database.dispose().catch(() => undefined);
     if (runtimeDir) removeRuntimeSnapshot(runtimeDir);
     if (downloadDirectory) removeDownloadDirectory(downloadDirectory);
+    if (browserCleanupError) throw browserCleanupError;
   }
 }
 

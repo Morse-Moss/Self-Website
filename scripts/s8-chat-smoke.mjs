@@ -35,6 +35,17 @@ async function openTab() {
   return socket;
 }
 
+async function listTabs() {
+  const response = await fetch(`${cdpBase}/json/list`);
+  if (!response.ok) throw new Error(`CDP tab list failed: ${response.status}`);
+  return response.json();
+}
+
+async function closeTabTarget(targetId) {
+  const response = await fetch(`${cdpBase}/json/close/${encodeURIComponent(targetId)}`);
+  if (!response.ok) throw new Error(`CDP tab close failed: ${response.status}`);
+}
+
 function createClient(socket) {
   let commandId = 0;
   const pending = new Map();
@@ -231,7 +242,8 @@ async function inspectConversation(client) {
     const articles = Array.from(document.querySelectorAll('article'));
     const userMessages = articles.filter((article) =>
       article.querySelector('span')?.textContent?.trim() === '你').length;
-    const source = document.querySelector('ol[aria-label="回答来源"] a');
+    const sourceGroup = document.querySelector('[aria-label="回答来源"]');
+    const source = sourceGroup?.querySelector('[data-source-group="local"] a[href^="/works#"]');
     const assistant = document.querySelector('article[data-stream-state="done"]');
     const quota = document.querySelector('[data-testid="morse-quota"]');
     const panel = document.querySelector('[role="dialog"]');
@@ -244,7 +256,10 @@ async function inspectConversation(client) {
       quotaPresent: Boolean(quota),
       remainingMessages: quota ? Number.parseInt(quota.textContent || '', 10) : -1,
       sourceHref: source ? new URL(source.href, location.href).href : null,
-      sourceCount: document.querySelectorAll('ol[aria-label="回答来源"] a').length,
+      sourceTarget: source?.getAttribute('target') ?? '',
+      sourceRel: source?.getAttribute('rel') ?? '',
+      sourceCount: sourceGroup?.querySelectorAll('li').length ?? 0,
+      staticSourceCount: sourceGroup?.querySelectorAll('[data-source-static="true"]').length ?? 0,
       scrollWidth: document.documentElement.scrollWidth,
       clientWidth: document.documentElement.clientWidth,
       panelWidth: rect?.width || 0,
@@ -256,6 +271,7 @@ async function inspectConversation(client) {
 async function runViewport({ expectRetry, height, key, starter, width }) {
   const socket = await openTab();
   const client = createClient(socket);
+  let openedSourceTarget = null;
   try {
     await client.send('Page.enable');
     await client.send('Runtime.enable');
@@ -311,7 +327,7 @@ async function runViewport({ expectRetry, height, key, starter, width }) {
     await waitFor(
       client,
       `Boolean(document.querySelector('article[data-stream-state="done"]'))
-        && Boolean(document.querySelector('ol[aria-label="回答来源"] a'))
+        && Boolean(document.querySelector('[aria-label="回答来源"] li'))
         && !document.querySelector('#morse-message')?.disabled
         && !Array.from(document.querySelectorAll('button')).some((button) => button.textContent?.trim() === '重试本次问题')`,
       'completed streamed answer and source',
@@ -319,39 +335,59 @@ async function runViewport({ expectRetry, height, key, starter, width }) {
     const conversation = await inspectConversation(client);
     const screenshot = await capture(client, `s8-chat-${key}.png`);
     const sourceUrl = conversation.sourceHref ? new URL(conversation.sourceHref) : null;
-    if (!sourceUrl) throw new Error('Public source link is missing.');
-    let sourcePathname;
-    let sourceHash;
-    if (sourceUrl.pathname === '/') {
-      if (sourceUrl.hash) throw new Error('Home source must not include a Hash.');
-      sourcePathname = '/';
-      sourceHash = '';
-    } else if (sourceUrl.pathname === '/works') {
+    if (!sourceUrl && conversation.staticSourceCount === 0) {
+      throw new Error('Public source evidence is missing.');
+    }
+    if (sourceUrl) {
+      if (sourceUrl.pathname !== '/works') throw new Error('Project source path is missing.');
       const sourceSlug = sourceUrl.hash.slice(1);
       if (!projectSlugs.includes(sourceSlug) || sourceUrl.hash !== `#${sourceSlug}`) {
         throw new Error('Project source Hash is invalid.');
       }
-      sourcePathname = '/works';
-      sourceHash = `#${sourceSlug}`;
-    } else {
-      throw new Error('Public source path is missing.');
+      if (conversation.sourceTarget !== '_blank' || !conversation.sourceRel.includes('noopener')) {
+        throw new Error('Project source must open in an isolated tab.');
+      }
     }
-    const sourceClicked = await client.evaluate(`(() => {
-      const source = document.querySelector('ol[aria-label="回答来源"] a');
-      if (!source) return false;
-      source.click();
-      return true;
-    })()`);
-    if (!sourceClicked) throw new Error('Public source link is not clickable.');
-    await waitFor(
-      client,
-      `location.pathname === ${JSON.stringify(sourcePathname)}
-        && location.hash === ${JSON.stringify(sourceHash)}`,
-      'source navigation',
+    const originalLocation = await client.evaluate('location.href');
+    const originalMessageCount = await client.evaluate(
+      'document.querySelectorAll(\'[data-testid="morse-chat-transcript"] article\').length',
     );
-    const sourceNavigation = await client.evaluate(
-      '({ pathname: location.pathname, hash: location.hash })',
-    );
+    if (sourceUrl) {
+      const existingTargetIds = new Set((await listTabs()).map((target) => target.id));
+      const sourceClicked = await client.evaluate(`(() => {
+        const source = document.querySelector('[aria-label="回答来源"] [data-source-group="local"] a[href^="/works#"]');
+        if (!source) return false;
+        source.click();
+        return true;
+      })()`);
+      if (!sourceClicked) throw new Error('Project source link is not clickable.');
+      for (let attempt = 0; attempt < 80; attempt += 1) {
+        const targets = await listTabs();
+        openedSourceTarget = targets.find((target) => (
+          target.type === 'page'
+            && target.url === sourceUrl.href
+            && !existingTargetIds.has(target.id)
+        )) ?? null;
+        if (openedSourceTarget) break;
+        await sleep(100);
+      }
+      if (!openedSourceTarget) throw new Error('Project source tab was not opened.');
+    }
+    const activeSourceState = await client.evaluate(`({
+      mode: ${JSON.stringify(sourceUrl ? 'new-tab' : 'static')},
+      href: location.href,
+      messages: document.querySelectorAll('[data-testid="morse-chat-transcript"] article').length,
+    })`);
+    const sourceNavigation = {
+      ...activeSourceState,
+      openedUrl: openedSourceTarget?.url ?? null,
+    };
+    if (sourceNavigation.href !== originalLocation) throw new Error('Source replaced the active chat page.');
+    if (sourceNavigation.messages !== originalMessageCount) throw new Error('Source changed the active chat transcript.');
+    if (openedSourceTarget) {
+      await closeTabTarget(openedSourceTarget.id);
+      openedSourceTarget = null;
+    }
 
     await navigate(client, '/');
     await clickButton(client, '对话');
@@ -378,6 +414,9 @@ async function runViewport({ expectRetry, height, key, starter, width }) {
       starters,
     };
   } finally {
+    if (openedSourceTarget) {
+      await closeTabTarget(openedSourceTarget.id).catch(() => undefined);
+    }
     try {
       await Promise.race([
         client.send('Page.close'),

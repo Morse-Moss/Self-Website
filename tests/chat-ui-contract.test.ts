@@ -6,6 +6,7 @@ import { test } from 'node:test';
 const componentPath = path.resolve('components/MorseChat.tsx');
 const stylePath = path.resolve('components/MorseChat.module.css');
 const globalStylePath = path.resolve('app/globals.css');
+const heroStylePath = path.resolve('app/styles/hero.module.css');
 const chatDirectory = path.resolve('components/chat');
 const portfolioLayoutPath = path.resolve('app/(portfolio)/layout.tsx');
 const worksLayoutPath = path.resolve('app/(portfolio)/works/layout.tsx');
@@ -138,8 +139,8 @@ test('transcript groups audited local sources separately from web sources', () =
   assert.match(sources, /source\.kind === ['"]local['"]/);
   assert.match(sources, /站内公开资料/);
   assert.match(sources, /联网参考资料/);
-  assert.match(sources, /target=\{external \? ['"]_blank['"] : undefined\}/);
-  assert.match(sources, /rel=\{external \? ['"]noopener noreferrer['"] : undefined\}/);
+  assert.match(sources, /target="_blank"/);
+  assert.match(sources, /rel="noopener noreferrer"/);
   assert.match(sources, /citationIndex:\s*index \+ 1/);
   assert.match(sources, /extractCitationIndexes/);
   assert.doesNotMatch(sources, /资料 \{citationIndex\}/);
@@ -149,6 +150,23 @@ test('transcript groups audited local sources separately from web sources', () =
   assert.match(transcript, /<ChatSources/);
   assert.match(transcript, /message\.complete/);
   assert.doesNotMatch(transcript, /aria-live=/, 'streaming token text must not be an aria-live region');
+});
+
+test('source evidence never replaces the active chat document', () => {
+  const sources = readChatSource('ChatSources.tsx');
+  const messageContent = readChatSource('ChatMessageContent.tsx');
+
+  assert.match(sources, /const navigable = external \|\| source\.href !== ['"]\/['"]/);
+  assert.match(sources, /data-source-static="true"/);
+  assert.match(sources, /target="_blank"/);
+  assert.match(sources, /rel="noopener noreferrer"/);
+  assert.match(sources, /当前对话引用的公开资料/);
+  assert.match(sources, /站内案例 · 新标签页/);
+  assert.match(messageContent, /const navigable = source\.kind !== ['"]local['"] \|\| source\.href !== ['"]\/['"]/);
+  assert.match(messageContent, /data-citation-static="true"/);
+  assert.match(messageContent, /target="_blank"/);
+  assert.match(messageContent, /rel="noopener noreferrer"/);
+  assert.doesNotMatch(messageContent, /href=\{`#\$\{sourceAnchorId/);
 });
 
 test('starter questions send immediately and pending assistants replace the empty suggestions', () => {
@@ -259,6 +277,7 @@ test('portfolio route group keeps one embedded chat and one works overlay', () =
 
 test('visitor controls remain tokenized, at least 44px, and responsive at 390px', () => {
   const styles = fs.readFileSync(stylePath, 'utf8');
+  const heroStyles = fs.readFileSync(heroStylePath, 'utf8');
 
   assert.doesNotMatch(styles, /#[0-9a-f]{3,8}|rgba?\(/i);
   assert.doesNotMatch(styles, /letter-spacing:\s*-[^;]+/i);
@@ -268,6 +287,14 @@ test('visitor controls remain tokenized, at least 44px, and responsive at 390px'
   assert.match(styles, /@media \(max-width: 640px\)/);
   assert.match(styles, /overflow-wrap:\s*anywhere/);
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
+  assert.match(styles, /width:\s*min\(560px,\s*calc\(100vw - var\(--space-6\)\)\)/);
+  assert.match(styles, /height:\s*min\(680px,\s*72svh\)/);
+  assert.match(styles, /height:\s*min\(720px,\s*calc\(100svh - var\(--space-3\)\)\)/);
+  assert.match(heroStyles, /grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(0,\s*36rem\)/);
+  assert.match(
+    heroStyles,
+    /@media \(max-width: 900px\)[\s\S]*?\.heroInner\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)/,
+  );
 });
 
 test('visitor chat exposes stable selectors for deterministic browser acceptance', () => {

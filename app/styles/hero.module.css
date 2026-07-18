@@ -9,7 +9,7 @@
 
 .heroInner {
   display: grid;
-  grid-template-columns: minmax(0, 0.92fr) minmax(420px, 1.08fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 36rem);
   gap: var(--space-7);
   align-items: center;
   width: min(var(--container), calc(100% - 48px));
@@ -124,7 +124,7 @@
 
 @media (max-width: 900px) {
   .heroInner {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--space-6);
   }
 
