@@ -67,7 +67,7 @@ test('S9 raw-CDP harness contains the complete route, viewport, and event contra
     '390',
     '844',
     'prefers-reduced-motion',
-    'morse-signal-canvas',
+    'warp-tunnel-canvas',
     'data-project-slug',
     'aria-expanded',
     'horizontalOverflow',
