@@ -47,7 +47,7 @@ npm run production:worker
 - `MORSE_ALLOW_TEST_EMBEDDINGS=true` 在生产直接拒绝。
 - `MORSE_LOCAL_RELEASE_SMOKE=true` 只供 loopback production-build harness 使用，正式角色启动器直接拒绝。
 - `MORSE_ALERTS_ENABLED` 必须显式为 `true` 或 `false`。关闭告警时 Worker 仍执行 retention cleanup。
-- 所有 key、密码、TOTP、webhook、DB URL 和 CA 只从部署 Secret Store 或主机受限环境文件注入，不进入 Git、镜像层和日志。
+- 所有 key、密码、webhook、DB URL 和 CA 只从部署 Secret Store 或主机受限环境文件注入，不进入 Git、镜像层和日志。
 
 完整变量名与本地默认值见 `.env.example`。示例值不是生产凭据，也不是生产安全配置。
 
@@ -66,8 +66,9 @@ npm run production:worker
 
 ### 4.1 管理员入口与邀请码运维
 
-- 管理入口固定为同源 `/admin`，不进入公开导航。隐藏入口不是安全措施；实际边界是独立密码、当前 TOTP、HttpOnly 管理 Session、精确 Origin 和服务端权限校验。
-- 登录后点击顶部“邀请码”，填写名称、1-720 小时有效期和 1-100 个最大会话数，并输入一个新的 6 位 TOTP。服务端生成带 `morse_` 前缀的 192-bit 随机码。
+- 管理入口固定为同源 `/admin`，不进入公开导航。隐藏入口不是安全措施；实际边界是独立密码、五次失败锁定、HttpOnly 管理 Session、精确 Origin 和服务端权限校验。
+- 使用管理员密码登录后，点击顶部“邀请码”，填写名称、1-720 小时有效期和 1-100 个最大会话数。服务端生成带 `morse_` 前缀的 192-bit 随机码。
+- 导出私有对话数据时必须再次输入管理员密码；复验与登录共享五次失败锁定，密码错误只拒绝本次导出，不注销仍有效的管理员 Session。
 - 明文只在创建成功响应和当前页面内存中出现一次；数据库只保存 SHA-256。关闭工具后不能恢复，管理员必须当场复制，通过受控渠道发送，不得写入工单、日志、截图、仓库或运行手册。
 - 列表只展示名称、有效/过期/耗尽/停用状态、有效期和会话用量。停用仅阻止新兑换；已登录 HR 的既有 Session 与后续聊天不受影响，需要立即中断时必须另走 Session 处置流程。
 - `npm run invite:create` 仅作为管理页面不可用、首次初始化或灾备恢复时的后备路径；通过 `MORSE_NEW_INVITE_CODE` 注入人工选定码，脚本不回显明文。
@@ -75,7 +76,7 @@ npm run production:worker
 | Route | 必需控制 | 用途 |
 |---|---|---|
 | `GET /api/admin/invites` | 有效管理员 Session | 返回邀请码元数据和派生状态，不返回明文 |
-| `POST /api/admin/invites` | 管理员 Session + 精确 Origin + 新 TOTP | 生成邀请码；只在本次响应返回明文 |
+| `POST /api/admin/invites` | 管理员 Session + 精确 Origin | 生成邀请码；只在本次响应返回明文 |
 | `PATCH /api/admin/invites/[inviteId]` | 管理员 Session + 精确 Origin | 仅允许将邀请码停用 |
 
 ## 5. Worker 行为

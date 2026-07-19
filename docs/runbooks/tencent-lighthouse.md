@@ -21,8 +21,8 @@
 邀请码管理只有在对应功能提交被 `master` 吸收并作为冻结 release 部署后才可验收。部署后按以下顺序检查：
 
 1. 核对 `/opt/revolution/current` 指向的新 release，不能只根据本地或远端分支判断已上线。
-2. 打开 `https://aimorse.tech/admin`，使用生产管理员密码和当前 TOTP 登录；确认公共导航仍没有 Admin 链接。
-3. 点击顶部“邀请码”，用新的未使用 TOTP 创建一个 1 小时、1 会话的 smoke 邀请码，并立即复制一次性明文；不要把明文写入终端历史、文档或截图。
+2. 打开 `https://aimorse.tech/admin`，使用生产管理员密码登录；确认公共导航仍没有 Admin 链接。
+3. 点击顶部“邀请码”，创建一个 1 小时、1 会话的 smoke 邀请码，并立即复制一次性明文；不要把明文写入终端历史、文档或截图。
 4. 在隔离浏览器会话中兑换并完成最小聊天 smoke，确认列表会话用量更新。
 5. 停用该 smoke 邀请码，确认新的兑换被拒绝；已经建立的访客 Session 应继续可用。
 6. 重新执行公网 live/ready 与 `MORSE_RELEASE_BASE_URL=https://aimorse.tech npm run release:smoke`，再记录 production-observed 证据。
@@ -74,7 +74,6 @@ OPENAI_CHAT_PROTOCOL=responses
 OPENAI_EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5
 EMBEDDING_API_KEY=<random-internal-key>
 MORSE_ADMIN_PASSWORD_HASH=<scrypt-hash>
-MORSE_ADMIN_TOTP_SECRET=<base32-secret>
 MORSE_INVITE_FINGERPRINT_SECRET=<random-secret>
 MORSE_ALERTS_ENABLED=false
 MORSE_SEARCH_ENABLED=false
