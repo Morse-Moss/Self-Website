@@ -2,20 +2,20 @@
 
 ## Outcome
 
-- 日期：2026-07-18 首发；2026-07-19 四项目与管理员邀请码管理更新
+- 日期：2026-07-18 首发；2026-07-19 五项目、管理员邀请码管理与公开知识更新
 - 模式：`STAGED / CRITICAL / DEPLOYED`
 - 状态：`PRODUCTION_OBSERVED / LIMITED_LAUNCH`
 - 公网入口：`https://aimorse.tech`
-- 管理员与邀请码功能基线：`c3f1ec6`
+- 当前应用 release：`ff03c1d`
 - 实例：腾讯云 Lighthouse 首尔 `lhins-0oly57x8`，公网 `43.133.68.202`
 
 ## Release And Runtime
 
-- 功能切换时 `/opt/revolution/current` 指向 `/opt/revolution/releases/c3f1ec6/revolution`；后续仅文档同步 release 以服务器实时 `readlink` 为准。
+- `/opt/revolution/current` 指向 `/opt/revolution/releases/ff03c1d/revolution`；Web、Worker 与 Edge 的 Compose working directory 均指向该冻结 release。
 - `db`、`embedding`、`web` 为 healthy；`worker` 与 `edge` 为 running。
 - PostgreSQL 16 + pgvector 使用 TLS 和独立 admin/runtime/migration/ingest/backup 凭据。
 - migration 001/002 首次执行和幂等复验通过；grants 完成后 migration 角色不再拥有超级用户权限。
-- 公开知识共 33 documents / 39 chunks；内容创作 Agent、自动运营 Agent、深度研究 Agent 与数字摩斯各有 7 个稳定文档，分别为 8、8、9、8 chunks。第二次全量摄取为 0 document 更新、0 chunk 更新、33 documents 跳过。
+- 公开知识共 40 documents / 47 chunks；AI 外贸获客系统首轮生产摄取新增 8 documents / 9 chunks，重复摄取与 `ff03c1d` 发布后的两轮摄取均为 0 document 更新、0 chunk 更新、40 documents 跳过。
 - 首个生产邀请码已创建，但邀请码明文、管理员凭据、TOTP、Provider key、数据库密码和私钥不进入本证据或 Git。
 
 ## Public Observation
@@ -25,19 +25,21 @@
 - `GET https://aimorse.tech/api/health` -> HTTP 200。
 - `GET https://aimorse.tech/` 与 `/works` -> HTTP 200。
 - `GET https://aimorse.tech/works/content-agent/atelier-main-design-2026-07-18.jpg` -> HTTP 200。
-- 自动运营 Agent、深度研究 Agent 与数字摩斯正式主图 -> HTTP 200。
+- 自动运营 Agent、深度研究 Agent、数字摩斯与 AI 外贸获客系统正式主图 -> HTTP 200；AI 外贸获客系统图片 SHA256 与仓库文件一致。
 - `http://aimorse.tech` -> 301 到主域 HTTPS。
 - `https://www.aimorse.tech/works` -> 301 到 `https://aimorse.tech/works`。
 - `MORSE_RELEASE_BASE_URL=https://aimorse.tech npm run release:smoke` -> `{"ok":true}`，同时验证 HSTS、frame、content-type、referrer、permissions policy 和无 `X-Powered-By`。
 - `GET https://aimorse.tech/admin` -> HTTP 200；未登录 `GET /api/admin/invites` -> HTTP 401。
 - 生产管理员脚本包含管理密码与邀请码入口，不含动态验证码、`totpCode` 或 `inviteTotpCode`。
 - 受控真实 Provider smoke -> HTTP 200、4 个 delta、消息额度 30 -> 29；不保存原始 prompt、回答、header 或 key。
+- 生产 BGE + pgvector 的 46 条 gold 为 top-1 38/46、top-3 46/46；最低正例 `0.553159`、最高负例 `0.426972`，正负阈值均通过。AI 外贸获客系统聚合技术栈问法命中 top-1。
 
 ## Browser Observation
 
 - 首页：1440x900 与 390x844 均无横向溢出，console error 为 0。
 - 作品页：1440x900 与 390x844 均无横向溢出，console error 为 0。
 - 内容创作 Agent 正式图片在双宽均加载完成；从项目 CTA 进入、输入邀请码后，预填问题保留在输入框且未自动发送。
+- AI 外贸获客系统在 1440x900 与 390x844 均完成主图加载、展开详情、CTA 预填、零横向溢出和 console/page error 0 的生产浏览器检查。
 - 桌面和移动首屏未观察到控件重叠或不可读文字。
 - 生产域名 Lighthouse 未复测：本机没有 Lighthouse 可执行文件，离线 npm 缓存也不可用；依赖安装不在本阶段授权内。
 
@@ -60,11 +62,13 @@
 - `d3f8d77`：发布自动运营作品集模块，并将四项目页面、详情和知识集合纳入同一冻结 release。
 - `d83b46f`：修正自动运营主题拆分后的 RAG gold 漂移；生产 BGE + pgvector 评测达到 top-3 36/36。
 - `c3f1ec6`：吸收管理员邀请码管理与密码登录简化；生产 `/admin` 和邀请码 API 已更新，动态验证码字段退出生产脚本。
-- 本轮发布前 PostgreSQL 全量测试 589/589、Mock E2E 20/20、本地与服务器生产构建 20 routes；公网 live/ready、release smoke、未登录 401 与生产脚本合同均通过。
+- `c90d153`：发布 AI 外贸获客系统页面、真实 Graphite 主图、五段详情与六主题公开知识。
+- `ff03c1d`：将歧义的销售流程问法从聚合文档 gold 调整为已验证的技术栈聚合问法；生产 RAG 达到 top-3 46/46。
+- 本轮发布前全量测试 595/595、Chat eval 54/54、生产构建 21 routes；公网 live/ready、作品页、正式主图与 release smoke 均通过。
 
 ## Residual Boundaries
 
 - 当前为有限生产发布，不标记完整 `ONLINE_READY`。
 - 仍需生产 Lighthouse `>= 90`、监控、托管备份与恢复演练、入口层速率/连接限制、真实 Bocha/Feishu smoke 和 moderate dependency advisory 处置。
-- 线上 Web release 只来自冻结提交，没有复制本地脏工作区。管理员与邀请码功能运行 `c3f1ec6`；四项目页面、正式主图和各 7 个稳定知识文档继续在生产。
-- 本次发布未调用真实 Chat Provider，未创建生产邀请码明文，也未清理旧 release 或持久卷；认证后的邀请码完整生命周期仍需管理员验收。
+- 线上 Web release 只来自冻结提交，没有复制本地脏工作区。五项目页面、正式主图和 40 documents / 47 chunks 公开知识已进入生产。
+- 本次发布未调用真实 Chat、Bocha、Feishu、Alibaba Mail、SMTP/IMAP Provider，未创建生产邀请码明文，也未清理旧 release 或持久卷；认证后的邀请码完整生命周期仍需管理员验收。

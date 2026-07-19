@@ -4,17 +4,19 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**S11-5D ADMIN_INVITES_PRODUCTION_OBSERVED / LIMITED_LAUNCH**
+**S11-5E AI_LEADGEN_PRODUCTION_OBSERVED / LIMITED_LAUNCH**
 
 ## next_allowed_pointer
-当前生产实例已观察到真实 HTTPS、live/ready、release smoke、四项目公开页面与主图、管理员密码登录静态合同、邀请码管理产物、未登录 401、内容创作 Agent CTA 授权流程和历史真实 Provider 主链。另有 AI 外贸获客系统已在本地完成作品集展示 slice，但尚未生产知识摄取、push 或部署；生产仍按四项目统计。下一步可由管理员完成认证后的邀请码创建/兑换/停用验收，或进入监控/备份/edge 限流等硬化阶段；在 Lighthouse 和剩余运维门关闭前不得宣称完整 `ONLINE_READY`。
+当前生产实例已观察到真实 HTTPS、live/ready、release smoke、五项目公开页面与主图、管理员密码登录静态合同、邀请码管理产物、未登录 401、内容创作 Agent CTA 授权流程和历史真实 Provider 主链。AI 外贸获客系统的作品集页面与六主题公开知识已进入生产，源系统仍保持“本地 MVP 真实链路已验证”的公开状态。下一步可由管理员完成认证后的邀请码创建/兑换/停用验收，或进入监控/备份/edge 限流等硬化阶段；在 Lighthouse 和剩余运维门关闭前不得宣称完整 `ONLINE_READY`。
 
-## AI leadgen portfolio local slice (2026-07-19)
+## AI leadgen portfolio production release (2026-07-19)
 
-- Mode: `STAGED / STANDARD / LOCAL`; status: `LOCAL_READY`，等待用户本地验收。
+- Mode: `STAGED / CRITICAL / DEPLOYED`; status: `OBSERVED / LIMITED_LAUNCH`。
 - Scope: `/works#ai-leadgen`、`content/site-content.json` 中的项目与六个知识主题、公开知识 Hash 路由、RAG/Chat 评测、真实 Graphite 主图和双宽浏览器 smoke。
-- Verification: `npm test` 595/595、`npm run build` 21 个路由、`npm run chat:eval` 54/54、专属双宽 smoke `failures: []`，共享 S9 桌面/移动/reduced-motion `failures: []`。
-- Boundary: 主图按确认原图使用；未调用 OpenAI、飞书、阿里邮箱或其他真实 Provider，未写生产数据库/生产知识库，未 push、未部署。生产仍保留四项目、33 documents / 39 chunks 的已发布统计。
+- Release: `c90d153` 发布五项目页面与知识，`ff03c1d` 修正 AI leadgen 聚合问法的 RAG gold；`/opt/revolution/current` 已指向 `/opt/revolution/releases/ff03c1d/revolution`，Web、Worker 与 Edge 标签均指向该冻结 release。
+- Verification: `npm test` 595/595、`npm run build` 21 个路由、`npm run chat:eval` 54/54；公网 live/ready、`/works`、正式主图与 release smoke 均通过，主图 SHA256 与仓库一致。生产 RAG 为 top-1 38/46、top-3 46/46，正负阈值均通过。
+- Data: 首轮生产摄取新增 8 documents / 9 chunks，重复摄取与 `ff03c1d` 发布后的两轮摄取均为 0 更新、40 documents 跳过；生产总量为 40 documents / 47 chunks，migration 保持 001/002。
+- Boundary: 主图按确认原图使用；未调用 Chat、Bocha、飞书、阿里邮箱、SMTP/IMAP 或其他真实 Provider。作品集与知识上线不等于 `E:\Two` 源系统已生产部署，也不构成规模化获客成果。
 - Contract and evidence: `docs/superpowers/specs/2026-07-19-ai-leadgen-works-content-design.md`、`docs/superpowers/plans/2026-07-19-ai-leadgen-portfolio.md`、`docs/verify/ai-leadgen/ai-leadgen-closeout.md`。
 
 ## S11-5D admin invite production release (2026-07-19)

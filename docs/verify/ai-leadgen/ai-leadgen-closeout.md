@@ -1,11 +1,12 @@
 # AI 外贸获客系统作品集信息完善 Closeout
 
-## Local Outcome
+## Outcome
 
 - 日期：2026-07-19
-- 模式：`STAGED / STANDARD / LOCAL`
-- 状态：`LOCAL_READY / KNOWLEDGE_RECONCILED`
-- 展示入口：`http://127.0.0.1:3012/works#ai-leadgen`
+- 模式：`STAGED / CRITICAL / DEPLOYED`
+- 状态：`PRODUCTION_OBSERVED / LIMITED_LAUNCH / KNOWLEDGE_RECONCILED`
+- 展示入口：`https://aimorse.tech/works#ai-leadgen`
+- 生产 release：`ff03c1d`
 - 公开状态文案：`唯一开发者 · 本地 MVP 真实链路已验证`
 
 ## Display Contract
@@ -22,6 +23,7 @@
 - `content/rag-eval.json` 新增聚合与六个主题问法，并包含对 Apify/Apollo/WhatsApp/Google Maps、AI 自动写开发信、AI 自动回复、生产部署和规模化成果等未实现能力的边界问法。
 - `content/chat-eval.json` 更新为五项目 Hash 合同；`scripts/chat-eval.mjs` 使用受控的 ai-leadgen 来源 fixture，并要求对生产部署与规模化成果给出明确负向回答。
 - 页面和知识不宣称生产部署、规模化获客、AI 自动写开发信或 AI 自动生成/发送客户回复。
+- 这里的“生产 release”只指 Revolution 作品集页面和公开知识上线，不代表 `E:\Two` 源系统已经生产部署。
 
 ## Verification
 
@@ -33,6 +35,9 @@
 - `py -X utf8 scripts/ai-leadgen-visual-smoke.py http://127.0.0.1:3012`：1440x900 与 390x844 均 `imageLoaded: true`、`horizontalOverflow: 0`、`promptPrefilled: true`、console/page error 0，并精确校验架构说明。
 - `node scripts/s9-visual-smoke.mjs http://127.0.0.1:3012`：桌面、移动端与 reduced-motion 均 `failures: []`；五项目展开、Hash、键盘、滚动、重定向、零横向溢出、零 console/page error 和零外部运行时请求全部通过。
 - `git diff --check`：无 whitespace error；仅有 Windows 工作区的 LF/CRLF 提示。
+- 生产 migration 仍为 001/002；grants 成功。首轮摄取新增 8 documents / 9 chunks，随后三轮均为 0 更新、40 documents 跳过；生产总量为 40 documents / 47 chunks。
+- 生产 RAG：46 cases，top-1 38/46、top-3 46/46，正负阈值均通过；AI 外贸获客系统聚合技术栈问法命中 `project-ai-leadgen` top-1。
+- 公网 live/ready、`/works`、正式主图和 release smoke 均通过；主图 SHA256 为 `026404371270ECAB10313A9F505677740A7621910DDCF33DDA180D6F5C3310D7`，与仓库一致。
 
 ## Visual Evidence
 
@@ -44,11 +49,11 @@
 ## Knowledge Reconciliation
 
 - `docs/portfolio-blueprint.md` 已记录第五项目、精确架构说明、负向能力边界和本地验收门。
-- `README.md` 与 `docs/task-center/run-state.md` 均区分本地五项目和生产四项目；生产状态、33 documents / 39 chunks 未被本地结果覆盖。
-- 项目根规则、工程准则和生产 runbook 无新增路由、环境变量、数据库或部署变化，无需修改；Codex durable memory 已有统一作品展示模板，本轮未新增记忆。
+- `README.md`、`docs/task-center/run-state.md`、两份生产 runbook、S11 生产证据与本文件已按五项目生产状态、40 documents / 47 chunks 和 46 条 RAG gold 对齐。
+- 项目根规则和工程准则无新增路由、环境变量或数据库变化，无需修改；Codex durable memory 未获用户明确授权，本轮不更新。
 
 ## Delivery Boundary
 
-- 本轮只修改 `E:\Revolution` 作品集、公开知识、评测、共享 S9 数量合同、主图和本地证据；未修改 `E:\Two`。
-- 未调用真实 OpenAI、飞书、阿里邮箱、SMTP/IMAP 或其他付费 Provider；未写生产数据库或生产知识库。
-- 未 push、未部署；用户确认后才可进入生产知识摄取和部署讨论。
+- 本轮只修改并发布 `E:\Revolution` 作品集、公开知识、评测、共享 S9 数量合同和主图；未修改 `E:\Two`。
+- 未调用真实 Chat、Bocha、飞书、阿里邮箱、SMTP/IMAP 或其他付费 Provider；生产写入仅限幂等公开知识摄取。
+- 发布只使用 Git 冻结归档，没有复制本地未跟踪文件；未删除旧 release 或持久卷。

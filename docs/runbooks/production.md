@@ -111,7 +111,7 @@ npm run production:worker
 
 ## 8. 当前生产状态与硬化余项
 
-首个生产实例在 `39849e1` 完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实对话 smoke 和公网 live/ready/release smoke。当前管理员与邀请码功能基线为 `c3f1ec6`，沿用同一生产拓扑，并已发布密码登录、邀请码管理、私有导出密码复验，以及内容创作 Agent、自动运营 Agent、深度研究 Agent 与数字摩斯的简洁页面、展开详情和正式主图。生产公开知识为 33 documents / 39 chunks，其中四项目各 7 个稳定文档；本次全量摄取为 33/33 跳过。生产 BGE + pgvector 的 36 条 gold 为 top-1 28/36、top-3 36/36，正负阈值均通过。本次管理员功能发布没有创建生产邀请码明文，也没有调用真实 Chat Provider；实例细节和发布证据以实例手册及 S11 closeout 为准。
+首个生产实例在 `39849e1` 完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实对话 smoke 和公网 live/ready/release smoke。当前应用 release 为 `ff03c1d`，沿用同一生产拓扑，并已发布密码登录、邀请码管理、私有导出密码复验，以及五个项目的简洁页面、展开详情和正式主图。生产公开知识为 40 documents / 47 chunks；重复全量摄取为 40/40 跳过。生产 BGE + pgvector 的 46 条 gold 为 top-1 38/46、top-3 46/46，正负阈值均通过。本次 AI 外贸获客系统内容与知识发布没有创建生产邀请码明文，也没有调用真实 Chat Provider；实例细节和发布证据以实例手册及 S11 closeout 为准。
 
 以下事项完成前保持 `LIMITED_LAUNCH`，不标记完整 `ONLINE_READY`：
 
