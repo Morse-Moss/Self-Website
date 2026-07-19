@@ -7,17 +7,16 @@ import styles from './AdminConsole.module.css';
 interface AdminLoginProps {
   busy: boolean;
   error: string;
-  onSubmit: (password: string, totpCode: string) => Promise<void>;
+  onSubmit: (password: string) => Promise<void>;
 }
 
 export default function AdminLogin({ busy, error, onSubmit }: AdminLoginProps) {
   const [password, setPassword] = useState('');
-  const [totpCode, setTotpCode] = useState('');
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy || !password || !/^\d{6}$/u.test(totpCode)) return;
-    void onSubmit(password, totpCode);
+    if (busy || !password) return;
+    void onSubmit(password);
   }
 
   return (
@@ -47,23 +46,8 @@ export default function AdminLogin({ busy, error, onSubmit }: AdminLoginProps) {
               autoFocus
             />
           </label>
-          <label className={styles.field}>
-            <span>动态验证码</span>
-            <input
-              name="totpCode"
-              type="text"
-              value={totpCode}
-              onChange={(event) => setTotpCode(event.target.value.replace(/\D/gu, '').slice(0, 6))}
-              autoComplete="one-time-code"
-              inputMode="numeric"
-              pattern="[0-9]{6}"
-              maxLength={6}
-              disabled={busy}
-              required
-            />
-          </label>
           {error ? <p className={styles.formError} role="alert">{error}</p> : null}
-          <button className={styles.primaryButton} type="submit" disabled={busy || !password || totpCode.length !== 6}>
+          <button className={styles.primaryButton} type="submit" disabled={busy || !password}>
             {busy ? '正在验证...' : '进入复盘台'}
           </button>
         </form>

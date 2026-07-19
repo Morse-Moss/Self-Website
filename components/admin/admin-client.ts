@@ -136,10 +136,10 @@ export function buildAdminQuery(filters: AdminFilters): string {
 
 export function adminErrorMessage(status: number, code = ''): string {
   if (code === 'ADMIN_AUTH_FAILED') {
-    return '密码或动态验证码无效，也可能已触发临时锁定。';
+    return '管理密码无效，也可能已触发临时锁定。';
   }
-  if (code === 'ADMIN_TOTP_REQUIRED') {
-    return '动态验证码无效、已使用或已过期，请输入新的验证码。';
+  if (code === 'ADMIN_REAUTH_FAILED') {
+    return '管理密码不正确，请重新输入。';
   }
   if (status === 401 || code === 'ADMIN_AUTH_REQUIRED') {
     return '管理会话已过期，请重新登录。';

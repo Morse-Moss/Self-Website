@@ -222,11 +222,10 @@ test('loadServerConfig rejects a non-integer provider concurrency', () => {
   );
 });
 
-test('loadAdminConfig isolates strict admin secrets, origin, cookie, and bounded policy', () => {
+test('loadAdminConfig isolates the admin password hash, origin, cookie, and bounded policy', () => {
   const config = loadAdminConfig({
     DATABASE_URL: 'postgresql://localhost/revolution',
     MORSE_ADMIN_PASSWORD_HASH: 'scrypt$test-only-hash',
-    MORSE_ADMIN_TOTP_SECRET: 'JBSWY3DPEHPK3PXP',
     MORSE_ADMIN_ALLOWED_ORIGIN: 'http://127.0.0.1:3010/',
   });
 
@@ -234,7 +233,6 @@ test('loadAdminConfig isolates strict admin secrets, origin, cookie, and bounded
     databaseUrl: 'postgresql://localhost/revolution',
     cookieName: 'morse_admin',
     passwordHash: 'scrypt$test-only-hash',
-    totpSecret: 'JBSWY3DPEHPK3PXP',
     allowedOrigin: 'http://127.0.0.1:3010',
     sessionMinutes: 30,
     maxFailedAttempts: 5,
@@ -242,17 +240,26 @@ test('loadAdminConfig isolates strict admin secrets, origin, cookie, and bounded
   });
 });
 
-test('loadAdminConfig fails closed for missing secrets, unsafe origins, and weakened limits', () => {
+test('loadAdminConfig accepts password-only admin configuration without a TOTP secret', () => {
+  const config = loadAdminConfig({
+    DATABASE_URL: 'postgresql://localhost/revolution',
+    MORSE_ADMIN_PASSWORD_HASH: 'scrypt$test-only-hash',
+    MORSE_ADMIN_ALLOWED_ORIGIN: 'https://portfolio.example',
+  });
+
+  assert.equal(config.passwordHash, 'scrypt$test-only-hash');
+  assert.equal('totpSecret' in config, false);
+});
+
+test('loadAdminConfig fails closed for missing password config, unsafe origins, and weakened limits', () => {
   const base = {
     DATABASE_URL: 'postgresql://localhost/revolution',
     MORSE_ADMIN_PASSWORD_HASH: 'scrypt$test-only-hash',
-    MORSE_ADMIN_TOTP_SECRET: 'JBSWY3DPEHPK3PXP',
     MORSE_ADMIN_ALLOWED_ORIGIN: 'https://portfolio.example',
   };
 
   for (const key of [
     'MORSE_ADMIN_PASSWORD_HASH',
-    'MORSE_ADMIN_TOTP_SECRET',
     'MORSE_ADMIN_ALLOWED_ORIGIN',
   ]) {
     const env = { ...base };

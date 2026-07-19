@@ -7,7 +7,7 @@ import { after, before, test } from 'node:test';
 import { NextRequest } from 'next/server.js';
 import pg from 'pg';
 
-import { generateTotp, hashAdminPassword } from '../lib/server/admin-auth.ts';
+import { hashAdminPassword } from '../lib/server/admin-auth.ts';
 import { createDisposablePostgresDatabase } from './postgres-test-utils.ts';
 
 const { Pool } = pg;
@@ -15,7 +15,6 @@ const repoRoot = path.resolve('.');
 const migrationRunner = path.join(repoRoot, 'scripts', 'migrate-db.mjs');
 const allowedOrigin = 'https://portfolio.example';
 const password = 'correct horse battery staple';
-const totpSecret = 'JBSWY3DPEHPK3PXP';
 
 let database: Awaited<ReturnType<typeof createDisposablePostgresDatabase>>;
 let pool: InstanceType<typeof Pool>;
@@ -68,14 +67,6 @@ function cookieFrom(response: Response): string {
   return match[1];
 }
 
-async function nextUnusedTotp(): Promise<string> {
-  const state = await pool.query<{ last_totp_counter: string }>(
-    "SELECT last_totp_counter::text FROM admin_security_state WHERE id = 'admin-login'",
-  );
-  const nextCounter = Number(state.rows[0].last_totp_counter) + 1;
-  return generateTotp(totpSecret, nextCounter * 30_000 + 1);
-}
-
 before(async () => {
   database = await createDisposablePostgresDatabase();
   await runMigrations(database.connectionString);
@@ -83,7 +74,6 @@ before(async () => {
 
   process.env.DATABASE_URL = database.connectionString;
   process.env.MORSE_ADMIN_PASSWORD_HASH = await hashAdminPassword(password);
-  process.env.MORSE_ADMIN_TOTP_SECRET = totpSecret;
   process.env.MORSE_ADMIN_ALLOWED_ORIGIN = allowedOrigin;
   process.env.MORSE_ADMIN_SESSION_MINUTES = '30';
   process.env.MORSE_ADMIN_MAX_FAILED_ATTEMPTS = '5';
@@ -132,7 +122,6 @@ after(async () => {
   for (const key of [
     'DATABASE_URL',
     'MORSE_ADMIN_PASSWORD_HASH',
-    'MORSE_ADMIN_TOTP_SECRET',
     'MORSE_ADMIN_ALLOWED_ORIGIN',
     'MORSE_ADMIN_SESSION_MINUTES',
     'MORSE_ADMIN_MAX_FAILED_ATTEMPTS',
@@ -151,12 +140,22 @@ test('visitor cookie and missing admin cookie cannot access any admin record API
   }
 });
 
-test('admin login, query, badcase, fresh-TOTP export, replay denial, and logout enforce the full route contract', async () => {
-  const currentCode = generateTotp(totpSecret, Date.now());
+test('admin session login accepts the configured password without a TOTP field', async () => {
+  const login = await sessionRoute.POST(request('/api/admin/session', {
+    method: 'POST',
+    origin: allowedOrigin,
+    body: { password },
+  }));
+
+  assert.equal(login.status, 200);
+  assert.match(login.headers.get('set-cookie') ?? '', /morse_admin=/u);
+});
+
+test('password login, query, badcase, password-confirmed export, and logout enforce the full route contract', async () => {
   const badOrigin = await sessionRoute.POST(request('/api/admin/session', {
     method: 'POST',
     origin: 'https://attacker.example',
-    body: { password, totpCode: currentCode },
+    body: { password },
   }));
   assert.equal(badOrigin.status, 403);
 
@@ -165,20 +164,17 @@ test('admin login, query, badcase, fresh-TOTP export, replay denial, and logout 
     origin: allowedOrigin,
     body: {
       password: 'attacker-password',
-      totpCode: '000000',
       passwordHash: await hashAdminPassword('attacker-password'),
-      totpSecret: 'GEZDGNBVGY3TQOJQ',
       now: '2035-01-01T00:00:00.000Z',
       policy: { maxFailedAttempts: 999 },
     },
   }));
   assert.equal(overrideAttempt.status, 401);
 
-  const loginCode = generateTotp(totpSecret, Date.now());
   const login = await sessionRoute.POST(request('/api/admin/session', {
     method: 'POST',
     origin: allowedOrigin,
-    body: { password, totpCode: loginCode },
+    body: { password },
   }));
   assert.equal(login.status, 200);
   const setCookie = login.headers.get('set-cookie') ?? '';
@@ -221,12 +217,20 @@ test('admin login, query, badcase, fresh-TOTP export, replay denial, and logout 
     { badcase: true, adminNote: 'needs review' },
   );
 
-  const exportCode = await nextUnusedTotp();
+  const rejectedExport = await exportRoute.POST(request('/api/admin/export', {
+    method: 'POST',
+    cookie,
+    origin: allowedOrigin,
+    body: { format: 'csv', password: 'wrong password', filters: { workflow: 'chat' } },
+  }));
+  assert.equal(rejectedExport.status, 401);
+  assert.deepEqual(await rejectedExport.json(), { ok: false, error: 'ADMIN_REAUTH_FAILED' });
+
   const exported = await exportRoute.POST(request('/api/admin/export', {
     method: 'POST',
     cookie,
     origin: allowedOrigin,
-    body: { format: 'csv', totpCode: exportCode, filters: { workflow: 'chat' } },
+    body: { format: 'csv', password, filters: { workflow: 'chat' } },
   }));
   assert.equal(exported.status, 200);
   assert.match(exported.headers.get('content-type') ?? '', /text\/csv/iu);
@@ -237,13 +241,13 @@ test('admin login, query, badcase, fresh-TOTP export, replay denial, and logout 
   assert.match(csv, /"'=unsafe question"/u);
   assert.doesNotMatch(csv, /apiKey|cookie|providerRawPayload|sessionToken|tokenHash/iu);
 
-  const replayed = await exportRoute.POST(request('/api/admin/export', {
+  const repeated = await exportRoute.POST(request('/api/admin/export', {
     method: 'POST',
     cookie,
     origin: allowedOrigin,
-    body: { format: 'json', totpCode: exportCode, filters: {} },
+    body: { format: 'json', password, filters: {} },
   }));
-  assert.equal(replayed.status, 401);
+  assert.equal(repeated.status, 200);
 
   const logout = await sessionRoute.DELETE(request('/api/admin/session', {
     method: 'DELETE',

@@ -31,20 +31,17 @@ export async function POST(request: NextRequest) {
     if (!hasAdminOrigin(request, config.allowedOrigin)) return adminForbidden();
     const body = await request.json() as Record<string, unknown>;
     const password = typeof body.password === 'string' ? body.password : '';
-    const totpCode = typeof body.totpCode === 'string' ? body.totpCode : '';
-    if (!password || password.length > 512 || !/^\d{6}$/u.test(totpCode)) return loginFailed();
+    if (!password || password.length > 512) return loginFailed();
 
     const result = await authenticateAdmin(
       getPool(config.databaseUrl),
-      { password, totpCode },
+      { password },
       {
         passwordHash: config.passwordHash,
-        totpSecret: config.totpSecret,
         policy: {
           maxFailedAttempts: config.maxFailedAttempts,
           lockoutMs: config.lockMinutes * 60_000,
           sessionTtlMs: config.sessionMinutes * 60_000,
-          totpWindow: 1,
         },
       },
     );

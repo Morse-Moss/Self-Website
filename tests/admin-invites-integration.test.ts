@@ -8,7 +8,6 @@ import { NextRequest } from 'next/server.js';
 import pg from 'pg';
 
 import { authenticateSession, redeemInvite } from '../lib/server/access.ts';
-import { generateTotp } from '../lib/server/admin-auth.ts';
 import { ChatServiceError, runChat } from '../lib/server/chat-service.ts';
 import { hashSecret } from '../lib/server/security.ts';
 import { createDisposablePostgresDatabase } from './postgres-test-utils.ts';
@@ -17,7 +16,6 @@ const { Pool } = pg;
 const repoRoot = path.resolve('.');
 const migrationRunner = path.join(repoRoot, 'scripts', 'migrate-db.mjs');
 const allowedOrigin = 'https://portfolio.example';
-const totpSecret = 'JBSWY3DPEHPK3PXP';
 const adminToken = `admin-invites-${randomUUID()}`;
 const adminCookie = `morse_admin=${adminToken}`;
 
@@ -86,7 +84,6 @@ before(async () => {
 
   process.env.DATABASE_URL = database.connectionString;
   process.env.MORSE_ADMIN_PASSWORD_HASH = 'configured-but-unused';
-  process.env.MORSE_ADMIN_TOTP_SECRET = totpSecret;
   process.env.MORSE_ADMIN_ALLOWED_ORIGIN = allowedOrigin;
   process.env.MORSE_ADMIN_SESSION_MINUTES = '30';
   process.env.MORSE_ADMIN_MAX_FAILED_ATTEMPTS = '5';
@@ -115,7 +112,6 @@ after(async () => {
   for (const key of [
     'DATABASE_URL',
     'MORSE_ADMIN_PASSWORD_HASH',
-    'MORSE_ADMIN_TOTP_SECRET',
     'MORSE_ADMIN_ALLOWED_ORIGIN',
     'MORSE_ADMIN_SESSION_MINUTES',
     'MORSE_ADMIN_MAX_FAILED_ATTEMPTS',
@@ -131,7 +127,7 @@ test('admin invite APIs reject unauthenticated requests without caching them', a
     await collectionRoute.POST(request('/api/admin/invites', {
       method: 'POST',
       origin: allowedOrigin,
-      body: { label: 'HR', durationHours: 72, maxSessions: 3, totpCode: '000000' },
+      body: { label: 'HR', durationHours: 72, maxSessions: 3 },
     })),
     await itemRoute.PATCH(request(`/api/admin/invites/${inviteId}`, {
       method: 'PATCH',
@@ -155,7 +151,7 @@ test('admin invite mutations require the exact configured Origin', async () => {
       method: 'POST',
       cookie: adminCookie,
       origin,
-      body: { label: 'HR', durationHours: 72, maxSessions: 3, totpCode: '000000' },
+      body: { label: 'HR', durationHours: 72, maxSessions: 3 },
     }));
     assert.equal(created.status, 403);
     assertNoStore(created);
@@ -171,9 +167,22 @@ test('admin invite mutations require the exact configured Origin', async () => {
   }
 });
 
-test('admin invite creation rejects malformed and out-of-range input before TOTP consumption', async () => {
+test('an authenticated admin session creates an invite without a TOTP field', async () => {
   const { collectionRoute } = await loadInviteFeature();
-  const valid = { label: 'HR interview', durationHours: 72, maxSessions: 3, totpCode: '000000' };
+  const response = await collectionRoute.POST(request('/api/admin/invites', {
+    method: 'POST',
+    cookie: adminCookie,
+    origin: allowedOrigin,
+    body: { label: 'Password-only admin', durationHours: 72, maxSessions: 3 },
+  }));
+
+  assert.equal(response.status, 201);
+  assert.match((await response.json() as { code: string }).code, /^morse_/u);
+});
+
+test('admin invite creation rejects malformed and out-of-range input without mutating auth state', async () => {
+  const { collectionRoute } = await loadInviteFeature();
+  const valid = { label: 'HR interview', durationHours: 72, maxSessions: 3 };
   const invalidBodies = [
     null,
     'invalid',
@@ -185,7 +194,6 @@ test('admin invite creation rejects malformed and out-of-range input before TOTP
     { ...valid, maxSessions: 0 },
     { ...valid, maxSessions: 101 },
     { ...valid, maxSessions: 1.5 },
-    { ...valid, totpCode: '12345' },
   ];
 
   for (const body of invalidBodies) {
@@ -204,14 +212,13 @@ test('admin invite creation rejects malformed and out-of-range input before TOTP
   assert.equal(securityState.rowCount, 0);
 });
 
-test('fresh TOTP creates one high-entropy invite while retaining only its SHA-256 hash', async () => {
+test('an authenticated session creates high-entropy invites while retaining only SHA-256 hashes', async () => {
   const { collectionRoute } = await loadInviteFeature();
-  const totpCode = generateTotp(totpSecret, Date.now());
   const response = await collectionRoute.POST(request('/api/admin/invites', {
     method: 'POST',
     cookie: adminCookie,
     origin: allowedOrigin,
-    body: { label: '  HR interview  ', durationHours: 72, maxSessions: 3, totpCode },
+    body: { label: '  HR interview  ', durationHours: 72, maxSessions: 3 },
   }));
 
   assert.equal(response.status, 201);
@@ -243,19 +250,20 @@ test('fresh TOTP creates one high-entropy invite while retaining only its SHA-25
   assert.notEqual(stored.rows[0].code_hash, payload.code);
   assert.doesNotMatch(stored.rows[0].row_text, new RegExp(payload.code, 'u'));
 
-  const replayed = await collectionRoute.POST(request('/api/admin/invites', {
+  const repeated = await collectionRoute.POST(request('/api/admin/invites', {
     method: 'POST',
     cookie: adminCookie,
     origin: allowedOrigin,
-    body: { label: 'replay', durationHours: 72, maxSessions: 3, totpCode },
+    body: { label: 'second invite', durationHours: 72, maxSessions: 3 },
   }));
-  assert.equal(replayed.status, 401);
-  assert.deepEqual(await replayed.json(), { ok: false, error: 'ADMIN_TOTP_REQUIRED' });
-  assertNoStore(replayed);
-  const replayRows = await pool.query<{ count: number }>(
-    "SELECT count(*)::integer AS count FROM invite_codes WHERE label = 'replay'",
+  assert.equal(repeated.status, 201);
+  assertNoStore(repeated);
+  const repeatedPayload = await repeated.json() as { code: string };
+  assert.notEqual(repeatedPayload.code, payload.code);
+  const repeatedRows = await pool.query<{ count: number }>(
+    "SELECT count(*)::integer AS count FROM invite_codes WHERE label = 'second invite'",
   );
-  assert.equal(replayRows.rows[0].count, 0);
+  assert.equal(repeatedRows.rows[0].count, 1);
 });
 
 test('invite listing exposes metadata and derived states without hashes or plaintext codes', async () => {

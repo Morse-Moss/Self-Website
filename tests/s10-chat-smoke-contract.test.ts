@@ -170,7 +170,9 @@ test('S10 proves the one-time invite lifecycle and mobile dialog geometry', () =
   const adminSource = source.slice(adminStart, collectStart);
 
   assert.ok(adminStart >= 0 && collectStart > adminStart);
-  assert.match(adminSource, /nextUnusedAdminTotp/u);
+  assert.doesNotMatch(adminSource, /nextUnusedAdminTotp|generateTotp|totpSecret/u);
+  assert.match(adminSource, /input\[name="exportPassword"\]/u);
+  assert.match(adminSource, /adminPassword/u);
   assert.match(adminSource, /hashSecret\(createdInviteCode\)/u);
   assert.match(adminSource, /Browser\.grantPermissions/u);
   assert.match(adminSource, /admin:invite-copy/u);

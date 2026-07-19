@@ -9,7 +9,6 @@ import {
   loadServerConfig,
 } from './config.ts';
 import {
-  isCanonicalAdminTotpSecret,
   isSupportedAdminPasswordHash,
 } from './admin-auth.ts';
 import { loadWorkerConfig, WorkerConfigError } from './worker-config.ts';
@@ -136,10 +135,7 @@ function validateWeb(env: Env): void {
   if (!adminOrigin || adminOrigin.origin !== publicOrigin.origin) {
     fail('PRODUCTION_ADMIN_ORIGIN_MISMATCH');
   }
-  if (
-    !isSupportedAdminPasswordHash(env.MORSE_ADMIN_PASSWORD_HASH?.trim() ?? '')
-    || !isCanonicalAdminTotpSecret(env.MORSE_ADMIN_TOTP_SECRET ?? '')
-  ) {
+  if (!isSupportedAdminPasswordHash(env.MORSE_ADMIN_PASSWORD_HASH?.trim() ?? '')) {
     fail('PRODUCTION_ADMIN_CREDENTIALS_INVALID');
   }
   if ((env.MORSE_INVITE_FINGERPRINT_SECRET?.trim().length ?? 0) < 32) {

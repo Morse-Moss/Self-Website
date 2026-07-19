@@ -27,10 +27,10 @@ export default function AdminExportDialog({
   onComplete,
 }: AdminExportDialogProps) {
   const [format, setFormat] = useState<AdminExportFormat>('json');
-  const [freshTotp, setFreshTotp] = useState('');
+  const [password, setPassword] = useState('');
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
-  const totpRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   const exportingRef = useRef(false);
 
@@ -43,7 +43,7 @@ export default function AdminExportDialog({
     restoreFocusRef.current = document.activeElement instanceof HTMLElement
       ? document.activeElement
       : null;
-    const frame = window.requestAnimationFrame(() => totpRef.current?.focus());
+    const frame = window.requestAnimationFrame(() => passwordRef.current?.focus());
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !exportingRef.current) onClose();
     };
@@ -57,7 +57,7 @@ export default function AdminExportDialog({
 
   useEffect(() => {
     if (open) return;
-    setFreshTotp('');
+    setPassword('');
     setError('');
     setExporting(false);
   }, [open]);
@@ -68,7 +68,7 @@ export default function AdminExportDialog({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (exporting || !/^\d{6}$/u.test(freshTotp)) return;
+    if (exporting || !password) return;
     setExporting(true);
     setError('');
     const exportFilters = { ...normalizeAdminFilters(filters), page: 1 };
@@ -77,11 +77,14 @@ export default function AdminExportDialog({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
-        body: JSON.stringify({ format, totpCode: freshTotp, filters: exportFilters }),
+        body: JSON.stringify({ format, password, filters: exportFilters }),
       });
       if (!response.ok) {
+        const errorPayload = await response.clone().json().catch(() => ({})) as { error?: unknown };
         const message = await responseError(response);
-        if (response.status === 401) onUnauthorized(message);
+        if (response.status === 401 && errorPayload.error === 'ADMIN_AUTH_REQUIRED') {
+          onUnauthorized(message);
+        }
         else setError(message);
         return;
       }
@@ -153,27 +156,24 @@ export default function AdminExportDialog({
           </fieldset>
 
           <label className={styles.field}>
-            <span>新的动态验证码</span>
+            <span>再次输入管理密码</span>
             <input
-              ref={totpRef}
-              name="exportTotpCode"
-              type="text"
-              value={freshTotp}
-              onChange={(event) => setFreshTotp(event.target.value.replace(/\D/gu, '').slice(0, 6))}
-              autoComplete="one-time-code"
-              inputMode="numeric"
-              pattern="[0-9]{6}"
-              maxLength={6}
+              ref={passwordRef}
+              name="exportPassword"
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="current-password"
+              maxLength={512}
               disabled={exporting}
               required
             />
-            <small>请输入与登录时不同且尚未使用的 6 位验证码。</small>
           </label>
 
           {error ? <p className={styles.formError} role="alert">{error}</p> : null}
           <div className={styles.dialogActions}>
             <button className={styles.secondaryButton} type="button" onClick={onClose} disabled={exporting}>取消</button>
-            <button className={styles.primaryButton} type="submit" disabled={exporting || freshTotp.length !== 6}>
+            <button className={styles.primaryButton} type="submit" disabled={exporting || !password}>
               {exporting ? '正在导出...' : `导出 ${format.toUpperCase()}`}
             </button>
           </div>

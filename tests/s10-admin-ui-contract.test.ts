@@ -71,13 +71,24 @@ test('admin login, session check, and logout stay on the isolated admin session 
 
   assert.match(source, /fetch\(['"]\/api\/admin\/session['"],\s*\{\s*cache:\s*['"]no-store['"]/s);
   assert.match(source, /name=['"]password['"]/);
-  assert.match(source, /name=['"]totpCode['"]/);
   assert.match(source, /autoComplete=['"]current-password['"]/);
-  assert.match(source, /autoComplete=['"]one-time-code['"]/);
   assert.match(source, /method:\s*['"]POST['"]/);
-  assert.match(source, /JSON\.stringify\(\{\s*password,\s*totpCode\s*\}\)/s);
+  assert.match(source, /JSON\.stringify\(\{\s*password\s*\}\)/s);
   assert.match(source, /method:\s*['"]DELETE['"]/);
   assert.doesNotMatch(source, /localStorage|sessionStorage|document\.cookie/);
+});
+
+test('admin login and invite creation do not ask the operator for a dynamic code', () => {
+  const source = adminSource();
+  const inviteSource = read(invitePath);
+
+  assert.doesNotMatch(source, /name=['"]totpCode['"]|one-time-code|动态验证码/u);
+  assert.match(source, /JSON\.stringify\(\{\s*password\s*\}\)/s);
+  assert.doesNotMatch(inviteSource, /inviteTotpCode|freshTotp|one-time-code|动态验证码/u);
+  assert.match(
+    inviteSource,
+    /JSON\.stringify\(\{\s*label,\s*durationHours,\s*maxSessions\s*\}\)/s,
+  );
 });
 
 test('admin filters map time, workflow, status, search, badcase, and pagination to the API', () => {
@@ -134,16 +145,19 @@ test('badcase saved feedback survives the parent detail reflection', () => {
   );
 });
 
-test('export dialog requires a fresh TOTP and downloads JSON or CSV without server files', () => {
+test('export dialog rechecks the admin password and downloads JSON or CSV without server files', () => {
   const source = adminSource();
 
   assert.match(source, /role=['"]dialog['"]/);
   assert.match(source, /aria-modal=['"]true['"]/);
   assert.match(source, /value=['"]json['"]/);
   assert.match(source, /value=['"]csv['"]/);
-  assert.match(source, /freshTotp/);
+  assert.match(source, /name=['"]exportPassword['"]/);
+  assert.match(source, /再次输入管理密码/u);
+  assert.doesNotMatch(source, /验证码|TOTP/u);
   assert.match(source, /fetch\(['"]\/api\/admin\/export['"]/);
-  assert.match(source, /JSON\.stringify\(\{\s*format,\s*totpCode:\s*freshTotp,\s*filters:/s);
+  assert.match(source, /JSON\.stringify\(\{\s*format,\s*password,\s*filters:/s);
+  assert.doesNotMatch(source, /freshTotp|exportTotpCode|one-time-code/u);
   assert.match(source, /response\.blob\(\)/);
   assert.match(source, /URL\.createObjectURL/);
   assert.match(source, /URL\.revokeObjectURL/);
@@ -165,7 +179,7 @@ test('admin exposes invite management from the existing private console', () => 
   assert.match(inviteSource, /method:\s*['"]POST['"]/);
   assert.match(
     inviteSource,
-    /JSON\.stringify\(\{\s*label,\s*durationHours,\s*maxSessions,\s*totpCode:\s*freshTotp\s*\}\)/s,
+    /JSON\.stringify\(\{\s*label,\s*durationHours,\s*maxSessions\s*\}\)/s,
   );
   assert.match(inviteSource, /method:\s*['"]PATCH['"]/);
   assert.match(inviteSource, /JSON\.stringify\(\{\s*active:\s*false\s*\}\)/s);
@@ -196,8 +210,7 @@ test('admin invite plaintext is one-time, memory-only, and has explicit copy fai
   assert.match(inviteSource, /max=\{720\}/);
   assert.match(inviteSource, /name=['"]maxSessions['"]/);
   assert.match(inviteSource, /max=\{100\}/);
-  assert.match(inviteSource, /name=['"]inviteTotpCode['"]/);
-  assert.match(inviteSource, /autoComplete=['"]one-time-code['"]/);
+  assert.doesNotMatch(inviteSource, /inviteTotpCode|freshTotp|one-time-code|动态验证码/u);
 });
 
 test('admin invite dialog is tokenized, accessible, and becomes a full-screen mobile tool', () => {
@@ -280,8 +293,8 @@ test('admin client keeps errors actionable and download names local', async () =
   const client = await import('../components/admin/admin-client.ts') as AdminClientModule;
 
   assert.equal(client.adminErrorMessage(401, 'ADMIN_AUTH_REQUIRED'), '管理会话已过期，请重新登录。');
-  assert.equal(client.adminErrorMessage(401, 'ADMIN_AUTH_FAILED'), '密码或动态验证码无效，也可能已触发临时锁定。');
-  assert.equal(client.adminErrorMessage(401, 'ADMIN_TOTP_REQUIRED'), '动态验证码无效、已使用或已过期，请输入新的验证码。');
+  assert.equal(client.adminErrorMessage(401, 'ADMIN_AUTH_FAILED'), '管理密码无效，也可能已触发临时锁定。');
+  assert.equal(client.adminErrorMessage(401, 'ADMIN_REAUTH_FAILED'), '管理密码不正确，请重新输入。');
   assert.equal(client.adminErrorMessage(400, 'INVALID_ADMIN_INVITE'), '邀请码设置无效，请检查名称、有效时长和会话上限。');
   assert.equal(client.adminErrorMessage(404, 'ADMIN_INVITE_NOT_FOUND'), '这个邀请码已不存在，请刷新列表。');
   assert.equal(client.adminErrorMessage(503, 'ADMIN_UNAVAILABLE'), '管理服务暂时不可用，请稍后重试。');

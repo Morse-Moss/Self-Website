@@ -172,7 +172,7 @@ export default function AdminConsole() {
     return () => controller.abort();
   }, [authState, selectedId]);
 
-  async function login(password: string, totpCode: string) {
+  async function login(password: string) {
     setLoginBusy(true);
     setLoginError('');
     try {
@@ -180,7 +180,7 @@ export default function AdminConsole() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
-        body: JSON.stringify({ password, totpCode }),
+        body: JSON.stringify({ password }),
       });
       if (!response.ok) {
         setLoginError(await responseError(response));

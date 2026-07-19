@@ -28,7 +28,6 @@ const webEnv = {
   MORSE_PUBLIC_ORIGIN: 'https://morse.example',
   MORSE_ADMIN_ALLOWED_ORIGIN: 'https://morse.example',
   MORSE_ADMIN_PASSWORD_HASH: validAdminPasswordHash,
-  MORSE_ADMIN_TOTP_SECRET: 'JBSWY3DPEHPK3PXP',
   MORSE_INVITE_FINGERPRINT_SECRET: 'invite-fingerprint-secret-32-bytes',
   OPENAI_API_KEY: 'test-production-chat-key',
   OPENAI_BASE_URL: 'https://gateway.example/v1',
@@ -39,6 +38,13 @@ const webEnv = {
   OPENAI_EMBEDDING_MODEL: 'bge-production',
   MORSE_ALLOW_TEST_EMBEDDINGS: 'false',
 };
+
+test('web production config does not require a TOTP secret for password-only admin login', () => {
+  assert.deepEqual(validateProductionRole('web', webEnv), {
+    alertsEnabled: null,
+    role: 'web',
+  });
+});
 
 test('production preflight validates only the configuration owned by each role', () => {
   assert.deepEqual(validateProductionRole('web', webEnv), {
@@ -126,10 +132,6 @@ test('production preflight fails closed with stable codes and never echoes value
     ['PRODUCTION_ADMIN_CREDENTIALS_INVALID', {
       ...webEnv,
       MORSE_ADMIN_PASSWORD_HASH: 'x'.repeat(24),
-    }],
-    ['PRODUCTION_ADMIN_CREDENTIALS_INVALID', {
-      ...webEnv,
-      MORSE_ADMIN_TOTP_SECRET: 'BBBBBBBBBBBBBBBBB',
     }],
     ['PRODUCTION_TEST_EMBEDDINGS_FORBIDDEN', {
       ...webEnv,

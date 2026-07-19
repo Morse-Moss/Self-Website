@@ -58,7 +58,6 @@ export default function AdminInviteDialog({
   const [label, setLabel] = useState('HR interview');
   const [durationValue, setDurationValue] = useState('72');
   const [maxSessionsValue, setMaxSessionsValue] = useState('3');
-  const [freshTotp, setFreshTotp] = useState('');
   const [creating, setCreating] = useState(false);
   const [formError, setFormError] = useState('');
   const [createdCode, setCreatedCode] = useState<string | null>(null);
@@ -121,7 +120,6 @@ export default function AdminInviteDialog({
     if (creating) return;
     setCreatedCode(null);
     setCopyState('idle');
-    setFreshTotp('');
     setConfirmingId(null);
     onClose();
   }
@@ -169,8 +167,7 @@ export default function AdminInviteDialog({
         body: JSON.stringify({
           label,
           durationHours,
-          maxSessions,
-          totpCode: freshTotp
+          maxSessions
         }),
       });
       if (!response.ok) {
@@ -186,7 +183,6 @@ export default function AdminInviteDialog({
       const payload = await response.json() as { invite: AdminInvite; code: string };
       setItems((current) => [payload.invite, ...current.filter((item) => item.id !== payload.invite.id)]);
       setCreatedCode(payload.code);
-      setFreshTotp('');
       window.requestAnimationFrame(() => {
         codeInputRef.current?.focus();
         codeInputRef.current?.select();
@@ -327,21 +323,6 @@ export default function AdminInviteDialog({
                   />
                 </label>
               </div>
-              <label className={styles.field}>
-                <span>新的动态验证码</span>
-                <input
-                  name="inviteTotpCode"
-                  value={freshTotp}
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  pattern="[0-9]{6}"
-                  maxLength={6}
-                  placeholder="6 位验证码"
-                  required
-                  disabled={creationLocked}
-                  onChange={(event) => setFreshTotp(event.target.value.replace(/\D/gu, '').slice(0, 6))}
-                />
-              </label>
               {formError ? <p className={styles.error} role="alert">{formError}</p> : null}
               <button
                 className={styles.primaryButton}

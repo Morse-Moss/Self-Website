@@ -47,17 +47,14 @@ export interface AdminAuthPolicy {
   maxFailedAttempts?: number;
   lockoutMs?: number;
   sessionTtlMs?: number;
-  totpWindow?: number;
 }
 
 export interface AdminLoginCredentials {
   password: string;
-  totpCode: string;
 }
 
 export interface AdminAuthSettings {
   passwordHash: string;
-  totpSecret: string;
   now?: Date;
   policy?: AdminAuthPolicy;
 }
@@ -103,7 +100,6 @@ interface NormalizedAdminAuthPolicy {
   maxFailedAttempts: number;
   lockoutMs: number;
   sessionTtlMs: number;
-  totpWindow: number;
 }
 
 interface NormalizedAdminTotpPolicy {
@@ -168,13 +164,6 @@ function normalizePolicy(policy: AdminAuthPolicy | undefined): NormalizedAdminAu
       'Admin session duration',
       1_000,
       24 * 60 * 60_000,
-    ),
-    totpWindow: boundedInteger(
-      policy?.totpWindow,
-      DEFAULT_TOTP_WINDOW,
-      'TOTP window',
-      0,
-      10,
     ),
   };
 }
@@ -546,30 +535,12 @@ export async function authenticateAdmin(
     }
 
     const failuresBeforeAttempt = state.locked_until ? 0 : state.failed_attempts;
-    const lastCounter = state.last_totp_counter === null
-      ? null
-      : BigInt(state.last_totp_counter);
-    const matchedCounter = verifyTotp(
-      settings.totpSecret,
-      credentials.totpCode,
-      now.getTime(),
-      { window: policy.totpWindow },
-    );
-    if (
-      matchedCounter !== null
-      && lastCounter !== null
-      && matchedCounter <= lastCounter
-    ) {
-      await client.query('COMMIT');
-      return FAILED_LOGIN;
-    }
     const passwordMatches = await verifyAdminPassword(
       credentials.password,
       settings.passwordHash,
     );
-    const credentialsAccepted = passwordMatches && matchedCounter !== null;
 
-    if (!credentialsAccepted) {
+    if (!passwordMatches) {
       await recordFailedLogin(client, failuresBeforeAttempt, now, policy);
       await client.query('COMMIT');
       return FAILED_LOGIN;
@@ -580,12 +551,11 @@ export async function authenticateAdmin(
     const expiresAt = new Date(now.getTime() + policy.sessionTtlMs);
     await client.query(
       `UPDATE admin_security_state
-          SET last_totp_counter = $2,
-              failed_attempts = 0,
+          SET failed_attempts = 0,
               locked_until = NULL,
-              updated_at = $3
+              updated_at = $2
         WHERE id = $1`,
-      [DEFAULT_SECURITY_STATE_ID, matchedCounter.toString(), now],
+      [DEFAULT_SECURITY_STATE_ID, now],
     );
     await client.query(
       `INSERT INTO admin_sessions
@@ -595,6 +565,53 @@ export async function authenticateAdmin(
     );
     await client.query('COMMIT');
     return { ok: true, sessionId, token, expiresAt };
+  } catch (error) {
+    await rollback(client);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function reauthenticateAdminPassword(
+  pool: Pool,
+  password: string,
+  settings: AdminAuthSettings,
+): Promise<boolean> {
+  const now = validDate(settings.now ?? new Date(), 'Admin password reauthentication time');
+  const policy = normalizePolicy(settings.policy);
+  if (await hasActiveAdminLock(pool, now)) return false;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    if (!await tryAdminAuthGate(client)) {
+      await client.query('COMMIT');
+      return false;
+    }
+    const state = await lockAdminSecurityState(client, now);
+    if (state.locked_until && state.locked_until.getTime() > now.getTime()) {
+      await client.query('COMMIT');
+      return false;
+    }
+
+    const failuresBeforeAttempt = state.locked_until ? 0 : state.failed_attempts;
+    if (!await verifyAdminPassword(password, settings.passwordHash)) {
+      await recordFailedLogin(client, failuresBeforeAttempt, now, policy);
+      await client.query('COMMIT');
+      return false;
+    }
+
+    await client.query(
+      `UPDATE admin_security_state
+          SET failed_attempts = 0,
+              locked_until = NULL,
+              updated_at = $2
+        WHERE id = $1`,
+      [DEFAULT_SECURITY_STATE_ID, now],
+    );
+    await client.query('COMMIT');
+    return true;
   } catch (error) {
     await rollback(client);
     throw error;

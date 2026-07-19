@@ -12,6 +12,7 @@ import {
   consumeAdminTotp,
   generateTotp,
   hashAdminPassword,
+  reauthenticateAdminPassword,
   revokeAdminSession,
   verifyAdminPassword,
   verifyTotp,
@@ -59,8 +60,6 @@ async function runMigrations(connectionString: string): Promise<void> {
 function loginInput(options: {
   now?: Date;
   candidatePassword?: string;
-  secret?: string;
-  code?: string;
   maxFailedAttempts?: number;
   lockoutMs?: number;
   sessionTtlMs?: number;
@@ -69,11 +68,9 @@ function loginInput(options: {
   return [
     {
       password: options.candidatePassword ?? password,
-      totpCode: options.code ?? generateTotp(totpSecret, now.getTime()),
     },
     {
       passwordHash,
-      totpSecret: options.secret ?? totpSecret,
       now,
       policy: {
         maxFailedAttempts: options.maxFailedAttempts,
@@ -186,18 +183,58 @@ test('TOTP verification accepts only the current counter and its adjacent window
   assert.equal(verifyTotp(rfcSecret, 'not-code', timestampMs, { digits: 8 }), null);
 });
 
-test('PostgreSQL login accepts previous, current, and next TOTP counters only', async () => {
-  for (const offsetMs of [-30_000, 0, 30_000]) {
-    const result = await authenticateAdmin(pool, ...loginInput({
-      code: generateTotp(totpSecret, baseTime.getTime() + offsetMs),
-    }));
-    assert.equal(result.ok, true, `expected offset ${offsetMs} to be accepted`);
-  }
+test('admin login accepts the password without a TOTP credential or secret', async () => {
+  const result = await authenticateAdmin(
+    pool,
+    { password },
+    {
+      passwordHash,
+      now: baseTime,
+      policy: { sessionTtlMs: 30 * 60_000 },
+    },
+  );
 
-  const outside = await authenticateAdmin(pool, ...loginInput({
-    code: generateTotp(totpSecret, baseTime.getTime() + 60_000),
-  }));
-  assert.deepEqual(outside, { ok: false, error: 'ADMIN_LOGIN_FAILED' });
+  assert.equal(result.ok, true);
+  const state = await pool.query<{ last_totp_counter: string | null }>(
+    'SELECT last_totp_counter FROM admin_security_state WHERE id = $1',
+    [adminStateId],
+  );
+  assert.equal(state.rows[0]?.last_totp_counter ?? null, null);
+});
+
+test('password reauthentication shares the login lockout without creating a session', async () => {
+  const policy = { maxFailedAttempts: 2, lockoutMs: 15 * 60_000 };
+
+  assert.equal(await reauthenticateAdminPassword(pool, 'wrong password', {
+    passwordHash,
+    now: baseTime,
+    policy,
+  }), false);
+  assert.equal(await reauthenticateAdminPassword(pool, 'still wrong', {
+    passwordHash,
+    now: baseTime,
+    policy,
+  }), false);
+  assert.equal(await reauthenticateAdminPassword(pool, password, {
+    passwordHash,
+    now: baseTime,
+    policy,
+  }), false);
+
+  const state = await pool.query<{ failed_attempts: number; locked_until: Date; sessions: number }>(
+    `SELECT security.failed_attempts, security.locked_until,
+            count(session.id)::integer AS sessions
+       FROM admin_security_state AS security
+       LEFT JOIN admin_sessions AS session ON true
+      WHERE security.id = $1
+      GROUP BY security.failed_attempts, security.locked_until`,
+    [adminStateId],
+  );
+  assert.deepEqual(state.rows[0], {
+    failed_attempts: 2,
+    locked_until: new Date(baseTime.getTime() + policy.lockoutMs),
+    sessions: 0,
+  });
 });
 
 test('a successful login stores only a session token hash and resets failure state', async () => {
@@ -242,21 +279,15 @@ test('a successful login stores only a session token hash and resets failure sta
   assert.notEqual(stored.rows[0].token_hash, result.token);
 });
 
-test('password, TOTP and replay failures return the same public result', async () => {
+test('password failures return one stable public result and increment the lock counter', async () => {
   const expectedFailure = { ok: false, error: 'ADMIN_LOGIN_FAILED' };
 
-  assert.deepEqual(
-    await authenticateAdmin(pool, ...loginInput({
-      candidatePassword: 'definitely wrong',
-    })),
-    expectedFailure,
-  );
-  assert.deepEqual(
-    await authenticateAdmin(pool, ...loginInput({
-      code: 'not-a-code',
-    })),
-    expectedFailure,
-  );
+  for (const candidatePassword of ['definitely wrong', 'still wrong']) {
+    assert.deepEqual(
+      await authenticateAdmin(pool, ...loginInput({ candidatePassword })),
+      expectedFailure,
+    );
+  }
 
   const failedCredentials = await pool.query<{ failed_attempts: number }>(
     'SELECT failed_attempts FROM admin_security_state WHERE id = $1',
@@ -264,21 +295,11 @@ test('password, TOTP and replay failures return the same public result', async (
   );
   assert.equal(failedCredentials.rows[0].failed_attempts, 2);
 
-  const first = await authenticateAdmin(pool, ...loginInput());
-  assert.equal(first.ok, true);
-  assert.deepEqual(
-    await authenticateAdmin(pool, ...loginInput()),
-    expectedFailure,
-  );
-
-  const replayFailure = await pool.query<{ failed_attempts: number }>(
-    'SELECT failed_attempts FROM admin_security_state WHERE id = $1',
-    [adminStateId],
-  );
-  assert.equal(replayFailure.rows[0].failed_attempts, 0);
+  const success = await authenticateAdmin(pool, ...loginInput());
+  assert.equal(success.ok, true);
 });
 
-test('concurrent logins cannot consume the same TOTP counter more than once', async () => {
+test('the durable gate bounds concurrent password login work', async () => {
   const sessionsBefore = await pool.query<{ count: number }>(
     'SELECT count(*)::integer AS count FROM admin_sessions',
   );
@@ -290,7 +311,7 @@ test('concurrent logins cannot consume the same TOTP counter more than once', as
   assert.equal(attempts.filter((result) => !result.ok).length, 3);
   const state = await pool.query<{
     failed_attempts: number;
-    last_totp_counter: string;
+    last_totp_counter: string | null;
   }>(
     `SELECT failed_attempts, last_totp_counter
        FROM admin_security_state
@@ -301,29 +322,20 @@ test('concurrent logins cannot consume the same TOTP counter more than once', as
     'SELECT count(*)::integer AS count FROM admin_sessions',
   );
   assert.equal(state.rows[0].failed_attempts, 0);
-  assert.equal(state.rows[0].last_totp_counter, String(Math.floor(baseTime.getTime() / 1_000 / 30)));
+  assert.equal(state.rows[0].last_totp_counter, null);
   assert.equal(sessionsAfter.rows[0].count - sessionsBefore.rows[0].count, 1);
 });
 
-test('login and fresh TOTP verification consume one shared global counter', async () => {
+test('password login does not consume the legacy TOTP counter', async () => {
   const login = await authenticateAdmin(pool, ...loginInput());
   assert.equal(login.ok, true);
   const currentCode = generateTotp(totpSecret, baseTime.getTime());
   assert.equal(await consumeAdminTotp(pool, ...freshTotpInput({
     code: currentCode,
     now: baseTime,
-  })), false);
-
-  const nextTime = new Date(baseTime.getTime() + 30_000);
-  const nextCode = generateTotp(totpSecret, nextTime.getTime());
-  assert.equal(await consumeAdminTotp(pool, ...freshTotpInput({
-    code: nextCode,
-    now: nextTime,
   })), true);
-  assert.deepEqual(
-    await authenticateAdmin(pool, ...loginInput({ now: nextTime })),
-    { ok: false, error: 'ADMIN_LOGIN_FAILED' },
-  );
+  const secondLogin = await authenticateAdmin(pool, ...loginInput());
+  assert.equal(secondLogin.ok, true);
 
   const state = await pool.query<{ failed_attempts: number; last_totp_counter: string }>(
     'SELECT failed_attempts, last_totp_counter FROM admin_security_state WHERE id = $1',
@@ -331,7 +343,7 @@ test('login and fresh TOTP verification consume one shared global counter', asyn
   );
   assert.equal(
     state.rows[0].last_totp_counter,
-    String(Math.floor(nextTime.getTime() / 1_000 / 30)),
+    String(Math.floor(baseTime.getTime() / 1_000 / 30)),
   );
   assert.equal(state.rows[0].failed_attempts, 0);
 });
@@ -571,14 +583,6 @@ test('an active login lock rejects before parsing or deriving credentials', asyn
     { ok: false, error: 'ADMIN_LOGIN_FAILED' },
   );
 
-  assert.deepEqual(
-    await authenticateAdmin(pool, ...loginInput({
-      secret: 'invalid-base32-secret!',
-      maxFailedAttempts: 1,
-    })),
-    { ok: false, error: 'ADMIN_LOGIN_FAILED' },
-  );
-
   const [credentials, settings] = loginInput({ maxFailedAttempts: 1 });
   const passwordHashTrap = {
     split() {
@@ -686,7 +690,7 @@ test('a durable login gate bounds burst verification before the first lock commi
   const waiters = Array.from({ length: waiterCount }, () => authenticateAdmin(
     gatedPool,
     ...loginInput({
-      secret: 'invalid-base32-secret!',
+      candidatePassword: 'wrong password',
       maxFailedAttempts: 1,
     }),
   ));
@@ -737,7 +741,7 @@ test('a busy durable gate rejects an admin burst without occupying the shared po
   const attempts = Array.from({ length: 20 }, () => authenticateAdmin(
     burstPool,
     ...loginInput({
-      secret: 'invalid-base32-secret!',
+      candidatePassword: 'wrong password',
       maxFailedAttempts: 1,
     }),
   ));
@@ -837,7 +841,7 @@ test('an Outbox failure rolls back the lockout state and can be retried safely',
   });
 });
 
-test('a failed session insert rolls back the accepted TOTP counter', async () => {
+test('a failed session insert rolls back the password login transaction', async () => {
   await pool.query(`
     CREATE FUNCTION reject_admin_session_insert() RETURNS trigger
     LANGUAGE plpgsql AS $$

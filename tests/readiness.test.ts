@@ -23,7 +23,6 @@ const runtimeEnv = {
   MORSE_PUBLIC_ORIGIN: 'https://morse.example',
   MORSE_ADMIN_ALLOWED_ORIGIN: 'https://morse.example',
   MORSE_ADMIN_PASSWORD_HASH: validAdminPasswordHash,
-  MORSE_ADMIN_TOTP_SECRET: 'JBSWY3DPEHPK3PXP',
   MORSE_INVITE_FINGERPRINT_SECRET: 'invite-fingerprint-secret-32-bytes',
   OPENAI_API_KEY: 'test-production-chat-key',
   OPENAI_BASE_URL: 'https://gateway.example/v1',

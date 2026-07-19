@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server.js';
 
-import { consumeAdminTotp } from '../../../../lib/server/admin-auth.ts';
+import { reauthenticateAdminPassword } from '../../../../lib/server/admin-auth.ts';
 import {
   streamAdminExport,
   type AdminExportFormat,
@@ -90,32 +90,27 @@ export async function POST(request: NextRequest) {
     const format = body.format === 'json' || body.format === 'csv'
       ? body.format as AdminExportFormat
       : null;
-    const totpCode = typeof body.totpCode === 'string' ? body.totpCode : '';
+    const password = typeof body.password === 'string' ? body.password : '';
     const filterInput = body.filters && typeof body.filters === 'object' && !Array.isArray(body.filters)
       ? body.filters as AdminTurnFilterInput
       : {};
-    if (!format || !/^\d{6}$/u.test(totpCode)) {
+    if (!format || !password || password.length > 512) {
       return NextResponse.json(
         { ok: false, error: 'INVALID_EXPORT_REQUEST' },
         { status: 400, headers: { 'Cache-Control': 'no-store' } },
       );
     }
     const filters = normalizeAdminTurnFilters(filterInput);
-    const verified = await consumeAdminTotp(
-      auth.pool,
-      { totpCode },
-      {
-        totpSecret: auth.config.totpSecret,
-        policy: {
-          maxFailedAttempts: auth.config.maxFailedAttempts,
-          lockoutMs: auth.config.lockMinutes * 60_000,
-          window: 1,
-        },
+    const verified = await reauthenticateAdminPassword(auth.pool, password, {
+      passwordHash: auth.config.passwordHash,
+      policy: {
+        maxFailedAttempts: auth.config.maxFailedAttempts,
+        lockoutMs: auth.config.lockMinutes * 60_000,
       },
-    );
+    });
     if (!verified) {
       return NextResponse.json(
-        { ok: false, error: 'ADMIN_TOTP_REQUIRED' },
+        { ok: false, error: 'ADMIN_REAUTH_FAILED' },
         { status: 401, headers: { 'Cache-Control': 'no-store' } },
       );
     }

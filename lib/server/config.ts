@@ -228,7 +228,6 @@ export function loadAdminConfig(env: Env = process.env) {
     databaseUrl: required(env, 'DATABASE_URL'),
     cookieName: env.MORSE_ADMIN_COOKIE?.trim() || 'morse_admin',
     passwordHash: required(env, 'MORSE_ADMIN_PASSWORD_HASH'),
-    totpSecret: required(env, 'MORSE_ADMIN_TOTP_SECRET'),
     allowedOrigin: exactApplicationOrigin(env, 'MORSE_ADMIN_ALLOWED_ORIGIN'),
     sessionMinutes: boundedPositiveInteger(
       env,

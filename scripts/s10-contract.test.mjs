@@ -61,7 +61,10 @@ test('S10 freezes Provider, search, admin and alert safety boundaries', () => {
   assert.match(design, /不抓取搜索结果页/);
   assert.match(design, /模型只引用服务端分配的 citation id/);
   assert.match(design, /访客与管理员认证完全分离/);
-  assert.match(design, /拒绝同一 counter 重放/);
+  assert.match(design, /Admin 登录只需要 scrypt 管理员密码/);
+  assert.match(design, /连续五次失败后临时锁定/);
+  assert.match(design, /导出前必须再次输入管理员密码/);
+  assert.match(design, /创建邀请码必须持有有效管理员 Session 并检查精确 Origin/);
   assert.match(design, /CSV 对公式前缀/);
   assert.match(design, /service-down:<incidentId>/);
   assert.match(design, /未来同一 fingerprint 再故障必须创建新 incident id/);
@@ -99,7 +102,6 @@ test('S10 environment contract has controls but no committed secret', () => {
     'MORSE_SEARCH_ENABLED',
     'BOCHA_API_KEY',
     'MORSE_ADMIN_PASSWORD_HASH',
-    'MORSE_ADMIN_TOTP_SECRET',
     'MORSE_ADMIN_ALLOWED_ORIGIN',
     'MORSE_ADMIN_MAX_FAILED_ATTEMPTS',
     'MORSE_INVITE_FINGERPRINT_SECRET',

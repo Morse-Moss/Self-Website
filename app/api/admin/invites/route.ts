@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server.js';
 
-import { consumeAdminTotp } from '../../../../lib/server/admin-auth.ts';
 import {
   AdminInviteInputError,
   createAdminInvite,
@@ -49,27 +48,6 @@ export async function POST(request: NextRequest) {
       durationHours: body.durationHours,
       maxSessions: body.maxSessions,
     });
-    const totpCode = typeof body.totpCode === 'string' ? body.totpCode : '';
-    if (!/^\d{6}$/u.test(totpCode)) return invalidInvite();
-
-    const verified = await consumeAdminTotp(
-      auth.pool,
-      { totpCode },
-      {
-        totpSecret: auth.config.totpSecret,
-        policy: {
-          maxFailedAttempts: auth.config.maxFailedAttempts,
-          lockoutMs: auth.config.lockMinutes * 60_000,
-          window: 1,
-        },
-      },
-    );
-    if (!verified) {
-      return NextResponse.json(
-        { ok: false, error: 'ADMIN_TOTP_REQUIRED' },
-        { status: 401, headers: { 'Cache-Control': 'no-store' } },
-      );
-    }
 
     const created = await createAdminInvite(auth.pool, input);
     return NextResponse.json(created, {

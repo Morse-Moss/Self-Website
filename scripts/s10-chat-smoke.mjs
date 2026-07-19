@@ -21,7 +21,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { generateTotp, hashAdminPassword } from '../lib/server/admin-auth.ts';
+import { hashAdminPassword } from '../lib/server/admin-auth.ts';
 import { hashSecret } from '../lib/server/security.ts';
 import {
   createDisposablePostgresDatabase,
@@ -319,24 +319,6 @@ function removeDownloadDirectory(downloadDirectory) {
   rmSync(resolved, { force: true, recursive: true });
 }
 
-function encodeBase32(bytes) {
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-  let buffer = 0;
-  let bits = 0;
-  let output = '';
-  for (const byte of bytes) {
-    buffer = (buffer << 8) | byte;
-    bits += 8;
-    while (bits >= 5) {
-      bits -= 5;
-      output += alphabet[(buffer >>> bits) & 31];
-      buffer &= (1 << bits) - 1;
-    }
-  }
-  if (bits > 0) output += alphabet[(buffer << (5 - bits)) & 31];
-  return output;
-}
-
 async function seedInvite(connectionString, inviteCode, inviteId) {
   await withPostgresClient(connectionString, (client) => client.query(
     `INSERT INTO invite_codes
@@ -344,15 +326,6 @@ async function seedInvite(connectionString, inviteCode, inviteId) {
      VALUES ($1, $2, $3, true, now() + interval '72 hours', 4, 0)`,
     [inviteId, hashSecret(inviteCode), 's10-loopback-smoke'],
   ));
-}
-
-async function nextUnusedAdminTotp(connectionString, totpSecret) {
-  const result = await withPostgresClient(connectionString, (client) => client.query(
-    "SELECT last_totp_counter::text FROM admin_security_state WHERE id = 'admin-login'",
-  ));
-  const lastCounter = Number(result.rows[0]?.last_totp_counter);
-  check(Number.isSafeInteger(lastCounter), 'admin:totp-counter');
-  return generateTotp(totpSecret, (lastCounter + 1) * 30_000 + 1);
 }
 
 async function waitForDatabase(connectionString, predicate, code) {
@@ -971,15 +944,20 @@ async function runAdminScenarios({
   targetUrl,
   connectionString,
   adminPassword,
-  totpSecret,
   outputDirectory,
   downloadDirectory,
   checks,
 }) {
   await navigate(desktopPage, targetUrl, '/admin');
   await waitFor(desktopPage, `Boolean(document.querySelector(${JSON.stringify(SELECTORS.adminLogin)}))`, 'admin:login-form');
+  check(!await selectorExists(desktopPage, '[name="totpCode"]'), 'admin:login-password-only');
+  await assertNoOverflow(desktopPage, 'admin-login-desktop');
+  const loginDesktopScreenshot = await capture(
+    desktopPage,
+    outputDirectory,
+    's10-admin-login-desktop-1440x900.png',
+  );
   await setControlledValue(desktopPage, '[name="password"]', adminPassword);
-  await setControlledValue(desktopPage, '[name="totpCode"]', generateTotp(totpSecret, Date.now() - 30_000));
   await click(desktopPage, `${SELECTORS.adminLogin} button[type="submit"]`);
   await waitFor(desktopPage, `Boolean(document.querySelector(${JSON.stringify(SELECTORS.adminConsole)}))`, 'admin:login');
   checks.add('admin-login');
@@ -1003,15 +981,11 @@ async function runAdminScenarios({
     `Boolean(document.querySelector(${JSON.stringify(SELECTORS.adminInviteDialog)}))`,
     'admin:invite-dialog',
   );
+  check(!await selectorExists(desktopPage, '[name="inviteTotpCode"]'), 'admin:invite-password-session-only');
   const inviteLabel = `S10 HR invite ${Date.now()}`;
   await setControlledValue(desktopPage, `${SELECTORS.adminInviteForm} input[name="inviteLabel"]`, inviteLabel);
   await setControlledValue(desktopPage, `${SELECTORS.adminInviteForm} input[name="durationHours"]`, '48');
   await setControlledValue(desktopPage, `${SELECTORS.adminInviteForm} input[name="maxSessions"]`, '2');
-  await setControlledValue(
-    desktopPage,
-    `${SELECTORS.adminInviteForm} input[name="inviteTotpCode"]`,
-    await nextUnusedAdminTotp(connectionString, totpSecret),
-  );
   await click(desktopPage, `${SELECTORS.adminInviteForm} button[type="submit"]`);
   await waitFor(
     desktopPage,
@@ -1091,12 +1065,26 @@ async function runAdminScenarios({
   });
   await click(desktopPage, SELECTORS.adminExportOpen);
   await waitFor(desktopPage, `Boolean(document.querySelector(${JSON.stringify(SELECTORS.adminExport)}))`, 'admin:export-dialog');
+  const exportText = await desktopPage.evaluate(
+    `document.querySelector(${JSON.stringify(SELECTORS.adminExport)})?.textContent ?? ''`,
+  );
+  check(!/验证码|TOTP/u.test(exportText), 'admin:export-password-only-copy');
+  check(
+    await selectorExists(desktopPage, `${SELECTORS.adminExport} input[name="exportPassword"]`),
+    'admin:export-password-input',
+  );
+  await assertNoOverflow(desktopPage, 'admin-export-desktop');
+  const exportDesktopScreenshot = await capture(
+    desktopPage,
+    outputDirectory,
+    's10-admin-export-desktop-1440x900.png',
+  );
   const csvOption = `${SELECTORS.adminExport} label:has(input[name="exportFormat"][value="csv"])`;
   await click(desktopPage, csvOption);
   await setControlledValue(
     desktopPage,
-    `${SELECTORS.adminExport} input[name="exportTotpCode"]`,
-    await nextUnusedAdminTotp(connectionString, totpSecret),
+    `${SELECTORS.adminExport} input[name="exportPassword"]`,
+    adminPassword,
   );
   await click(desktopPage, `${SELECTORS.adminExport} button[type="submit"]`);
   const exportPath = await withTimeout((async () => {
@@ -1168,8 +1156,18 @@ async function runAdminScenarios({
   ));
   await reload(mobilePage);
   await waitFor(mobilePage, `Boolean(document.querySelector(${JSON.stringify(SELECTORS.adminLogin)}))`, 'admin:session-expiry');
+  check(!await selectorExists(mobilePage, '[name="totpCode"]'), 'admin:mobile-login-password-only');
+  await assertNoOverflow(mobilePage, 'admin-login-mobile');
+  const loginMobileScreenshot = await capture(
+    mobilePage,
+    outputDirectory,
+    's10-admin-login-mobile-390x844.png',
+  );
   checks.add('admin-session-expiry');
   return {
+    loginDesktopScreenshot,
+    exportDesktopScreenshot,
+    loginMobileScreenshot,
     desktopScreenshot,
     mobileScreenshot,
     inviteDesktopScreenshot,
@@ -1233,7 +1231,6 @@ export async function runS10MockE2E() {
     const inviteCode = `s10-${randomBytes(12).toString('hex')}`;
     const inviteId = randomUUID();
     const adminPassword = `S10-${randomBytes(18).toString('base64url')}`;
-    const totpSecret = encodeBase32(randomBytes(20));
     await seedInvite(database.connectionString, inviteCode, inviteId);
     const adminPasswordHash = await hashAdminPassword(adminPassword);
 
@@ -1286,7 +1283,6 @@ export async function runS10MockE2E() {
       MORSE_SEARCH_TIMEOUT_MS: '5000',
       MORSE_SSE_HEARTBEAT_MS: '1000',
       MORSE_ADMIN_PASSWORD_HASH: adminPasswordHash,
-      MORSE_ADMIN_TOTP_SECRET: totpSecret,
       MORSE_ADMIN_ALLOWED_ORIGIN: targetUrl.origin,
       MORSE_INVITE_FINGERPRINT_SECRET: randomBytes(32).toString('hex'),
     };
@@ -1350,12 +1346,14 @@ export async function runS10MockE2E() {
       targetUrl,
       connectionString: database.connectionString,
       adminPassword,
-      totpSecret,
       outputDirectory,
       downloadDirectory,
       checks,
     });
     screenshots.push(
+      adminScreenshots.loginDesktopScreenshot,
+      adminScreenshots.exportDesktopScreenshot,
+      adminScreenshots.loginMobileScreenshot,
       adminScreenshots.desktopScreenshot,
       adminScreenshots.mobileScreenshot,
       adminScreenshots.inviteDesktopScreenshot,
