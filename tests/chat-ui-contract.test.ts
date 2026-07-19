@@ -293,7 +293,7 @@ test('portfolio route group keeps one embedded chat and one works overlay', () =
   const worksLayout = readIfPresent(worksLayoutPath);
   const page = readIfPresent(pagePath);
 
-  assert.match(portfolioLayout, /Canvas/);
+  assert.match(portfolioLayout, /AmbientBackground/);
   assert.match(page, /import MorseChat/);
   assert.equal((page.match(/<MorseChat variant="embedded"\s*\/>/g) ?? []).length, 1);
   assert.match(worksLayout, /import MorseChat/);

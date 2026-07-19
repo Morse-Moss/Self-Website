@@ -1,7 +1,7 @@
 import Script from 'next/script';
 
 import ScrollEffects from '@/components/ScrollEffects';
-import MorseSignalCanvas from '@/components/site/MorseSignalCanvas';
+import AmbientBackground from '@/components/site/AmbientBackground';
 import ResumeSheet from '@/components/site/ResumeSheet';
 import SiteFooter from '@/components/site/SiteFooter';
 import SiteHeader from '@/components/site/SiteHeader';
@@ -32,7 +32,7 @@ export default function PortfolioLayout({
         strategy="beforeInteractive"
         dangerouslySetInnerHTML={{ __html: resumeModeBootScript }}
       />
-      <MorseSignalCanvas />
+      <AmbientBackground />
       <ScrollEffects />
       <div className={shellStyles.standardContent} data-standard-content>
         <SiteHeader site={siteContent.site} />

@@ -58,7 +58,8 @@ test('portfolio layout owns the persistent public shell and resume surface', () 
   assert.match(layout, /siteContent\.site\.resumeMode\.bodyClass/);
   assert.doesNotMatch(layout, /import\s+SiteShell|<SiteShell/);
 
-  assert.equal(count(layout, /<MorseSignalCanvas\s*\/>/g), 1);
+  assert.equal(count(layout, /<AmbientBackground\s*\/>/g), 1);
+  assert.doesNotMatch(layout, /<MorseSignalCanvas\s*\/>/);
   assert.equal(count(layout, /<ScrollEffects\s*\/>/g), 1);
   assert.equal(count(layout, /<SiteHeader\b/g), 1);
   assert.equal(count(layout, /<SiteFooter\b/g), 1);
@@ -86,7 +87,7 @@ test('route trees do not duplicate the global shell and each route keeps one cha
   assert.match(worksLayout, /<>\s*\{children\}\s*<MorseChat\s*\/>\s*<\/>/s);
   assert.doesNotMatch(
     adminLayout,
-    /MorseSignalCanvas|ScrollEffects|SiteHeader|SiteFooter|ResumeSheet|MorseChat|data-standard-content/,
+    /AmbientBackground|MorseSignalCanvas|ScrollEffects|SiteHeader|SiteFooter|ResumeSheet|MorseChat|data-standard-content/,
   );
 });
 

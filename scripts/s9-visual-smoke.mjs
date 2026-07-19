@@ -738,7 +738,7 @@ async function captureScreenshot(client, viewportName, kind) {
 
 async function sampleCanvas(client) {
   const sample = await client.evaluate(`(() => {
-    const canvas = document.querySelector('[data-testid="morse-signal-canvas"]');
+    const canvas = document.querySelector('[data-testid="warp-tunnel-canvas"]');
     if (!(canvas instanceof HTMLCanvasElement)) return null;
     const sampleWidth = ${CANVAS_SAMPLE_WIDTH};
     const sampleHeight = ${CANVAS_SAMPLE_HEIGHT};
@@ -777,7 +777,7 @@ async function sampleCanvas(client) {
   const secondDataUrl = `data:image/png;base64,${secondScreenshot.data}`;
 
   return client.evaluate(`(async () => {
-    const canvas = document.querySelector('[data-testid="morse-signal-canvas"]');
+    const canvas = document.querySelector('[data-testid="warp-tunnel-canvas"]');
     if (!(canvas instanceof HTMLCanvasElement)) return null;
     const sampleWidth = ${CANVAS_SAMPLE_WIDTH};
     const sampleHeight = ${CANVAS_SAMPLE_HEIGHT};
@@ -831,6 +831,11 @@ async function inspectHome(client, viewport) {
     'Boolean(document.querySelector("#morse-invite-code"))',
     `${viewportName}:home:locked-access-timeout`,
   );
+  await waitFor(
+    client,
+    'Boolean(document.querySelector(\'[data-testid="warp-tunnel-canvas"]\'))',
+    `${viewportName}:home:canvas-timeout`,
+  );
   await recordHorizontalOverflow(client, viewportName, '/');
 
   const state = await client.evaluate(`(() => {
@@ -851,7 +856,7 @@ async function inspectHome(client, viewport) {
     const header = document.querySelector('header');
     const main = document.querySelector('main');
     const chat = document.querySelector('[data-testid="morse-chat"]');
-    const canvas = document.querySelector('[data-testid="morse-signal-canvas"]');
+    const canvas = document.querySelector('[data-testid="warp-tunnel-canvas"]');
     const h1 = document.querySelector('#home-title');
     const identity = h1?.parentElement;
     const featured = document.querySelector('#featured-title')?.closest('section');
@@ -966,6 +971,22 @@ async function inspectHome(client, viewport) {
   }
 
   await captureScreenshot(client, viewportName, 'home');
+
+  const contextLossHandled = await client.evaluate(`(() => {
+    const canvas = document.querySelector('[data-testid="warp-tunnel-canvas"]');
+    if (!(canvas instanceof HTMLCanvasElement)) return false;
+    const event = new Event('webglcontextlost', { cancelable: true });
+    const dispatched = canvas.dispatchEvent(event);
+    return dispatched === false && event.defaultPrevented;
+  })()`);
+  check(contextLossHandled, `${viewportName}:home:context-loss-not-handled`);
+  if (contextLossHandled) {
+    await waitFor(
+      client,
+      'Boolean(document.querySelector(\'[data-testid="morse-signal-canvas"]\'))',
+      `${viewportName}:home:canvas-fallback-timeout`,
+    );
+  }
 }
 
 async function inspectWorksShell(client, viewportName, route) {
