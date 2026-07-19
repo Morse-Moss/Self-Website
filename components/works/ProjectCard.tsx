@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from 'react';
 import type { MouseEvent, TransitionEvent } from 'react';
 
 import type { Project, ProjectSlug } from '@/lib/site-content';
-import OpenChatButton from '@/components/site/OpenChatButton';
 
 import CaseStudy from './CaseStudy';
 import styles from './ProjectCard.module.css';
@@ -137,7 +136,7 @@ export default function ProjectCard({
               width={project.media.width}
               height={project.media.height}
               alt={project.media.alt}
-              sizes="(max-width: 640px) 34vw, (max-width: 1100px) 22vw, 220px"
+              sizes="(max-width: 640px) 100vw, 352px"
             />
           ) : (
             <div
@@ -146,23 +145,15 @@ export default function ProjectCard({
               aria-label={`${project.name}暂无可公开截图`}
             >截图待补</div>
           )}
+          {project.media ? (
+            <span className={styles.mediaBadge}>{project.media.label}</span>
+          ) : null}
         </div>
-        {project.media ? (
-          <p className={styles.mediaDisclosure}>{project.media.label}</p>
-        ) : null}
       </div>
 
       <div className={styles.content}>
-        <div className={styles.meta}>
-          <span className={styles.status}>{project.status}</span>
-          <span aria-hidden="true">/</span>
-          <span>{project.type}</span>
-        </div>
         <h2 id={titleId}>{project.name}</h2>
         <p className={styles.summary}>{project.summary}</p>
-        {project.ownership ? (
-          <p className={styles.ownership}>{project.ownership}</p>
-        ) : null}
 
         <ul className={styles.capabilities} aria-label={`${project.name}能力`}>
           {project.capabilities.map((capability) => (
@@ -170,40 +161,19 @@ export default function ProjectCard({
           ))}
         </ul>
 
-        {project.futureDirection ? (
-          <p className={styles.futureDirection}>{project.futureDirection}</p>
-        ) : null}
+        <p className={styles.status}>{project.status}</p>
 
-        <div className={styles.actions} aria-label={`${project.name}操作`}>
-          <button
-            className={styles.toggle}
-            type="button"
-            aria-expanded={expanded}
-            aria-controls={detailsId}
-            onClick={onToggle}
-          >
-            {expanded ? '收起详情' : '展开详情'}
-          </button>
-
-          {project.askMorse ? (
-            <OpenChatButton className={styles.action} prompt={project.askMorse.prompt}>
-              {project.askMorse.label}
-            </OpenChatButton>
-          ) : null}
-
-          {project.actions.map((action) => (
-            <a
-              key={action.href}
-              className={styles.action}
-              href={action.href}
-              target="_blank"
-              rel="noreferrer"
-              onClick={(event) => event.stopPropagation()}
-            >
-              {action.label}
-            </a>
-          ))}
-        </div>
+        <button
+          className={styles.toggle}
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={detailsId}
+          aria-label={`${expanded ? '收起' : '展开'}${project.name}详情`}
+          title={expanded ? '收起详情' : '展开详情'}
+          onClick={onToggle}
+        >
+          <span className={styles.toggleIcon} aria-hidden="true" />
+        </button>
       </div>
 
       {detailsMounted ? (

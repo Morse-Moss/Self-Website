@@ -9,9 +9,7 @@ export default function WorksPage() {
   return (
     <main className={styles.main}>
       <header className={styles.header}>
-        <p>WORK INDEX</p>
         <h1>{siteContent.works.title}</h1>
-        <span>{siteContent.works.intro}</span>
       </header>
 
       <ProjectGallery projects={projects} />

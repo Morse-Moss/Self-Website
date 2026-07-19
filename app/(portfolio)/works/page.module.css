@@ -6,29 +6,17 @@
 }
 
 .header {
-  display: grid;
-  grid-template-columns: minmax(0, 8rem) minmax(0, 1fr) minmax(0, 34rem);
-  align-items: end;
-  gap: var(--space-5);
+  display: flex;
+  justify-content: center;
   min-width: 0;
-  padding-bottom: var(--space-7);
-}
-
-.header p {
-  color: var(--accent);
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  letter-spacing: 0;
+  padding-bottom: var(--space-6);
+  text-align: center;
 }
 
 .header h1 {
-  font-size: var(--fs-portfolio-hero);
-  line-height: 1;
-}
-
-.header span {
-  color: var(--muted);
-  line-height: 1.7;
+  max-width: 100%;
+  font-size: var(--fs-h2);
+  line-height: 1.2;
   overflow-wrap: anywhere;
 }
 
@@ -38,11 +26,6 @@
   }
 
   .header {
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-3);
-  }
-
-  .header h1 {
-    font-size: var(--fs-portfolio-hero-mobile);
+    padding-bottom: var(--space-5);
   }
 }
