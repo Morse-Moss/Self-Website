@@ -16,6 +16,10 @@
   border-top-color: var(--line-strong);
 }
 
+.card[data-expanded='true'] {
+  grid-column: 1 / -1;
+}
+
 .mediaColumn,
 .content {
   min-width: 0;
