@@ -65,3 +65,34 @@
 ## Review Gate
 
 本轮 follow-up commit 后必须由独立 reviewer 对原四项 blocker 的关闭证据、提交范围和公开口径执行 delta review；只有 verdict 为 PASS 才能关闭本阶段。
+
+## Representative Works Refresh Addendum (2026-07-19)
+
+### Presentation Contract
+
+- 折叠层已精简为项目名、一段简介、五个能力短词、状态、黑金新版主图和展开按钮；状态为“唯一开发者 · 企业局域网已投入使用”。
+- 展开层固定为“项目简介、核心能力、系统架构、我的技术实现、技术栈”五段，技术栈与 CTA 均后置；公开页面不再展示验证证据、当前边界、采集时间、提交版本和运行方式。
+- 公共知识优先读取结构化 `details`，不再默认提取旧 `evidence`、`boundaries`、媒体元数据或操作入口。
+
+### Local Commit Lineage
+
+- `8c1c298 docs: define simplified works presentation`
+- `7be12ea docs: plan concise content agent presentation`
+- `eb8977c test: freeze concise works presentation`
+- `e90b27b content: publish concise content agent story`
+- `1211252 feat: simplify portfolio project presentation`
+- `edec187 test: verify concise content agent presentation`：只提交浏览器验收脚本、四张更新截图和展开态网格兼容修正，未吸收并行线程的页面样式、研究文档或历史截图。
+
+### Fresh Verification
+
+- 隔离运行快照全量 `node --env-file=E:\Revolution\.env.local --test "scripts/*.test.mjs" "tests/*.test.ts"`：570/570 通过，0 fail，0 skip。
+- 同一快照 `npm run build`：Next.js / TypeScript 通过，生成 19 个页面。
+- `py -3 scripts/content-agent-visual-smoke.py http://127.0.0.1:3012`：1440×900 / 390×844 均为 `failures: []`；主图加载、横向溢出 0、延迟历史后问题保留、自由对话复位、console/page error 0。
+- 完整 S9：桌面、移动端与 reduced-motion 均 `failures: []`；四项目展开、Hash、键盘、滚动、外链隔离、重定向、零横向溢出、零 console/page error 和零外部运行时请求全部通过。
+- 四张 Content Agent 证据图已逐张检查：主截图以黑金新版主页、简介、五个能力短词和项目状态开场；CTA 截图在桌面与移动端均无错位或遮挡。
+- 本轮未运行知识库摄取、聊天或生成 Provider，未写生产数据库，未 push、未部署、未创建 PR。
+
+### Delta Review
+
+- 独立 reviewer 对 `1211252..edec187` 中的 Content Agent 相关 delta 给出 `PASS`，未发现 blocker；Digital Morse 与 Deep Research 的并行提交已明确排除。
+- reviewer 核对了蓝图 §21、最终内容源、五段详情、展开布局、两套 smoke 的失败传播和四张截图一致性。唯一 FOLLOW-UP 是聚焦 smoke 的禁用审计词扫描发生在展开前；展开详情仍由作品展示、路由内容合同单测与完整 S9 共同覆盖，当前公开页面不存在这些章节，不阻塞收口。
