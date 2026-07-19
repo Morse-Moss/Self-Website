@@ -59,10 +59,24 @@ npm run production:worker
 4. 使用 ingest 角色执行 `npm run production:ingest`；重复执行应全量跳过。
 5. 启动单副本 Web，检查 `/api/health/live` 和 `/api/health/ready`。
 6. 启动单实例 Worker。
-7. 创建新的 72 小时邀请码，完成一次受控文本对话 smoke。
+7. 优先通过 `/admin` 创建新的 72 小时邀请码；管理页面不可用时使用 CLI 应急后备。完成一次受控文本对话 smoke。
 8. 在真实 TLS edge 后执行 `MORSE_RELEASE_BASE_URL=https://... npm run release:smoke`。
 
 `/api/health/live` 不访问依赖。`/api/health/ready` 和兼容入口 `/api/health` 只有在运行配置有效、数据库可达、migration 版本与 checksum 完整、公开知识非空时返回 `200 {"ok":true}`；失败统一返回 `503 {"ok":false}`，不得泄漏模型、费用、表名、chunk 数或内部异常。
+
+### 4.1 管理员入口与邀请码运维
+
+- 管理入口固定为同源 `/admin`，不进入公开导航。隐藏入口不是安全措施；实际边界是独立密码、当前 TOTP、HttpOnly 管理 Session、精确 Origin 和服务端权限校验。
+- 登录后点击顶部“邀请码”，填写名称、1-720 小时有效期和 1-100 个最大会话数，并输入一个新的 6 位 TOTP。服务端生成带 `morse_` 前缀的 192-bit 随机码。
+- 明文只在创建成功响应和当前页面内存中出现一次；数据库只保存 SHA-256。关闭工具后不能恢复，管理员必须当场复制，通过受控渠道发送，不得写入工单、日志、截图、仓库或运行手册。
+- 列表只展示名称、有效/过期/耗尽/停用状态、有效期和会话用量。停用仅阻止新兑换；已登录 HR 的既有 Session 与后续聊天不受影响，需要立即中断时必须另走 Session 处置流程。
+- `npm run invite:create` 仅作为管理页面不可用、首次初始化或灾备恢复时的后备路径；通过 `MORSE_NEW_INVITE_CODE` 注入人工选定码，脚本不回显明文。
+
+| Route | 必需控制 | 用途 |
+|---|---|---|
+| `GET /api/admin/invites` | 有效管理员 Session | 返回邀请码元数据和派生状态，不返回明文 |
+| `POST /api/admin/invites` | 管理员 Session + 精确 Origin + 新 TOTP | 生成邀请码；只在本次响应返回明文 |
+| `PATCH /api/admin/invites/[inviteId]` | 管理员 Session + 精确 Origin | 仅允许将邀请码停用 |
 
 ## 5. Worker 行为
 

@@ -12,8 +12,22 @@
 - 数据：migration 001/002 已执行并通过幂等复验；内容发布后公开知识共 15 documents，`b15be68` 最终 ingest 为 0 document 更新、0 chunk 更新、15 documents 跳过；migration 临时超级用户权限已撤销。
 - 验证：公网 live、ready、兼容 health、根页、作品页与内容创作 Agent 正式图片均为 HTTP 200；`release:smoke` 通过；真实 Provider smoke 为 HTTP 200 并完成 SSE 输出。
 - 浏览器：1440x900 与 390x844 的作品页和对话框均无横向溢出、控制台 error 为 0；正式图片加载完成；从项目 CTA 输入邀请码后，预填问题保留在输入框且不会自动发送。
+- 管理入口：`https://aimorse.tech/admin` 不在公开导航中。当前 release `b15be68` 包含既有登录、对话复盘、badcase 和导出；本地邀请码管理提交 `50a7663` 尚未进入 `master` 或部署，生产顶部暂不应声称已有“邀请码”入口。
 
 仍需保持诚实边界：当前生产域名的 Lighthouse 分数未复测；监控、托管备份、独立 edge 速率/连接限制和真实 Bocha/Feishu smoke 尚未完成。当前 `b15be68` 已吸收内容创作 Agent 简介、黑金设计图、六主题知识和 CTA 修复；数字摩斯提交 `7c4c2a0` 已进入 `origin/master` 但尚未部署，剩余工作区改动同样没有进入该 release。
+
+## 管理入口与邀请码发布验收
+
+邀请码管理只有在对应功能提交被 `master` 吸收并作为冻结 release 部署后才可验收。部署后按以下顺序检查：
+
+1. 核对 `/opt/revolution/current` 指向的新 release，不能只根据本地或远端分支判断已上线。
+2. 打开 `https://aimorse.tech/admin`，使用生产管理员密码和当前 TOTP 登录；确认公共导航仍没有 Admin 链接。
+3. 点击顶部“邀请码”，用新的未使用 TOTP 创建一个 1 小时、1 会话的 smoke 邀请码，并立即复制一次性明文；不要把明文写入终端历史、文档或截图。
+4. 在隔离浏览器会话中兑换并完成最小聊天 smoke，确认列表会话用量更新。
+5. 停用该 smoke 邀请码，确认新的兑换被拒绝；已经建立的访客 Session 应继续可用。
+6. 重新执行公网 live/ready 与 `MORSE_RELEASE_BASE_URL=https://aimorse.tech npm run release:smoke`，再记录 production-observed 证据。
+
+如管理页面不可用，按平台无关生产手册使用 `npm run invite:create` 应急；不要为此开放数据库端口、打印生产环境变量或直接写 `invite_codes`。
 
 ## 发布边界
 

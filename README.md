@@ -13,6 +13,7 @@
 - S8 智能客服文字对话闭环已完成并进入 `origin/master`：三类访客意图、失败补偿、幂等重放、公开来源、可恢复重试、双宽浏览器验证和分层评测均已通过。
 - S9 Morse 作品集重设计已完成并进入 `origin/master`：首页以 `Morse` 为主身份，作品集改为四项目单页折叠，企业内部项目只保留脱敏文字案例；全视口首屏、1440/390 双宽、减弱动画和 Lighthouse 门禁均已通过。
 - S10 数字摩斯智能客服已达到 `MAINLINE_PROVIDER_READY / CHAT_UX_LOCAL_READY`：访客三流程、自动搜索、管理后台与离线评测完成；19/19 Mock E2E、1440/390 真实浏览器、543/543 零 skip 全量测试、BGE/pgvector 语义评测和 19/19 生产构建均已通过。2026-07-17 针对中转 WAF 和易变模型目录加入显式兼容 User-Agent，并固定使用已验收的 `gpt-5.4`；随后修复默认问题只填框、等待态仍显示建议、Markdown 源码外露、来源编号不清和 OpenAI-compatible 中转间歇性空输出/502。聊天区已扩大；正文“依据”和底部来源统一遵循不打断合同：当前页资料静态显示，项目案例和联网资料在新标签页打开，不能改变当前对话 URL、消息或 transcript 滚动位置。Responses 只有在尚未输出正文且属于空完成、incomplete 或明确瞬时 HTTP 状态时才进行最多 3 次总尝试，永久 4xx、显式 failed/error 和已有部分回答均不重试。空完成或 incomplete 轮次如返回 usage，会计入最终真实用量。最新持久化 usage 证据 turn `e9d03006-2cbd-40dd-a31c-1cd65c6b6e45` 到达 SSE `done` 和数据库 `completed`，usage 为 5766 输入 / 102 输出 token；本轮另有三个真实浏览器 turn `45d91a62-38b9-4505-9a80-5e7b563a2cb2`、`3023fc9a-af03-45e0-91c6-3994022a1fc5` 与 `389f9ccd-9f42-451f-a641-050bad5f1106` 均为 `completed`，额度各从 30 降到 29；最新一轮延迟 15706ms、5 个检索来源、`used_search=false`。中转未返回 usage，费用保持未知。真实博查/飞书未验收；S10 当时未部署，当前生产状态以 S11 条目为准。
+- 管理员固定入口为 `/admin`，不出现在公开导航；访问安全依赖独立密码、TOTP 和管理 Session，不依赖隐藏 URL。邀请码管理增量已在本地隔离分支提交为 `50a7663`，尚未进入 `master`、push 或当前生产 release `b15be68`。
 - S11 腾讯云生产部署已于 2026-07-18 达到 `PRODUCTION_OBSERVED / LIMITED_LAUNCH`，并在 2026-07-19 更新到 `b15be68`：`aimorse.tech` 与 `www.aimorse.tech` 已指向首尔 Lighthouse，Caddy/HTTPS、Web、Worker、PostgreSQL/pgvector 和 CPU BGE 均在运行；生产 migration、最小数据库 grants、公开知识摄取、真实 Provider smoke、live/ready 与 release smoke 已通过。内容创作 Agent 的新简介、黑金设计图、六主题知识及 CTA 邀请码后的问题保留修复均已在生产观察通过，`origin/master` 已包含该生产修订。
 - 当前仍不标记 `ONLINE_READY`：生产 Lighthouse 性能分数尚未复测，监控、托管备份、edge 速率/连接限制及真实 Bocha/Feishu smoke 仍待完成；数字摩斯简介、新版主图、六主题知识及配套实现提交 `7c4c2a0` 已进入 `origin/master`，但尚未部署，剩余工作区改动与未跟踪证据也未复制到服务器。
 - M3-RAG 基础能力继续复用短期邀请码、PostgreSQL + pgvector、OpenAI 适配层、SSE、短期会话和费用门；本地 BGE 语义向量已接入。S8 的 3 次历史 `runChat` 未完成，但已由 2026-07-17 的 S10 真实 Provider 全链 PASS 更新当前结论；历史失败记录不删除，也不由 Mock 替代。
@@ -49,7 +50,9 @@ npm run rag:eval
 npm run dev
 ```
 
-创建一个 72 小时、最多 3 个会话的短期码。脚本只保存哈希，也不会回显邀请码：
+管理员入口不放在公开导航。开发环境直接访问 `http://localhost:3000/admin`；生产入口固定为 `https://aimorse.tech/admin`。使用独立管理员密码和当前 6 位 TOTP 登录后，点击顶部“邀请码”，填写名称、有效小时数和最大会话数，再输入一个新的 TOTP 生成邀请码。系统只显示一次明文，关闭后不能恢复，必须当场复制并通过受控渠道发送。
+
+当管理页面不可用或执行灾备初始化时，保留 CLI 作为应急后备。下面创建一个 72 小时、最多 3 个会话的短期码；脚本只保存哈希，也不会回显邀请码：
 
 ```powershell
 $env:MORSE_NEW_INVITE_CODE = Read-Host '输入短期邀请码'
