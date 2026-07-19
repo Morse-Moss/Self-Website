@@ -217,7 +217,7 @@
 
 - 2026-07-19 主图与双视口截图来自本地 production build 和受控 fixture，不是生产访客或真实对话数据，也没有调用 Provider。
 - 腾讯云生产站已通过 HTTPS、live/ready、release smoke 和受控真实 Chat Provider smoke；真实 Bocha、真实 Feishu、监控、托管备份和独立 edge 限流仍需单独验收。
-- 生产运行仍为 `b15be68`；数字摩斯紧凑展示、五段详情、六主题知识与模型无关文案提交 `60738e1` 已进入 `origin/master`，尚未部署。
+- 生产 Web 运行 `4f3d885`；数字摩斯紧凑展示、五段详情、六主题知识与模型无关文案提交 `60738e1` 已进入 `origin/master`。其中 7 个知识文档已定向同步到生产 RAG，紧凑展示未随本次知识同步切换 Web release。
 - 语音、视频、跨 Session 长期记忆和自动知识更新尚未实现，不能写成当前能力。
 - `content/drafts/**` 未经摩斯终审，不属于公开知识。
 

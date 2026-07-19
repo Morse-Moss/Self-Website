@@ -1,5 +1,18 @@
 # 数字摩斯作品集信息完善 Closeout
 
+## Latest Production Knowledge Sync
+
+- 日期：2026-07-19
+- 模式：`STAGED / CRITICAL / DEPLOYED`
+- 状态：`PRODUCTION_RAG_OBSERVED / KNOWLEDGE_RECONCILED`
+- 范围：只更新生产对话知识库中的数字摩斯 7 个稳定文档 ID；Web、Worker 与 Edge 继续运行冻结 release `4f3d885`，未切换整站 release。
+- 内容源：`60738e1` 中的 `content/site-content.json` 与 `lib/server/public-knowledge.ts`。
+- 生产结果：数字摩斯 7 documents / 8 chunks；全库保持 21 documents / 24 chunks。
+- 定向评测：7/7 进入 top-3，最低正例分数 `0.693913`，最高负例分数 `0.420975`，正负阈值均通过。
+- 幂等复验：0 documents 更新、0 chunks 更新、7 documents 跳过。
+- 运行观察：公网 live/ready 均为 HTTP 200；DB、Embedding 与 Web healthy，Worker 与 Edge running。
+- 本次未调用真实 Chat Provider，也未把具体生成模型版本或云厂商表述写入数字摩斯知识分块。
+
 ## Latest Round: Concise Module
 
 - 日期：2026-07-19
@@ -18,7 +31,7 @@
 - `npm run build`：Next.js / TypeScript PASS，生成 19 个页面。
 - `py -3 scripts/digital-morse-visual-smoke.py http://127.0.0.1:3032`：1440x900 与 390x844 均完成折叠、展开、Hash、CTA 和预填；图片加载、横向溢出、console、page 与 HTTP error 均通过。
 - 主图角标经视觉复盘移至数字摩斯卡片右上空白区，避免遮挡示例界面内容。
-- 实现与验收阶段未执行 Provider 调用、知识摄取、生产数据库写入或部署；源码同步仅按最终 closeout 授权执行。
+- 该本地实现与验收阶段未执行 Provider 调用、知识摄取、生产数据库写入或部署；后续生产知识同步结果以上方记录为准。
 
 ### Latest Changed Surface
 
@@ -50,7 +63,7 @@
 - 唯一公开媒体为 `public/works/digital-morse/digital-morse-main-local-2026-07-19.png`。
 - 卡片首层显示“本地验收截图 · 示例会话 · 非生产访客数据”。
 - 截图来自本地 production build 与受控 fixture，不包含真实访客、生产会话、邀请码、密钥、内部地址或 Provider payload。
-- 本轮未调用聊天、搜索或生成 Provider，未写生产数据库。
+- 该本地媒体验收轮未调用聊天、搜索或生成 Provider，也未写生产数据库。
 
 ## Knowledge And Conversation
 
@@ -79,9 +92,9 @@
 
 ## Git And Release Boundary
 
-- 数字摩斯信息完善已形成提交 `7c4c2a0` 并位于本地与远端 `master`；该提交只吸收数字摩斯范围，没有吸收其他线程或不明归属文件。
-- 生产运行 `b15be68`，尚未包含 `7c4c2a0`；远端提交不等于已部署。
-- 本地验收阶段未 push、未部署、未创建 PR；后续并行收尾已将该提交同步到 `origin/master`。下一次发布仍必须从冻结提交独立验收，不能复制剩余脏工作区。
+- 数字摩斯紧凑展示与知识内容已形成提交 `60738e1` 并进入 `origin/master`；该提交只吸收数字摩斯范围，没有吸收其他线程或不明归属文件。
+- 生产 Web 运行 `4f3d885`，未切换到 `60738e1`；生产 RAG 已按 7 个稳定文档 ID 定向同步 `60738e1` 的数字摩斯资料。
+- 下一次 Web 发布仍必须从冻结提交独立验收，不能复制剩余脏工作区。
 
 ## Review Gate
 
