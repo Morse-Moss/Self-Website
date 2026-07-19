@@ -46,6 +46,7 @@ test('S10 scenario registry covers the complete visitor and admin contract', () 
     'admin-login',
     'admin-list-detail',
     'admin-badcase',
+    'admin-invite-management',
     'admin-export',
     'admin-session-expiry',
     'dual-width-overflow',
@@ -144,6 +145,14 @@ test('S10 harness uses stable UI observability for every required workflow', () 
     'admin-turn-list',
     'admin-turn-detail',
     'admin-badcase-form',
+    'admin-invites-open',
+    'admin-invite-dialog',
+    'admin-invite-form',
+    'admin-invite-code',
+    'admin-invite-list',
+    'admin-invite-copy',
+    'admin-invite-deactivate',
+    'admin-invite-deactivate-confirm',
     'admin-export-form',
   ]) {
     assert.ok(source.includes(selector), `missing stable selector: ${selector}`);
@@ -151,6 +160,30 @@ test('S10 harness uses stable UI observability for every required workflow', () 
   assert.ok(
     source.includes('document.querySelector(${JSON.stringify(SELECTORS.chatPanel)})?.getBoundingClientRect()'),
     'mobile panel geometry must use the shared chat panel selector',
+  );
+});
+
+test('S10 proves the one-time invite lifecycle and mobile dialog geometry', () => {
+  const source = readFileSync(harnessUrl, 'utf8');
+  const adminStart = source.indexOf('async function runAdminScenarios');
+  const collectStart = source.indexOf('function collectBrowserErrors');
+  const adminSource = source.slice(adminStart, collectStart);
+
+  assert.ok(adminStart >= 0 && collectStart > adminStart);
+  assert.match(adminSource, /nextUnusedAdminTotp/u);
+  assert.match(adminSource, /hashSecret\(createdInviteCode\)/u);
+  assert.match(adminSource, /Browser\.grantPermissions/u);
+  assert.match(adminSource, /admin:invite-copy/u);
+  assert.match(adminSource, /admin:invite-hash-only/u);
+  assert.match(adminSource, /admin:invite-deactivated/u);
+  assert.match(adminSource, /admin:invite-one-time/u);
+  assert.match(adminSource, /s10-admin-invites-desktop-1440x900\.png/u);
+  assert.match(adminSource, /s10-admin-invites-mobile-390x844\.png/u);
+  assert.match(adminSource, /admin:mobile-invite-fullscreen/u);
+  assert.ok(
+    adminSource.indexOf('s10-admin-invites-mobile-390x844.png')
+      < adminSource.indexOf('UPDATE admin_sessions'),
+    'mobile invite evidence must be captured before admin session expiry',
   );
 });
 

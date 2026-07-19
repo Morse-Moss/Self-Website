@@ -473,11 +473,8 @@ async function reserveTurnInTransaction(input: {
   const sessionResult = await input.client.query<SessionLockRow>(
     `SELECT session.expires_at, session.message_count, session.search_count
        FROM access_sessions AS session
-       JOIN invite_codes AS invite ON invite.id = session.invite_code_id
       WHERE session.id = $1
         AND session.expires_at > $2
-        AND invite.active = true
-        AND invite.expires_at > $2
       FOR UPDATE OF session`,
     [input.accessSessionId, input.now],
   );

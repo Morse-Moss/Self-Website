@@ -7,6 +7,22 @@ import type {
 export type AdminWorkflow = ChatWorkflow;
 export type AdminTurnStatus = 'running' | 'completed' | 'stopped' | 'failed';
 export type AdminExportFormat = 'json' | 'csv';
+export type AdminInviteStatus = 'active' | 'expired' | 'exhausted' | 'inactive';
+
+export interface AdminInvite {
+  id: string;
+  label: string;
+  active: boolean;
+  expiresAt: string;
+  maxSessions: number;
+  sessionCount: number;
+  createdAt: string;
+  status: AdminInviteStatus;
+}
+
+export interface AdminInviteList {
+  items: AdminInvite[];
+}
 
 export interface AdminFilters {
   from: string;
@@ -136,6 +152,15 @@ export function adminErrorMessage(status: number, code = ''): string {
   }
   if (code === 'INVALID_BADCASE_UPDATE') {
     return '复盘备注无效，备注最多 2,000 字。';
+  }
+  if (code === 'INVALID_ADMIN_INVITE') {
+    return '邀请码设置无效，请检查名称、有效时长和会话上限。';
+  }
+  if (code === 'INVALID_ADMIN_INVITE_UPDATE') {
+    return '邀请码状态更新无效，请刷新列表后重试。';
+  }
+  if (code === 'ADMIN_INVITE_NOT_FOUND') {
+    return '这个邀请码已不存在，请刷新列表。';
   }
   if (status === 404 || code === 'ADMIN_TURN_NOT_FOUND') {
     return '这条记录已过保留期或不存在，请刷新列表。';

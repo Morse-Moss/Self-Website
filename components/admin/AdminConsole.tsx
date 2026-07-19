@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 
 import AdminExportDialog from './AdminExportDialog';
 import AdminFilters from './AdminFilters';
+import AdminInviteDialog from './AdminInviteDialog';
 import AdminLogin from './AdminLogin';
 import AdminTurnDetailPanel from './AdminTurnDetail';
 import AdminTurnList from './AdminTurnList';
@@ -46,6 +47,7 @@ export default function AdminConsole() {
   const [detailError, setDetailError] = useState('');
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
   const [notice, setNotice] = useState('');
 
   function resetPrivateState() {
@@ -57,6 +59,7 @@ export default function AdminConsole() {
     setDetailError('');
     setMobileDetailOpen(false);
     setExportOpen(false);
+    setInviteOpen(false);
     setNotice('');
   }
 
@@ -279,6 +282,14 @@ export default function AdminConsole() {
           </span>
           <button
             className={styles.secondaryButton}
+            data-testid="admin-invites-open"
+            type="button"
+            onClick={() => setInviteOpen(true)}
+          >
+            邀请码
+          </button>
+          <button
+            className={styles.secondaryButton}
             data-testid="admin-export-open"
             type="button"
             onClick={() => setExportOpen(true)}
@@ -342,6 +353,13 @@ export default function AdminConsole() {
           onSaved={reflectSavedBadcase}
         />
       </div>
+
+      <AdminInviteDialog
+        open={inviteOpen}
+        onClose={() => setInviteOpen(false)}
+        onUnauthorized={requireLogin}
+        onComplete={setNotice}
+      />
 
       <AdminExportDialog
         open={exportOpen}

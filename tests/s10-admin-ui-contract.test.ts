@@ -6,6 +6,8 @@ import { test } from 'node:test';
 const adminDirectory = path.resolve('components/admin');
 const consolePath = path.join(adminDirectory, 'AdminConsole.tsx');
 const detailPath = path.join(adminDirectory, 'AdminTurnDetail.tsx');
+const invitePath = path.join(adminDirectory, 'AdminInviteDialog.tsx');
+const inviteStylePath = path.join(adminDirectory, 'AdminInviteDialog.module.css');
 const clientPath = path.join(adminDirectory, 'admin-client.ts');
 const stylePath = path.join(adminDirectory, 'AdminConsole.module.css');
 const layoutPath = path.resolve('app/admin/layout.tsx');
@@ -151,6 +153,75 @@ test('export dialog requires a fresh TOTP and downloads JSON or CSV without serv
   assert.doesNotMatch(source, /\}, \[exporting, onClose, open\]\);/);
 });
 
+test('admin exposes invite management from the existing private console', () => {
+  const consoleSource = read(consolePath);
+  const inviteSource = read(invitePath);
+
+  assert.match(consoleSource, /import AdminInviteDialog from ['"]\.\/AdminInviteDialog['"]/);
+  assert.match(consoleSource, /data-testid=['"]admin-invites-open['"]/);
+  assert.match(consoleSource, />\s*邀请码\s*</u);
+  assert.match(consoleSource, /<AdminInviteDialog/);
+  assert.match(inviteSource, /fetch\(['"]\/api\/admin\/invites['"],\s*\{\s*cache:\s*['"]no-store['"]/s);
+  assert.match(inviteSource, /method:\s*['"]POST['"]/);
+  assert.match(
+    inviteSource,
+    /JSON\.stringify\(\{\s*label,\s*durationHours,\s*maxSessions,\s*totpCode:\s*freshTotp\s*\}\)/s,
+  );
+  assert.match(inviteSource, /method:\s*['"]PATCH['"]/);
+  assert.match(inviteSource, /JSON\.stringify\(\{\s*active:\s*false\s*\}\)/s);
+  for (const label of ['有效', '已过期', '已耗尽', '已停用']) {
+    assert.match(inviteSource, new RegExp(label, 'u'));
+  }
+  for (const state of ['正在加载邀请码', '还没有邀请码', '重新加载']) {
+    assert.match(inviteSource, new RegExp(state, 'u'));
+  }
+});
+
+test('admin invite plaintext is one-time, memory-only, and has explicit copy failure feedback', () => {
+  const inviteSource = read(invitePath);
+
+  assert.match(inviteSource, /const \[createdCode, setCreatedCode\] = useState<string \| null>\(null\)/);
+  assert.match(inviteSource, /data-testid=['"]admin-invite-code['"]/);
+  assert.match(inviteSource, /navigator\.clipboard\.writeText\(createdCode\)/);
+  assert.match(inviteSource, /关闭后无法再次查看/);
+  assert.match(inviteSource, /复制失败/);
+  assert.match(inviteSource, /setCreatedCode\(null\)/);
+  assert.match(inviteSource, /disabled=\{creating \|\| Boolean\(createdCode\)\}/);
+  assert.match(inviteSource, /createdCode \? ['"]邀请码已生成['"] : ['"]生成邀请码['"]/);
+  assert.doesNotMatch(inviteSource, /localStorage|sessionStorage|document\.cookie|URLSearchParams/);
+  assert.doesNotMatch(inviteSource, /console\.(?:log|info|warn|error)\([^)]*createdCode/);
+  assert.match(inviteSource, /name=['"]inviteLabel['"]/);
+  assert.match(inviteSource, /name=['"]durationHours['"]/);
+  assert.match(inviteSource, /min=\{1\}/);
+  assert.match(inviteSource, /max=\{720\}/);
+  assert.match(inviteSource, /name=['"]maxSessions['"]/);
+  assert.match(inviteSource, /max=\{100\}/);
+  assert.match(inviteSource, /name=['"]inviteTotpCode['"]/);
+  assert.match(inviteSource, /autoComplete=['"]one-time-code['"]/);
+});
+
+test('admin invite dialog is tokenized, accessible, and becomes a full-screen mobile tool', () => {
+  const source = read(invitePath);
+  const styles = read(inviteStylePath);
+
+  assert.match(source, /role=['"]dialog['"]/);
+  assert.match(source, /aria-modal=['"]true['"]/);
+  assert.match(source, /aria-labelledby=['"]admin-invite-title['"]/);
+  assert.match(source, /data-testid=['"]admin-invite-dialog['"]/);
+  assert.match(source, /data-testid=['"]admin-invite-form['"]/);
+  assert.match(source, /data-testid=['"]admin-invite-list['"]/);
+  assert.doesNotMatch(styles, /#[0-9a-f]{3,8}|rgba?\(|hsla?\(/iu);
+  assert.doesNotMatch(styles, /letter-spacing:\s*-[^;]+/iu);
+  assert.match(styles, /min-height:\s*44px/);
+  assert.match(styles, /min-width:\s*0/);
+  assert.match(styles, /max-width:\s*100%/);
+  assert.match(styles, /overflow-wrap:\s*anywhere/);
+  assert.match(styles, /@media\s*\(max-width:\s*640px\)/);
+  assert.match(styles, /\.inviteDialog[\s\S]*width:\s*100%/);
+  assert.match(styles, /\.inviteDialog[\s\S]*height:\s*100dvh/);
+  assert.match(styles, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
+});
+
 test('admin covers checking, loading, empty, unauthorized, and recoverable error states', () => {
   const source = adminSource();
 
@@ -211,6 +282,8 @@ test('admin client keeps errors actionable and download names local', async () =
   assert.equal(client.adminErrorMessage(401, 'ADMIN_AUTH_REQUIRED'), '管理会话已过期，请重新登录。');
   assert.equal(client.adminErrorMessage(401, 'ADMIN_AUTH_FAILED'), '密码或动态验证码无效，也可能已触发临时锁定。');
   assert.equal(client.adminErrorMessage(401, 'ADMIN_TOTP_REQUIRED'), '动态验证码无效、已使用或已过期，请输入新的验证码。');
+  assert.equal(client.adminErrorMessage(400, 'INVALID_ADMIN_INVITE'), '邀请码设置无效，请检查名称、有效时长和会话上限。');
+  assert.equal(client.adminErrorMessage(404, 'ADMIN_INVITE_NOT_FOUND'), '这个邀请码已不存在，请刷新列表。');
   assert.equal(client.adminErrorMessage(503, 'ADMIN_UNAVAILABLE'), '管理服务暂时不可用，请稍后重试。');
   assert.equal(
     client.exportFileName('attachment; filename="morse-interactions-2026-07-16.csv"', 'csv'),
@@ -254,6 +327,13 @@ test('admin exposes stable selectors for the Mock browser acceptance path', () =
     'admin-export-open',
     'admin-export-dialog',
     'admin-export-form',
+    'admin-invites-open',
+    'admin-invite-dialog',
+    'admin-invite-form',
+    'admin-invite-list',
+    'admin-invite-copy',
+    'admin-invite-deactivate',
+    'admin-invite-deactivate-confirm',
     'admin-logout',
   ]) {
     assert.match(source, new RegExp(`data-testid=["']${selector}["']`), selector);

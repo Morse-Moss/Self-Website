@@ -306,11 +306,8 @@ export async function authenticateSession(
   const result = await pool.query<SessionRow>(
     `SELECT session.id, session.invite_code_id, session.expires_at, session.message_count
        FROM access_sessions AS session
-       JOIN invite_codes AS invite ON invite.id = session.invite_code_id
       WHERE session.token_hash = $1
-        AND session.expires_at > $2
-        AND invite.active = true
-        AND invite.expires_at > $2`,
+        AND session.expires_at > $2`,
     [hashSecret(token), now],
   );
   const session = result.rows[0];

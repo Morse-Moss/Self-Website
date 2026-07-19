@@ -58,6 +58,7 @@ export const S10_SCENARIOS = Object.freeze([
   'admin-login',
   'admin-list-detail',
   'admin-badcase',
+  'admin-invite-management',
   'admin-export',
   'admin-session-expiry',
   'dual-width-overflow',
@@ -104,6 +105,14 @@ const SELECTORS = Object.freeze({
   adminRow: '[data-testid="admin-turn-row"]',
   adminDetail: '[data-testid="admin-turn-detail"]',
   adminBadcase: '[data-testid="admin-badcase-form"]',
+  adminInvitesOpen: '[data-testid="admin-invites-open"]',
+  adminInviteDialog: '[data-testid="admin-invite-dialog"]',
+  adminInviteForm: '[data-testid="admin-invite-form"]',
+  adminInviteCode: '[data-testid="admin-invite-code"]',
+  adminInviteList: '[data-testid="admin-invite-list"]',
+  adminInviteCopy: '[data-testid="admin-invite-copy"]',
+  adminInviteDeactivate: '[data-testid="admin-invite-deactivate"]',
+  adminInviteDeactivateConfirm: '[data-testid="admin-invite-deactivate-confirm"]',
   adminExportOpen: '[data-testid="admin-export-open"]',
   adminExport: '[data-testid="admin-export-form"]',
 });
@@ -335,6 +344,15 @@ async function seedInvite(connectionString, inviteCode, inviteId) {
      VALUES ($1, $2, $3, true, now() + interval '72 hours', 4, 0)`,
     [inviteId, hashSecret(inviteCode), 's10-loopback-smoke'],
   ));
+}
+
+async function nextUnusedAdminTotp(connectionString, totpSecret) {
+  const result = await withPostgresClient(connectionString, (client) => client.query(
+    "SELECT last_totp_counter::text FROM admin_security_state WHERE id = 'admin-login'",
+  ));
+  const lastCounter = Number(result.rows[0]?.last_totp_counter);
+  check(Number.isSafeInteger(lastCounter), 'admin:totp-counter');
+  return generateTotp(totpSecret, (lastCounter + 1) * 30_000 + 1);
 }
 
 async function waitForDatabase(connectionString, predicate, code) {
@@ -979,6 +997,93 @@ async function runAdminScenarios({
   await waitFor(desktopPage, `Boolean(document.querySelector(${JSON.stringify(`${SELECTORS.adminBadcase} [role="status"]`)}))`, 'admin:badcase-saved');
   checks.add('admin-badcase');
 
+  await click(desktopPage, SELECTORS.adminInvitesOpen);
+  await waitFor(
+    desktopPage,
+    `Boolean(document.querySelector(${JSON.stringify(SELECTORS.adminInviteDialog)}))`,
+    'admin:invite-dialog',
+  );
+  const inviteLabel = `S10 HR invite ${Date.now()}`;
+  await setControlledValue(desktopPage, `${SELECTORS.adminInviteForm} input[name="inviteLabel"]`, inviteLabel);
+  await setControlledValue(desktopPage, `${SELECTORS.adminInviteForm} input[name="durationHours"]`, '48');
+  await setControlledValue(desktopPage, `${SELECTORS.adminInviteForm} input[name="maxSessions"]`, '2');
+  await setControlledValue(
+    desktopPage,
+    `${SELECTORS.adminInviteForm} input[name="inviteTotpCode"]`,
+    await nextUnusedAdminTotp(connectionString, totpSecret),
+  );
+  await click(desktopPage, `${SELECTORS.adminInviteForm} button[type="submit"]`);
+  await waitFor(
+    desktopPage,
+    `Boolean(document.querySelector(${JSON.stringify(SELECTORS.adminInviteCode)}))`,
+    'admin:invite-created',
+  );
+  const createdInviteCode = await desktopPage.evaluate(
+    `document.querySelector(${JSON.stringify(SELECTORS.adminInviteCode)})?.value ?? ''`,
+  );
+  check(/^morse_[A-Za-z0-9_-]{32}$/u.test(createdInviteCode), 'admin:invite-format');
+  check(Buffer.from(createdInviteCode.slice('morse_'.length), 'base64url').length === 24, 'admin:invite-entropy');
+
+  await browserTransport.send('Browser.grantPermissions', {
+    origin: targetUrl.origin,
+    permissions: ['clipboardReadWrite', 'clipboardSanitizedWrite'],
+  });
+  await click(desktopPage, SELECTORS.adminInviteCopy);
+  await waitFor(
+    desktopPage,
+    `document.querySelector(${JSON.stringify(SELECTORS.adminInviteCopy)})?.textContent?.includes('已复制')`,
+    'admin:invite-copy',
+  );
+
+  const createdInviteRow = await withPostgresClient(connectionString, (client) => client.query(
+    `SELECT id, code_hash, row_to_json(invite_codes)::text AS row_text
+       FROM invite_codes
+      WHERE label = $1`,
+    [inviteLabel],
+  ));
+  check(createdInviteRow.rowCount === 1, 'admin:invite-row');
+  const createdInvite = createdInviteRow.rows[0];
+  check(createdInvite.code_hash === hashSecret(createdInviteCode), 'admin:invite-hash-only');
+  check(!createdInvite.row_text.includes(createdInviteCode), 'admin:invite-plaintext-storage');
+
+  await assertNoOverflow(desktopPage, 'admin-invite-desktop');
+  const inviteDesktopScreenshot = await capture(
+    desktopPage,
+    outputDirectory,
+    's10-admin-invites-desktop-1440x900.png',
+  );
+
+  const inviteRowSelector = `${SELECTORS.adminInviteList} [data-invite-id="${createdInvite.id}"]`;
+  await click(desktopPage, `${inviteRowSelector} ${SELECTORS.adminInviteDeactivate}`);
+  await click(desktopPage, `${inviteRowSelector} ${SELECTORS.adminInviteDeactivateConfirm}`);
+  await waitFor(
+    desktopPage,
+    `Boolean(document.querySelector(${JSON.stringify(`${inviteRowSelector} [data-status="inactive"]`)}))`,
+    'admin:invite-deactivated',
+  );
+  const deactivatedInvite = await withPostgresClient(connectionString, (client) => client.query(
+    'SELECT active FROM invite_codes WHERE id = $1',
+    [createdInvite.id],
+  ));
+  check(deactivatedInvite.rows[0]?.active === false, 'admin:invite-deactivated');
+
+  await click(desktopPage, '[aria-label="关闭邀请码管理"]');
+  await waitFor(
+    desktopPage,
+    `!document.querySelector(${JSON.stringify(SELECTORS.adminInviteDialog)})`,
+    'admin:invite-closed',
+  );
+  await click(desktopPage, SELECTORS.adminInvitesOpen);
+  await waitFor(
+    desktopPage,
+    `Boolean(document.querySelector(${JSON.stringify(SELECTORS.adminInviteDialog)}))`,
+    'admin:invite-reopen',
+  );
+  await delay(100);
+  check(!await selectorExists(desktopPage, SELECTORS.adminInviteCode), 'admin:invite-one-time');
+  checks.add('admin-invite-management');
+  await click(desktopPage, '[aria-label="关闭邀请码管理"]');
+
   await browserTransport.send('Browser.setDownloadBehavior', {
     behavior: 'allow',
     downloadPath: downloadDirectory,
@@ -988,7 +1093,11 @@ async function runAdminScenarios({
   await waitFor(desktopPage, `Boolean(document.querySelector(${JSON.stringify(SELECTORS.adminExport)}))`, 'admin:export-dialog');
   const csvOption = `${SELECTORS.adminExport} label:has(input[name="exportFormat"][value="csv"])`;
   await click(desktopPage, csvOption);
-  await setControlledValue(desktopPage, `${SELECTORS.adminExport} input[name="exportTotpCode"]`, generateTotp(totpSecret, Date.now()));
+  await setControlledValue(
+    desktopPage,
+    `${SELECTORS.adminExport} input[name="exportTotpCode"]`,
+    await nextUnusedAdminTotp(connectionString, totpSecret),
+  );
   await click(desktopPage, `${SELECTORS.adminExport} button[type="submit"]`);
   const exportPath = await withTimeout((async () => {
     while (true) {
@@ -1029,13 +1138,43 @@ async function runAdminScenarios({
   await waitFor(mobilePage, `document.querySelector(${JSON.stringify(SELECTORS.adminDetail)})?.getAttribute('data-mobile-open') === 'false'`,
     'admin:mobile-back');
 
+  await click(mobilePage, SELECTORS.adminInvitesOpen);
+  await waitFor(
+    mobilePage,
+    `Boolean(document.querySelector(${JSON.stringify(SELECTORS.adminInviteDialog)}))`,
+    'admin:mobile-invite-dialog',
+  );
+  const mobileInviteGeometry = await mobilePage.evaluate(`(() => {
+    const rect = document.querySelector(${JSON.stringify(SELECTORS.adminInviteDialog)})?.getBoundingClientRect();
+    return { left: rect?.left ?? -1, top: rect?.top ?? -1, width: rect?.width ?? 0, height: rect?.height ?? 0 };
+  })()`);
+  check(
+    mobileInviteGeometry.left <= 1
+      && mobileInviteGeometry.top <= 1
+      && mobileInviteGeometry.width >= 388
+      && mobileInviteGeometry.height >= 842,
+    'admin:mobile-invite-fullscreen',
+  );
+  await assertNoOverflow(mobilePage, 'admin-invite-mobile');
+  const inviteMobileScreenshot = await capture(
+    mobilePage,
+    outputDirectory,
+    's10-admin-invites-mobile-390x844.png',
+  );
+  await click(mobilePage, '[aria-label="关闭邀请码管理"]');
+
   await withPostgresClient(connectionString, (client) => client.query(
     "UPDATE admin_sessions SET expires_at = now() - interval '1 second'",
   ));
   await reload(mobilePage);
   await waitFor(mobilePage, `Boolean(document.querySelector(${JSON.stringify(SELECTORS.adminLogin)}))`, 'admin:session-expiry');
   checks.add('admin-session-expiry');
-  return { desktopScreenshot, mobileScreenshot };
+  return {
+    desktopScreenshot,
+    mobileScreenshot,
+    inviteDesktopScreenshot,
+    inviteMobileScreenshot,
+  };
 }
 
 function collectBrowserErrors(pages) {
@@ -1216,7 +1355,12 @@ export async function runS10MockE2E() {
       downloadDirectory,
       checks,
     });
-    screenshots.push(adminScreenshots.desktopScreenshot, adminScreenshots.mobileScreenshot);
+    screenshots.push(
+      adminScreenshots.desktopScreenshot,
+      adminScreenshots.mobileScreenshot,
+      adminScreenshots.inviteDesktopScreenshot,
+      adminScreenshots.inviteMobileScreenshot,
+    );
     checks.add('dual-width-overflow');
 
     const browserErrors = collectBrowserErrors(pages);
