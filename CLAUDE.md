@@ -22,7 +22,7 @@
 - `docs/runbooks/production.md` 是平台无关的生产合同,`docs/runbooks/tencent-lighthouse.md` 是当前腾讯云实例运行源;2026-07-18 已到 `PRODUCTION_OBSERVED / LIMITED_LAUNCH`,但不得写成已完成全部 `ONLINE_READY` 硬化
 - 同一 Node 24 非 root 应用镜像提供 Web、Worker、Migration、Ingest 四个显式角色;Node 镜像不包含 PostgreSQL、BGE、TLS edge 或托管备份
 - `/api/health/live` 无依赖;`/api/health/ready` 与 `/api/health` 只返回通用 `{ ok }`,并要求配置、数据库、migration checksum 与公开知识就绪
-- 当前生产 Web release 为 `ff03c1d`,域名为 `aimorse.tech`;管理员使用密码登录并可管理邀请码,私有导出时重新输入密码;内容创作 Agent、自动运营 Agent、深度研究 Agent、数字摩斯与 AI 外贸获客系统页面和五张正式主图均已上线;生产 RAG 为 40 documents / 47 chunks,46/46 gold 进入 top-3;其余工作区改动不属于生产,再次部署、push、清理旧 release 或远端安全配置变更仍需明确授权
+- 当前生产 Web release 为 `693e56b`,域名为 `aimorse.tech`;管理员使用密码登录并可管理邀请码,私有导出时重新输入密码;五项目页面统一使用“项目负责人”并保留独立完成全部技术实现口径,五张正式主图均已上线;生产 RAG 为 40 documents / 47 chunks,46/46 gold 进入 top-3;其余工作区改动不属于生产,再次部署、push、清理旧 release 或远端安全配置变更仍需明确授权
 - 生产数据库 001/002 migration 与 checksum 已验证;历史长期本地主库的 checksum 漂移仍是本地边界,未经明确破坏性授权不得改登记或重建
 
 ## 红线

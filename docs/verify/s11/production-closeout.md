@@ -6,16 +6,16 @@
 - 模式：`STAGED / CRITICAL / DEPLOYED`
 - 状态：`PRODUCTION_OBSERVED / LIMITED_LAUNCH`
 - 公网入口：`https://aimorse.tech`
-- 当前应用 release：`ff03c1d`
+- 当前应用 release：`693e56b`
 - 实例：腾讯云 Lighthouse 首尔 `lhins-0oly57x8`，公网 `43.133.68.202`
 
 ## Release And Runtime
 
-- `/opt/revolution/current` 指向 `/opt/revolution/releases/ff03c1d/revolution`；Web、Worker 与 Edge 的 Compose working directory 均指向该冻结 release。
+- `/opt/revolution/current` 指向 `/opt/revolution/releases/693e56b/revolution`；Web、Worker 与 Edge 的 Compose working directory 均指向该冻结 release。
 - `db`、`embedding`、`web` 为 healthy；`worker` 与 `edge` 为 running。
 - PostgreSQL 16 + pgvector 使用 TLS 和独立 admin/runtime/migration/ingest/backup 凭据。
 - migration 001/002 首次执行和幂等复验通过；grants 完成后 migration 角色不再拥有超级用户权限。
-- 公开知识共 40 documents / 47 chunks；AI 外贸获客系统首轮生产摄取新增 8 documents / 9 chunks，重复摄取与 `ff03c1d` 发布后的两轮摄取均为 0 document 更新、0 chunk 更新、40 documents 跳过。
+- 公开知识共 40 documents / 47 chunks；本轮负责人称呼同步首轮生产摄取更新 10 documents / 16 chunks，第二轮为 0 document 更新、0 chunk 更新、40 documents 跳过。
 - 首个生产邀请码已创建，但邀请码明文、管理员凭据、TOTP、Provider key、数据库密码和私钥不进入本证据或 Git。
 
 ## Public Observation
@@ -32,7 +32,7 @@
 - `GET https://aimorse.tech/admin` -> HTTP 200；未登录 `GET /api/admin/invites` -> HTTP 401。
 - 生产管理员脚本包含管理密码与邀请码入口，不含动态验证码、`totpCode` 或 `inviteTotpCode`。
 - 受控真实 Provider smoke -> HTTP 200、4 个 delta、消息额度 30 -> 29；不保存原始 prompt、回答、header 或 key。
-- 生产 BGE + pgvector 的 46 条 gold 为 top-1 38/46、top-3 46/46；最低正例 `0.553159`、最高负例 `0.426972`，正负阈值均通过。AI 外贸获客系统聚合技术栈问法命中 top-1。
+- 生产 BGE + pgvector 的 46 条 gold 为 top-1 36/46、top-3 46/46；最低正例 `0.553473`、最高负例 `0.426972`，正负阈值均通过。
 
 ## Browser Observation
 
@@ -64,6 +64,7 @@
 - `c3f1ec6`：吸收管理员邀请码管理与密码登录简化；生产 `/admin` 和邀请码 API 已更新，动态验证码字段退出生产脚本。
 - `c90d153`：发布 AI 外贸获客系统页面、真实 Graphite 主图、五段详情与六主题公开知识。
 - `ff03c1d`：将歧义的销售流程问法从聚合文档 gold 调整为已验证的技术栈聚合问法；生产 RAG 达到 top-3 46/46。
+- `693e56b`：将五项目卡片、详情、FAQ 和公开知识的“唯一开发者”统一调整为“项目负责人”，并保留“独立完成全部技术实现”的能力口径。
 - 本轮发布前全量测试 595/595、Chat eval 54/54、生产构建 21 routes；公网 live/ready、作品页、正式主图与 release smoke 均通过。
 
 ## Residual Boundaries

@@ -6,7 +6,7 @@
 - 模式：`STAGED / CRITICAL / DEPLOYED`
 - 状态：`PRODUCTION_OBSERVED / LIMITED_LAUNCH / KNOWLEDGE_RECONCILED`
 - 展示入口：`https://aimorse.tech/works#ai-leadgen`
-- 生产 release：`ff03c1d`
+- 生产 release：`693e56b`
 - 公开状态文案：`项目负责人 · 本地 MVP 真实链路已验证`
 
 ## Display Contract
@@ -36,7 +36,7 @@
 - `node scripts/s9-visual-smoke.mjs http://127.0.0.1:3012`：桌面、移动端与 reduced-motion 均 `failures: []`；五项目展开、Hash、键盘、滚动、重定向、零横向溢出、零 console/page error 和零外部运行时请求全部通过。
 - `git diff --check`：无 whitespace error；仅有 Windows 工作区的 LF/CRLF 提示。
 - 生产 migration 仍为 001/002；grants 成功。首轮摄取新增 8 documents / 9 chunks，随后三轮均为 0 更新、40 documents 跳过；生产总量为 40 documents / 47 chunks。
-- 生产 RAG：46 cases，top-1 38/46、top-3 46/46，正负阈值均通过；AI 外贸获客系统聚合技术栈问法命中 `project-ai-leadgen` top-1。
+- 生产 RAG：46 cases，top-1 36/46、top-3 46/46，正负阈值均通过。
 - 公网 live/ready、`/works`、正式主图和 release smoke 均通过；主图 SHA256 为 `026404371270ECAB10313A9F505677740A7621910DDCF33DDA180D6F5C3310D7`，与仓库一致。
 
 ## Visual Evidence

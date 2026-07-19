@@ -4,25 +4,27 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**S11-5F PROJECT_OWNER_COPY_LOCAL_READY / AWAITING_RELEASE**
+**S11-5F PROJECT_OWNER_COPY_PRODUCTION_OBSERVED / LIMITED_LAUNCH**
 
 ## next_allowed_pointer
-当前生产实例继续运行 `ff03c1d`，线上五个项目仍显示旧称呼。本地已将五项目公开状态、详情、FAQ 和知识统一改为“项目负责人”，同时保留“独立完成全部技术实现”的技术归属；等待用户另行授权 push、生产知识摄取和部署。生产硬化余项不变，在 Lighthouse 和剩余运维门关闭前不得宣称完整 `ONLINE_READY`。
+当前生产实例运行 `693e56b`，五项目公开状态、详情、FAQ 和知识已统一使用“项目负责人”，同时保留“独立完成全部技术实现”的技术归属。公网双宽、知识摄取、RAG、live/ready 与 release smoke 均已观察通过。生产硬化余项不变，在 Lighthouse 和剩余运维门关闭前不得宣称完整 `ONLINE_READY`。
 
 ## Project owner copy local increment (2026-07-19)
 
-- Mode: `DIRECT / STANDARD / LOCAL`; status: `LOCAL_READY / AWAITING_RELEASE`。
+- Mode: `STAGED / CRITICAL / DEPLOYED`; status: `PRODUCTION_OBSERVED / LIMITED_LAUNCH`。
 - Scope: 五项目卡片状态、展开详情、FAQ、公开知识、待终审草稿、当前蓝图、验收文档和浏览器合同；统一用“项目负责人”，技术归属继续明确为“独立完成全部技术实现”。
 - Verification: failure-first 内容合同已验证；`npm test` 595/595、`npm run build` 21 routes、`npm run chat:eval` 54/54。1440x900 与 390x844 真实渲染均显示 5 个新状态，旧称呼不可见，横向溢出、console error 和 page error 均为 0。
-- Local knowledge: 首轮摄取更新 22 documents / 28 chunks，第二轮 40/40 全量跳过；46 条 RAG gold top-3 46/46，正负阈值通过。
-- Boundary: 尚未 push、未执行生产知识摄取、未部署；生产继续运行 `ff03c1d`，不把本地页面或本地知识结果写成线上事实。
+- Production release: `693e56b` 已进入 `origin/master`，并从 Git 冻结归档部署；`/opt/revolution/current` 及 Web、Worker、Edge 标签均指向 `/opt/revolution/releases/693e56b/revolution`。
+- Production knowledge: 首轮摄取更新 10 documents / 16 chunks，第二轮 40/40 全量跳过；生产总量 40 documents / 47 chunks，46 条 RAG gold top-1 36/46、top-3 46/46，正负阈值通过。
+- Public observation: 五个新状态全部可见，旧称呼不可见；1440x900 与 390x844 横向溢出、console error、page error 均为 0，live/ready、`/works` 和 release smoke 通过。
+- Boundary: 未调用真实 Chat、Bocha、Feishu、Alibaba Mail、SMTP/IMAP Provider；未删除旧 release 或持久卷。
 
 ## AI leadgen portfolio production release (2026-07-19)
 
 - Mode: `STAGED / CRITICAL / DEPLOYED`; status: `OBSERVED / LIMITED_LAUNCH`。
 - Scope: `/works#ai-leadgen`、`content/site-content.json` 中的项目与六个知识主题、公开知识 Hash 路由、RAG/Chat 评测、真实 Graphite 主图和双宽浏览器 smoke。
-- Release: `c90d153` 发布五项目页面与知识，`ff03c1d` 修正 AI leadgen 聚合问法的 RAG gold；`/opt/revolution/current` 已指向 `/opt/revolution/releases/ff03c1d/revolution`，Web、Worker 与 Edge 标签均指向该冻结 release。
-- Verification: `npm test` 595/595、`npm run build` 21 个路由、`npm run chat:eval` 54/54；公网 live/ready、`/works`、正式主图与 release smoke 均通过，主图 SHA256 与仓库一致。生产 RAG 为 top-1 38/46、top-3 46/46，正负阈值均通过。
+- Release: `c90d153` 发布五项目页面与知识，`ff03c1d` 修正 AI leadgen 聚合问法的 RAG gold，`693e56b` 统一五项目负责人称呼并成为当前生产 release。
+- Verification: `npm test` 595/595、`npm run build` 21 个路由、`npm run chat:eval` 54/54；公网 live/ready、`/works`、正式主图与 release smoke 均通过，主图 SHA256 与仓库一致。当前生产 RAG 为 top-1 36/46、top-3 46/46，正负阈值均通过。
 - Data: 首轮生产摄取新增 8 documents / 9 chunks，重复摄取与 `ff03c1d` 发布后的两轮摄取均为 0 更新、40 documents 跳过；生产总量为 40 documents / 47 chunks，migration 保持 001/002。
 - Boundary: 主图按确认原图使用；未调用 Chat、Bocha、飞书、阿里邮箱、SMTP/IMAP 或其他真实 Provider。作品集与知识上线不等于 `E:\Two` 源系统已生产部署，也不构成规模化获客成果。
 - Contract and evidence: `docs/superpowers/specs/2026-07-19-ai-leadgen-works-content-design.md`、`docs/superpowers/plans/2026-07-19-ai-leadgen-portfolio.md`、`docs/verify/ai-leadgen/ai-leadgen-closeout.md`。
