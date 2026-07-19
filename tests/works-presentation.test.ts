@@ -32,7 +32,7 @@ test("content agent uses the approved compact card and five-section detail contr
     project.summary,
     "面向企业的多模态内容创作系统，通过 GPT 式对话生成图片和视频，并持续沉淀 Prompt、Skill 与数字资产。",
   );
-  assert.equal(project.status, "唯一开发者 · 企业局域网已投入使用");
+  assert.equal(project.status, "项目负责人 · 企业局域网已投入使用");
   assert.deepEqual(project.capabilities, [
     "GPT 式创作",
     "Prompt 沉淀",
@@ -55,7 +55,7 @@ test("deep research uses the approved compact card and five-section detail contr
     project.summary,
     "本地优先的多 Agent 深度研究与报告系统，围绕研究问题完成方法发现、证据采集、横纵分析、质量审查与正式报告生成。",
   );
-  assert.equal(project.status, "唯一开发者 · 核心研究链可用");
+  assert.equal(project.status, "项目负责人 · 核心研究链可用");
   assert.deepEqual(project.capabilities, [
     "横纵研究",
     "证据台账",
@@ -100,7 +100,7 @@ test("AI leadgen uses the approved compact card and project-specific detail head
     project.summary,
     "面向外贸销售团队的 AI 获客运营系统，打通线索入池、官网信息补全、AI 价值评分、飞书协同、邮件触达与回信跟进，将分散的获客动作整合为可追踪、可协作的销售流程。",
   );
-  assert.equal(project.status, "唯一开发者 · 本地 MVP 真实链路已验证");
+  assert.equal(project.status, "项目负责人 · 本地 MVP 真实链路已验证");
   assert.deepEqual(project.capabilities, [
     "线索数据归一化",
     "官网信息富化",

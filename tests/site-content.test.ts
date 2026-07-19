@@ -22,22 +22,22 @@ const expectedSlugs = [
 const expectedProjects = {
   "content-agent": {
     name: "内容创作 Agent 系统",
-    status: "唯一开发者 · 企业局域网已投入使用",
+    status: "项目负责人 · 企业局域网已投入使用",
     actions: [],
   },
   "auto-operations": {
     name: "自动运营 Agent 系统",
-    status: "唯一开发者 · 已部署运行",
+    status: "项目负责人 · 已部署运行",
     actions: [],
   },
   "ai-leadgen": {
     name: "AI 外贸获客系统",
-    status: "唯一开发者 · 本地 MVP 真实链路已验证",
+    status: "项目负责人 · 本地 MVP 真实链路已验证",
     actions: [],
   },
   "deep-research": {
     name: "深度研究 Agent 系统",
-    status: "唯一开发者 · 核心研究链可用",
+    status: "项目负责人 · 核心研究链可用",
     actions: [
       {
         kind: "external",
@@ -48,7 +48,7 @@ const expectedProjects = {
   },
   "digital-morse": {
     name: "数字摩斯",
-    status: "唯一开发者 · 已上线 · 持续完善中",
+    status: "项目负责人 · 已上线 · 持续完善中",
     actions: [
       {
         kind: "external",
@@ -160,7 +160,7 @@ test("content agent leads with a concise operator pitch and solo technical deliv
   assert.ok(project.summary.length <= 90, "public project summary must stay quickly scannable");
   assert.equal(
     project.ownership,
-    "项目需求、产品方向和部分创意来自真实业务对接；摩斯是项目唯一开发者，负责将这些需求完整实现为可运行系统。",
+    "项目需求、产品方向和部分创意来自真实业务对接；摩斯是项目负责人，负责将这些需求完整实现为可运行系统，并独立完成全部技术实现。",
   );
   assert.match(project.futureDirection ?? "", /可审核、可回退的自进化 Agent/);
   assert.deepEqual(project.capabilities, [
@@ -184,7 +184,7 @@ test("content agent leads with a concise operator pitch and solo technical deliv
   assert.equal(project.details?.architecture.modules.length, 5);
   assert.equal(project.details?.implementation.contributions.length, 6);
   assert.match(project.details?.implementation.summary ?? "", /真实业务对接/);
-  assert.match(project.details?.implementation.summary ?? "", /唯一开发者/);
+  assert.match(project.details?.implementation.summary ?? "", /项目负责人/);
   assert.doesNotMatch(
     project.details?.implementation.summary ?? "",
     /独自提出全部业务|独立完成产品设计/,
@@ -202,7 +202,7 @@ test("auto operations publishes the approved controlled-workflow story", () => {
   assert.ok(project.summary.length <= 90, "public project summary must stay quickly scannable");
   assert.equal(
     project.ownership,
-    "业务需求、产品方向和部分创意来自真实业务对接；摩斯是项目唯一开发者，负责将这些输入完整实现为可运行系统。",
+    "业务需求、产品方向和部分创意来自真实业务对接；摩斯是项目负责人，负责将这些输入完整实现为可运行系统，并独立完成全部技术实现。",
   );
   assert.match(project.futureDirection ?? "", /可审核、可回退的运营策略 Agent/);
   assert.deepEqual(project.capabilities, [
@@ -225,7 +225,7 @@ test("auto operations publishes the approved controlled-workflow story", () => {
   assert.equal(project.details?.architecture.modules.length, 5);
   assert.equal(project.details?.implementation.contributions.length, 7);
   assert.match(project.details?.implementation.summary ?? "", /真实业务对接/);
-  assert.match(project.details?.implementation.summary ?? "", /唯一开发者/);
+  assert.match(project.details?.implementation.summary ?? "", /项目负责人/);
 
   const aiPlatform = project.techStack.find((group) => group.label === "AI 与平台");
   assert.deepEqual(aiPlatform?.items, [
@@ -272,7 +272,7 @@ test("AI leadgen publishes the approved full-funnel acquisition story", () => {
     project.summary,
     "面向外贸销售团队的 AI 获客运营系统，打通线索入池、官网信息补全、AI 价值评分、飞书协同、邮件触达与回信跟进，将分散的获客动作整合为可追踪、可协作的销售流程。",
   );
-  assert.equal(project.status, "唯一开发者 · 本地 MVP 真实链路已验证");
+  assert.equal(project.status, "项目负责人 · 本地 MVP 真实链路已验证");
   assert.deepEqual(project.capabilities, [
     "线索数据归一化",
     "官网信息富化",
@@ -333,7 +333,7 @@ test("deep research leads with the approved research and evidence-governance sto
   );
   assert.equal(
     project.ownership,
-    "项目方向与研究方法吸收实际使用反馈、架构评审和外部系统研究；摩斯是项目发起人和唯一开发者，负责全部技术实现。",
+    "项目方向与研究方法吸收实际使用反馈、架构评审和外部系统研究；摩斯是项目发起人兼项目负责人，并独立完成全部技术实现。",
   );
   assert.deepEqual(project.capabilities, [
     "横纵研究",
@@ -350,7 +350,7 @@ test("deep research leads with the approved research and evidence-governance sto
   assert.equal(project.details?.coreCapabilities.length, 7);
   assert.equal(project.details?.architecture.modules.length, 5);
   assert.equal(project.details?.implementation.contributions.length, 7);
-  assert.match(project.details?.implementation.summary ?? "", /唯一开发者/);
+  assert.match(project.details?.implementation.summary ?? "", /项目负责人/);
   assert.match(project.details?.implementation.futureDirection ?? "", /未来方向|Agent OS/);
   assert.deepEqual(project.actions, [
     {
@@ -459,7 +459,7 @@ test("keeps the approved global copy and four FAQ topics", () => {
   assert.match(siteContent.faq[0].question, /技术栈/);
   assert.match(siteContent.faq[1].question, /AI native/i);
   assert.match(siteContent.faq[2].question, /职责/);
-  assert.match(siteContent.faq[2].answer, /唯一开发者.*全部技术实现/);
+  assert.match(siteContent.faq[2].answer, /项目负责人.*全部技术实现/);
   assert.match(siteContent.faq[2].answer, /业务需求.*沟通/);
   assert.match(siteContent.faq[3].question, /快速了解/);
 });
@@ -468,7 +468,7 @@ test("publishes the Digital Morse live status without vendor-specific copy", () 
   const project = getProjectBySlug("digital-morse");
 
   assert.ok(project);
-  assert.equal(project.status, "唯一开发者 · 已上线 · 持续完善中");
+  assert.equal(project.status, "项目负责人 · 已上线 · 持续完善中");
   assert.doesNotMatch(
     JSON.stringify({
       status: project.status,
@@ -494,7 +494,7 @@ test("digital Morse leads with visitor value, solo delivery, and honest future s
   assert.ok(project.summary.length <= 90, "public project summary must stay quickly scannable");
   assert.equal(
     project.ownership,
-    "数字摩斯由摩斯发起；需求判断、产品方向和部分创意也会吸收招聘方、潜在客户、同行及真实业务沟通中的输入。摩斯是项目唯一开发者，负责全部技术实现。",
+    "数字摩斯由摩斯发起；需求判断、产品方向和部分创意也会吸收招聘方、潜在客户、同行及真实业务沟通中的输入。摩斯是项目负责人，并独立完成全部技术实现。",
   );
   assert.match(project.futureDirection ?? "", /未来.*语音.*视频.*长期记忆.*人工审核/);
   assert.deepEqual(project.capabilities, [
@@ -529,7 +529,7 @@ test("digital Morse leads with visitor value, solo delivery, and honest future s
   assert.equal(project.details?.coreCapabilities.length, 6);
   assert.equal(project.details?.architecture.modules.length, 5);
   assert.equal(project.details?.implementation.contributions.length, 6);
-  assert.match(project.details?.implementation.summary ?? "", /唯一开发者.*全部技术实现/);
+  assert.match(project.details?.implementation.summary ?? "", /项目负责人.*全部技术实现/);
   assert.match(project.details?.implementation.summary ?? "", /真实业务沟通/);
   assert.match(project.details?.implementation.futureDirection ?? "", /语音.*视频.*长期记忆.*人工审核/);
   assert.doesNotMatch(

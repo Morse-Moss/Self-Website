@@ -13,7 +13,7 @@
 - 模式：`STAGED / STANDARD / LOCAL`
 - 状态：`LOCAL_READY / KNOWLEDGE_RECONCILED`
 - 展示入口：`/works#auto-operations`
-- 公开状态文案：`唯一开发者 · 已部署运行`
+- 公开状态文案：`项目负责人 · 已部署运行`
 
 ## Display Contract
 
@@ -21,7 +21,7 @@
 - 展开层严格使用“项目简介、核心能力、系统架构、我的技术实现、技术栈”五段。
 - 主图为 `public/works/auto-operations/operations-workbench-design-2026-07-19.png`，尺寸 1440x1080，使用“界面设计稿 · 示例数据”角标。
 - AI 与平台技术栈不公开具体模型名称；发布动作保留预检、显式确认和状态回写，不宣传无人值守发布。
-- 业务需求、产品方向和部分创意来自真实业务对接；摩斯是项目唯一开发者，负责全部技术实现。
+- 业务需求、产品方向和部分创意来自真实业务对接；摩斯是项目负责人，并独立完成全部技术实现。
 
 ## Knowledge And Evaluation
 

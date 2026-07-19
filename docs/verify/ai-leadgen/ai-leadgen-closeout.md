@@ -7,7 +7,7 @@
 - 状态：`PRODUCTION_OBSERVED / LIMITED_LAUNCH / KNOWLEDGE_RECONCILED`
 - 展示入口：`https://aimorse.tech/works#ai-leadgen`
 - 生产 release：`ff03c1d`
-- 公开状态文案：`唯一开发者 · 本地 MVP 真实链路已验证`
+- 公开状态文案：`项目负责人 · 本地 MVP 真实链路已验证`
 
 ## Display Contract
 

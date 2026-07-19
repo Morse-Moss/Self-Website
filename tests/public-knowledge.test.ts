@@ -184,7 +184,7 @@ test('deep-research public knowledge leads with approved value and implementatio
 
   assert.ok(document);
   assert.match(document.content, /方法发现.*证据采集.*横纵分析/);
-  assert.match(document.content, /唯一开发者/);
+  assert.match(document.content, /项目负责人/);
   assert.match(document.content, /人工发布审批/);
   assert.doesNotMatch(document.content, /开源项目|验证证据|当前边界|采集时间|提交版本/);
 });
@@ -236,7 +236,7 @@ test('content-agent public knowledge leads with approved value and implementatio
   assert.ok(document);
   assert.match(document.content, /企业局域网并投入使用/);
   assert.match(document.content, /GPT Image 2、Seedance 2、Kling、Veo、Wan/);
-  assert.match(document.content, /项目唯一开发者/);
+  assert.match(document.content, /项目负责人/);
   assert.match(document.content, /可审核、可回退的自进化 Agent/);
   assert.doesNotMatch(document.content, /验证证据|当前边界|采集时间|提交版本|脱敏处理/);
 });
@@ -252,7 +252,7 @@ test('auto-operations public knowledge follows the approved controlled-workflow 
   assert.equal(topics.length, 6);
   assert.match(document.content, /数据发现、内容沉淀、AI 内容生产/);
   assert.match(document.content, /AutoTask.*PublishJob/);
-  assert.match(document.content, /唯一开发者.*全部技术实现/);
+  assert.match(document.content, /项目负责人.*全部技术实现/);
   assert.match(topics.map((topic) => topic.content).join('\n'), /未来方向/);
   assert.doesNotMatch(
     [document.content, ...topics.map((topic) => topic.content)].join('\n'),
@@ -297,7 +297,7 @@ test('digital-Morse public knowledge follows the approved resume story', () => {
   assert.equal(topics.length, 6);
   assert.match(document.content, /自由对话、JD 匹配和需求初诊/);
   assert.match(document.content, /BGE Embeddings.*pgvector/);
-  assert.match(document.content, /唯一开发者.*全部技术实现/);
+  assert.match(document.content, /项目负责人.*全部技术实现/);
   assert.match(topics.map((topic) => topic.content).join('\n'), /未来方向/);
   assert.doesNotMatch(
     [document.content, ...topics.map((topic) => topic.content)].join('\n'),

@@ -121,7 +121,7 @@ def inspect_viewport(
     expect(card).to_be_visible()
     expect(card.locator("#project-title-ai-leadgen")).to_be_visible()
     expect(card).to_contain_text(SUMMARY)
-    expect(card).to_contain_text("唯一开发者 · 本地 MVP 真实链路已验证")
+    expect(card).to_contain_text("项目负责人 · 本地 MVP 真实链路已验证")
     expect(card.get_by_text("真实运行界面", exact=True)).to_be_visible()
 
     capability_items = card.locator('ul[aria-label="AI 外贸获客系统能力"] li')

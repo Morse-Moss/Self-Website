@@ -155,7 +155,7 @@ def inspect_viewport(
     expect(card).to_contain_text(
         "嵌入个人作品集的 AI 数字分身系统，通过自由对话、JD 匹配和需求初诊"
     )
-    expect(card).to_contain_text("唯一开发者 · 已上线 · 持续完善中")
+    expect(card).to_contain_text("项目负责人 · 已上线 · 持续完善中")
     badge = card.get_by_text("产品界面 · 示例会话")
     expect(badge).to_be_visible()
     media = badge.locator("..")
@@ -201,7 +201,7 @@ def inspect_viewport(
         raise AssertionError(f"{name}: Digital Morse detail headings drifted")
     expect(details).to_contain_text("交互层")
     expect(details).to_contain_text("模型 Provider 生成")
-    expect(details).to_contain_text("我是项目唯一开发者，负责全部技术实现")
+    expect(details).to_contain_text("我是项目负责人，并独立完成全部技术实现")
     expect(details).to_contain_text("语音与视频表达")
 
     visible_copy = page.locator("body").inner_text()

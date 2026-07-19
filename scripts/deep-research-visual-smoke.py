@@ -45,7 +45,7 @@ def inspect_viewport(page: Page, base_url: str, name: str, width: int, height: i
     expect(card).to_be_visible()
     card.scroll_into_view_if_needed()
     expect(card).to_contain_text(SUMMARY)
-    expect(card).to_contain_text("唯一开发者 · 核心研究链可用")
+    expect(card).to_contain_text("项目负责人 · 核心研究链可用")
     summary = card.locator("p").filter(has_text=SUMMARY).first
     summary_metrics = summary.evaluate(
         """

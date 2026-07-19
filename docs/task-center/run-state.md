@@ -4,10 +4,18 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**S11-5E AI_LEADGEN_PRODUCTION_OBSERVED / LIMITED_LAUNCH**
+**S11-5F PROJECT_OWNER_COPY_LOCAL_READY / AWAITING_RELEASE**
 
 ## next_allowed_pointer
-当前生产实例已观察到真实 HTTPS、live/ready、release smoke、五项目公开页面与主图、管理员密码登录静态合同、邀请码管理产物、未登录 401、内容创作 Agent CTA 授权流程和历史真实 Provider 主链。AI 外贸获客系统的作品集页面与六主题公开知识已进入生产，源系统仍保持“本地 MVP 真实链路已验证”的公开状态。下一步可由管理员完成认证后的邀请码创建/兑换/停用验收，或进入监控/备份/edge 限流等硬化阶段；在 Lighthouse 和剩余运维门关闭前不得宣称完整 `ONLINE_READY`。
+当前生产实例继续运行 `ff03c1d`，线上五个项目仍显示旧称呼。本地已将五项目公开状态、详情、FAQ 和知识统一改为“项目负责人”，同时保留“独立完成全部技术实现”的技术归属；等待用户另行授权 push、生产知识摄取和部署。生产硬化余项不变，在 Lighthouse 和剩余运维门关闭前不得宣称完整 `ONLINE_READY`。
+
+## Project owner copy local increment (2026-07-19)
+
+- Mode: `DIRECT / STANDARD / LOCAL`; status: `LOCAL_READY / AWAITING_RELEASE`。
+- Scope: 五项目卡片状态、展开详情、FAQ、公开知识、待终审草稿、当前蓝图、验收文档和浏览器合同；统一用“项目负责人”，技术归属继续明确为“独立完成全部技术实现”。
+- Verification: failure-first 内容合同已验证；`npm test` 595/595、`npm run build` 21 routes、`npm run chat:eval` 54/54。1440x900 与 390x844 真实渲染均显示 5 个新状态，旧称呼不可见，横向溢出、console error 和 page error 均为 0。
+- Local knowledge: 首轮摄取更新 22 documents / 28 chunks，第二轮 40/40 全量跳过；46 条 RAG gold top-3 46/46，正负阈值通过。
+- Boundary: 尚未 push、未执行生产知识摄取、未部署；生产继续运行 `ff03c1d`，不把本地页面或本地知识结果写成线上事实。
 
 ## AI leadgen portfolio production release (2026-07-19)
 

@@ -110,7 +110,7 @@ def inspect_viewport(
     expect(card).to_be_visible()
     expect(card.locator("#project-title-auto-operations")).to_be_visible()
     expect(card).to_contain_text(SUMMARY)
-    expect(card).to_contain_text("唯一开发者 · 已部署运行")
+    expect(card).to_contain_text("项目负责人 · 已部署运行")
     expect(card.get_by_text("界面设计稿 · 示例数据", exact=True)).to_be_visible()
 
     capability_items = card.locator(
@@ -158,7 +158,7 @@ def inspect_viewport(
         expect(card.get_by_role("heading", name=heading, exact=True)).to_be_visible()
 
     expect(card).to_contain_text("AutoTask 与 PublishJob")
-    expect(card).to_contain_text("我是项目唯一开发者")
+    expect(card).to_contain_text("我是项目负责人")
     expect(card).to_contain_text("可审核、可回退的运营策略 Agent")
 
     card_text = card.inner_text()

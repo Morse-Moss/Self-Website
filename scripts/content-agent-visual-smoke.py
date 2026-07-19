@@ -116,7 +116,7 @@ def inspect_viewport(
     expect(card).to_be_visible()
     expect(card.locator("#project-title-content-agent")).to_be_visible()
     expect(card).to_contain_text(SUMMARY)
-    expect(card).to_contain_text("唯一开发者 · 企业局域网已投入使用")
+    expect(card).to_contain_text("项目负责人 · 企业局域网已投入使用")
     expect(card.get_by_text("界面设计稿 · 示例数据", exact=True)).to_be_visible()
 
     capability_items = card.locator(
@@ -201,7 +201,7 @@ def inspect_viewport(
     panel.get_by_role("button", name="关闭对话").click()
 
     expect(card).to_contain_text("GPT Image 2、Seedance 2、Kling、Veo、Wan")
-    expect(card).to_contain_text("我是项目唯一开发者")
+    expect(card).to_contain_text("我是项目负责人")
     expect(card).to_contain_text("可审核、可回退的自进化 Agent")
 
     horizontal_overflow = page.evaluate(
