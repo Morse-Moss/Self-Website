@@ -72,6 +72,13 @@
   overflow-wrap: anywhere;
 }
 
+.card[data-project-slug='digital-morse'] .mediaBadge {
+  top: var(--space-3);
+  right: var(--space-3);
+  bottom: auto;
+  left: auto;
+}
+
 .content {
   position: relative;
   display: flex;

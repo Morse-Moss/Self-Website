@@ -1,5 +1,35 @@
 # 数字摩斯作品集信息完善 Closeout
 
+## Latest Round: Concise Module
+
+- 日期：2026-07-19
+- 模式：`STAGED / STANDARD / LOCAL`
+- 状态：`LOCAL_READY / KNOWLEDGE_RECONCILED`
+- 本地验收入口：`http://127.0.0.1:3032/works#digital-morse`
+- 公开状态文案：`唯一开发者 · 已上线 · 持续完善中`
+- 折叠层：两行简介、5 个能力短词、短媒体角标和展开图标。
+- 展开层：项目简介、核心能力、系统架构、我的技术实现、技术栈五段。
+- 知识库：六个主题继续使用稳定 ID，gold 问法已同步新主题语义。
+- 生成模型与嵌入模型的具体名称、版本未写入作品集文案；生成链路使用模型无关的 Provider / Responses 表述，向量检索保留 BGE Embeddings 能力族。
+
+### Latest Verification
+
+- `npm test`：`570/570`，0 fail，0 skip。
+- `npm run build`：Next.js / TypeScript PASS，生成 19 个页面。
+- `py -3 scripts/digital-morse-visual-smoke.py http://127.0.0.1:3032`：1440x900 与 390x844 均完成折叠、展开、Hash、CTA 和预填；图片加载、横向溢出、console、page 与 HTTP error 均通过。
+- 主图角标经视觉复盘移至数字摩斯卡片右上空白区，避免遮挡示例界面内容。
+- 实现与验收阶段未执行 Provider 调用、知识摄取、生产数据库写入或部署；源码同步仅按最终 closeout 授权执行。
+
+### Latest Changed Surface
+
+- `content/site-content.json`：数字摩斯简介、状态、5 个短词、五段详情、六主题知识和主图角标。
+- `content/rag-eval.json`：数字摩斯 gold 问法与新知识主题对齐。
+- `components/works/ProjectCard.module.css`：数字摩斯媒体角标位置修正；并行已有展开态规则保持原样。
+- `scripts/digital-morse-visual-smoke.py`：双宽折叠/展开/详情/角标/CTA 合同。
+- `tests/site-content.test.ts`、`tests/public-knowledge.test.ts`、`tests/rag-eval-contract.test.ts`：数字摩斯内容与知识合同。
+- `tests/routes-contract.test.ts`、`tests/chat-ui-contract.test.ts`：同步到当前五段作品展示结构。
+- `content/drafts/system-digital-morse.md`：项目独立资料草稿，已同步本地展示。
+
 ## Outcome
 
 - 日期：2026-07-19

@@ -42,7 +42,7 @@ const expectedProjects = {
   },
   "digital-morse": {
     name: "数字摩斯",
-    status: "腾讯云生产已上线 · 持续完善中",
+    status: "唯一开发者 · 已上线 · 持续完善中",
     actions: [
       {
         kind: "external",
@@ -234,7 +234,7 @@ test("publishes only the two separately approved project media assets", () => {
   assert.equal(mediaProjects[1]?.media?.width, 576);
   assert.equal(mediaProjects[1]?.media?.height, 648);
   assert.match(mediaProjects[1]?.media?.evidence.runMode ?? "", /本地 production build/);
-  assert.match(mediaProjects[1]?.media?.label ?? "", /示例会话.*非生产访客数据/);
+  assert.equal(mediaProjects[1]?.media?.label, "产品界面 · 示例会话");
 });
 
 test("keeps the approved global copy and four FAQ topics", () => {
@@ -275,13 +275,19 @@ test("keeps the approved global copy and four FAQ topics", () => {
   assert.match(siteContent.faq[3].question, /快速了解/);
 });
 
-test("publishes the observed Digital Morse production status without stale launch claims", () => {
+test("publishes the Digital Morse live status without vendor-specific copy", () => {
   const project = getProjectBySlug("digital-morse");
 
   assert.ok(project);
-  assert.equal(project.status, "腾讯云生产已上线 · 持续完善中");
-  assert.match(project.caseStudy.evidence.join("\n"), /腾讯云.*生产环境已上线/);
-  assert.match(project.caseStudy.evidence.join("\n"), /live.*ready.*release smoke/i);
+  assert.equal(project.status, "唯一开发者 · 已上线 · 持续完善中");
+  assert.doesNotMatch(
+    JSON.stringify({
+      status: project.status,
+      details: project.details,
+      knowledgeTopics: project.knowledgeTopics,
+    }),
+    /腾讯云|GPT-5\.4|BAAI\/bge-small/i,
+  );
   assert.doesNotMatch(
     JSON.stringify(project),
     /网站尚未部署|真实 Provider 仅部分通过|不提供公开访问入口/,
@@ -294,18 +300,20 @@ test("digital Morse leads with visitor value, solo delivery, and honest future s
   assert.ok(project);
   assert.equal(
     project.summary,
-    "一套嵌入个人作品集的 AI 数字分身系统。访客可以直接与数字摩斯对话，了解项目、生成 JD 匹配报告或完成需求初诊，并获得带来源的可追溯回答。",
+    "嵌入个人作品集的 AI 数字分身系统，通过自由对话、JD 匹配和需求初诊，帮助访客快速了解项目与能力，并获得带来源的可追溯回答。",
   );
+  assert.ok(project.summary.length <= 90, "public project summary must stay quickly scannable");
   assert.equal(
     project.ownership,
-    "摩斯是项目发起人和唯一开发者；从作品集、RAG、对话工作流、管理后台到生产部署，全部技术实现均由摩斯独立完成。",
+    "数字摩斯由摩斯发起；需求判断、产品方向和部分创意也会吸收招聘方、潜在客户、同行及真实业务沟通中的输入。摩斯是项目唯一开发者，负责全部技术实现。",
   );
   assert.match(project.futureDirection ?? "", /未来.*语音.*视频.*长期记忆.*人工审核/);
   assert.deepEqual(project.capabilities, [
-    "自由对话 / JD 匹配 / 需求初诊",
-    "BGE + pgvector RAG",
-    "可追溯来源与受控联网",
-    "停止、重试与会话恢复",
+    "三类对话工作流",
+    "BGE + pgvector",
+    "可追溯来源",
+    "受控联网",
+    "停止与恢复",
   ]);
   assert.ok(project.media);
   assert.equal(
@@ -314,10 +322,8 @@ test("digital Morse leads with visitor value, solo delivery, and honest future s
   );
   assert.equal(
     project.media.label,
-    "本地验收截图 · 示例会话 · 非生产访客数据",
+    "产品界面 · 示例会话",
   );
-  assert.match(project.media.caption, /当前主界面/);
-  assert.match(project.media.caption, /不含真实访客或生产会话数据/);
   assert.deepEqual(project.askMorse, {
     label: "问数字摩斯",
     prompt: "请介绍数字摩斯的三种对话流程、RAG 与可靠性设计，以及摩斯独立完成的技术实现。",
@@ -326,8 +332,27 @@ test("digital Morse leads with visitor value, solo delivery, and honest future s
     project.knowledgeTopics?.map((topic) => topic.id),
     ["overview", "workflows", "knowledge", "reliability", "role", "roadmap"],
   );
-  assert.match(project.caseStudy.role, /唯一开发者.*全部技术实现/);
-  assert.match(project.caseStudy.boundaries.join("\n"), /语音.*视频.*长期记忆.*尚未实现/);
+  assert.deepEqual(
+    project.knowledgeTopics?.map((topic) => topic.title),
+    ["项目定位与价值", "使用流程", "核心架构", "关键技术实现", "个人技术贡献", "未来方向"],
+  );
+  assert.equal(project.details?.overview.length, 2);
+  assert.equal(project.details?.coreCapabilities.length, 6);
+  assert.equal(project.details?.architecture.modules.length, 5);
+  assert.equal(project.details?.implementation.contributions.length, 6);
+  assert.match(project.details?.implementation.summary ?? "", /唯一开发者.*全部技术实现/);
+  assert.match(project.details?.implementation.summary ?? "", /真实业务沟通/);
+  assert.match(project.details?.implementation.futureDirection ?? "", /语音.*视频.*长期记忆.*人工审核/);
+  assert.doesNotMatch(
+    JSON.stringify({
+      summary: project.summary,
+      status: project.status,
+      capabilities: project.capabilities,
+      details: project.details,
+      knowledgeTopics: project.knowledgeTopics,
+    }),
+    /验证证据|当前边界|采集时间|提交版本|运行方式|脱敏处理|腾讯云|GPT-5\.4|BAAI\/bge-small/i,
+  );
 });
 
 test("keeps all public JSON free of placeholders and private-source leakage", () => {

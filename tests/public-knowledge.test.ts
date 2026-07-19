@@ -171,6 +171,25 @@ test('content-agent public knowledge leads with approved value and implementatio
   assert.doesNotMatch(document.content, /验证证据|当前边界|采集时间|提交版本|脱敏处理/);
 });
 
+test('digital-Morse public knowledge follows the approved resume story', () => {
+  const documents = extractPublicKnowledge(loadSiteContent());
+  const document = documents.find((item) => item.id === 'project-digital-morse');
+  const topics = documents.filter((item) =>
+    item.id.startsWith('project-digital-morse-'),
+  );
+
+  assert.ok(document);
+  assert.equal(topics.length, 6);
+  assert.match(document.content, /自由对话、JD 匹配和需求初诊/);
+  assert.match(document.content, /BGE Embeddings.*pgvector/);
+  assert.match(document.content, /唯一开发者.*全部技术实现/);
+  assert.match(topics.map((topic) => topic.content).join('\n'), /未来方向/);
+  assert.doesNotMatch(
+    [document.content, ...topics.map((topic) => topic.content)].join('\n'),
+    /验证证据|当前边界|采集时间|提交版本|运行方式|脱敏处理|腾讯云|GPT-5\.4|BAAI\/bge-small/i,
+  );
+});
+
 test('extractPublicKnowledge excludes drafts, paths, media, actions, and sanitization metadata', () => {
   const content = loadSiteContent();
   content.projects[0].media = {

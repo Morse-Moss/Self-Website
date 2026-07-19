@@ -12,6 +12,7 @@ const portfolioLayoutPath = path.resolve('app/(portfolio)/layout.tsx');
 const worksLayoutPath = path.resolve('app/(portfolio)/works/layout.tsx');
 const pagePath = path.resolve('app/(portfolio)/page.tsx');
 const projectCardPath = path.resolve('components/works/ProjectCard.tsx');
+const caseStudyPath = path.resolve('components/works/CaseStudy.tsx');
 const openChatButtonPath = path.resolve('components/site/OpenChatButton.tsx');
 const scrollPath = path.resolve('lib/client/chat-scroll.ts');
 const chatContractPath = path.resolve('lib/contracts/chat.ts');
@@ -187,15 +188,17 @@ test('starter questions send immediately and pending assistants replace the empt
 test('project CTA opens Digital Morse with the approved content-agent question prefilled', () => {
   const component = readIfPresent(componentPath);
   const projectCard = readIfPresent(projectCardPath);
+  const caseStudy = readIfPresent(caseStudyPath);
   const openChatButton = readIfPresent(openChatButtonPath);
 
   assert.match(openChatButton, /prompt\?:\s*string/);
   assert.match(openChatButton, /new CustomEvent\(['"]morse-chat:open['"]/);
   assert.match(openChatButton, /detail:\s*\{\s*prompt\s*\}/);
-  assert.match(projectCard, /import OpenChatButton/);
-  assert.match(projectCard, /project\.askMorse/);
+  assert.doesNotMatch(projectCard, /import OpenChatButton|project\.askMorse/);
+  assert.match(caseStudy, /import OpenChatButton/);
+  assert.match(caseStudy, /project\.askMorse/);
   assert.match(
-    projectCard,
+    caseStudy,
     /<OpenChatButton[\s\S]*prompt=\{project\.askMorse\.prompt\}[\s\S]*project\.askMorse\.label/,
   );
   assert.match(component, /event\s+instanceof\s+CustomEvent/);

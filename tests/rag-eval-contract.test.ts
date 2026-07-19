@@ -39,7 +39,7 @@ test('RAG gold set covers every approved public document', () => {
   );
   assert.ok(cases.every((item) => item.query.trim().length > 0));
   assert.equal(
-    cases.find((item) => item.query === '数字摩斯现在如何访问，公开作品和实时对话分别需要什么条件？')
+    cases.find((item) => item.query === '数字摩斯解决什么问题，招聘方、潜在客户和同行能用它做什么？')
       ?.expectedDocumentId,
     'project-digital-morse-overview',
   );
