@@ -33,7 +33,7 @@
   },
   {
     "query": "自动运营 Agent 系统如何保持发布受控？",
-    "expectedDocumentId": "project-auto-operations"
+    "expectedDocumentId": "project-auto-operations-workflow"
   },
   {
     "query": "自动运营 Agent 面向谁，如何把分散的运营资料沉淀成内容资产？",
@@ -92,7 +92,7 @@
     "expectedDocumentId": "project-content-agent"
   },
   {
-    "query": "内容库、草稿工坊和发布中心怎么连接？",
+    "query": "自动运营 Agent 系统整体具备哪些数据发现、内容资产、AI 生产、任务编排和受控发布能力？",
     "expectedDocumentId": "project-auto-operations"
   },
   {

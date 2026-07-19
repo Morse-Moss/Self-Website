@@ -44,6 +44,21 @@ test('RAG gold set covers every approved public document', () => {
     ]),
   );
   assert.ok(cases.every((item) => item.query.trim().length > 0));
+  const expectedByQuery = new Map(
+    cases.map((item) => [item.query, item.expectedDocumentId]),
+  );
+  assert.equal(
+    expectedByQuery.get('自动运营 Agent 系统如何保持发布受控？'),
+    'project-auto-operations-workflow',
+  );
+  assert.equal(
+    expectedByQuery.get('自动运营 Agent 系统整体具备哪些数据发现、内容资产、AI 生产、任务编排和受控发布能力？'),
+    'project-auto-operations',
+  );
+  assert.ok(
+    cases.every((item) => !item.query.includes('草稿工坊')),
+    'RAG gold queries must use the current public auto-operations vocabulary',
+  );
   assert.equal(
     cases.find((item) => item.query === '数字摩斯解决什么问题，招聘方、潜在客户和同行能用它做什么？')
       ?.expectedDocumentId,
