@@ -2,20 +2,20 @@
 
 ## Outcome
 
-- 日期：2026-07-18 首发；2026-07-19 五项目、管理员邀请码管理与公开知识更新
+- 日期：2026-07-18 首发；2026-07-20 首页 Warp Tunnel、五项目与公开知识更新
 - 模式：`STAGED / CRITICAL / DEPLOYED`
 - 状态：`PRODUCTION_OBSERVED / LIMITED_LAUNCH`
 - 公网入口：`https://aimorse.tech`
-- 当前应用 release：`693e56b`
+- 当前应用 release：`44ed094`
 - 实例：腾讯云 Lighthouse 首尔 `lhins-0oly57x8`，公网 `43.133.68.202`
 
 ## Release And Runtime
 
-- `/opt/revolution/current` 指向 `/opt/revolution/releases/693e56b/revolution`；Web、Worker 与 Edge 的 Compose working directory 均指向该冻结 release。
+- `/opt/revolution/current` 指向 `/opt/revolution/releases/44ed094/revolution`；Web、Worker 与 Edge 的 Compose working directory 均指向该冻结 release。
 - `db`、`embedding`、`web` 为 healthy；`worker` 与 `edge` 为 running。
 - PostgreSQL 16 + pgvector 使用 TLS 和独立 admin/runtime/migration/ingest/backup 凭据。
 - migration 001/002 首次执行和幂等复验通过；grants 完成后 migration 角色不再拥有超级用户权限。
-- 公开知识共 40 documents / 47 chunks；本轮负责人称呼同步首轮生产摄取更新 10 documents / 16 chunks，第二轮为 0 document 更新、0 chunk 更新、40 documents 跳过。
+- 公开知识共 40 documents / 47 chunks；本轮生产摄取为 0 document 更新、0 chunk 更新、40 documents 跳过。
 - 首个生产邀请码已创建，但邀请码明文、管理员凭据、TOTP、Provider key、数据库密码和私钥不进入本证据或 Git。
 
 ## Public Observation
@@ -33,6 +33,7 @@
 - 生产管理员脚本包含管理密码与邀请码入口，不含动态验证码、`totpCode` 或 `inviteTotpCode`。
 - 受控真实 Provider smoke -> HTTP 200、4 个 delta、消息额度 30 -> 29；不保存原始 prompt、回答、header 或 key。
 - 生产 BGE + pgvector 的 46 条 gold 为 top-1 36/46、top-3 46/46；最低正例 `0.553473`、最高负例 `0.426972`，正负阈值均通过。
+- 首页 Warp Tunnel 已在生产域名完成 1440x900、390x844 与 reduced-motion 观察；`release:smoke`、live/ready 均通过，Web/Worker/Edge 近期错误关键词计数为 0。
 
 ## Browser Observation
 
@@ -41,7 +42,7 @@
 - 内容创作 Agent 正式图片在双宽均加载完成；从项目 CTA 进入、输入邀请码后，预填问题保留在输入框且未自动发送。
 - AI 外贸获客系统在 1440x900 与 390x844 均完成主图加载、展开详情、CTA 预填、零横向溢出和 console/page error 0 的生产浏览器检查。
 - 桌面和移动首屏未观察到控件重叠或不可读文字。
-- 生产域名 Lighthouse 未复测：本机没有 Lighthouse 可执行文件，离线 npm 缓存也不可用；依赖安装不在本阶段授权内。
+- 生产域名 Lighthouse 13.4.0：移动端 Performance 99；桌面端 Performance 99，FCP 0.2s、LCP 0.6s、TBT 70ms、CLS 0、Speed Index 1.0s。
 
 ## Network And Security
 
@@ -65,11 +66,13 @@
 - `c90d153`：发布 AI 外贸获客系统页面、真实 Graphite 主图、五段详情与六主题公开知识。
 - `ff03c1d`：将歧义的销售流程问法从聚合文档 gold 调整为已验证的技术栈聚合问法；生产 RAG 达到 top-3 46/46。
 - `693e56b`：将五项目卡片、详情、FAQ 和公开知识的“唯一开发者”统一调整为“项目负责人”，并保留“独立完成全部技术实现”的能力口径。
-- 本轮发布前全量测试 595/595、Chat eval 54/54、生产构建 21 routes；公网 live/ready、作品页、正式主图与 release smoke 均通过。
+- `e364f03` / `1ced025`：实现首页 Warp Tunnel 并以显式 merge commit 吸收到 `master`。
+- `44ed094`：收紧 S9 网络监控，仅接受 Next.js 生成的 favicon 指纹查询，消除导航取消导致的误报，同时继续拒绝任意查询参数。
+- 本轮发布前全量测试 601/601、生产构建 21 routes；完整生产 S9 连续两轮无 failures、console/page errors、外部请求或横向溢出；公网 live/ready、作品页、正式主图与 release smoke 均通过。
 
 ## Residual Boundaries
 
 - 当前为有限生产发布，不标记完整 `ONLINE_READY`。
-- 仍需生产 Lighthouse `>= 90`、监控、托管备份与恢复演练、入口层速率/连接限制、真实 Bocha/Feishu smoke 和 moderate dependency advisory 处置。
+- 仍需监控、托管备份与恢复演练、入口层速率/连接限制、真实 Bocha/Feishu smoke、moderate dependency advisory 处置及更多国内网络可达性复核。
 - 线上 Web release 只来自冻结提交，没有复制本地脏工作区。五项目页面、正式主图和 40 documents / 47 chunks 公开知识已进入生产。
 - 本次发布未调用真实 Chat、Bocha、Feishu、Alibaba Mail、SMTP/IMAP Provider，未创建生产邀请码明文，也未清理旧 release 或持久卷；认证后的邀请码完整生命周期仍需管理员验收。

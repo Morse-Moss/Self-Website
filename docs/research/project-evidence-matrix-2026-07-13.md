@@ -217,7 +217,7 @@
 
 - 2026-07-19 主图与双视口截图来自本地 production build 和受控 fixture，不是生产访客或真实对话数据，也没有调用 Provider。
 - 腾讯云生产站已通过 HTTPS、live/ready、release smoke 和受控真实 Chat Provider smoke；真实 Bocha、真实 Feishu、监控、托管备份和独立 edge 限流仍需单独验收。
-- 生产 Web 当前运行 `693e56b`；五项目卡片、详情、FAQ 和公开知识均已统一使用“项目负责人”，并保留独立完成全部技术实现口径。生产公开知识总量为 40 documents / 47 chunks，46 条 gold 全部进入 top-3。
+- 生产 Web 当前运行 `44ed094`；首页 Warp Tunnel 已完成生产双宽观察，生产 Lighthouse 移动端与桌面端 Performance 均为 99。五项目卡片、详情、FAQ 和公开知识均已统一使用“项目负责人”，并保留独立完成全部技术实现口径。生产公开知识总量为 40 documents / 47 chunks，46 条 gold 全部进入 top-3。
 - 语音、视频、跨 Session 长期记忆和自动知识更新尚未实现，不能写成当前能力。
 - `content/drafts/**` 未经摩斯终审，不属于公开知识。
 

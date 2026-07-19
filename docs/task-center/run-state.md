@@ -4,17 +4,25 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**S11-5F PROJECT_OWNER_COPY_PRODUCTION_OBSERVED / LIMITED_LAUNCH**
+**S11-5G WARP_TUNNEL_PRODUCTION_OBSERVED / LIMITED_LAUNCH**
 
 ## next_allowed_pointer
-当前生产实例运行 `693e56b`，五项目公开状态、详情、FAQ 和知识已统一使用“项目负责人”，同时保留“独立完成全部技术实现”的技术归属。公网双宽、知识摄取、RAG、live/ready 与 release smoke 均已观察通过。生产硬化余项不变，在 Lighthouse 和剩余运维门关闭前不得宣称完整 `ONLINE_READY`。
+当前生产实例运行 `44ed094`，首页 Warp Tunnel、五项目公开状态、详情、FAQ 和知识均已上线。公网双宽、知识摄取、RAG、live/ready、release smoke 及生产 Lighthouse 移动端/桌面端 99 均已观察通过。生产硬化余项仍包括监控、托管备份与恢复、edge 流量限制、真实 Bocha/Feishu smoke、moderate advisory 处置和更多国内网络可达性复核；关闭前不得宣称完整 `ONLINE_READY`。
+
+## Homepage Warp Tunnel production release (2026-07-20)
+
+- Mode: `STAGED / CRITICAL / DEPLOYED`; status: `PRODUCTION_OBSERVED / LIMITED_LAUNCH`。
+- Release: `e364f03` 由 merge commit `1ced025` 吸收到 `master`，S9 favicon 竞态修复为 `44ed094`；本地与 `origin/master` 均对齐，`/opt/revolution/current` 及 Web、Worker、Edge working directory 均指向 `/opt/revolution/releases/44ed094/revolution`。
+- Verification: `npm test` 601/601，`npm run build` 21 routes；完整生产 S9 连续两轮无 failures、console/page errors、外部请求或横向溢出；生产 Lighthouse 13.4.0 移动端与桌面端 Performance 均为 99。
+- Production: migration 001/002、grants 与 ingest 通过，0 更新、40 documents 跳过；live/ready、release smoke 通过，Web/Worker/Edge 近期错误关键词计数为 0。
+- Boundary: 未调用真实 Chat、Bocha 或 Feishu Provider；未清理旧 release 或持久卷；监控、托管备份与恢复、edge 流量限制、moderate advisory 和更多国内网络可达性仍待完成。
 
 ## Project owner copy local increment (2026-07-19)
 
 - Mode: `STAGED / CRITICAL / DEPLOYED`; status: `PRODUCTION_OBSERVED / LIMITED_LAUNCH`。
 - Scope: 五项目卡片状态、展开详情、FAQ、公开知识、待终审草稿、当前蓝图、验收文档和浏览器合同；统一用“项目负责人”，技术归属继续明确为“独立完成全部技术实现”。
 - Verification: failure-first 内容合同已验证；`npm test` 595/595、`npm run build` 21 routes、`npm run chat:eval` 54/54。1440x900 与 390x844 真实渲染均显示 5 个新状态，旧称呼不可见，横向溢出、console error 和 page error 均为 0。
-- Production release: `693e56b` 已进入 `origin/master`，并从 Git 冻结归档部署；`/opt/revolution/current` 及 Web、Worker、Edge 标签均指向 `/opt/revolution/releases/693e56b/revolution`。
+- Production release（该里程碑）: `693e56b` 已进入 `origin/master`，并从 Git 冻结归档部署；当时 `/opt/revolution/current` 及 Web、Worker、Edge 标签均指向 `/opt/revolution/releases/693e56b/revolution`。
 - Production knowledge: 首轮摄取更新 10 documents / 16 chunks，第二轮 40/40 全量跳过；生产总量 40 documents / 47 chunks，46 条 RAG gold top-1 36/46、top-3 46/46，正负阈值通过。
 - Public observation: 五个新状态全部可见，旧称呼不可见；1440x900 与 390x844 横向溢出、console error、page error 均为 0，live/ready、`/works` 和 release smoke 通过。
 - Boundary: 未调用真实 Chat、Bocha、Feishu、Alibaba Mail、SMTP/IMAP Provider；未删除旧 release 或持久卷。
@@ -23,7 +31,7 @@
 
 - Mode: `STAGED / CRITICAL / DEPLOYED`; status: `OBSERVED / LIMITED_LAUNCH`。
 - Scope: `/works#ai-leadgen`、`content/site-content.json` 中的项目与六个知识主题、公开知识 Hash 路由、RAG/Chat 评测、真实 Graphite 主图和双宽浏览器 smoke。
-- Release: `c90d153` 发布五项目页面与知识，`ff03c1d` 修正 AI leadgen 聚合问法的 RAG gold，`693e56b` 统一五项目负责人称呼并成为当前生产 release。
+- Release: `c90d153` 发布五项目页面与知识，`ff03c1d` 修正 AI leadgen 聚合问法的 RAG gold，`693e56b` 统一五项目负责人称呼并成为该里程碑生产 release；当前生产版本见 `current_pointer`。
 - Verification: `npm test` 595/595、`npm run build` 21 个路由、`npm run chat:eval` 54/54；公网 live/ready、`/works`、正式主图与 release smoke 均通过，主图 SHA256 与仓库一致。当前生产 RAG 为 top-1 36/46、top-3 46/46，正负阈值均通过。
 - Data: 首轮生产摄取新增 8 documents / 9 chunks，重复摄取与 `ff03c1d` 发布后的两轮摄取均为 0 更新、40 documents 跳过；生产总量为 40 documents / 47 chunks，migration 保持 001/002。
 - Boundary: 主图按确认原图使用；未调用 Chat、Bocha、飞书、阿里邮箱、SMTP/IMAP 或其他真实 Provider。作品集与知识上线不等于 `E:\Two` 源系统已生产部署，也不构成规模化获客成果。
@@ -47,7 +55,7 @@
 - Verification PASS: 生产 BGE + pgvector 的 36 条 gold 为 top-1 28/36、top-3 36/36；最低正例 `0.527623`、最高负例 `0.420975`，正负阈值均通过。公网 live/ready、作品页和四张正式主图均为 HTTP 200，release smoke 与相关容器健康。本轮未调用真实 Chat Provider。
 - Runtime PASS: PostgreSQL/pgvector、CPU BGE、Next.js Web、Worker 与 Caddy 均运行；DB、Embedding、Web healthy，内部端口仍未映射公网。
 - Browser PASS: 1440x900 与 390x844 均无横向溢出，正式图片加载完成，控制台 error 0；从内容创作 Agent CTA 进入、输入邀请码后，预填问题保留在输入框且未自动发送。`b8d6d88` 上的真实 Provider 对话已完整返回并展示公开来源。
-- Residual: 生产 Lighthouse 未复测；监控、托管备份、独立 edge 速率/连接限制、真实 Bocha/Feishu 和 moderate dependency advisory 处置仍未完成；其余工作区改动和未跟踪证据未纳入生产。
+- Residual（截至该里程碑）: 当时生产 Lighthouse 未复测；监控、托管备份、独立 edge 速率/连接限制、真实 Bocha/Feishu 和 moderate dependency advisory 处置仍未完成；其余工作区改动和未跟踪证据未纳入生产。
 - Knowledge reconciliation: README、`CLAUDE.md`、腾讯云运行手册、本运行状态与 S11 生产证据按当前 release 同步；Codex durable memory 未获用户授权，不更新。
 
 ## S11-5B Tencent production deployment (2026-07-18, superseded by S11-5C)
