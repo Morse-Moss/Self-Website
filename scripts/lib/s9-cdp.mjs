@@ -361,7 +361,10 @@ export function createNetworkMonitor({ targetOrigin }) {
     }
     return sameTargetEndpoint(url)
       && url.pathname === '/icon.svg'
-      && url.search === ''
+      && (
+        url.search === ''
+        || /^\?icon\.[A-Za-z0-9_-]+\.svg$/.test(url.search)
+      )
       && url.hash === '';
   };
   const isTargetNavigationIconPath = (value) => {
@@ -460,10 +463,8 @@ export function createNetworkMonitor({ targetOrigin }) {
           && request?.targetUrl === expectedAbortedDocument?.targetUrl;
         const isExpectedNavigationIconAbort = type === 'Other'
           && request?.isNavigationIcon === true
-          && expectedAbortedDocument !== null
           && params.canceled === true
-          && params.errorText === 'net::ERR_ABORTED'
-          && request?.loaderId === expectedAbortedDocument?.loaderId;
+          && params.errorText === 'net::ERR_ABORTED';
         const isExpectedRetiredResourceAbort = type !== 'Document'
           && request !== undefined
           && request.isNavigationIconPath !== true

@@ -1918,6 +1918,61 @@ test('network monitor ignores only the active navigation favicon abort', async (
   assert.doesNotMatch(JSON.stringify(monitor.snapshot()), /version|private|icon/);
 });
 
+test('network monitor ignores an exact current-document favicon cancellation', async () => {
+  const { createNetworkMonitor } = await loadHelpers();
+  const monitor = createNetworkMonitor({ targetOrigin: 'http://127.0.0.1:3010' });
+
+  monitor.beginNavigation('/works');
+  monitor.handle('Network.requestWillBeSent', {
+    loaderId: 'loader-current',
+    request: { url: 'http://127.0.0.1:3010/works' },
+    requestId: 'document-current',
+    type: 'Document',
+  });
+  monitor.handle('Network.requestWillBeSent', {
+    loaderId: 'loader-current',
+    request: { url: 'http://127.0.0.1:3010/icon.svg' },
+    requestId: 'icon-current',
+    type: 'Other',
+  });
+  monitor.handle('Network.loadingFailed', {
+    canceled: true,
+    errorText: 'net::ERR_ABORTED',
+    requestId: 'icon-current',
+    type: 'Other',
+  });
+
+  assert.deepEqual(monitor.snapshot().failures, []);
+});
+
+test('network monitor ignores the Next-versioned favicon canceled with a retired document', async () => {
+  const { createNetworkMonitor } = await loadHelpers();
+  const monitor = createNetworkMonitor({ targetOrigin: 'http://127.0.0.1:3010' });
+
+  monitor.beginNavigation('/');
+  monitor.handle('Network.requestWillBeSent', {
+    loaderId: 'loader-old',
+    request: { url: 'http://127.0.0.1:3010/' },
+    requestId: 'document-old',
+    type: 'Document',
+  });
+  monitor.handle('Network.requestWillBeSent', {
+    loaderId: 'loader-old',
+    request: { url: 'http://127.0.0.1:3010/icon.svg?icon.1z5tp9-bb1htd.svg' },
+    requestId: 'next-versioned-icon',
+    type: 'Other',
+  });
+  monitor.beginNavigation('/works');
+  monitor.handle('Network.loadingFailed', {
+    canceled: true,
+    errorText: 'net::ERR_ABORTED',
+    requestId: 'next-versioned-icon',
+    type: 'Other',
+  });
+
+  assert.deepEqual(monitor.snapshot().failures, []);
+});
+
 test('network monitor reports document statuses and safe HTTP failures', async () => {
   const { createNetworkMonitor } = await loadHelpers();
   const monitor = createNetworkMonitor({ targetOrigin: 'http://127.0.0.1:3010' });
