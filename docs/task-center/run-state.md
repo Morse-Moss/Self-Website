@@ -13,11 +13,11 @@
 
 - Mode: `STAGED / CRITICAL / DEPLOYED`；状态：`OBSERVED / LIMITED_LAUNCH`。
 - Release: `/opt/revolution/current` 指向 `/opt/revolution/releases/4f3d885/revolution`。Web、Worker 与 Edge 未因本轮知识同步切换 release；发布只使用冻结提交，没有从脏工作区复制文件。
-- Content/Data PASS: 数字摩斯生产 RAG 已按 7 个稳定文档 ID 定向同步 `60738e1` 的内容。全库 21 documents / 24 chunks，数字摩斯 7 documents / 8 chunks；幂等复验 0 document 更新、0 chunk 更新、7 documents 跳过，migration 仍为 001/002。
-- Verification PASS: 数字摩斯 7/7 定向 RAG 评测进入 top-3，最低正例 `0.693913`、最高负例 `0.420975`，正负阈值均通过；公网 live/ready 均为 HTTP 200，相关容器健康。本轮未调用真实 Chat Provider。
+- Content/Data PASS: 数字摩斯生产 RAG 已按 7 个稳定文档 ID 定向同步 `60738e1`，内容创作 Agent 生产 RAG 已按 7 个稳定文档 ID 定向同步 `e90b27b`。全库 21 documents / 24 chunks，两项目各 7 documents / 8 chunks；两组幂等复验均为 0 document 更新、0 chunk 更新、7 documents 跳过，migration 仍为 001/002。
+- Verification PASS: 数字摩斯 7/7、内容创作 Agent 9/9 定向 RAG 评测均进入 top-3；内容创作 Agent 为 8/9 top-1，最低正例 `0.564173`、最高负例 `0.420975`，正负阈值均通过。公网 live/ready、作品页均为 HTTP 200，release smoke 与相关容器健康。本轮未调用真实 Chat Provider。
 - Runtime PASS: PostgreSQL/pgvector、CPU BGE、Next.js Web、Worker 与 Caddy 均运行；DB、Embedding、Web healthy，内部端口仍未映射公网。
 - Browser PASS: 1440x900 与 390x844 均无横向溢出，正式图片加载完成，控制台 error 0；从内容创作 Agent CTA 进入、输入邀请码后，预填问题保留在输入框且未自动发送。`b8d6d88` 上的真实 Provider 对话已完整返回并展示公开来源。
-- Residual: 生产 Lighthouse 未复测；监控、托管备份、独立 edge 速率/连接限制、真实 Bocha/Feishu 和 moderate dependency advisory 处置仍未完成。数字摩斯提交 `60738e1` 的知识已进入生产 RAG，紧凑展示尚未随本轮知识同步切换 Web release；其余工作区改动和未跟踪证据未纳入生产。
+- Residual: 生产 Lighthouse 未复测；监控、托管备份、独立 edge 速率/连接限制、真实 Bocha/Feishu 和 moderate dependency advisory 处置仍未完成。数字摩斯 `60738e1` 与内容创作 Agent `e90b27b` 的知识已进入生产 RAG，紧凑展示尚未随知识同步切换 Web release；其余工作区改动和未跟踪证据未纳入生产。
 - Knowledge reconciliation: README、`CLAUDE.md`、腾讯云运行手册、本运行状态与 S11 生产证据按当前 release 同步；Codex durable memory 未获用户授权，不更新。
 
 ## S11-5B Tencent production deployment (2026-07-18, superseded by S11-5C)

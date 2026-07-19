@@ -117,6 +117,6 @@
   },
   {
     "query": "想做电商内容生产，摩斯有哪些系统经验？",
-    "expectedDocumentId": "project-content-agent"
+    "expectedDocumentId": "project-content-agent-role"
   }
 ]

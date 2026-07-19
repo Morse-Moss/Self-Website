@@ -96,3 +96,11 @@
 
 - 独立 reviewer 对 `1211252..edec187` 中的 Content Agent 相关 delta 给出 `PASS`，未发现 blocker；Digital Morse 与 Deep Research 的并行提交已明确排除。
 - reviewer 核对了蓝图 §21、最终内容源、五段详情、展开布局、两套 smoke 的失败传播和四张截图一致性。唯一 FOLLOW-UP 是聚焦 smoke 的禁用审计词扫描发生在展开前；展开详情仍由作品展示、路由内容合同单测与完整 S9 共同覆盖，当前公开页面不存在这些章节，不阻塞收口。
+
+## Production Knowledge Sync Addendum (2026-07-19)
+
+- 生产 Web、Worker 与 Edge 继续运行冻结 release `4f3d885`；本次只使用独立 ingest 角色，将 `e90b27b` 中 `project-content-agent*` 的 7 个固定文档 ID 定向同步到生产 RAG。
+- 首次定向摄取更新 7 documents / 8 chunks，幂等复验为 0 document 更新、0 chunk 更新、7 documents 跳过；全库保持 21 documents / 24 chunks，没有删除或覆盖其他项目文档。
+- 数据断言确认 7 个主题统一链接 `/works#content-agent`，局域网投用、具体模型和唯一开发者口径已进入 chunks，验证证据、当前边界、采集时间、提交版本、运行方式和脱敏处理等审计式文案未进入生产知识。
+- 生产 BGE + pgvector 定向评测 9/9 进入 top-3、8/9 为 top-1；最低正例 `0.564173`，最高负例 `0.420975`，正负阈值均通过。
+- 公网 live、ready、作品页均为 HTTP 200，release smoke 返回 `{"ok":true}`，DB、Embedding 与 Web healthy；本次未调用真实 Chat Provider，也未切换 release 或重启常驻服务。

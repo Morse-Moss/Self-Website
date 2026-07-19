@@ -2,7 +2,7 @@
 
 ## Outcome
 
-- 日期：2026-07-18 首发；2026-07-19 内容与数字摩斯知识更新
+- 日期：2026-07-18 首发；2026-07-19 内容、数字摩斯与内容创作 Agent 知识更新
 - 模式：`STAGED / CRITICAL / DEPLOYED`
 - 状态：`PRODUCTION_OBSERVED / LIMITED_LAUNCH`
 - 公网入口：`https://aimorse.tech`
@@ -15,7 +15,7 @@
 - `db`、`embedding`、`web` 为 healthy；`worker` 与 `edge` 为 running。
 - PostgreSQL 16 + pgvector 使用 TLS 和独立 admin/runtime/migration/ingest/backup 凭据。
 - migration 001/002 首次执行和幂等复验通过；grants 完成后 migration 角色不再拥有超级用户权限。
-- 公开知识共 21 documents / 24 chunks；数字摩斯为 7 documents / 8 chunks。数字摩斯定向摄取幂等复验为 0 document 更新、0 chunk 更新、7 documents 跳过。
+- 公开知识共 21 documents / 24 chunks；数字摩斯和内容创作 Agent 各为 7 documents / 8 chunks。两组定向摄取幂等复验均为 0 document 更新、0 chunk 更新、7 documents 跳过。
 - 首个生产邀请码已创建，但邀请码明文、管理员凭据、TOTP、Provider key、数据库密码和私钥不进入本证据或 Git。
 
 ## Public Observation
@@ -60,5 +60,5 @@
 
 - 当前为有限生产发布，不标记完整 `ONLINE_READY`。
 - 仍需生产 Lighthouse `>= 90`、监控、托管备份与恢复演练、入口层速率/连接限制、真实 Bocha/Feishu smoke 和 moderate dependency advisory 处置。
-- 线上 Web release 只来自冻结提交，没有复制本地脏工作区。生产运行 `4f3d885`；数字摩斯提交 `60738e1` 的 7 个知识文档已定向同步到生产 RAG，Web、Worker 与 Edge 未随本次同步切换。
+- 线上 Web release 只来自冻结提交，没有复制本地脏工作区。生产运行 `4f3d885`；数字摩斯 `60738e1` 与内容创作 Agent `e90b27b` 各 7 个知识文档已定向同步到生产 RAG，Web、Worker 与 Edge 未随本次同步切换。
 - 本次知识同步未调用真实 Chat Provider，未创建 PR，也未清理旧 release、上传包或持久卷。
