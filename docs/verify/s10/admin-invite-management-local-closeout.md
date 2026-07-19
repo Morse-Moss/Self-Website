@@ -1,7 +1,7 @@
 # S10 管理员邀请码管理本地验收账本
 
 > 日期：2026-07-19
-> 状态：`LOCAL_READY / AWAITING_MAINLINE_ABSORPTION`
+> 状态：`PRODUCTION_OBSERVED / LIMITED_LAUNCH`
 > Worktree：`E:\Revolution\.worktrees\admin-invite-management`
 > 分支：`codex/admin-invite-management`
 > 基线：`master@1211252`
@@ -31,7 +31,7 @@
 - 最终 `npm run visual:s10` Mock E2E：20 个场景全部 PASS。
 - 视口：1440x900、390x844；登录、导出、邀请码工具和管理台均无横向溢出，console error、page error 均为 0。
 - 本地 ignored 证据目录：`tmp/admin-password-e2e-final/`，共 9 张截图；已人工检查桌面/移动密码登录、桌面密码导出及桌面/移动邀请码工具。
-- 全量测试：574 total / 512 pass / 7 fail / 55 skip。7 个失败与进入 worktree 时的基线相同：6 个作品集精简线合同漂移，1 个因本 worktree 没有 `.env.local` 而缺少 `DATABASE_URL`；相关失败文件相对基线 `1211252` 没有本分支改动。
+- 合并当前 `master` 并修正浏览器静态来源断言后，显式本地 PostgreSQL 的最终全量测试为 589/589 PASS、0 fail、0 skip；生产构建为 20 routes，最终 Mock E2E 为 20/20。
 - 合规审计：PASS。管理员/访客权限隔离、精确 Origin、Strict Session、五次锁定、服务端权限和无密钥提交边界保持不变。
 - 质量/安全审计：PASS。输错导出密码只拒绝本次导出且不注销有效 Session；创建和停用邀请码继续要求有效管理员 Session；开放 blocker 为 0。
 
@@ -39,5 +39,5 @@
 
 - 一次性数据库已销毁；`.next/`、`node_modules/`、`tmp/` 均受 Git ignore 保护。
 - 本轮没有读取或修改生产密钥，没有生成生产邀请码，没有调用真实 Provider。
-- 功能提交 `50a7663` 与密码简化提交 `48d13b9` 均尚未进入 `master`，未 push、未部署。当前腾讯云 release `b15be68` 的 `/admin` 仍只有既有复盘、badcase 和导出能力。
-- 只有在主线吸收并部署冻结 release 后，才能按 `docs/runbooks/tencent-lighthouse.md` 将生产邀请码管理标记为已观察。
+- 功能提交 `50a7663`、密码简化提交 `48d13b9` 与运维文档提交 `7f165a6` 已由 merge commit `c3f1ec6` 吸收到 `master`、push 并部署。公网 `/admin`、未登录邀请码 API 401、密码流程静态合同、live/ready 与 release smoke 已观察通过。
+- 发布验收没有读取生产管理员密码，没有创建邀请码明文，也没有调用真实 Provider；认证后的创建、兑换、用量更新和停用按 `docs/runbooks/tencent-lighthouse.md` 由管理员继续验收。

@@ -4,10 +4,20 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**S11-5C PRODUCTION_OBSERVED / LIMITED_LAUNCH**
+**S11-5D ADMIN_INVITES_PRODUCTION_OBSERVED / LIMITED_LAUNCH**
 
 ## next_allowed_pointer
-当前生产实例已观察到真实 HTTPS、live/ready、release smoke、四项目公开页面与主图、内容创作 Agent CTA 授权流程和历史真实 Provider 主链。下一步只允许从另一条开发线冻结新的明确提交后再发布，或进入监控/备份/edge 限流等硬化阶段；在 Lighthouse 和剩余运维门关闭前不得宣称完整 `ONLINE_READY`。
+当前生产实例已观察到真实 HTTPS、live/ready、release smoke、四项目公开页面与主图、管理员密码登录静态合同、邀请码管理产物、未登录 401、内容创作 Agent CTA 授权流程和历史真实 Provider 主链。下一步可由管理员完成认证后的邀请码创建/兑换/停用验收，或进入监控/备份/edge 限流等硬化阶段；在 Lighthouse 和剩余运维门关闭前不得宣称完整 `ONLINE_READY`。
+
+## S11-5D admin invite production release (2026-07-19)
+
+- Mode: `STAGED / CRITICAL / DEPLOYED`；状态：`OBSERVED / LIMITED_LAUNCH`。
+- Release: `c3f1ec6` 吸收 `50a7663`、`48d13b9` 与 `7f165a6` 后进入 `origin/master`，并从 `git archive` 冻结包发布；功能切换时 `/opt/revolution/current` 指向 `/opt/revolution/releases/c3f1ec6/revolution`，未复制根工作区脏改动。
+- Runtime PASS: migration 仍为 001/002，grants 成功，ingest 为 0 documents / 0 chunks 更新、33 documents 跳过；DB、Embedding、Web healthy，Worker 与 Caddy running。
+- Verification PASS: 本地 PostgreSQL 全量测试 589/589、0 fail、0 skip；本地与服务器生产构建均生成 20 routes；合并后 Mock E2E 20/20，1440x900 与 390x844 的 9 张截图已人工检查，console/page error 为 0。
+- Public Observation PASS: `/admin` HTTP 200，`/api/admin/invites` 未登录 401，生产 HTML/9 个脚本包含管理密码与邀请码入口且不含动态验证码、`totpCode` 或 `inviteTotpCode`；live/ready 与 release smoke 通过，Web/Worker/Caddy 发布后 3 分钟日志的错误关键词计数均为 0。
+- Security Boundary: 未读取或输出生产管理员密码、Provider key、数据库密码或私钥；未创建生产邀请码明文，未调用真实 Chat/Bocha/Feishu。认证后的邀请码创建、兑换、用量更新和停用仍需管理员按 runbook 完成。
+- Knowledge reconciliation: README、`CLAUDE.md`、蓝图、两份生产 runbook、本运行状态与 S10/S11 证据按真实发布状态同步；Codex durable memory 未获用户授权，不更新。
 
 ## S11-5C production content release (2026-07-19)
 
@@ -49,13 +59,13 @@
 - Knowledge reconciliation PASS: README、`CLAUDE.md`、工程准则、唯一需求源、S11 架构源、production runbook 与 Task Center 已按最终代码和证据对齐；历史阶段证据保持原口径。用户未明确要求更新 Codex durable memory，本轮未写记忆扩展。
 - Delivery boundary: 本阶段只生成本地镜像与本地提交；未 push、未部署、未调用真实 GPT/博查/飞书，既有 3010 服务未重启。
 
-## S10 admin invite local increment (2026-07-19)
+## S10 admin invite local increment (2026-07-19, superseded by S11-5D)
 
 - Mode: `DIRECT / CRITICAL / LOCAL`；状态：`LOCAL_READY / AWAITING_MAINLINE_ABSORPTION`。
 - Outcome: 本地隔离分支 `codex/admin-invite-management` 以 `50a7663` 增加管理员生成、复制一次、状态列表和停用邀请码，以 `48d13b9` 将管理员操作简化为密码登录、有效 Session 内直接管理邀请码、导出时重输密码。
 - Security override: 本段覆盖下方 S10 历史段落中的 TOTP 运行要求。当前管理员认证保留 scrypt、五次失败锁定、30 分钟 HttpOnly/Secure/SameSite=Strict Session、精确 Origin、访客/管理员隔离和服务端权限校验；导出密码复验与登录共享锁定状态，失败不注销仍有效的 Session。
 - Verification PASS: focused 103/103、生产构建 20 routes、Mock E2E 20/20；1440x900 与 390x844 登录/邀请码工具及桌面导出弹窗已人工检查，overflow、console error、page error 均为 0。全量测试为 574 total / 512 pass / 7 fail / 55 skip，7 个失败均为进入 worktree 时已有的作品集合同/缺少本地数据库配置基线。
-- Delivery boundary: 两个提交均未进入 `master`、未 push、未部署，当前生产 release `b15be68` 不包含邀请码管理或密码登录简化。生产观察必须等主线吸收和单独部署授权。
+- Delivery boundary（当时）: 两个提交均未进入 `master`、未 push、未部署；该边界已由上方 S11-5D 的主线吸收、push 和生产观察取代。
 
 ## S10 smart customer service amendment(2026-07-15)
 

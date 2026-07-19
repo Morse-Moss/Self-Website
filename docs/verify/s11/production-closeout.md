@@ -2,16 +2,16 @@
 
 ## Outcome
 
-- 日期：2026-07-18 首发；2026-07-19 四项目页面与生产知识全量更新
+- 日期：2026-07-18 首发；2026-07-19 四项目与管理员邀请码管理更新
 - 模式：`STAGED / CRITICAL / DEPLOYED`
 - 状态：`PRODUCTION_OBSERVED / LIMITED_LAUNCH`
 - 公网入口：`https://aimorse.tech`
-- Web 运行修订：`d83b46f`
+- 管理员与邀请码功能基线：`c3f1ec6`
 - 实例：腾讯云 Lighthouse 首尔 `lhins-0oly57x8`，公网 `43.133.68.202`
 
 ## Release And Runtime
 
-- `/opt/revolution/current` 指向 `/opt/revolution/releases/d83b46f/revolution`。
+- 功能切换时 `/opt/revolution/current` 指向 `/opt/revolution/releases/c3f1ec6/revolution`；后续仅文档同步 release 以服务器实时 `readlink` 为准。
 - `db`、`embedding`、`web` 为 healthy；`worker` 与 `edge` 为 running。
 - PostgreSQL 16 + pgvector 使用 TLS 和独立 admin/runtime/migration/ingest/backup 凭据。
 - migration 001/002 首次执行和幂等复验通过；grants 完成后 migration 角色不再拥有超级用户权限。
@@ -29,6 +29,8 @@
 - `http://aimorse.tech` -> 301 到主域 HTTPS。
 - `https://www.aimorse.tech/works` -> 301 到 `https://aimorse.tech/works`。
 - `MORSE_RELEASE_BASE_URL=https://aimorse.tech npm run release:smoke` -> `{"ok":true}`，同时验证 HSTS、frame、content-type、referrer、permissions policy 和无 `X-Powered-By`。
+- `GET https://aimorse.tech/admin` -> HTTP 200；未登录 `GET /api/admin/invites` -> HTTP 401。
+- 生产管理员脚本包含管理密码与邀请码入口，不含动态验证码、`totpCode` 或 `inviteTotpCode`。
 - 受控真实 Provider smoke -> HTTP 200、4 个 delta、消息额度 30 -> 29；不保存原始 prompt、回答、header 或 key。
 
 ## Browser Observation
@@ -57,11 +59,12 @@
 - `b15be68`：收紧公开证据口径，并用 `pendingPromptRef` 修复 CTA 在邀请码授权期间丢失预填问题的竞态。
 - `d3f8d77`：发布自动运营作品集模块，并将四项目页面、详情和知识集合纳入同一冻结 release。
 - `d83b46f`：修正自动运营主题拆分后的 RAG gold 漂移；生产 BGE + pgvector 评测达到 top-3 36/36。
-- 部署前 S11 生产合同 10/10、migration 集成 13/13；`b15be68` 独立归档全量测试 557/557、定向测试 48/48、生产构建 19 routes 与敏感信息扫描均通过。
+- `c3f1ec6`：吸收管理员邀请码管理与密码登录简化；生产 `/admin` 和邀请码 API 已更新，动态验证码字段退出生产脚本。
+- 本轮发布前 PostgreSQL 全量测试 589/589、Mock E2E 20/20、本地与服务器生产构建 20 routes；公网 live/ready、release smoke、未登录 401 与生产脚本合同均通过。
 
 ## Residual Boundaries
 
 - 当前为有限生产发布，不标记完整 `ONLINE_READY`。
 - 仍需生产 Lighthouse `>= 90`、监控、托管备份与恢复演练、入口层速率/连接限制、真实 Bocha/Feishu smoke 和 moderate dependency advisory 处置。
-- 线上 Web release 只来自冻结提交，没有复制本地脏工作区。生产运行 `d83b46f`；四项目页面、正式主图和各 7 个稳定知识文档均已进入生产。
-- 本次内容与知识发布未调用真实 Chat Provider，未创建 PR，也未清理旧 release、上传包或持久卷。
+- 线上 Web release 只来自冻结提交，没有复制本地脏工作区。管理员与邀请码功能运行 `c3f1ec6`；四项目页面、正式主图和各 7 个稳定知识文档继续在生产。
+- 本次发布未调用真实 Chat Provider，未创建生产邀请码明文，也未清理旧 release 或持久卷；认证后的邀请码完整生命周期仍需管理员验收。
