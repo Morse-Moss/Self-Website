@@ -10,6 +10,8 @@ const sourceFilename =
   'auto-operations-railway-login-desktop-1440-2026-07-13.png';
 const digitalMorseAssetDirectory = path.join(publicRoot, 'works', 'digital-morse');
 const digitalMorseFilename = 'digital-morse-main-local-2026-07-19.png';
+const deepResearchAssetDirectory = path.join(publicRoot, 'works', 'deep-research');
+const deepResearchFilename = 'operator-workbench-example.png';
 
 async function listFiles(directory: string): Promise<string[]> {
   let entries;
@@ -47,5 +49,14 @@ test('publishes one approved Digital Morse interface screenshot', async () => {
   assert.deepEqual(files.map((file) => path.basename(file)), [digitalMorseFilename]);
   const image = await readFile(path.join(digitalMorseAssetDirectory, digitalMorseFilename));
   assert.ok(image.length > 10_000);
+  assert.deepEqual([...image.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+});
+
+test('publishes one approved deep-research Operator Workbench screenshot', async () => {
+  const files = await listFiles(deepResearchAssetDirectory);
+
+  assert.deepEqual(files.map((file) => path.basename(file)), [deepResearchFilename]);
+  const image = await readFile(path.join(deepResearchAssetDirectory, deepResearchFilename));
+  assert.ok(image.length > 100_000);
   assert.deepEqual([...image.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
 });

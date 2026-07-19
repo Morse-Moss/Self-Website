@@ -196,6 +196,7 @@ test('source navigation keeps the active chat while project evidence opens separ
   const visitorSource = source.slice(visitorStart, mobileStart);
 
   assert.ok(visitorStart >= 0 && mobileStart > visitorStart);
+  assert.match(visitorSource, /请根据站内公开资料简要介绍 Morse/u);
   assert.match(visitorSource, /localStaticCount/u);
   assert.match(visitorSource, /inlineLocalHref/u);
   assert.match(visitorSource, /inlineStaticCount/u);

@@ -43,47 +43,51 @@ function positionOf(source: string, value: string): number {
   return position;
 }
 
-test('ProjectCard renders real media, an honest empty state, and at most the content-owned actions', () => {
+test('ProjectCard renders the concise project row and keeps actions out of the collapsed state', () => {
   const source = readSource(files.projectCard);
 
   assert.match(source, /import Image from ['"]next\/image['"]/);
   assert.doesNotMatch(source, /import Link from ['"]next\/link['"]/);
   assert.match(source, /project\.status/);
   assert.match(source, /project\.name/);
-  assert.match(source, /project\.type/);
   assert.match(source, /project\.summary/);
+  assert.match(source, /project\.capabilities\.map/);
   assert.match(source, /project\.media/);
   assert.match(source, /<Image[\s\S]*src=\{project\.media\.src\}[\s\S]*width=\{project\.media\.width\}[\s\S]*height=\{project\.media\.height\}[\s\S]*alt=\{project\.media\.alt\}/);
   assert.match(source, /role=['"]img['"]/);
   assert.match(source, /aria-label=\{`\$\{project\.name\}暂无可公开截图`\}/);
   assert.match(source, />截图待补<\/div>/);
-  assert.match(source, /project\.actions\.map/);
-  assert.doesNotMatch(source, /action\.kind\s*===\s*['"]case['"]|<Link/);
-  assert.match(source, /project\.actions\.map\(\(action\) =>\s*\(\s*<a/);
-  assert.match(source, /<a[\s\S]*target=['"]_blank['"][\s\S]*rel=['"]noreferrer['"]/);
+  assert.match(source, /mediaBadge/);
+  assert.match(source, /aria-expanded=\{expanded\}/);
+  assert.match(source, /aria-controls=\{detailsId\}/);
+  assert.doesNotMatch(
+    source,
+    /project\.type|project\.ownership|project\.futureDirection|project\.actions\.map|OpenChatButton|<a(?:\s|>)/,
+  );
   assert.doesNotMatch(source, /slice\s*\(/);
 });
 
-test('CaseStudy keeps the six evidence sections in exact order and leads with honest media evidence', () => {
+test('CaseStudy renders five resume sections and keeps actions after the content', () => {
   const source = readSource(files.caseStudy);
-  const headings = ['问题', '我的角色', '关键判断', '真实结构', '验证证据', '当前边界'];
+  const headings = ['项目简介', '核心能力', '系统架构', '我的技术实现', '技术栈'];
   const positions = headings.map((heading) => positionOf(source, heading));
 
   assert.deepEqual(positions, [...positions].sort((left, right) => left - right));
-  assert.ok(positionOf(source, 'project.media') < positions[0]);
-  assert.match(source, /import Image from ['"]next\/image['"]/);
-  assert.match(source, /<figcaption>[\s\S]*project\.media\.caption/);
-  for (const field of ['capturedAt', 'commit', 'runMode', 'sanitization']) {
-    assert.match(source, new RegExp(`project\\.media\\.evidence\\.${field}`));
-  }
+  assert.match(source, /import OpenChatButton/);
+  assert.match(source, /project\.details \?\?/);
+  assert.match(source, /details\.overview\.map/);
+  assert.match(source, /details\.coreCapabilities\.map/);
+  assert.match(source, /details\.architecture\.modules\.map/);
+  assert.match(source, /details\.implementation\.contributions\.map/);
+  assert.match(source, /project\.techStack\.map/);
   assert.match(source, /<dl/);
-  assert.match(source, /role=['"]img['"]/);
-  assert.match(source, /aria-label=\{`\$\{project\.name\}暂无可公开截图`\}/);
-  assert.match(source, />截图待补<\/div>/);
-  assert.doesNotMatch(source, /action\.kind\s*!==\s*['"]case['"]|externalActions/);
-  assert.match(source, /project\.actions\.length/);
+  assert.match(source, /project\.askMorse/);
   assert.match(source, /project\.actions\.map/);
-  assert.match(source, /<Image[\s\S]*unoptimized/);
+  assert.match(source, /<a[\s\S]*target="_blank"[\s\S]*rel="noreferrer"/);
+  assert.doesNotMatch(
+    source,
+    /project\.media|capturedAt|commit|runMode|sanitization|验证证据|当前边界/,
+  );
 });
 
 test('home leads with Morse, one embedded chat, and the shared shell controls', () => {
@@ -164,7 +168,7 @@ test('works index is an unfiltered four-project gallery driven by the public con
   };
 
   assert.match(source, /siteContent\.works\.title/);
-  assert.match(source, /siteContent\.works\.intro/);
+  assert.doesNotMatch(source, /siteContent\.works\.intro/);
   assert.match(source, /getAllProjects\(\)/);
   assert.match(source, /<ProjectGallery\s+projects=\{projects\}\s*\/>/);
   assert.doesNotMatch(source, /filter|search|sort/i);
@@ -275,33 +279,25 @@ test('pending gallery correction is cancelled by subsequent user scroll intent o
 test('controlled project cards expose real hash targets and accessible embedded details', () => {
   const card = readSource(files.projectCard);
   const caseStudy = readSource(files.caseStudy);
-  const problemPosition = positionOf(caseStudy, '问题');
-  const rolePosition = positionOf(caseStudy, '我的角色');
-  const stackPosition = positionOf(caseStudy, '技术栈');
-  const decisionsPosition = positionOf(caseStudy, '关键判断');
-  const structurePosition = positionOf(caseStudy, '真实结构');
-  const evidencePosition = positionOf(caseStudy, '验证证据');
-  const boundariesPosition = positionOf(caseStudy, '当前边界');
+  const headings = ['项目简介', '核心能力', '系统架构', '我的技术实现', '技术栈'];
+  const positions = headings.map((heading) => positionOf(caseStudy, heading));
 
   assert.match(card, /<article[\s\S]*id=\{project\.slug\}[\s\S]*data-project-slug=\{project\.slug\}/);
   assert.match(card, /aria-expanded=\{expanded\}/);
   assert.match(card, /aria-controls=\{detailsId\}/);
-  assert.match(card, /event\.stopPropagation\(\)/);
+  assert.match(card, /target\.closest\(['"]a, button, \[data-project-details\]['"]\)/);
   assert.match(card, /project\.capabilities\.map/);
-  assert.match(card, /project\.actions\.map[\s\S]*<a/);
   assert.match(card, /detailsMounted \? \([\s\S]*<CaseStudy[\s\S]*detailsId=\{detailsId\}/);
   assert.doesNotMatch(card, /expanded \? \(\s*<CaseStudy/);
   assert.match(caseStudy, /id=\{detailsId\}/);
   assert.match(caseStudy, /role=['"]region['"]/);
   assert.match(caseStudy, /aria-labelledby=\{labelledBy\}/);
-  assert.match(caseStudy, /<h2>\{project\.name\}<\/h2>/);
+  assert.doesNotMatch(caseStudy, /<h2>\{project\.name\}<\/h2>/);
   assert.match(caseStudy, /project\.techStack\.map/);
-  assert.ok(problemPosition < rolePosition);
-  assert.ok(rolePosition < stackPosition);
-  assert.ok(stackPosition < decisionsPosition);
-  assert.ok(decisionsPosition < structurePosition);
-  assert.ok(structurePosition < evidencePosition);
-  assert.ok(evidencePosition < boundariesPosition);
+  assert.match(caseStudy, /project\.askMorse/);
+  assert.match(caseStudy, /project\.actions\.map[\s\S]*<a/);
+  assert.deepEqual(positions, [...positions].sort((left, right) => left - right));
+  assert.doesNotMatch(caseStudy, /验证证据|当前边界|采集时间|提交版本|运行方式|脱敏处理/);
 });
 
 test('project details keep a cancellable presence until the row transition finishes', () => {
@@ -329,7 +325,7 @@ test('project details keep a cancellable presence until the row transition finis
   assert.match(card, /if \(expanded \|\| event\.propertyName !== ['"]grid-template-rows['"]\)/);
 });
 
-test('project card layout stays expanded through detail exit without a grid row gap', () => {
+test('project card layout keeps stable desktop and mobile gaps through detail exit', () => {
   const card = readSource(files.projectCard);
   const cardStyles = readSource(files.projectCardStyles);
   const desktopCardRule = cardStyles.match(/\.card\s*\{([\s\S]*?)\n\}/);
@@ -340,15 +336,12 @@ test('project card layout stays expanded through detail exit without a grid row 
   assert.match(card, /const layoutExpanded = expanded \|\| detailsMounted;/);
   assert.match(card, /data-expanded=\{layoutExpanded\}/);
   assert.match(card, /aria-expanded=\{expanded\}/);
-  assert.match(card, /\{expanded \? ['"]收起详情['"] : ['"]展开详情['"]\}/);
+  assert.match(card, /aria-label=\{`\$\{expanded \? ['"]收起['"] : ['"]展开['"]\}\$\{project\.name\}详情`\}/);
   assert.ok(desktopCardRule, 'missing desktop project-card layout rule');
   assert.ok(mobileCardRule, 'missing mobile project-card layout rule');
-  assert.match(desktopCardRule[1], /column-gap:\s*var\(--space-5\)/);
-  assert.match(desktopCardRule[1], /row-gap:\s*0/);
-  assert.doesNotMatch(desktopCardRule[1], /(?:^|\s)gap:/);
-  assert.match(mobileCardRule[1], /column-gap:\s*var\(--space-4\)/);
-  assert.match(mobileCardRule[1], /row-gap:\s*0/);
-  assert.doesNotMatch(mobileCardRule[1], /(?:^|\s)gap:/);
+  assert.match(desktopCardRule[1], /gap:\s*var\(--space-6\)/);
+  assert.match(mobileCardRule[1], /gap:\s*var\(--space-4\)/);
+  assert.match(cardStyles, /\.details\s*\{[\s\S]*grid-column:\s*1\s*\/\s*-1/);
 });
 
 test('legacy case routes validate slugs and redirect without rendering independent details', () => {

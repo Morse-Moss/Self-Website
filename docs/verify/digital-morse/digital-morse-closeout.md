@@ -1,6 +1,56 @@
 # 数字摩斯作品集信息完善 Closeout
 
-## Outcome
+## Latest Production Absorption
+
+- 日期：2026-07-19；模式：`STAGED / CRITICAL / DEPLOYED`。
+- 生产 release：`d83b46f`；`/works#digital-morse`、展开详情与正式主图均已上线并返回 HTTP 200。
+- 生产知识：7 documents / 8 chunks，统一链接 `/works#digital-morse`；全库第二次摄取 33/33 跳过。
+- 全量评测：生产 BGE + pgvector 的 36 条 gold 为 top-3 36/36；本次未调用真实 Chat Provider。
+
+## Historical Production Knowledge Sync
+
+- 日期：2026-07-19
+- 模式：`STAGED / CRITICAL / DEPLOYED`
+- 状态：`PRODUCTION_RAG_OBSERVED / KNOWLEDGE_RECONCILED`
+- 范围：只更新生产对话知识库中的数字摩斯 7 个稳定文档 ID；Web、Worker 与 Edge 继续运行冻结 release `4f3d885`，未切换整站 release。
+- 内容源：`60738e1` 中的 `content/site-content.json` 与 `lib/server/public-knowledge.ts`。
+- 生产结果：数字摩斯 7 documents / 8 chunks；全库保持 21 documents / 24 chunks。
+- 定向评测：7/7 进入 top-3，最低正例分数 `0.693913`，最高负例分数 `0.420975`，正负阈值均通过。
+- 幂等复验：0 documents 更新、0 chunks 更新、7 documents 跳过。
+- 运行观察：公网 live/ready 均为 HTTP 200；DB、Embedding 与 Web healthy，Worker 与 Edge running。
+- 本次未调用真实 Chat Provider，也未把具体生成模型版本或云厂商表述写入数字摩斯知识分块。
+
+## Historical Round: Concise Module
+
+- 日期：2026-07-19
+- 模式：`STAGED / STANDARD / LOCAL`
+- 状态：`LOCAL_READY / KNOWLEDGE_RECONCILED`
+- 本地验收入口：`http://127.0.0.1:3032/works#digital-morse`
+- 公开状态文案：`唯一开发者 · 已上线 · 持续完善中`
+- 折叠层：两行简介、5 个能力短词、短媒体角标和展开图标。
+- 展开层：项目简介、核心能力、系统架构、我的技术实现、技术栈五段。
+- 知识库：六个主题继续使用稳定 ID，gold 问法已同步新主题语义。
+- 生成模型与嵌入模型的具体名称、版本未写入作品集文案；生成链路使用模型无关的 Provider / Responses 表述，向量检索保留 BGE Embeddings 能力族。
+
+### Latest Verification
+
+- `npm test`：`570/570`，0 fail，0 skip。
+- `npm run build`：Next.js / TypeScript PASS，生成 19 个页面。
+- `py -3 scripts/digital-morse-visual-smoke.py http://127.0.0.1:3032`：1440x900 与 390x844 均完成折叠、展开、Hash、CTA 和预填；图片加载、横向溢出、console、page 与 HTTP error 均通过。
+- 主图角标经视觉复盘移至数字摩斯卡片右上空白区，避免遮挡示例界面内容。
+- 该本地实现与验收阶段未执行 Provider 调用、知识摄取、生产数据库写入或部署；后续生产知识同步结果以上方记录为准。
+
+### Latest Changed Surface
+
+- `content/site-content.json`：数字摩斯简介、状态、5 个短词、五段详情、六主题知识和主图角标。
+- `content/rag-eval.json`：数字摩斯 gold 问法与新知识主题对齐。
+- `components/works/ProjectCard.module.css`：数字摩斯媒体角标位置修正；并行已有展开态规则保持原样。
+- `scripts/digital-morse-visual-smoke.py`：双宽折叠/展开/详情/角标/CTA 合同。
+- `tests/site-content.test.ts`、`tests/public-knowledge.test.ts`、`tests/rag-eval-contract.test.ts`：数字摩斯内容与知识合同。
+- `tests/routes-contract.test.ts`、`tests/chat-ui-contract.test.ts`：同步到当前五段作品展示结构。
+- `content/drafts/system-digital-morse.md`：项目独立资料草稿，已同步本地展示。
+
+## Historical Local Outcome
 
 - 日期：2026-07-19
 - 模式：`STAGED / STANDARD / LOCAL`
@@ -20,7 +70,7 @@
 - 唯一公开媒体为 `public/works/digital-morse/digital-morse-main-local-2026-07-19.png`。
 - 卡片首层显示“本地验收截图 · 示例会话 · 非生产访客数据”。
 - 截图来自本地 production build 与受控 fixture，不包含真实访客、生产会话、邀请码、密钥、内部地址或 Provider payload。
-- 本轮未调用聊天、搜索或生成 Provider，未写生产数据库。
+- 该本地媒体验收轮未调用聊天、搜索或生成 Provider，也未写生产数据库。
 
 ## Knowledge And Conversation
 
@@ -47,11 +97,11 @@
 
 四张截图均只使用本地 fixture 驱动访问与历史状态；验收脚本不发送聊天消息，不调用 Provider。
 
-## Git And Release Boundary
+## Historical Local Git And Release Boundary
 
-- 数字摩斯信息完善已形成提交 `7c4c2a0` 并位于本地与远端 `master`；该提交只吸收数字摩斯范围，没有吸收其他线程或不明归属文件。
-- 生产运行 `b15be68`，尚未包含 `7c4c2a0`；远端提交不等于已部署。
-- 本地验收阶段未 push、未部署、未创建 PR；后续并行收尾已将该提交同步到 `origin/master`。下一次发布仍必须从冻结提交独立验收，不能复制剩余脏工作区。
+- 数字摩斯紧凑展示与知识内容已形成提交 `60738e1` 并进入 `origin/master`；该提交只吸收数字摩斯范围，没有吸收其他线程或不明归属文件。
+- 生产 Web 运行 `4f3d885`，未切换到 `60738e1`；生产 RAG 已按 7 个稳定文档 ID 定向同步 `60738e1` 的数字摩斯资料。
+- 下一次 Web 发布仍必须从冻结提交独立验收，不能复制剩余脏工作区。
 
 ## Review Gate
 

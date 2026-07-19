@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>自动运营 Agent 系统 - 示例工作台</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { width: 1440px; height: 1080px; margin: 0; overflow: hidden; }
+    body {
+      background: #0b0d10;
+      color: #f5f5f3;
+      font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+      font-size: 18px;
+      letter-spacing: 0;
+    }
+    .canvas { display: grid; grid-template-columns: 238px 1fr; width: 100%; height: 100%; }
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      padding: 30px 22px;
+      border-right: 1px solid #2a3038;
+      background: #111419;
+    }
+    .brand { padding: 2px 10px 28px; }
+    .brand small { color: #ff6979; font-weight: 700; font-size: 13px; }
+    .brand strong { display: block; margin-top: 7px; font-size: 25px; }
+    .nav { display: grid; gap: 8px; }
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-height: 48px;
+      padding: 0 12px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      color: #9da3ad;
+    }
+    .nav-item i { display: grid; width: 26px; height: 26px; place-items: center; border: 1px solid #3a414b; border-radius: 4px; color: #d3d7dd; font-style: normal; font-size: 12px; }
+    .nav-item.active { border-color: #ff4d5f; background: #201519; color: #ffffff; }
+    .nav-item.active i { border-color: #ff4d5f; color: #ff6979; }
+    .side-status { margin-top: auto; padding: 18px 12px 4px; border-top: 1px solid #2a3038; color: #9da3ad; font-size: 14px; line-height: 1.7; }
+    .side-status b { color: #3fcf8e; }
+    .main { display: grid; grid-template-rows: 92px 1fr; min-width: 0; }
+    .topbar { display: flex; align-items: center; justify-content: space-between; padding: 0 38px; border-bottom: 1px solid #2a3038; background: #0f1216; }
+    .title small { color: #9da3ad; font-size: 14px; }
+    .title h1 { margin: 5px 0 0; font-size: 28px; line-height: 1.2; }
+    .top-actions { display: flex; align-items: center; gap: 12px; }
+    .pill { padding: 9px 13px; border: 1px solid #343b45; border-radius: 6px; color: #c6cad0; font-size: 14px; }
+    .pill.sample { border-color: #5d4630; background: #221a12; color: #f0b35a; }
+    .content { display: grid; grid-template-rows: 118px 232px 1fr; gap: 20px; min-height: 0; padding: 28px 38px 34px; }
+    .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+    .metric { padding: 19px 20px; border: 1px solid #2a3038; border-radius: 6px; background: #14181e; }
+    .metric .label { color: #9da3ad; font-size: 14px; }
+    .metric .value { display: flex; align-items: baseline; justify-content: space-between; margin-top: 10px; }
+    .metric strong { font-size: 31px; }
+    .metric em { color: #727985; font-style: normal; font-size: 13px; }
+    .metric:nth-child(1) strong { color: #4ea7ff; }
+    .metric:nth-child(2) strong { color: #f5f5f3; }
+    .metric:nth-child(3) strong { color: #f0b35a; }
+    .metric:nth-child(4) strong { color: #3fcf8e; }
+    .panel { min-width: 0; border: 1px solid #2a3038; border-radius: 6px; background: #12161b; }
+    .panel-head { display: flex; align-items: center; justify-content: space-between; min-height: 58px; padding: 0 20px; border-bottom: 1px solid #2a3038; }
+    .panel-head h2 { margin: 0; font-size: 17px; }
+    .panel-head span { color: #8f96a1; font-size: 13px; }
+    .flow { display: grid; grid-template-columns: minmax(0, 1fr) 40px minmax(0, 1fr) 40px minmax(0, 1fr) 40px minmax(0, 1fr) 40px minmax(0, 1fr); align-items: center; gap: 8px; height: 172px; padding: 24px 22px; }
+    .step { display: grid; min-height: 98px; padding: 15px 12px; align-content: center; border: 1px solid #343b45; border-radius: 5px; background: #171c22; }
+    .step b { color: #ffffff; font-size: 16px; }
+    .step small { margin-top: 8px; color: #8f96a1; font-size: 12px; line-height: 1.5; }
+    .step.highlight { border-color: #ff4d5f; background: #21161a; }
+    .step.confirm { border-color: #6a4e2b; background: #201a13; }
+    .arrow { color: #626a75; text-align: center; font-size: 22px; }
+    .lower { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(320px, .8fr); gap: 20px; min-height: 0; }
+    .tasks { display: grid; grid-template-rows: 58px repeat(3, 1fr); min-height: 0; }
+    .task { display: grid; grid-template-columns: 1.5fr .85fr .8fr .7fr; align-items: center; gap: 12px; padding: 0 20px; border-top: 1px solid #242a31; }
+    .task:first-of-type { border-top: 0; }
+    .task b { font-size: 15px; }
+    .task span { color: #969da8; font-size: 13px; }
+    .tag { justify-self: start; padding: 7px 10px; border: 1px solid #3b434e; border-radius: 4px; color: #cbd0d7 !important; }
+    .tag.green { border-color: #2b7358; color: #62dfa7 !important; }
+    .tag.amber { border-color: #73562e; color: #f0b35a !important; }
+    .tag.blue { border-color: #315f87; color: #71b9ff !important; }
+    .health { display: grid; grid-template-rows: 58px auto 1fr; min-height: 0; }
+    .health-summary { display: flex; align-items: center; gap: 18px; padding: 22px 20px; border-bottom: 1px solid #242a31; }
+    .health-ring { display: grid; width: 76px; height: 76px; place-items: center; border: 10px solid #254d3f; border-top-color: #3fcf8e; border-radius: 50%; color: #ffffff; font-weight: 700; }
+    .health-copy b { display: block; font-size: 19px; }
+    .health-copy small { display: block; margin-top: 7px; color: #8f96a1; font-size: 13px; }
+    .health-list { display: grid; align-content: start; gap: 14px; padding: 20px; }
+    .health-row { display: flex; align-items: center; justify-content: space-between; color: #b9bec6; font-size: 14px; }
+    .dot { width: 9px; height: 9px; margin-right: 9px; border-radius: 50%; background: #3fcf8e; box-shadow: 0 0 0 3px #193329; }
+    .health-row span { display: flex; align-items: center; }
+    .health-row b { color: #7f8792; font-size: 13px; font-weight: 500; }
+  </style>
+</head>
+<body>
+  <div class="canvas">
+    <aside class="sidebar">
+      <div class="brand"><small>AUTO OPERATIONS</small><strong>运营工作台</strong></div>
+      <nav class="nav" aria-label="示例导航">
+        <div class="nav-item active"><i>01</i>运营总览</div>
+        <div class="nav-item"><i>02</i>账号矩阵</div>
+        <div class="nav-item"><i>03</i>内容库</div>
+        <div class="nav-item"><i>04</i>草稿工坊</div>
+        <div class="nav-item"><i>05</i>图片工坊</div>
+        <div class="nav-item"><i>06</i>发布中心</div>
+        <div class="nav-item"><i>07</i>任务中心</div>
+      </nav>
+      <div class="side-status"><b>● 服务正常</b><br>受控工作流已就绪</div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="title"><small>XHS WORKSPACE</small><h1>小红书运营总览</h1></div>
+        <div class="top-actions"><span class="pill">账号健康 4 / 4</span><span class="pill sample">示例数据</span></div>
+      </header>
+
+      <div class="content">
+        <section class="metrics" aria-label="运营指标">
+          <div class="metric"><div class="label">今日入库</div><div class="value"><strong>24</strong><em>内容资产</em></div></div>
+          <div class="metric"><div class="label">内容库</div><div class="value"><strong>128</strong><em>已归档</em></div></div>
+          <div class="metric"><div class="label">待处理任务</div><div class="value"><strong>6</strong><em>需要确认</em></div></div>
+          <div class="metric"><div class="label">账号健康</div><div class="value"><strong>4 / 4</strong><em>状态正常</em></div></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>受控运营工作流</h2><span>发现、生产与发布状态统一追踪</span></div>
+          <div class="flow">
+            <div class="step"><b>数据发现</b><small>关键词 / 链接 / 账号内容</small></div><div class="arrow">→</div>
+            <div class="step"><b>内容入库</b><small>标签、素材与来源归档</small></div><div class="arrow">→</div>
+            <div class="step highlight"><b>AI 内容生产</b><small>分析、改写与图片处理</small></div><div class="arrow">→</div>
+            <div class="step confirm"><b>发布校验</b><small>账号、素材与人工确认</small></div><div class="arrow">→</div>
+            <div class="step"><b>任务回写</b><small>结果、失败原因与恢复</small></div>
+          </div>
+        </section>
+
+        <div class="lower">
+          <section class="panel tasks">
+            <div class="panel-head"><h2>任务队列</h2><span>AutoTask / PublishJob</span></div>
+            <div class="task"><b>春季通勤选题整理</b><span>内容发现</span><span>12 项资产</span><span class="tag green">已完成</span></div>
+            <div class="task"><b>新品体验草稿生产</b><span>AI 内容生产</span><span>3 个草稿</span><span class="tag blue">处理中</span></div>
+            <div class="task"><b>周末主题发布任务</b><span>发布校验</span><span>4 张素材</span><span class="tag amber">待确认</span></div>
+          </section>
+
+          <section class="panel health">
+            <div class="panel-head"><h2>账号与运行健康</h2><span>授权账号</span></div>
+            <div class="health-summary"><div class="health-ring">100%</div><div class="health-copy"><b>链路状态正常</b><small>所有示例账号均可用</small></div></div>
+            <div class="health-list">
+              <div class="health-row"><span><i class="dot"></i>PC 数据账号</span><b>正常</b></div>
+              <div class="health-row"><span><i class="dot"></i>Creator 发布账号</span><b>正常</b></div>
+              <div class="health-row"><span><i class="dot"></i>内容任务队列</span><b>正常</b></div>
+              <div class="health-row"><span><i class="dot"></i>发布确认闸门</span><b>已启用</b></div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

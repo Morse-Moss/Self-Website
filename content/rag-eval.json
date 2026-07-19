@@ -33,10 +33,34 @@
   },
   {
     "query": "自动运营 Agent 系统如何保持发布受控？",
-    "expectedDocumentId": "project-auto-operations"
+    "expectedDocumentId": "project-auto-operations-workflow"
   },
   {
-    "query": "数字摩斯现在如何访问，公开作品和实时对话分别需要什么条件？",
+    "query": "自动运营 Agent 面向谁，如何把分散的运营资料沉淀成内容资产？",
+    "expectedDocumentId": "project-auto-operations-overview"
+  },
+  {
+    "query": "从绑定账号到内容入库、AI 生产和人工确认发布的流程是什么？",
+    "expectedDocumentId": "project-auto-operations-workflow"
+  },
+  {
+    "query": "自动运营系统如何用 XHS Adapter、内容资产层、AutoTask 和 PublishJob 连接完整链路？",
+    "expectedDocumentId": "project-auto-operations-architecture"
+  },
+  {
+    "query": "自动运营 Agent 如何实现能力路由、定时任务、凭据加密和发布预检？",
+    "expectedDocumentId": "project-auto-operations-engineering"
+  },
+  {
+    "query": "自动运营系统的业务想法来自哪里，摩斯独立完成了哪些技术实现？",
+    "expectedDocumentId": "project-auto-operations-role"
+  },
+  {
+    "query": "自动运营 Agent 未来如何根据历史任务和人工反馈优化运营策略？",
+    "expectedDocumentId": "project-auto-operations-roadmap"
+  },
+  {
+    "query": "数字摩斯解决什么问题，招聘方、潜在客户和同行能用它做什么？",
     "expectedDocumentId": "project-digital-morse-overview"
   },
   {
@@ -68,11 +92,11 @@
     "expectedDocumentId": "project-content-agent"
   },
   {
-    "query": "内容库、草稿工坊和发布中心怎么连接？",
+    "query": "自动运营 Agent 系统整体具备哪些数据发现、内容资产、AI 生产、任务编排和受控发布能力？",
     "expectedDocumentId": "project-auto-operations"
   },
   {
-    "query": "数字摩斯的自由对话、JD 匹配和需求初诊分别解决什么问题？",
+    "query": "访客如何使用数字摩斯完成自由对话、JD 匹配或需求初诊？",
     "expectedDocumentId": "project-digital-morse-workflows"
   },
   {
@@ -96,27 +120,27 @@
     "expectedDocumentId": "faq-4"
   },
   {
-    "query": "数字摩斯如何处理停止、重试、12 小时会话恢复和同一 Turn 幂等重放？",
+    "query": "数字摩斯如何用 SSE、停止、重试、幂等 Turn、事务补偿和有界重试保障可靠性？",
     "expectedDocumentId": "project-digital-morse-reliability"
   },
   {
-    "query": "数字摩斯的整体结构如何连接 Next.js、Chat Service、PostgreSQL、Worker、Admin 和 Caddy？",
-    "expectedDocumentId": "project-digital-morse"
-  },
-  {
-    "query": "数字摩斯如何用 BGE、pgvector、引用来源和受控联网保证回答可追溯？",
+    "query": "数字摩斯的核心架构如何连接 Next.js、Chat Service、PostgreSQL、Worker 和 Caddy？",
     "expectedDocumentId": "project-digital-morse-knowledge"
   },
   {
-    "query": "数字摩斯是谁发起和开发的，摩斯独立完成了哪些技术实现？",
+    "query": "数字摩斯整体具备哪些对话、RAG、受控联网、可靠性和后台工程能力？",
+    "expectedDocumentId": "project-digital-morse"
+  },
+  {
+    "query": "数字摩斯的全部技术实现由谁完成，覆盖哪些工程范围？",
     "expectedDocumentId": "project-digital-morse-role"
   },
   {
-    "query": "数字摩斯未来会加入语音视频、长期记忆和自动知识更新吗？",
+    "query": "数字摩斯未来会如何加入语音视频、授权式长期记忆和人工审核的知识更新？",
     "expectedDocumentId": "project-digital-morse-roadmap"
   },
   {
     "query": "想做电商内容生产，摩斯有哪些系统经验？",
-    "expectedDocumentId": "project-content-agent"
+    "expectedDocumentId": "project-content-agent-role"
   }
 ]

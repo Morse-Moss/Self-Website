@@ -35,7 +35,7 @@ function expectedProjectDetails(project: any): string[] {
   ];
 }
 
-test('extractPublicKnowledge produces the approved site-content and content-agent topic documents', () => {
+test('extractPublicKnowledge produces the approved site-content and project topic documents', () => {
   const documents = extractPublicKnowledge(loadSiteContent());
 
   assert.deepEqual(
@@ -57,11 +57,21 @@ test('extractPublicKnowledge produces the approved site-content and content-agen
         sourcePath: 'content/site-content.json#projects.auto-operations',
         href: '/works#auto-operations',
       },
+      ...['overview', 'workflow', 'architecture', 'engineering', 'role', 'roadmap'].map((topic) => ({
+        id: `project-auto-operations-${topic}`,
+        sourcePath: `content/site-content.json#projects.auto-operations.knowledge.${topic}`,
+        href: '/works#auto-operations',
+      })),
       {
         id: 'project-deep-research',
         sourcePath: 'content/site-content.json#projects.deep-research',
         href: '/works#deep-research',
       },
+      ...['overview', 'workflow', 'architecture', 'engineering', 'role', 'roadmap'].map((topic) => ({
+        id: `project-deep-research-${topic}`,
+        sourcePath: `content/site-content.json#projects.deep-research.knowledge.${topic}`,
+        href: '/works#deep-research',
+      })),
       {
         id: 'project-digital-morse',
         sourcePath: 'content/site-content.json#projects.digital-morse',
@@ -119,6 +129,36 @@ test('digital-Morse knowledge topics stay independently retrievable and share on
   }
 });
 
+test('deep-research knowledge topics stay independently retrievable and share one case href', () => {
+  const content = loadSiteContent();
+  const project = content.projects.find((item: { slug: string }) => item.slug === 'deep-research');
+  const documents = extractPublicKnowledge(content);
+
+  assert.ok(project);
+  assert.equal(project.knowledgeTopics.length, 6);
+  for (const topic of project.knowledgeTopics) {
+    const documentId = `project-deep-research-${topic.id}`;
+    const document = documents.find((item) => item.id === documentId);
+
+    assert.ok(document);
+    assert.equal(document.title, `${project.name}：${topic.title}`);
+    assert.equal(document.content, `${project.name}\n\n${topic.title}\n\n${topic.content}`);
+    assert.equal(document.href, '/works#deep-research');
+    assert.equal(publicKnowledgeHref(documentId), '/works#deep-research');
+  }
+});
+
+test('deep-research public knowledge leads with approved value and implementation facts', () => {
+  const documents = extractPublicKnowledge(loadSiteContent());
+  const document = documents.find((item) => item.id === 'project-deep-research');
+
+  assert.ok(document);
+  assert.match(document.content, /方法发现.*证据采集.*横纵分析/);
+  assert.match(document.content, /唯一开发者/);
+  assert.match(document.content, /人工发布审批/);
+  assert.doesNotMatch(document.content, /开源项目|验证证据|当前边界|采集时间|提交版本/);
+});
+
 test('extractPublicKnowledge limits profile and project content to approved fields', () => {
   const content = loadSiteContent();
   const documents = extractPublicKnowledge(content);
@@ -171,6 +211,44 @@ test('content-agent public knowledge leads with approved value and implementatio
   assert.doesNotMatch(document.content, /验证证据|当前边界|采集时间|提交版本|脱敏处理/);
 });
 
+test('auto-operations public knowledge follows the approved controlled-workflow story', () => {
+  const documents = extractPublicKnowledge(loadSiteContent());
+  const document = documents.find((item) => item.id === 'project-auto-operations');
+  const topics = documents.filter((item) =>
+    item.id.startsWith('project-auto-operations-'),
+  );
+
+  assert.ok(document);
+  assert.equal(topics.length, 6);
+  assert.match(document.content, /数据发现、内容沉淀、AI 内容生产/);
+  assert.match(document.content, /AutoTask.*PublishJob/);
+  assert.match(document.content, /唯一开发者.*全部技术实现/);
+  assert.match(topics.map((topic) => topic.content).join('\n'), /未来方向/);
+  assert.doesNotMatch(
+    [document.content, ...topics.map((topic) => topic.content)].join('\n'),
+    /验证证据|当前边界|采集时间|提交版本|运行方式|脱敏处理|Railway|https?:\/\/|doubao|豆包|gpt-?\d|seed|kling|veo|wan/i,
+  );
+});
+
+test('digital-Morse public knowledge follows the approved resume story', () => {
+  const documents = extractPublicKnowledge(loadSiteContent());
+  const document = documents.find((item) => item.id === 'project-digital-morse');
+  const topics = documents.filter((item) =>
+    item.id.startsWith('project-digital-morse-'),
+  );
+
+  assert.ok(document);
+  assert.equal(topics.length, 6);
+  assert.match(document.content, /自由对话、JD 匹配和需求初诊/);
+  assert.match(document.content, /BGE Embeddings.*pgvector/);
+  assert.match(document.content, /唯一开发者.*全部技术实现/);
+  assert.match(topics.map((topic) => topic.content).join('\n'), /未来方向/);
+  assert.doesNotMatch(
+    [document.content, ...topics.map((topic) => topic.content)].join('\n'),
+    /验证证据|当前边界|采集时间|提交版本|运行方式|脱敏处理|腾讯云|GPT-5\.4|BAAI\/bge-small/i,
+  );
+});
+
 test('extractPublicKnowledge excludes drafts, paths, media, actions, and sanitization metadata', () => {
   const content = loadSiteContent();
   content.projects[0].media = {
@@ -199,15 +277,26 @@ test('extractPublicKnowledge excludes drafts, paths, media, actions, and sanitiz
   assert.doesNotMatch(serialized, /无人值守运营|disabled-operation/i);
   assert.doesNotMatch(serialized, /\/works\/auto-operations\/login-workbench-2026-07-13\.png/i);
 
+  const publicKnowledge = extractPublicKnowledge(loadSiteContent());
   const internalKnowledge = JSON.stringify(
-    extractPublicKnowledge(loadSiteContent()).filter((document) =>
+    publicKnowledge.filter((document) =>
       document.id.startsWith('project-content-agent')
-        || document.id === 'project-auto-operations',
+        || document.id.startsWith('project-auto-operations'),
     ),
   );
   assert.doesNotMatch(
     internalKnowledge,
-    /https?:\/\/|Railway|login-workbench|capturedAt|commit|生产环境|RUNNING/,
+    /https?:\/\/|Railway|login-workbench|capturedAt|commit|生产环境|\bRUNNING\b/i,
+  );
+
+  const autoOperationsKnowledge = JSON.stringify(
+    publicKnowledge.filter((document) =>
+      document.id.startsWith('project-auto-operations'),
+    ),
+  );
+  assert.doesNotMatch(
+    autoOperationsKnowledge,
+    /doubao|豆包|gpt-?\d|seed|kling|veo|wan/i,
   );
 });
 

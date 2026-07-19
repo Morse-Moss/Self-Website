@@ -1145,6 +1145,8 @@ async function assertAllCollapsed(client, viewportName, label) {
 
 async function verifyExternalClickIsolation(client, viewport) {
   const viewportName = viewport.name;
+  await clickSlug(client, viewport, 'deep-research');
+  await waitForExpanded(client, viewportName, 'deep-research');
   const guardInstalled = await client.evaluate(`(() => {
     const article = document.querySelector('[data-project-slug="deep-research"]');
     const link = article?.querySelector('a[href^="https://"]');
@@ -1165,6 +1167,11 @@ async function verifyExternalClickIsolation(client, viewport) {
 
   let state;
   try {
+    await waitForPointerTargetStable(
+      client,
+      '[data-project-slug="deep-research"] a[href^="https://"]',
+      `${viewportName}:works:external-pointer-stability-timeout`,
+    );
     const clicked = await clickSelector(
       client,
       viewport,
@@ -1181,8 +1188,8 @@ async function verifyExternalClickIsolation(client, viewport) {
       const expandedCount = document.querySelectorAll('button[aria-expanded="true"]').length;
       const locationUnchanged = location.href === guard.state.before;
       const clicked = guard.state.intercepted;
-      const targetCollapsed = article?.getAttribute('data-expanded') === 'false';
-      return { clicked, expandedCount, locationUnchanged, targetCollapsed };
+      const targetExpanded = article?.getAttribute('data-expanded') === 'true';
+      return { clicked, expandedCount, locationUnchanged, targetExpanded };
     })()`);
   }
   if (!state) {
@@ -1192,9 +1199,11 @@ async function verifyExternalClickIsolation(client, viewport) {
   check(state.clicked, `${viewportName}:works:external-click-missing`);
   check(state.locationUnchanged, `${viewportName}:works:external-navigation`);
   check(
-    state.expandedCount === 0 && state.targetCollapsed,
+    state.expandedCount === 1 && state.targetExpanded,
     `${viewportName}:works:external-click-toggled-card`,
   );
+  await clickSlug(client, viewport, 'deep-research', { waitForApplicationScroll: false });
+  await assertAllCollapsed(client, viewportName, 'works:external-click-cleanup');
 }
 
 async function verifyKeyboard(client, viewportName) {
@@ -1450,10 +1459,22 @@ async function inspectWorks(client, viewport) {
       autoOperations: inspect('auto-operations'),
     };
   })()`);
-  for (const [label, state] of Object.entries(privacy)) {
-    check(state.images === 0, `${viewportName}:works:${label}:internal-image`);
-    check(state.actions === 0, `${viewportName}:works:${label}:internal-action`);
-  }
+  check(
+    privacy.contentAgent.images === 1,
+    `${viewportName}:works:contentAgent:approved-image`,
+  );
+  check(
+    privacy.contentAgent.actions === 0,
+    `${viewportName}:works:contentAgent:internal-action`,
+  );
+  check(
+    privacy.autoOperations.images === 1,
+    `${viewportName}:works:autoOperations:approved-image`,
+  );
+  check(
+    privacy.autoOperations.actions === 0,
+    `${viewportName}:works:autoOperations:internal-action`,
+  );
 
   await verifyExternalClickIsolation(client, viewport);
   await verifyKeyboard(client, viewportName);
@@ -1492,8 +1513,8 @@ async function inspectWorks(client, viewport) {
 
   if (screenshotFiles[viewportName]?.works) {
     await navigate(client, viewportName, '/works');
-    await clickSlug(client, viewport, 'deep-research');
-    await waitForExpanded(client, viewportName, 'deep-research');
+    await clickSlug(client, viewport, 'content-agent');
+    await waitForExpanded(client, viewportName, 'content-agent');
     await captureScreenshot(client, viewportName, 'works');
   }
 }
@@ -1567,7 +1588,10 @@ try {
   targetUrl = new URL(argv[2] || 'http://127.0.0.1:3010');
   edgePath = env.S9_EDGE_PATH
     || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-  evidenceDir = path.resolve(new URL('../docs/verify/s9/', import.meta.url).pathname.slice(1));
+  evidenceDir = path.resolve(
+    env.S9_EVIDENCE_DIR
+      || new URL('../docs/verify/s9/', import.meta.url).pathname.slice(1),
+  );
   publicContent = JSON.parse(readFileSync(
     new URL('../content/site-content.json', import.meta.url),
     'utf8',

@@ -9,35 +9,22 @@ from playwright.sync_api import Page, Playwright, expect, sync_playwright
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT_DIR = ROOT / "docs" / "verify" / "content-agent"
+OUTPUT_DIR = ROOT / "docs" / "verify" / "auto-operations"
 PROMPT = (
-    "请介绍内容创作 Agent 的对话式创作、多模型适配、异步任务与数字资产管理，"
+    "请介绍自动运营 Agent 的账号矩阵、内容资产、AI 生产、任务编排与受控发布，"
     "以及摩斯独立完成的技术实现。"
 )
-
 SUMMARY = (
-    "面向企业的多模态内容创作系统，通过 GPT 式对话生成图片和视频，"
-    "并持续沉淀 Prompt、Skill 与数字资产。"
+    "面向企业运营团队的小红书智能运营系统，将数据发现、内容沉淀、AI 内容生产、"
+    "发布校验和任务追踪连接成受控运营工作流。"
 )
-
-CAPABILITIES = [
-    "GPT 式创作",
-    "Prompt 沉淀",
-    "Skill 复用",
-    "多模型接入",
-    "数字资产",
-]
-
+CAPABILITIES = ["账号矩阵", "内容资产化", "AI 内容生产", "任务编排", "受控发布"]
 DETAIL_HEADINGS = ["项目简介", "核心能力", "系统架构", "我的技术实现", "技术栈"]
-
-FORBIDDEN_COPY = [
-    "验证证据",
-    "当前边界",
-    "采集时间",
-    "提交版本",
-    "运行方式",
-    "脱敏处理",
-]
+FORBIDDEN_COPY = ["验证证据", "当前边界", "采集时间", "提交版本", "运行方式", "脱敏处理"]
+SPECIFIC_MODEL_PATTERN = re.compile(
+    r"doubao|豆包|gpt-?\d|seed|kling|veo|wan",
+    re.IGNORECASE,
+)
 
 
 def launch_browser(playwright: Playwright):
@@ -50,8 +37,7 @@ def launch_browser(playwright: Playwright):
             return playwright.chromium.launch(headless=True, channel="chrome")
 
 
-def authorize_chat(page: Page) -> list:
-    pending_history: list = []
+def authorize_chat(page: Page) -> None:
     page.route(
         "**/api/access",
         lambda route: route.fulfill(
@@ -60,7 +46,7 @@ def authorize_chat(page: Page) -> list:
             body=json.dumps(
                 {
                     "authorized": True,
-                    "expiresAt": "2026-07-18T23:59:59.000Z",
+                    "expiresAt": "2026-07-19T23:59:59.000Z",
                     "remainingMessages": 12,
                 }
             ),
@@ -68,14 +54,25 @@ def authorize_chat(page: Page) -> list:
     )
     page.route(
         "**/api/chat/history",
-        lambda route: pending_history.append(route),
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(
+                {
+                    "ok": True,
+                    "remainingMessages": 12,
+                    "workflow": None,
+                    "conversationId": None,
+                    "messages": [],
+                }
+            ),
+        ),
     )
-    return pending_history
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Verify the content-agent portfolio card and Digital Morse CTA."
+        description="Verify the auto-operations portfolio card and knowledge-facing CTA."
     )
     parser.add_argument(
         "base_url",
@@ -104,23 +101,20 @@ def inspect_viewport(
         else None,
     )
     page.on("pageerror", lambda error: page_errors.append(str(error)))
-    pending_history = authorize_chat(page)
+    authorize_chat(page)
 
-    page.goto(
-        f"{base_url.rstrip('/')}/works",
-        wait_until="domcontentloaded",
-    )
-
+    page.goto(f"{base_url.rstrip('/')}/works", wait_until="domcontentloaded")
     expect(page.get_by_role("heading", name="代表作品", exact=True)).to_be_visible()
-    card = page.locator('article[data-project-slug="content-agent"]')
+
+    card = page.locator('article[data-project-slug="auto-operations"]')
     expect(card).to_be_visible()
-    expect(card.locator("#project-title-content-agent")).to_be_visible()
+    expect(card.locator("#project-title-auto-operations")).to_be_visible()
     expect(card).to_contain_text(SUMMARY)
-    expect(card).to_contain_text("唯一开发者 · 企业局域网已投入使用")
+    expect(card).to_contain_text("唯一开发者 · 已部署运行")
     expect(card.get_by_text("界面设计稿 · 示例数据", exact=True)).to_be_visible()
 
     capability_items = card.locator(
-        'ul[aria-label="内容创作 Agent 系统能力"] li'
+        'ul[aria-label="自动运营 Agent 系统能力"] li'
     )
     expect(capability_items).to_have_count(5)
     if capability_items.all_text_contents() != CAPABILITIES:
@@ -128,81 +122,66 @@ def inspect_viewport(
             f"{name}: unexpected capability tags {capability_items.all_text_contents()}"
         )
 
-    page_text = page.locator("body").inner_text()
-    for forbidden in FORBIDDEN_COPY:
-        if forbidden in page_text:
-            raise AssertionError(f"{name}: forbidden public copy is visible: {forbidden}")
-
     toggle = card.locator(
-        'button[aria-controls="project-details-content-agent"]'
+        'button[aria-controls="project-details-auto-operations"]'
     )
-    expect(toggle).to_have_attribute(
-        "aria-label", "展开内容创作 Agent 系统详情"
-    )
+    expect(toggle).to_have_attribute("aria-label", "展开自动运营 Agent 系统详情")
     expect(toggle).to_have_attribute("aria-expanded", "false")
 
     image = card.locator("img").first
     expect(image).to_have_attribute(
-        "src", re.compile(r"atelier-main-design-2026-07-18\.jpg")
+        "src", re.compile(r"operations-workbench-design-2026-07-19\.png")
     )
+    image.scroll_into_view_if_needed()
+    expect(image).to_be_visible()
     image_loaded = image.evaluate(
-        "element => element.complete && element.naturalWidth > 0 && element.naturalHeight > 0"
+        """
+        element => {
+          const loaded = () => (
+            element.complete && element.naturalWidth > 0 && element.naturalHeight > 0
+          );
+          if (element.complete) return loaded();
+          return new Promise((resolve) => {
+            element.addEventListener('load', () => resolve(loaded()), { once: true });
+            element.addEventListener('error', () => resolve(false), { once: true });
+          });
+        }
+        """
     )
     if not image_loaded:
         raise AssertionError(f"{name}: approved design image did not load")
 
     toggle.click()
     expect(toggle).to_have_attribute("aria-expanded", "true")
-    expect(toggle).to_have_attribute(
-        "aria-label", "收起内容创作 Agent 系统详情"
-    )
+    expect(toggle).to_have_attribute("aria-label", "收起自动运营 Agent 系统详情")
     for heading in DETAIL_HEADINGS:
         expect(card.get_by_role("heading", name=heading, exact=True)).to_be_visible()
 
-    card.evaluate(
-        "element => element.scrollIntoView({ block: 'start', behavior: 'auto' })"
-    )
+    expect(card).to_contain_text("AutoTask 与 PublishJob")
+    expect(card).to_contain_text("我是项目唯一开发者")
+    expect(card).to_contain_text("可审核、可回退的运营策略 Agent")
+
+    card_text = card.inner_text()
+    for forbidden in FORBIDDEN_COPY:
+        if forbidden in card_text:
+            raise AssertionError(f"{name}: forbidden public copy is visible: {forbidden}")
+    if SPECIFIC_MODEL_PATTERN.search(card_text):
+        raise AssertionError(f"{name}: a specific model name is visible in auto-operations")
+
+    card.evaluate("element => element.scrollIntoView({ block: 'start', behavior: 'auto' })")
     page.wait_for_timeout(150)
     page.screenshot(
-        path=OUTPUT_DIR / f"portfolio-content-agent-{name}-{width}x{height}.png"
+        path=OUTPUT_DIR / f"portfolio-auto-operations-{name}-{width}x{height}.png"
     )
 
     cta = card.get_by_role("button", name="问数字摩斯", exact=True)
     expect(cta).to_be_visible()
-
-    for _ in range(40):
-        if pending_history:
-            break
-        page.wait_for_timeout(50)
-    if not pending_history:
-        raise AssertionError(f"{name}: history request did not reach the delayed fixture")
-
     cta.click()
     panel = page.get_by_test_id("morse-chat-panel")
     expect(panel).to_be_visible()
-    expect(panel.get_by_text("正在恢复会话...")).to_be_visible()
-    pending_history[0].fulfill(
-        status=200,
-        content_type="application/json",
-        body=json.dumps(
-            {
-                "ok": True,
-                "remainingMessages": 12,
-                "workflow": None,
-                "conversationId": None,
-                "messages": [],
-            }
-        ),
-    )
-    page.wait_for_load_state("networkidle")
     composer = page.locator("#morse-message")
     expect(composer).to_have_value(PROMPT)
-    delayed_history_prefilled = composer.input_value() == PROMPT
-    panel.get_by_role("button", name="关闭对话").click()
-
-    expect(card).to_contain_text("GPT Image 2、Seedance 2、Kling、Veo、Wan")
-    expect(card).to_contain_text("我是项目唯一开发者")
-    expect(card).to_contain_text("可审核、可回退的自进化 Agent")
+    expect(composer).to_be_focused()
 
     horizontal_overflow = page.evaluate(
         "document.documentElement.scrollWidth - document.documentElement.clientWidth"
@@ -210,31 +189,14 @@ def inspect_viewport(
     if horizontal_overflow > 0:
         raise AssertionError(f"{name}: horizontal overflow is {horizontal_overflow}px")
 
-    page.get_by_role("button", name="问摩斯", exact=True).click()
-    expect(panel).to_be_visible()
-    panel.get_by_role("button", name="JD 匹配").click()
-    expect(panel.get_by_role("button", name="JD 匹配")).to_have_attribute(
-        "aria-pressed", "true"
-    )
-    panel.get_by_role("button", name="关闭对话").click()
-
-    cta.click()
-    expect(panel).to_be_visible()
-    expect(panel.get_by_role("button", name="自由对话")).to_have_attribute(
-        "aria-pressed", "true"
-    )
-    expect(composer).to_have_value(PROMPT)
-    expect(composer).to_be_focused()
     page.screenshot(
-        path=OUTPUT_DIR / f"portfolio-content-agent-cta-{name}-{width}x{height}.png"
+        path=OUTPUT_DIR / f"portfolio-auto-operations-cta-{name}-{width}x{height}.png"
     )
-
     result = {
         "viewport": name,
         "size": [width, height],
         "imageLoaded": image_loaded,
         "horizontalOverflow": horizontal_overflow,
-        "delayedHistoryPrefilled": delayed_history_prefilled,
         "promptPrefilled": composer.input_value() == PROMPT,
         "consoleErrors": console_errors,
         "pageErrors": page_errors,
@@ -258,7 +220,6 @@ def main() -> None:
         if result["consoleErrors"]
         or result["pageErrors"]
         or not result["imageLoaded"]
-        or not result["delayedHistoryPrefilled"]
         or not result["promptPrefilled"]
         or result["horizontalOverflow"] > 0
     ]

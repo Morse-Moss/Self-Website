@@ -146,19 +146,71 @@ def inspect_viewport(
     authorize_chat(page)
 
     page.goto(
-        f"{base_url.rstrip('/')}/works#digital-morse",
+        f"{base_url.rstrip('/')}/works",
         wait_until="networkidle",
     )
     card = page.locator('article[data-project-slug="digital-morse"]')
     expect(card).to_be_visible()
     expect(card.locator("#project-title-digital-morse")).to_be_visible()
-    expect(card).to_contain_text("自由对话 / JD 匹配 / 需求初诊")
-    expect(card).to_contain_text("BGE + pgvector RAG")
-    expect(card).to_contain_text("唯一开发者")
-    expect(card).to_contain_text("未来将加入语音与视频表达")
-    expect(
-        card.get_by_text("本地验收截图 · 示例会话 · 非生产访客数据")
-    ).to_be_visible()
+    expect(card).to_contain_text(
+        "嵌入个人作品集的 AI 数字分身系统，通过自由对话、JD 匹配和需求初诊"
+    )
+    expect(card).to_contain_text("唯一开发者 · 已上线 · 持续完善中")
+    badge = card.get_by_text("产品界面 · 示例会话")
+    expect(badge).to_be_visible()
+    media = badge.locator("..")
+    badge_box = badge.bounding_box()
+    media_box = media.bounding_box()
+    if badge_box is None or media_box is None:
+        raise AssertionError(f"{name}: Digital Morse media badge has no bounds")
+    if badge_box["y"] >= media_box["y"] + media_box["height"] / 3:
+        raise AssertionError(f"{name}: Digital Morse media badge obscures the image content")
+
+    tags = card.locator('ul[aria-label="数字摩斯能力"] li')
+    expect(tags).to_have_count(5)
+    if tags.all_text_contents() != [
+        "三类对话工作流",
+        "BGE + pgvector",
+        "可追溯来源",
+        "受控联网",
+        "停止与恢复",
+    ]:
+        raise AssertionError(f"{name}: Digital Morse capability tags drifted")
+
+    cta = card.get_by_role("button", name="问数字摩斯")
+    expect(cta).to_have_count(0)
+
+    toggle = card.locator('button[aria-controls="project-details-digital-morse"]')
+    expect(toggle).to_have_attribute("aria-label", "展开数字摩斯详情")
+    expect(toggle).to_have_attribute("aria-expanded", "false")
+    toggle.click()
+    expect(toggle).to_have_attribute("aria-expanded", "true")
+    expect(toggle).to_have_attribute("aria-label", "收起数字摩斯详情")
+    expect(page).to_have_url(re.compile(r"/works#digital-morse$"))
+
+    details = card.locator("#project-details-digital-morse")
+    expect(details).to_be_visible()
+    headings = details.locator("h3")
+    if headings.all_text_contents() != [
+        "项目简介",
+        "核心能力",
+        "系统架构",
+        "我的技术实现",
+        "技术栈",
+    ]:
+        raise AssertionError(f"{name}: Digital Morse detail headings drifted")
+    expect(details).to_contain_text("交互层")
+    expect(details).to_contain_text("模型 Provider 生成")
+    expect(details).to_contain_text("我是项目唯一开发者，负责全部技术实现")
+    expect(details).to_contain_text("语音与视频表达")
+
+    visible_copy = page.locator("body").inner_text()
+    if re.search(
+        r"验证证据|当前边界|采集时间|提交版本|运行方式|脱敏处理|腾讯云|GPT-5\.4",
+        visible_copy,
+        re.IGNORECASE,
+    ):
+        raise AssertionError(f"{name}: visible copy contains forbidden audit or vendor text")
 
     image = card.locator("img").first
     expect(image).to_have_attribute(

@@ -16,6 +16,10 @@
   border-top-color: var(--line-strong);
 }
 
+.card[data-expanded='true'] {
+  grid-column: 1 / -1;
+}
+
 .mediaColumn,
 .content {
   min-width: 0;
@@ -70,6 +74,13 @@
   font-size: var(--fs-2xs);
   line-height: 1.4;
   overflow-wrap: anywhere;
+}
+
+.card[data-project-slug='digital-morse'] .mediaBadge {
+  top: var(--space-3);
+  right: var(--space-3);
+  bottom: auto;
+  left: auto;
 }
 
 .content {

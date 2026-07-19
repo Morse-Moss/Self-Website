@@ -199,38 +199,127 @@
       "slug": "auto-operations",
       "name": "自动运营 Agent 系统",
       "type": "受控运营工作流",
-      "status": "企业内部项目 · 脱敏展示",
-      "summary": "围绕已授权账号，把内容沉淀、草稿处理、素材、发布校验和人工确认连接成受控运营工作流。",
+      "status": "唯一开发者 · 已部署运行",
+      "summary": "面向企业运营团队的小红书智能运营系统，将数据发现、内容沉淀、AI 内容生产、发布校验和任务追踪连接成受控运营工作流。",
+      "ownership": "业务需求、产品方向和部分创意来自真实业务对接；摩斯是项目唯一开发者，负责将这些输入完整实现为可运行系统。",
+      "futureDirection": "基于历史任务、人工反馈和内容质量评估，优化选题、内容模板、能力路由与排期建议，逐步演进为可审核、可回退的运营策略 Agent。",
       "featured": false,
       "disclosure": "internal-redacted",
-      "capabilities": ["受控运营工作流", "任务状态治理", "人工发布闸门"],
+      "capabilities": ["账号矩阵", "内容资产化", "AI 内容生产", "任务编排", "受控发布"],
       "techStack": [
         {
           "label": "前端",
-          "items": ["React", "TypeScript", "Vite", "Ant Design", "dnd-kit"]
+          "items": ["React", "TypeScript", "Vite", "Ant Design", "React Router", "dnd-kit", "Recharts"]
         },
         {
           "label": "后端",
-          "items": ["FastAPI", "SQLAlchemy", "Pydantic", "Alembic"]
+          "items": ["Python", "FastAPI", "Uvicorn", "Pydantic", "SQLAlchemy", "Alembic", "APScheduler"]
         },
-        { "label": "数据", "items": ["MySQL"] },
         {
-          "label": "工程与部署",
-          "items": ["APScheduler", "Docker"]
+          "label": "数据与安全",
+          "items": ["MySQL", "SQLite", "JWT", "Fernet"]
+        },
+        {
+          "label": "AI 与平台",
+          "items": ["模型能力路由", "OpenAI-compatible Adapter", "RunningHub 工作流", "XHS SDK / 签名适配"]
+        },
+        {
+          "label": "工程交付",
+          "items": ["Docker 多阶段构建", "前后端单服务托管", "pytest", "Playwright", "健康检查"]
         }
       ],
-      "media": null,
+      "media": {
+        "src": "/works/auto-operations/operations-workbench-design-2026-07-19.png",
+        "width": 1440,
+        "height": 1080,
+        "alt": "自动运营 Agent 系统脱敏运营总览界面设计图",
+        "label": "界面设计稿 · 示例数据",
+        "caption": "脱敏运营总览设计图，使用示例数据展示内容资产、任务状态、账号健康与受控发布链路。",
+        "evidence": {
+          "capturedAt": "2026-07-19",
+          "commit": "不适用（本地设计稿）",
+          "runMode": "界面设计稿 / 非运行态",
+          "sanitization": "账号、任务、指标和内容均为示例数据，不含公司品牌、真实账号、业务数据或生产地址"
+        }
+      },
       "actions": [],
+      "askMorse": {
+        "label": "问数字摩斯",
+        "prompt": "请介绍自动运营 Agent 的账号矩阵、内容资产、AI 生产、任务编排与受控发布，以及摩斯独立完成的技术实现。"
+      },
+      "knowledgeTopics": [
+        {
+          "id": "overview",
+          "title": "项目定位与价值",
+          "content": "自动运营 Agent 系统面向企业运营团队，将授权账号、数据发现、内容资产、AI 内容生产、发布协同和任务状态收进统一工作台。系统已经部署运行，帮助运营人员减少跨工具搬运，并把内容与执行结果持续沉淀为可追踪资产。"
+        },
+        {
+          "id": "workflow",
+          "title": "使用流程",
+          "content": "使用流程从绑定已授权的 PC 与 Creator 账号开始。运营人员通过关键词、笔记链接或账号内容发现候选，筛选后保存到内容库，再完成分析、改写和图片处理；系统创建发布任务并执行预检，经过人工确认后进入发布链路，结果与失败原因回写任务中心。"
+        },
+        {
+          "id": "architecture",
+          "title": "核心架构",
+          "content": "系统由平台接入层、内容资产层、AI 生产层、任务编排层和发布治理层组成。XHS Adapter 隔离 PC、Creator、签名与账号状态差异；SQLAlchemy 统一保存内容、草稿、素材和任务；AutoTask、Task 与 PublishJob 连接自动任务、执行记录和发布状态。"
+        },
+        {
+          "id": "engineering",
+          "title": "关键技术实现",
+          "content": "模型能力路由统一文本、视觉和图片生成调用；APScheduler 与显式状态模型管理手动、每日、每周和间隔任务；用户归属查询、JWT、Fernet、额度与并发控制保护账号和数据；发布预检、动作确认、失败诊断和健康检查共同约束高风险操作。"
+        },
+        {
+          "id": "role",
+          "title": "个人技术贡献",
+          "content": "业务需求、产品方向和部分创意来自真实业务对接。摩斯是项目唯一开发者，独立完成运营工作台、FastAPI 服务、数据模型、XHS 平台适配、AI 能力路由、任务编排、安全治理、测试、容器化与全部技术实现。"
+        },
+        {
+          "id": "roadmap",
+          "title": "未来方向",
+          "content": "未来方向：基于历史任务、人工反馈和内容质量评估，生成选题、内容模板、能力路由与排期建议，逐步形成可审核、可回退的运营策略 Agent；发布动作继续保留人工确认。"
+        }
+      ],
+      "details": {
+        "overview": [
+          "为企业运营团队开发的小红书智能运营系统，围绕已授权账号管理数据发现、内容资产、草稿、图片、发布任务和运营状态。系统已经部署运行。",
+          "系统把关键词与笔记发现、内容分析、AI 改写、图片处理、发布预检和任务回写连接成完整工作流，让分散的运营资料和操作状态在同一平台内持续沉淀。"
+        ],
+        "coreCapabilities": [
+          "账号矩阵：管理 PC 与 Creator 账号、登录状态、账号用途和健康检查。",
+          "数据发现：支持关键词、笔记链接、账号内容和批量任务等数据入口。",
+          "内容资产：统一管理笔记、互动数据、标签、素材、草稿和分析结果。",
+          "AI 生产：按文本、视觉和图片生成能力完成内容改写、评分与图片处理。",
+          "任务编排：配置手动、每日、每周或间隔任务，生成可追踪的草稿与发布任务。",
+          "发布治理：执行素材校验、账号校验、发布预检、显式确认、状态回写和失败诊断。"
+        ],
+        "architecture": {
+          "flow": "授权账号 / 关键词 / 笔记链接 -> 平台适配 -> 数据发现与内容库 -> 分析 / AI 草稿 / 图片工坊 -> AutoTask 与 PublishJob -> 发布预检与人工确认 -> 任务中心 / 运营总览",
+          "modules": ["平台接入层", "内容资产层", "AI 生产层", "任务编排层", "发布治理层"]
+        },
+        "implementation": {
+          "summary": "业务需求、产品方向和部分创意来自真实业务对接；我是项目唯一开发者，负责把这些输入实现为可运行系统，并完成全部技术实现。",
+          "contributions": [
+            "开发 React、TypeScript、Vite、Ant Design 运营工作台与多平台共享 UI 内核。",
+            "构建 FastAPI API、SQLAlchemy 数据模型、Alembic 迁移和 MySQL / SQLite 数据层。",
+            "封装 XHS 原生 SDK、签名能力与平台 Adapter，区分 PC 和 Creator 账号链路。",
+            "建立文本、视觉和图片生成能力路由，统一适配不同 AI 服务。",
+            "设计 AutoTask、Task、PublishJob 状态模型及 APScheduler 调度、监控、失败记录和恢复路径。",
+            "实现用户数据隔离、凭据加密、额度与并发控制、发布预检和显式确认。",
+            "完成 Docker 多阶段构建、前后端单服务托管、生产配置与健康检查。"
+          ],
+          "futureDirection": "基于历史任务、人工反馈和内容质量评估，优化选题、内容模板、能力路由与排期建议，逐步演进为可审核、可回退的运营策略 Agent。"
+        }
+      },
       "caseStudy": {
         "problem": "运营资料分散在采集结果、内容库、草稿、素材和发布任务中，状态难追踪。",
-        "role": "摩斯是项目开发负责人，负责整个项目的开发。",
+        "role": "业务需求、产品方向和部分创意来自真实业务对接；摩斯是项目唯一开发者，负责整个项目的开发与全部技术实现。",
         "decisions": [
           "以内容资产和任务状态串联数据沉淀、草稿编辑、素材处理、发布校验和人工确认。",
           "把发布前校验、失败原因和人工确认保留在发布中心。",
           "将系统限定在已授权账号与合规业务场景。"
         ],
         "structure": [
-          "Web 工作台覆盖账号与权限、数据获取、内容库、草稿工坊、图片工坊、发布中心和任务中心。",
+          "Web 工作台覆盖账号与权限、数据获取、内容库、分析中心、草稿工坊、图片工坊、发布中心和任务中心。",
           "数据获取支持关键词、链接和批量任务入口，并把结果沉淀到内容库。",
           "任务状态、素材本地化、失败原因和人工发布闸门组成受控运营链路。"
         ],
@@ -249,30 +338,53 @@
       "slug": "deep-research",
       "name": "深度研究 Agent 系统",
       "type": "深度研究与报告生成系统",
-      "status": "已接受能力持续扩展中",
-      "summary": "用可观察工件、证据覆盖、受限缺口修复和人工发布审批约束深度研究报告。",
+      "status": "唯一开发者 · 核心研究链可用",
+      "summary": "本地优先的多 Agent 深度研究与报告系统，围绕研究问题完成方法发现、证据采集、横纵分析、质量审查与正式报告生成。",
+      "ownership": "项目方向与研究方法吸收实际使用反馈、架构评审和外部系统研究；摩斯是项目发起人和唯一开发者，负责全部技术实现。",
+      "futureDirection": "继续推进 Agent OS 内核、可审核生产记忆、分布式 Worker 和语义级事实核验，支持更长周期、更复杂的研究任务。",
       "featured": true,
       "disclosure": "public",
-      "capabilities": ["多 Agent 研究链", "证据与质量门", "可恢复运行"],
+      "capabilities": ["横纵研究", "证据台账", "论断映射", "缺口修复", "发布审批"],
       "techStack": [
         {
           "label": "前端",
-          "items": ["React", "TypeScript", "Vite", "XYFlow"]
+          "items": ["React", "TypeScript", "Vite", "XYFlow", "Lucide React"]
         },
         {
           "label": "后端",
-          "items": ["Python", "FastAPI", "Pydantic", "HTTPX"]
+          "items": ["Python", "FastAPI", "Pydantic", "Uvicorn", "HTTPX"]
         },
         {
           "label": "AI / Agent",
-          "items": ["固定 hv_analysis 工作流", "证据审查", "人工发布审批"]
+          "items": ["OpenAI-compatible Responses API", "NodeContract DAG", "Tool Gateway", "角色化模型路由"]
         },
         {
-          "label": "工程与部署",
-          "items": ["Pytest", "Docker local runtime"]
+          "label": "检索与证据",
+          "items": ["DuckDuckGo", "Jina Reader", "AnySearch", "Browser CDP", "pypdf"]
+        },
+        {
+          "label": "数据与输出",
+          "items": ["JSONL", "SQLite sidecar", "工件存储", "Markdown", "DOCX"]
+        },
+        {
+          "label": "工程",
+          "items": ["Pytest", "Vitest", "Testing Library", "Docker Compose"]
         }
       ],
-      "media": null,
+      "media": {
+        "src": "/works/deep-research/operator-workbench-example.png",
+        "width": 1440,
+        "height": 1080,
+        "alt": "深度研究 Agent Operator Workbench 示例运行界面",
+        "label": "运行界面 · 示例数据",
+        "caption": "Operator Workbench 示例运行界面，展示运行队列、任务 DAG、治理检查与报告预览。",
+        "evidence": {
+          "capturedAt": "2026-07-19",
+          "commit": "外部只读项目本地构建",
+          "runMode": "本地只读预览",
+          "sanitization": "使用公开示例研究；运行 ID、时间与具体模型标识已替换，不含密钥、真实用户数据或内部路径"
+        }
+      },
       "actions": [
         {
           "kind": "external",
@@ -280,9 +392,77 @@
           "href": "https://github.com/Morse-Moss/Deep-research-sys"
         }
       ],
+      "askMorse": {
+        "label": "问数字摩斯",
+        "prompt": "请介绍深度研究 Agent 的横纵研究、证据治理、缺口修复与人工发布流程，以及摩斯独立完成的技术实现。"
+      },
+      "knowledgeTopics": [
+        {
+          "id": "overview",
+          "title": "项目定位与价值",
+          "content": "深度研究 Agent 系统将研究方法、网络检索、多 Agent 分工、证据治理和报告发布组织成一条可观察工作流，减少长链路研究中的来源丢失、论断失据和完成状态误判。"
+        },
+        {
+          "id": "workflow",
+          "title": "使用流程",
+          "content": "用户输入研究问题并选择研究配置；系统完成方法发现和横纵研究，汇总来源与证据，生成并评估报告，修复关键缺口，完成双 Agent 审校和人工发布审批，最后提供正式报告阅读与下载。"
+        },
+        {
+          "id": "architecture",
+          "title": "核心架构",
+          "content": "Operator Workbench 负责交互与治理，FastAPI 运行时负责任务编排，研究 Agent 通过 Tool Gateway 获取证据，审核链负责质量与发布决策，运行状态、事件和工件统一保存到本地数据目录。"
+        },
+        {
+          "id": "engineering",
+          "title": "关键技术实现",
+          "content": "系统将固定 DAG 与经验证、审批后追加的受限动态节点结合；Agent 通过类型化工件通信；Provider 级联处理网页采集；来源台账和论断映射约束报告；失败任务保留诊断并支持节点边界恢复。"
+        },
+        {
+          "id": "role",
+          "title": "个人技术贡献",
+          "content": "摩斯是项目发起人和唯一开发者，独立完成系统架构、Agent 工作流、模型接入、证据治理、运行时、前后端工作台、数据协议、测试体系和本地交付配置。项目方向与研究方法也吸收实际使用反馈、架构评审和外部系统研究。"
+        },
+        {
+          "id": "roadmap",
+          "title": "未来方向",
+          "content": "未来将完善 Agent OS 通用执行内核、生产记忆闭环、分布式任务执行、语义级事实核验和更丰富的领域研究方法库。"
+        }
+      ],
+      "details": {
+        "overview": [
+          "本地优先的多 Agent 深度研究与报告生成系统。用户提交研究问题后，系统通过固定 hv_analysis 工作流完成领域方法发现、纵向时间线研究、横向对比研究、来源审查、交叉综合、报告起草、论断映射、缺口修复和最终审校。",
+          "正式报告经过证据支持检查、质量评估、Evidence Reviewer、Chief Editor 和人工发布审批后开放。Operator Workbench 集中展示运行队列、任务 DAG、治理状态、证据工件和报告，并支持 Markdown 阅读与 DOCX 下载。"
+        ],
+        "coreCapabilities": [
+          "方法发现：根据研究领域匹配 Domain Profile 与 Domain Playbook，生成研究方法和查询补充。",
+          "多 Agent 协作：Planner、Researcher、Synthesizer、Evaluator、Finalizer 通过类型化工件衔接任务。",
+          "多源证据采集：通过搜索、静态抓取、内容提取和 Browser CDP 获取研究资料。",
+          "论断与证据治理：维护来源台账、证据笔记和 claim-source-map，检查关键论断的证据支持。",
+          "受限缺口修复：根据评估结果执行最多两轮补充检索、证据合并和报告重写。",
+          "发布治理：通过双 Agent 审校、候选报告晋级和人工发布审批控制正式出口。",
+          "可观察运行：展示节点状态、事件、工件、暂停恢复、会话检查点和 Worker 诊断。"
+        ],
+        "architecture": {
+          "flow": "研究问题 -> 分类与方法发现 -> 纵向 / 横向并行研究 -> 来源审查与交叉综合 -> 报告草稿 -> 论断映射与质量评估 -> 缺口修复 -> 最终报告 -> 双 Agent 审校 -> 人工发布审批 -> Markdown / DOCX",
+          "modules": ["工作台层", "编排层", "研究与证据层", "审核发布层", "工件与运行态层"]
+        },
+        "implementation": {
+          "summary": "项目方向与研究方法吸收了实际使用反馈、架构评审和外部系统研究；我是项目发起人和唯一开发者，负责全部技术实现。",
+          "contributions": [
+            "设计并实现 hv_analysis DAG、NodeContract、AgentSpec、事件和类型化工件协议。",
+            "实现 FastAPI 运行时、任务队列、节点并发、暂停恢复、会话检查点与本地 Worker 机制。",
+            "构建搜索、静态抓取、内容提取、Browser CDP 及安全回退链。",
+            "接入 OpenAI-compatible Responses API，建立角色化模型路由、能力检查和结构化输出校验。",
+            "实现来源台账、论断映射、关键支持门、缺口修复、候选晋级和人工发布审批。",
+            "开发 React Operator Workbench，覆盖运行队列、XYFlow DAG、治理检查、证据工件和报告出口。",
+            "建立契约测试、后端测试、前端测试和本地 Docker 运行配置。"
+          ],
+          "futureDirection": "继续推进 Agent OS 内核、可审核生产记忆、分布式 Worker 和语义级事实核验，支持更长周期、更复杂的研究任务。"
+        }
+      },
       "caseStudy": {
         "problem": "长链路研究容易把“报告写得完整”误当作“证据足够”。",
-        "role": "摩斯是项目发起人和开发负责人，负责整个项目的开发与整体架构。",
+        "role": "摩斯是项目发起人和唯一开发者，负责整个项目的开发与全部技术实现；项目方向与研究方法也吸收实际使用反馈、架构评审和外部系统研究。",
         "decisions": [
           "把研究拆成可观察工件、质量门和人工发布审批。",
           "关键证据不足时明确失败，并允许最多两轮受限缺口修复。",
@@ -309,17 +489,18 @@
       "slug": "digital-morse",
       "name": "数字摩斯",
       "type": "个人作品集 × AI 分身",
-      "status": "腾讯云生产已上线 · 持续完善中",
-      "summary": "一套嵌入个人作品集的 AI 数字分身系统。访客可以直接与数字摩斯对话，了解项目、生成 JD 匹配报告或完成需求初诊，并获得带来源的可追溯回答。",
-      "ownership": "摩斯是项目发起人和唯一开发者；从作品集、RAG、对话工作流、管理后台到生产部署，全部技术实现均由摩斯独立完成。",
-      "futureDirection": "未来将加入语音与视频表达、授权式长期记忆和人工审核的知识更新，让数字摩斯从会回答的作品集演进为可持续工作的数字分身。",
+      "status": "唯一开发者 · 已上线 · 持续完善中",
+      "summary": "嵌入个人作品集的 AI 数字分身系统，通过自由对话、JD 匹配和需求初诊，帮助访客快速了解项目与能力，并获得带来源的可追溯回答。",
+      "ownership": "数字摩斯由摩斯发起；需求判断、产品方向和部分创意也会吸收招聘方、潜在客户、同行及真实业务沟通中的输入。摩斯是项目唯一开发者，负责全部技术实现。",
+      "futureDirection": "未来将增加语音与视频表达，建设经用户授权且可撤销的长期记忆，并建立人工审核的知识更新流程。",
       "featured": true,
       "disclosure": "public",
       "capabilities": [
-        "自由对话 / JD 匹配 / 需求初诊",
-        "BGE + pgvector RAG",
-        "可追溯来源与受控联网",
-        "停止、重试与会话恢复"
+        "三类对话工作流",
+        "BGE + pgvector",
+        "可追溯来源",
+        "受控联网",
+        "停止与恢复"
       ],
       "techStack": [
         {
@@ -327,17 +508,17 @@
           "items": ["Next.js 16", "React 19", "TypeScript", "CSS Modules"]
         },
         {
-          "label": "后端",
-          "items": ["Next.js Route Handlers", "OpenAI-compatible Responses", "SSE", "Worker"]
+          "label": "服务端",
+          "items": ["Next.js Route Handlers", "Node.js Worker", "OpenAI SDK", "SSE"]
         },
-        { "label": "数据", "items": ["PostgreSQL 16", "pgvector", "BGE Embeddings"] },
         {
           "label": "AI / Agent",
-          "items": ["RAG", "SearchRouter", "JD Match", "Diagnosis State Machine"]
+          "items": ["OpenAI-compatible Responses", "BGE Embeddings", "RAG", "SearchRouter", "JD Match", "Diagnosis State Machine"]
         },
+        { "label": "数据", "items": ["PostgreSQL 16", "pgvector"] },
         {
-          "label": "工程与部署",
-          "items": ["Docker", "Caddy / HTTPS", "Transactional Outbox", "Health / Release Smoke"]
+          "label": "工程",
+          "items": ["Docker Compose", "Caddy", "HTTPS", "Transactional Outbox", "Health Check", "Release Smoke"]
         }
       ],
       "media": {
@@ -345,8 +526,8 @@
         "width": 576,
         "height": 648,
         "alt": "数字摩斯当前对话主界面",
-        "label": "本地验收截图 · 示例会话 · 非生产访客数据",
-        "caption": "数字摩斯当前主界面（本地生产构建），对话状态由验收数据驱动；不含真实访客或生产会话数据。",
+        "label": "产品界面 · 示例会话",
+        "caption": "数字摩斯产品主界面，展示自由对话、JD 匹配和需求初诊入口。",
         "evidence": {
           "capturedAt": "2026-07-19",
           "commit": "b15be68（本轮截图基线）",
@@ -369,37 +550,67 @@
         {
           "id": "overview",
           "title": "项目定位与价值",
-          "content": "数字摩斯是一套嵌入个人作品集的 AI 数字分身系统，面向招聘方、潜在客户和同行。访客无需翻完所有页面，就能通过对话了解摩斯的项目、能力和工程判断；公开作品可直接阅读，实时对话使用短期邀请码控制访问。"
+          "content": "数字摩斯将个人作品集扩展为可对话的数字分身入口。招聘方、潜在客户和同行可以直接询问项目、能力与技术决策，也可以通过 JD 匹配和需求初诊完成更具体的交流。"
         },
         {
           "id": "workflows",
-          "title": "三类对话工作流",
-          "content": "自由对话用于了解项目、经历和技术决策；JD 匹配会基于公开证据拆解岗位要求、对应项目与诚实缺口，不生成虚构匹配百分比；需求初诊通过五项结构化信息逐步收集问题、目标、现状、约束和时间预期，再形成初步判断与下一步。"
+          "title": "使用流程",
+          "content": "访客进入站内对话并完成短期访问授权，选择自由对话、JD 匹配或需求初诊。系统检索公开知识，按需补充外部资料，再以流式方式返回带来源回答；对话支持停止、重试和继续恢复。"
         },
         {
           "id": "knowledge",
-          "title": "RAG 与可追溯回答",
-          "content": "数字摩斯以审核后的站点内容为唯一公开事实源，使用 BGE Embeddings 和 PostgreSQL/pgvector 检索相关证据。回答只展示服务端确认的站内或联网来源；受控联网只补充外部背景，不能改写摩斯的履历、项目状态、数字或联系方式。"
+          "title": "核心架构",
+          "content": "Next.js 承载作品集、对话工作区和管理后台；Chat Service 编排工作流、BGE Embedding、pgvector 检索、SearchRouter 和 OpenAI-compatible Responses；PostgreSQL 保存知识、会话和交互记录；Worker 处理 Outbox 与清理任务；Caddy 负责 HTTPS 入口。"
         },
         {
           "id": "reliability",
-          "title": "可靠性与访问治理",
-          "content": "系统使用 SSE 流式输出，并支持真实停止、原位重试、12 小时会话恢复、同一 Turn 幂等重放和失败补偿。短期邀请码、每 Session 30 条消息、最多五次联网、并发与超时限制共同约束成本和滥用；Provider 已输出部分正文后不会自动重试，避免重复回答。"
+          "title": "关键技术实现",
+          "content": "使用 BGE Embeddings 生成知识向量，以 pgvector 完成语义检索；通过确定性 SearchRouter 控制联网；三类工作流分别约束输入和输出；SSE、Abort、幂等 Turn、事务补偿和有界重试保障对话可靠性。"
         },
         {
           "id": "role",
-          "title": "个人贡献与工程范围",
-          "content": "摩斯是数字摩斯的项目发起人和唯一开发者，负责产品方向、工程决策和全部技术实现，包括作品集前端、RAG 与模型适配、三类对话工作流、事务与幂等、私有管理后台、badcase 与导出、Worker、生产安全配置和腾讯云部署。AI 工具用于研究、编程和验证，不构成人类协作团队。"
+          "title": "个人技术贡献",
+          "content": "摩斯是项目唯一开发者，独立完成前端、服务端、RAG、模型适配、工作流、数据模型、访问治理、管理后台、Worker 和生产交付。业务需求、产品方向和部分创意也会吸收真实沟通中的输入。"
         },
         {
           "id": "roadmap",
-          "title": "未来方向：更完整的数字分身",
-          "content": "语音与视频表达、跨 Session 长期记忆和自动知识更新当前尚未实现。下一阶段计划在用户明确授权、记忆可查看可撤销、知识变更需人工审核的前提下逐步加入这些能力，让数字摩斯从会回答的作品集演进为可持续工作的数字分身。"
+          "title": "未来方向",
+          "content": "未来将增加语音与视频表达；建设经用户授权、可查看、可撤销的跨会话长期记忆；建立人工审核的知识更新流程；继续完善数字分身的持续工作能力。"
         }
       ],
+      "details": {
+        "overview": [
+          "数字摩斯是一套嵌入个人作品集的 AI 数字分身系统，面向招聘方、潜在客户和同行。访客可以通过对话了解摩斯的项目、能力和技术判断，也可以提交 JD 或结构化业务需求，获得带来源的匹配分析与初步诊断。",
+          "系统将作品集内容、RAG 检索、工作流编排、流式生成和后台治理连接为完整产品链路，已上线并持续完善。"
+        ],
+        "coreCapabilities": [
+          "自由对话：围绕项目经历、技术实现和工程判断进行多轮问答。",
+          "JD 匹配：拆解岗位要求，关联公开项目与能力，输出匹配点和诚实缺口。",
+          "需求初诊：逐步收集问题、目标、现状、约束和时间预期，形成初步判断与下一步。",
+          "可追溯 RAG：使用 BGE Embeddings 和 pgvector 检索审核后的公开知识，并返回具名来源。",
+          "受控联网：通过确定性 SearchRouter 判断是否补充外部资料，个人履历和项目事实始终以站内知识为准。",
+          "可靠对话：支持 SSE 流式输出、真实停止、原位重试、会话恢复、幂等重放和失败补偿。"
+        ],
+        "architecture": {
+          "flow": "访客问题 / JD / 需求字段 -> 访问与工作流编排 -> BGE + pgvector 检索 -> SearchRouter 按需补充资料 -> 模型 Provider 生成 -> SSE 流式返回 -> 交互记录与后台回看",
+          "modules": ["交互层", "工作流层", "知识层", "生成层", "治理层"]
+        },
+        "implementation": {
+          "summary": "数字摩斯由我发起；需求判断、产品方向和部分创意也会吸收招聘方、潜在客户、同行及真实业务沟通中的输入。我是项目唯一开发者，负责全部技术实现。",
+          "contributions": [
+            "作品集前端、对话工作区、响应式界面和私有管理后台。",
+            "自由对话、JD Match 和 Diagnosis State Machine 三类工作流。",
+            "BGE 知识向量化、pgvector 检索、来源映射和 SearchRouter。",
+            "OpenAI-compatible Responses 适配、SSE、停止、超时、有界重试和幂等恢复。",
+            "PostgreSQL 数据模型、短期访问、用量治理、badcase、导出和 Transactional Outbox。",
+            "Docker、Caddy、HTTPS、Worker、数据库迁移、健康检查和发布冒烟。"
+          ],
+          "futureDirection": "语音与视频表达、经用户授权且可撤销的长期记忆、人工审核的知识更新工作流。"
+        }
+      },
       "caseStudy": {
         "problem": "传统作品集只能被动展示内容，招聘方和潜在客户仍要自己翻页、拼接证据；普通聊天机器人又容易脱离事实、无法恢复失败，也难以把高价值咨询沉淀为可跟进线索。",
-        "role": "摩斯是项目发起人和唯一开发者，负责整个项目的开发、产品方向与整体架构，并独立完成网站、RAG、对话工作流、后台治理和生产部署等全部技术实现。",
+        "role": "数字摩斯由摩斯发起；需求判断、产品方向和部分创意也会吸收真实沟通中的输入。摩斯是项目唯一开发者，负责整个项目的开发与全部技术实现。",
         "decisions": [
           "让站点内容与 RAG 共用同一份审核公开事实源，回答必须带服务端确认的来源，不让模型补造履历或项目状态。",
           "把自由对话、JD 匹配和需求初诊放在同一条受控运行链上，但由服务端分别约束输入、状态与输出结构。",
@@ -412,12 +623,12 @@
           "Chat Service 编排 BGE Embedding、pgvector 检索、受控 SearchRouter、OpenAI-compatible Provider 与 SSE 输出。",
           "PostgreSQL 保存公开知识、向量、访问会话、短期消息、交互分析、诊断状态、用量与 Outbox。",
           "Worker 负责告警投递和保留期清理；Admin 支持筛选、详情、badcase 与 fresh-TOTP JSON/CSV 导出。",
-          "腾讯云生产拓扑由 Caddy、Next.js Web、Worker、PostgreSQL/pgvector 和 CPU BGE 组成。"
+          "生产拓扑由 Caddy、Next.js Web、Worker、PostgreSQL/pgvector 和 CPU BGE 组成。"
         ],
         "evidence": [
           "访客三流程、停止与重试、历史恢复、来源分组和私有 Admin 均有自动化测试与 1440/390 浏览器证据。",
           "本地 CPU BGE + pgvector 已通过知识幂等摄取、语义正例与负例阈值评测。",
-          "腾讯云 Lighthouse 生产环境已上线，Caddy、Next.js、Worker、PostgreSQL/pgvector 与 CPU BGE 均在运行。",
+          "生产环境已上线，Caddy、Next.js、Worker、PostgreSQL/pgvector 与 CPU BGE 均在运行。",
           "公网 live、ready 与 release smoke 已通过；受控真实 Chat Provider smoke 到达 HTTP 200、SSE 完成和数据库 completed。"
         ],
         "boundaries": [

@@ -111,7 +111,7 @@ npm run production:worker
 
 ## 8. 当前生产状态与硬化余项
 
-腾讯云首个实例在 `39849e1` 完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实 GPT smoke 和公网 live/ready/release smoke。当前 release 为 `b15be68`，沿用同一生产拓扑，并已重新观察容器健康、公网 live/ready、release smoke、公开页面与正式图片；实例细节和内容发布证据以腾讯云手册及 S11 closeout 为准。
+首个生产实例在 `39849e1` 完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实对话 smoke 和公网 live/ready/release smoke。当前 Web release 为 `d83b46f`，沿用同一生产拓扑，并已发布内容创作 Agent、自动运营 Agent、深度研究 Agent 与数字摩斯的简洁页面、展开详情和正式主图。生产公开知识为 33 documents / 39 chunks，其中四项目各 7 个稳定文档；第二次全量摄取为 33/33 跳过。生产 BGE + pgvector 的 36 条 gold 为 top-1 28/36、top-3 36/36，正负阈值均通过。本次内容与知识发布没有调用真实 Chat Provider；实例细节和内容发布证据以实例手册及 S11 closeout 为准。
 
 以下事项完成前保持 `LIMITED_LAUNCH`，不标记完整 `ONLINE_READY`：
 

@@ -767,6 +767,12 @@ async function runVisitorScenarios({
   }, 'search:degradation-not-persisted');
   checks.add('search-degradation');
 
+  const staticEvidence = await submitChatValue(page, '#morse-message', '请根据站内公开资料简要介绍 Morse。');
+  check(
+    staticEvidence.state === 'done' && staticEvidence.localSources > 0,
+    'source:static-answer',
+  );
+
   const searched = await submitChatValue(page, '#morse-message', '请查证 Next.js 当前版本的官方文档与 GitHub 资料。');
   check(searched.state === 'done' && searched.localSources > 0 && searched.webSources > 0, 'search:sources-missing');
   const sourceContract = await page.evaluate(`(() => {
