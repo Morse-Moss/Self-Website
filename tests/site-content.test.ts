@@ -14,6 +14,7 @@ import {
 const expectedSlugs = [
   "content-agent",
   "auto-operations",
+  "ai-leadgen",
   "deep-research",
   "digital-morse",
 ] as const;
@@ -27,6 +28,11 @@ const expectedProjects = {
   "auto-operations": {
     name: "自动运营 Agent 系统",
     status: "唯一开发者 · 已部署运行",
+    actions: [],
+  },
+  "ai-leadgen": {
+    name: "AI 外贸获客系统",
+    status: "唯一开发者 · 本地 MVP 真实链路已验证",
     actions: [],
   },
   "deep-research": {
@@ -137,7 +143,7 @@ test("content agent leads with a concise operator pitch and solo technical deliv
     details?: {
       overview: string[];
       coreCapabilities: string[];
-      architecture: { flow?: string; modules: string[] };
+      architecture: { description?: string; flow?: string; modules: string[] };
       implementation: {
         summary: string;
         contributions: string[];
@@ -240,6 +246,83 @@ test("auto operations publishes the approved controlled-workflow story", () => {
   );
 });
 
+test("AI leadgen publishes the approved full-funnel acquisition story", () => {
+  const project = getProjectBySlug("ai-leadgen") as ReturnType<
+    typeof getProjectBySlug
+  > & {
+    details?: {
+      sectionTitles?: {
+        overview?: string;
+        implementation?: string;
+      };
+      overview: string[];
+      coreCapabilities: string[];
+      architecture: { description?: string; flow?: string; modules: string[] };
+      implementation: {
+        summary: string;
+        contributions: string[];
+        futureDirection?: string;
+      };
+    };
+  };
+
+  assert.ok(project);
+  assert.equal(project.name, "AI 外贸获客系统");
+  assert.equal(
+    project.summary,
+    "面向外贸销售团队的 AI 获客运营系统，打通线索入池、官网信息补全、AI 价值评分、飞书协同、邮件触达与回信跟进，将分散的获客动作整合为可追踪、可协作的销售流程。",
+  );
+  assert.equal(project.status, "唯一开发者 · 本地 MVP 真实链路已验证");
+  assert.deepEqual(project.capabilities, [
+    "线索数据归一化",
+    "官网信息富化",
+    "AI 线索评分",
+    "飞书协同",
+    "阿里邮箱 OpenAPI",
+  ]);
+  assert.equal(
+    project.media?.src,
+    "/works/ai-leadgen/graphite-dashboard-real-2026-07-19.png",
+  );
+  assert.equal(project.media?.width, 1440);
+  assert.equal(project.media?.height, 1272);
+  assert.equal(project.media?.label, "真实运行界面");
+  assert.deepEqual(project.askMorse, {
+    label: "问数字摩斯",
+    prompt: "我想了解 AI 外贸获客系统",
+  });
+  assert.deepEqual(
+    project.knowledgeTopics?.map((topic) => topic.id),
+    ["overview", "acquisition", "scoring", "collaboration", "outreach", "role"],
+  );
+  assert.deepEqual(project.details?.sectionTitles, {
+    overview: "为什么做",
+    implementation: "技术实现",
+  });
+  assert.equal(project.details?.overview.length, 1);
+  assert.equal(project.details?.coreCapabilities.length, 5);
+  assert.equal(project.details?.architecture.modules.length, 5);
+  assert.equal(project.details?.implementation.contributions.length, 4);
+  assert.equal(
+    project.details?.architecture.description,
+    "系统以统一线索状态串联评分记录、飞书提醒、发信任务和客户回信。触达前经过人工确认、邮箱健康检查和 Safe Send 校验，回信自动关联原始发信记录并进入后续跟进流程。",
+  );
+  assert.match(project.details?.architecture.flow ?? "", /外部企业数据.*客户跟进/);
+  assert.match(project.details?.implementation.summary ?? "", /真实业务对接/);
+  assert.doesNotMatch(
+    JSON.stringify({
+      summary: project.summary,
+      capabilities: project.capabilities,
+      details: project.details,
+      knowledgeTopics: project.knowledgeTopics,
+    }),
+    /已经接入 Apify|已经接入 Apollo|已经接入 WhatsApp|Google Maps 自动采集已完成|支持 AI 自动撰写开发信|AI 自动生成客户回复已完成|AI 自动发送客户回复已完成|已生产部署|已取得规模化获客|实现规模化获客/,
+  );
+  assert.match(JSON.stringify(project.knowledgeTopics), /不是 AI 自动撰写/);
+  assert.match(JSON.stringify(project.knowledgeTopics), /不自动生成或发送客户回复/);
+  assert.match(JSON.stringify(project.knowledgeTopics), /不表述为生产部署或规模化获客成果/);
+});
+
 test("deep research leads with the approved research and evidence-governance story", () => {
   const project = getProjectBySlug("deep-research");
 
@@ -317,12 +400,12 @@ test("provides six case-study fields for every project", () => {
   }
 });
 
-test("publishes only the four separately approved project media assets", () => {
+test("publishes only the five separately approved project media assets", () => {
   const mediaProjects = getAllProjects().filter((project) => project.media);
 
   assert.deepEqual(
     mediaProjects.map((project) => project.slug),
-    ["content-agent", "auto-operations", "deep-research", "digital-morse"],
+    ["content-agent", "auto-operations", "ai-leadgen", "deep-research", "digital-morse"],
   );
   assert.equal(mediaProjects[0]?.media?.width, 1280);
   assert.equal(mediaProjects[0]?.media?.height, 1486);
@@ -331,12 +414,16 @@ test("publishes only the four separately approved project media assets", () => {
   assert.equal(mediaProjects[1]?.media?.height, 1080);
   assert.equal(mediaProjects[1]?.media?.label, "界面设计稿 · 示例数据");
   assert.equal(mediaProjects[2]?.media?.width, 1440);
-  assert.equal(mediaProjects[2]?.media?.height, 1080);
-  assert.equal(mediaProjects[2]?.media?.label, "运行界面 · 示例数据");
-  assert.equal(mediaProjects[3]?.media?.width, 576);
-  assert.equal(mediaProjects[3]?.media?.height, 648);
-  assert.match(mediaProjects[3]?.media?.evidence.runMode ?? "", /本地 production build/);
-  assert.equal(mediaProjects[3]?.media?.label, "产品界面 · 示例会话");
+  assert.equal(mediaProjects[2]?.media?.height, 1272);
+  assert.equal(mediaProjects[2]?.media?.label, "真实运行界面");
+  assert.match(mediaProjects[2]?.media?.evidence.sanitization ?? "", /原图使用/);
+  assert.equal(mediaProjects[3]?.media?.width, 1440);
+  assert.equal(mediaProjects[3]?.media?.height, 1080);
+  assert.equal(mediaProjects[3]?.media?.label, "运行界面 · 示例数据");
+  assert.equal(mediaProjects[4]?.media?.width, 576);
+  assert.equal(mediaProjects[4]?.media?.height, 648);
+  assert.match(mediaProjects[4]?.media?.evidence.runMode ?? "", /本地 production build/);
+  assert.equal(mediaProjects[4]?.media?.label, "产品界面 · 示例会话");
 });
 
 test("keeps the approved global copy and four FAQ topics", () => {
@@ -477,5 +564,5 @@ test("keeps all public JSON free of placeholders and private-source leakage", ()
   for (const pattern of banned) {
     assert.doesNotMatch(source, pattern);
   }
-  assert.equal(siteContent.projects.length, 4);
+  assert.equal(siteContent.projects.length, 5);
 });

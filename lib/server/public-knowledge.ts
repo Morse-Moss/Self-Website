@@ -9,6 +9,7 @@ export interface PublicKnowledgeDocument {
 const publicProjectSlugs = [
   'content-agent',
   'auto-operations',
+  'ai-leadgen',
   'deep-research',
   'digital-morse',
 ] as const;
@@ -36,6 +37,7 @@ interface SiteContent {
       overview?: string[];
       coreCapabilities?: string[];
       architecture?: {
+        description?: string;
         flow?: string;
         modules?: string[];
       };
@@ -70,6 +72,7 @@ function projectDetailParts(
       project.details.coreCapabilities?.length
         ? `核心能力:\n${project.details.coreCapabilities.join('\n')}`
         : undefined,
+      project.details.architecture?.description,
       project.details.architecture?.flow,
       project.details.architecture?.modules?.length
         ? `系统模块:\n${project.details.architecture.modules.join('\n')}`

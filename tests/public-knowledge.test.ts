@@ -19,6 +19,7 @@ function expectedProjectDetails(project: any): string[] {
     return [
       ...project.details.overview,
       `核心能力:\n${project.details.coreCapabilities.join('\n')}`,
+      project.details.architecture.description,
       project.details.architecture.flow,
       `系统模块:\n${project.details.architecture.modules.join('\n')}`,
       project.details.implementation.summary,
@@ -61,6 +62,16 @@ test('extractPublicKnowledge produces the approved site-content and project topi
         id: `project-auto-operations-${topic}`,
         sourcePath: `content/site-content.json#projects.auto-operations.knowledge.${topic}`,
         href: '/works#auto-operations',
+      })),
+      {
+        id: 'project-ai-leadgen',
+        sourcePath: 'content/site-content.json#projects.ai-leadgen',
+        href: '/works#ai-leadgen',
+      },
+      ...['overview', 'acquisition', 'scoring', 'collaboration', 'outreach', 'role'].map((topic) => ({
+        id: `project-ai-leadgen-${topic}`,
+        sourcePath: `content/site-content.json#projects.ai-leadgen.knowledge.${topic}`,
+        href: '/works#ai-leadgen',
       })),
       {
         id: 'project-deep-research',
@@ -107,6 +118,25 @@ test('content-agent knowledge topics stay independently retrievable and share on
     assert.equal(document.content, `${project.name}\n\n${topic.title}\n\n${topic.content}`);
     assert.equal(document.href, '/works#content-agent');
     assert.equal(publicKnowledgeHref(documentId), '/works#content-agent');
+  }
+});
+
+test('AI leadgen knowledge topics stay independently retrievable and share one case href', () => {
+  const content = loadSiteContent();
+  const project = content.projects.find((item: { slug: string }) => item.slug === 'ai-leadgen');
+  const documents = extractPublicKnowledge(content);
+
+  assert.ok(project);
+  assert.equal(project.knowledgeTopics.length, 6);
+  for (const topic of project.knowledgeTopics) {
+    const documentId = `project-ai-leadgen-${topic.id}`;
+    const document = documents.find((item) => item.id === documentId);
+
+    assert.ok(document);
+    assert.equal(document.title, `${project.name}：${topic.title}`);
+    assert.equal(document.content, `${project.name}\n\n${topic.title}\n\n${topic.content}`);
+    assert.equal(document.href, '/works#ai-leadgen');
+    assert.equal(publicKnowledgeHref(documentId), '/works#ai-leadgen');
   }
 });
 
@@ -227,6 +257,32 @@ test('auto-operations public knowledge follows the approved controlled-workflow 
   assert.doesNotMatch(
     [document.content, ...topics.map((topic) => topic.content)].join('\n'),
     /验证证据|当前边界|采集时间|提交版本|运行方式|脱敏处理|Railway|https?:\/\/|doubao|豆包|gpt-?\d|seed|kling|veo|wan/i,
+  );
+});
+
+test('AI leadgen public knowledge keeps implemented scope precise', () => {
+  const documents = extractPublicKnowledge(loadSiteContent());
+  const document = documents.find((item) => item.id === 'project-ai-leadgen');
+  const topics = documents.filter((item) =>
+    item.id.startsWith('project-ai-leadgen-'),
+  );
+  const serialized = JSON.stringify([document, ...topics]);
+
+  assert.ok(document);
+  assert.equal(topics.length, 6);
+  assert.match(document.content, /线索入池.*官网信息补全.*AI 价值评分/);
+  assert.match(document.content, /外部企业数据.*官网富化.*回信同步.*客户跟进/);
+  assert.match(
+    document.content,
+    /统一线索状态串联评分记录、飞书提醒、发信任务和客户回信.*人工确认、邮箱健康检查和 Safe Send 校验.*回信自动关联原始发信记录/,
+  );
+  assert.match(serialized, /规则模板/);
+  assert.match(serialized, /不是 AI 自动撰写/);
+  assert.match(serialized, /不自动生成或发送客户回复/);
+  assert.match(serialized, /不表述为生产部署或规模化获客成果/);
+  assert.doesNotMatch(
+    serialized,
+    /已经接入 Apify|已经接入 Apollo|已经接入 WhatsApp|Google Maps 自动采集已完成|支持 AI 自动撰写开发信|AI 自动生成客户回复已完成|AI 自动发送客户回复已完成|已生产部署|已取得规模化获客|实现规模化获客/,
   );
 });
 

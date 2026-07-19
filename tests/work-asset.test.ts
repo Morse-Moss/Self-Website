@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
@@ -12,6 +13,8 @@ const digitalMorseAssetDirectory = path.join(publicRoot, 'works', 'digital-morse
 const digitalMorseFilename = 'digital-morse-main-local-2026-07-19.png';
 const deepResearchAssetDirectory = path.join(publicRoot, 'works', 'deep-research');
 const deepResearchFilename = 'operator-workbench-example.png';
+const aiLeadgenAssetDirectory = path.join(publicRoot, 'works', 'ai-leadgen');
+const aiLeadgenFilename = 'graphite-dashboard-real-2026-07-19.png';
 
 async function listFiles(directory: string): Promise<string[]> {
   let entries;
@@ -59,4 +62,17 @@ test('publishes one approved deep-research Operator Workbench screenshot', async
   const image = await readFile(path.join(deepResearchAssetDirectory, deepResearchFilename));
   assert.ok(image.length > 100_000);
   assert.deepEqual([...image.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+});
+
+test('publishes the confirmed AI leadgen Graphite dashboard without pixel changes', async () => {
+  const files = await listFiles(aiLeadgenAssetDirectory);
+
+  assert.deepEqual(files.map((file) => path.basename(file)), [aiLeadgenFilename]);
+  const image = await readFile(path.join(aiLeadgenAssetDirectory, aiLeadgenFilename));
+  assert.ok(image.length > 300_000);
+  assert.deepEqual([...image.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+  assert.equal(
+    createHash('sha256').update(image).digest('hex').toUpperCase(),
+    '026404371270ECAB10313A9F505677740A7621910DDCF33DDA180D6F5C3310D7',
+  );
 });

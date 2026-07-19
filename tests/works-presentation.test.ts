@@ -82,25 +82,47 @@ test("deep research uses the approved compact card and five-section detail contr
   );
 });
 
+test("AI leadgen uses the approved compact card and project-specific detail headings", () => {
+  const project = getProjectBySlug("ai-leadgen") as ReturnType<
+    typeof getProjectBySlug
+  > & {
+    details?: {
+      sectionTitles?: { overview?: string; implementation?: string };
+      overview: string[];
+      coreCapabilities: string[];
+      architecture: { modules: string[] };
+      implementation: { contributions: string[] };
+    };
+  };
+
+  assert.ok(project);
+  assert.equal(
+    project.summary,
+    "面向外贸销售团队的 AI 获客运营系统，打通线索入池、官网信息补全、AI 价值评分、飞书协同、邮件触达与回信跟进，将分散的获客动作整合为可追踪、可协作的销售流程。",
+  );
+  assert.equal(project.status, "唯一开发者 · 本地 MVP 真实链路已验证");
+  assert.deepEqual(project.capabilities, [
+    "线索数据归一化",
+    "官网信息富化",
+    "AI 线索评分",
+    "飞书协同",
+    "阿里邮箱 OpenAPI",
+  ]);
+  assert.equal(project.media?.label, "真实运行界面");
+  assert.deepEqual(project.details?.sectionTitles, {
+    overview: "为什么做",
+    implementation: "技术实现",
+  });
+  assert.equal(project.details?.overview.length, 1);
+  assert.equal(project.details?.coreCapabilities.length, 5);
+  assert.equal(project.details?.architecture.modules.length, 5);
+  assert.equal(project.details?.implementation.contributions.length, 4);
+});
+
 test("live components render five concise sections and omit audit narration", () => {
   const page = read("app/(portfolio)/works/page.tsx");
   const card = read("components/works/ProjectCard.tsx");
   const caseStudy = read("components/works/CaseStudy.tsx");
-  const headings = [
-    "项目简介",
-    "核心能力",
-    "系统架构",
-    "我的技术实现",
-    "技术栈",
-  ];
-  let cursor = -1;
-
-  for (const heading of headings) {
-    const next = caseStudy.indexOf(`>${heading}<`);
-    assert.ok(next > cursor, `${heading} must appear in order`);
-    cursor = next;
-  }
-
   assert.doesNotMatch(page, /WORK INDEX|siteContent\.works\.intro/);
   assert.doesNotMatch(
     card,
@@ -108,6 +130,19 @@ test("live components render five concise sections and omit audit narration", ()
   );
   assert.match(card, /mediaBadge/);
   assert.match(card, /aria-expanded=\{expanded\}/);
+  assert.match(
+    caseStudy,
+    /const overviewTitle = details\.sectionTitles\?\.overview \?\? ['"]项目简介['"]/,
+  );
+  assert.match(
+    caseStudy,
+    /const implementationTitle = details\.sectionTitles\?\.implementation \?\? ['"]我的技术实现['"]/,
+  );
+  assert.match(caseStudy, /<h3>\{overviewTitle\}<\/h3>/);
+  assert.match(caseStudy, /<h3>核心能力<\/h3>/);
+  assert.match(caseStudy, /<h3>系统架构<\/h3>/);
+  assert.match(caseStudy, /<h3>\{implementationTitle\}<\/h3>/);
+  assert.match(caseStudy, /<h3>技术栈<\/h3>/);
   assert.doesNotMatch(
     caseStudy,
     /验证证据|当前边界|采集时间|提交版本|运行方式|脱敏处理/,

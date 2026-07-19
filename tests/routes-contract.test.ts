@@ -69,14 +69,23 @@ test('ProjectCard renders the concise project row and keeps actions out of the c
 
 test('CaseStudy renders five resume sections and keeps actions after the content', () => {
   const source = readSource(files.caseStudy);
-  const headings = ['项目简介', '核心能力', '系统架构', '我的技术实现', '技术栈'];
-  const positions = headings.map((heading) => positionOf(source, heading));
+  const renderedHeadings = [
+    '<h3>{overviewTitle}</h3>',
+    '<h3>核心能力</h3>',
+    '<h3>系统架构</h3>',
+    '<h3>{implementationTitle}</h3>',
+    '<h3>技术栈</h3>',
+  ];
+  const positions = renderedHeadings.map((heading) => positionOf(source, heading));
 
   assert.deepEqual(positions, [...positions].sort((left, right) => left - right));
   assert.match(source, /import OpenChatButton/);
   assert.match(source, /project\.details \?\?/);
+  assert.match(source, /details\.sectionTitles\?\.overview \?\? ['"]项目简介['"]/);
+  assert.match(source, /details\.sectionTitles\?\.implementation \?\? ['"]我的技术实现['"]/);
   assert.match(source, /details\.overview\.map/);
   assert.match(source, /details\.coreCapabilities\.map/);
+  assert.match(source, /details\.architecture\.description\s*\?/);
   assert.match(source, /details\.architecture\.modules\.map/);
   assert.match(source, /details\.implementation\.contributions\.map/);
   assert.match(source, /project\.techStack\.map/);
@@ -161,7 +170,7 @@ test('home sections render exactly two public projects, linked capabilities, and
   assert.doesNotMatch(sections, /\?\?\s*0|\|\|\s*0|职业|时间线|FAQ|高频问题/);
 });
 
-test('works index is an unfiltered four-project gallery driven by the public content helper', () => {
+test('works index is an unfiltered five-project gallery driven by the public content helper', () => {
   const source = readSource(files.works);
   const content = JSON.parse(readSource(files.siteContent)) as {
     projects: Array<{ slug: string }>;
@@ -174,7 +183,7 @@ test('works index is an unfiltered four-project gallery driven by the public con
   assert.doesNotMatch(source, /filter|search|sort/i);
   assert.deepEqual(
     content.projects.map((project) => project.slug),
-    ['content-agent', 'auto-operations', 'deep-research', 'digital-morse'],
+    ['content-agent', 'auto-operations', 'ai-leadgen', 'deep-research', 'digital-morse'],
   );
 });
 
@@ -279,8 +288,14 @@ test('pending gallery correction is cancelled by subsequent user scroll intent o
 test('controlled project cards expose real hash targets and accessible embedded details', () => {
   const card = readSource(files.projectCard);
   const caseStudy = readSource(files.caseStudy);
-  const headings = ['项目简介', '核心能力', '系统架构', '我的技术实现', '技术栈'];
-  const positions = headings.map((heading) => positionOf(caseStudy, heading));
+  const renderedHeadings = [
+    '<h3>{overviewTitle}</h3>',
+    '<h3>核心能力</h3>',
+    '<h3>系统架构</h3>',
+    '<h3>{implementationTitle}</h3>',
+    '<h3>技术栈</h3>',
+  ];
+  const positions = renderedHeadings.map((heading) => positionOf(caseStudy, heading));
 
   assert.match(card, /<article[\s\S]*id=\{project\.slug\}[\s\S]*data-project-slug=\{project\.slug\}/);
   assert.match(card, /aria-expanded=\{expanded\}/);

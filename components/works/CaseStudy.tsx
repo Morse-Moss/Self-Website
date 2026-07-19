@@ -24,6 +24,8 @@ export default function CaseStudy({
       futureDirection: project.futureDirection,
     },
   };
+  const overviewTitle = details.sectionTitles?.overview ?? '项目简介';
+  const implementationTitle = details.sectionTitles?.implementation ?? '我的技术实现';
   const hasActions = Boolean(project.askMorse || project.actions.length);
 
   return (
@@ -38,7 +40,7 @@ export default function CaseStudy({
         <section>
           <p className={styles.sectionIndex}>01</p>
           <div>
-            <h3>项目简介</h3>
+            <h3>{overviewTitle}</h3>
             {details.overview.map((paragraph) => (
               <p key={paragraph}>{paragraph}</p>
             ))}
@@ -61,6 +63,9 @@ export default function CaseStudy({
           <p className={styles.sectionIndex}>03</p>
           <div>
             <h3>系统架构</h3>
+            {details.architecture.description ? (
+              <p>{details.architecture.description}</p>
+            ) : null}
             {details.architecture.flow ? (
               <p className={styles.architectureFlow}>
                 {details.architecture.flow}
@@ -77,7 +82,7 @@ export default function CaseStudy({
         <section>
           <p className={styles.sectionIndex}>04</p>
           <div>
-            <h3>我的技术实现</h3>
+            <h3>{implementationTitle}</h3>
             <p>{details.implementation.summary}</p>
             <ul>
               {details.implementation.contributions.map((item) => (

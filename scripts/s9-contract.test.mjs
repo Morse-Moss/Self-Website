@@ -59,6 +59,7 @@ test('S9 raw-CDP harness contains the complete route, viewport, and event contra
     "'/works'",
     'content-agent',
     'auto-operations',
+    'ai-leadgen',
     'deep-research',
     'digital-morse',
     '1440',
@@ -77,6 +78,18 @@ test('S9 raw-CDP harness contains the complete route, viewport, and event contra
   ]) {
     assert.ok(harness.includes(marker), `missing S9 harness marker: ${marker}`);
   }
+});
+
+test('S9 gallery count follows the canonical slug list', () => {
+  const harness = readHarness();
+
+  assert.match(harness, /buttons\.length === \$\{slugs\.length\}/);
+  assert.match(
+    harness,
+    /document\.querySelectorAll\("\[data-project-slug\]"\)\.length === \$\{slugs\.length\}/,
+  );
+  assert.match(harness, /state\.cardCount === slugs\.length/);
+  assert.doesNotMatch(harness, /=== 4/);
 });
 
 test('S9 home hero fills the first viewport before the featured band begins', () => {

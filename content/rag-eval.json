@@ -60,6 +60,46 @@
     "expectedDocumentId": "project-auto-operations-roadmap"
   },
   {
+    "query": "AI 外贸获客系统整体覆盖哪些销售流程？",
+    "expectedDocumentId": "project-ai-leadgen"
+  },
+  {
+    "query": "AI 外贸获客系统如何从获取线索推进到邮件触达和回信跟进？",
+    "expectedDocumentId": "project-ai-leadgen-overview"
+  },
+  {
+    "query": "外部企业数据如何归一化、去重并通过官网补全邮箱、电话和联系表单？",
+    "expectedDocumentId": "project-ai-leadgen-acquisition"
+  },
+  {
+    "query": "AI 外贸获客系统已经接入 Apify、Apollo、WhatsApp 或 Google Maps 自动采集了吗？",
+    "expectedDocumentId": "project-ai-leadgen-acquisition"
+  },
+  {
+    "query": "AI 外贸获客系统如何评估客户价值并生成 A、B、C 级线索？",
+    "expectedDocumentId": "project-ai-leadgen-scoring"
+  },
+  {
+    "query": "高价值线索和客户回信如何通过飞书认领、回写和超时提醒协同？",
+    "expectedDocumentId": "project-ai-leadgen-collaboration"
+  },
+  {
+    "query": "阿里邮箱 OpenAPI 如何连接受控发信、回信同步和原始线索关联？",
+    "expectedDocumentId": "project-ai-leadgen-outreach"
+  },
+  {
+    "query": "AI 外贸获客系统会自动写开发信并自动回复客户吗？",
+    "expectedDocumentId": "project-ai-leadgen-outreach"
+  },
+  {
+    "query": "AI 外贸获客系统的业务需求来自哪里，摩斯完成了哪些技术实现？",
+    "expectedDocumentId": "project-ai-leadgen-role"
+  },
+  {
+    "query": "AI 外贸获客系统已经生产部署并取得规模化获客成果了吗？",
+    "expectedDocumentId": "project-ai-leadgen-role"
+  },
+  {
     "query": "数字摩斯解决什么问题，招聘方、潜在客户和同行能用它做什么？",
     "expectedDocumentId": "project-digital-morse-overview"
   },
@@ -112,7 +152,7 @@
     "expectedDocumentId": "faq-2"
   },
   {
-    "query": "四个项目都是谁负责完整开发？",
+    "query": "这些项目都是谁负责完整开发？",
     "expectedDocumentId": "faq-3"
   },
   {

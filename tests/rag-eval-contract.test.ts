@@ -29,6 +29,13 @@ test('RAG gold set covers every approved public document', () => {
       'project-auto-operations-engineering',
       'project-auto-operations-role',
       'project-auto-operations-roadmap',
+      'project-ai-leadgen',
+      'project-ai-leadgen-overview',
+      'project-ai-leadgen-acquisition',
+      'project-ai-leadgen-scoring',
+      'project-ai-leadgen-collaboration',
+      'project-ai-leadgen-outreach',
+      'project-ai-leadgen-role',
       'project-deep-research',
       'project-digital-morse',
       'project-digital-morse-overview',
@@ -65,6 +72,22 @@ test('RAG gold set covers every approved public document', () => {
     'project-digital-morse-overview',
   );
   assert.ok(cases.some((item) => item.expectedDocumentId === 'project-auto-operations'));
+  assert.equal(
+    expectedByQuery.get('AI 外贸获客系统如何从获取线索推进到邮件触达和回信跟进？'),
+    'project-ai-leadgen-overview',
+  );
+  assert.equal(
+    expectedByQuery.get('AI 外贸获客系统会自动写开发信并自动回复客户吗？'),
+    'project-ai-leadgen-outreach',
+  );
+  assert.equal(
+    expectedByQuery.get('AI 外贸获客系统已经接入 Apify、Apollo、WhatsApp 或 Google Maps 自动采集了吗？'),
+    'project-ai-leadgen-acquisition',
+  );
+  assert.equal(
+    expectedByQuery.get('AI 外贸获客系统已经生产部署并取得规模化获客成果了吗？'),
+    'project-ai-leadgen-role',
+  );
   for (const expectedDocumentId of [
     'project-content-agent-overview',
     'project-content-agent-experience',
@@ -78,6 +101,12 @@ test('RAG gold set covers every approved public document', () => {
     'project-auto-operations-engineering',
     'project-auto-operations-role',
     'project-auto-operations-roadmap',
+    'project-ai-leadgen-overview',
+    'project-ai-leadgen-acquisition',
+    'project-ai-leadgen-scoring',
+    'project-ai-leadgen-collaboration',
+    'project-ai-leadgen-outreach',
+    'project-ai-leadgen-role',
     'project-digital-morse-overview',
     'project-digital-morse-workflows',
     'project-digital-morse-knowledge',
@@ -179,6 +208,25 @@ test('S8 chat evaluation covers answer safety, runtime errors, and source naviga
   assert.match(runner, /projectSlugs\.includes\(projectSlug\)/);
   assert.match(runner, /href === item\.expectedHref/);
   assert.match(runner, /raw prompts and answers are intentionally omitted/);
+  const productionBoundary = data.cases.find(
+    (item) => item.id === 'ai-leadgen-production-boundary',
+  ) as (typeof data.cases)[number] & {
+    sourceScenario?: string;
+    requiredAnswerFragments?: string[];
+    forbiddenAnswerFragments?: string[];
+  };
+  assert.ok(productionBoundary);
+  assert.equal(productionBoundary.sourceScenario, 'ai-leadgen');
+  assert.deepEqual(productionBoundary.requiredAnswerFragments, [
+    '当前为本地 MVP',
+    '尚未生产部署',
+    '尚未取得规模化获客成果',
+  ]);
+  assert.deepEqual(productionBoundary.forbiddenAnswerFragments, [
+    '已经生产部署',
+    '已取得规模化获客成果',
+    '实现规模化获客',
+  ]);
   const packageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'));
   assert.equal(packageJson.scripts['chat:eval'], 'node scripts/chat-eval.mjs');
 });

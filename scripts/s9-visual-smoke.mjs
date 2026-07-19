@@ -44,12 +44,19 @@ const SAFE_SCREENSHOTS = new Set([
   's9-works-desktop-1440x900.png',
   's9-works-mobile-390x844.png',
 ].map((fileName) => `docs/verify/s9/${fileName}`));
-const SAFE_SLUGS = new Set(['content-agent', 'auto-operations', 'deep-research', 'digital-morse']);
+const SAFE_SLUGS = new Set([
+  'content-agent',
+  'auto-operations',
+  'ai-leadgen',
+  'deep-research',
+  'digital-morse',
+]);
 const SAFE_HARNESS_ROUTES = new Set([
   '/',
   '/works',
   '/works#content-agent',
   '/works#auto-operations',
+  '/works#ai-leadgen',
   '/works#not-a-project',
   ...[...SAFE_SLUGS].map((slug) => `/works/${slug}`),
 ]);
@@ -396,7 +403,13 @@ const viewports = [
   { name: 'mobile-reduced', width: 390, height: 844, reducedMotion: true },
 ];
 const routes = ['/', '/works'];
-const slugs = ['content-agent', 'auto-operations', 'deep-research', 'digital-morse'];
+const slugs = [
+  'content-agent',
+  'auto-operations',
+  'ai-leadgen',
+  'deep-research',
+  'digital-morse',
+];
 const screenshotFiles = {
   desktop: {
     home: 's9-home-desktop-1440x900.png',
@@ -990,7 +1003,7 @@ async function inspectWorksShell(client, viewportName, route) {
       }).length,
     };
   })()`);
-  check(state.cardCount === 4, `${viewportName}:${route}:card-count`);
+  check(state.cardCount === slugs.length, `${viewportName}:${route}:card-count`);
   check(state.chatCount === 1, `${viewportName}:${route}:chat-count`);
   check(state.textOverflowCount === 0, `${viewportName}:${route}:text-overflow`);
   check(state.viewportOverflowCount === 0, `${viewportName}:${route}:control-overflow`);
@@ -1129,7 +1142,7 @@ async function waitForStaleDetailsRemoved(client, viewportName, activeSlug, labe
 async function assertAllCollapsed(client, viewportName, label) {
   await waitFor(client, `(() => {
     const buttons = Array.from(document.querySelectorAll('button[aria-expanded]'));
-    return buttons.length === 4
+    return buttons.length === ${slugs.length}
       && buttons.every((button) => button.getAttribute('aria-expanded') === 'false')
       && document.querySelectorAll('[data-project-slug][data-expanded="true"]').length === 0;
   })()`, `${viewportName}:${label}:collapsed-timeout`);
@@ -1439,7 +1452,7 @@ async function inspectWorks(client, viewport) {
   check(statuses.at(-1) === 200, `${viewportName}:works:document-status`);
   await waitFor(
     client,
-    'document.querySelectorAll("[data-project-slug]").length === 4',
+    `document.querySelectorAll("[data-project-slug]").length === ${slugs.length}`,
     `${viewportName}:works:gallery-timeout`,
   );
   const directState = await assertAllCollapsed(client, viewportName, 'works:direct-nohash');

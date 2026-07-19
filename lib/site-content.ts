@@ -3,6 +3,7 @@ import contentJson from "../content/site-content.json" with { type: "json" };
 export const projectSlugs = [
   "content-agent",
   "auto-operations",
+  "ai-leadgen",
   "deep-research",
   "digital-morse",
 ] as const;
@@ -53,9 +54,14 @@ export type ProjectKnowledgeTopic = {
 };
 
 export type ProjectDetails = {
+  sectionTitles?: {
+    overview?: string;
+    implementation?: string;
+  };
   overview: string[];
   coreCapabilities: string[];
   architecture: {
+    description?: string;
     flow?: string;
     modules: string[];
   };

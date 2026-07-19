@@ -17,6 +17,7 @@
 - S11 生产部署已于 2026-07-18 达到 `PRODUCTION_OBSERVED / LIMITED_LAUNCH`，并在 2026-07-19 将管理员密码登录与邀请码管理更新到 `c3f1ec6`：`aimorse.tech` 与 `www.aimorse.tech` 的 Caddy/HTTPS、Web、Worker、PostgreSQL/pgvector 和 CPU BGE 均在运行；生产 migration、最小数据库 grants、公开知识摄取、历史真实 Provider smoke、live/ready 与 release smoke 已通过。
 - 内容创作 Agent、自动运营 Agent、深度研究 Agent 与数字摩斯的简洁页面、正式主图和展开详情均已进入生产 Web；四张主图、公网页面和健康接口均为 HTTP 200。
 - 生产 RAG 已全量收敛到 33 documents / 39 chunks，其中四项目各 7 documents，共 28 documents / 33 chunks；第二次全量摄取为 0 document 更新、0 chunk 更新、33 documents 跳过。生产 BGE + pgvector 的 36 条 gold 为 top-1 28/36、top-3 36/36，正负阈值均通过；本轮未调用真实 Chat Provider。
+- AI 外贸获客系统已完成本地作品集展示 slice：新增真实 Graphite 总控台主图、五段详情、六个公共知识主题、RAG/Chat 评测和 1440/390 双宽验证；尚未生产知识摄取、push 或部署，因此不计入上面的四项目生产统计。
 - 当前仍不标记 `ONLINE_READY`：生产 Lighthouse 性能分数尚未复测，监控、托管备份、edge 速率/连接限制及真实 Bocha/Feishu smoke 仍待完成；剩余工作区改动与未跟踪证据未复制到服务器。
 - M3-RAG 基础能力继续复用短期邀请码、PostgreSQL + pgvector、OpenAI 适配层、SSE、短期会话和费用门；本地 BGE 语义向量已接入。S8 的 3 次历史 `runChat` 未完成，但已由 2026-07-17 的 S10 真实 Provider 全链 PASS 更新当前结论；历史失败记录不删除，也不由 Mock 替代。
 - 本次部署为用户明确授权的生产发布；后续 push、再次部署和远端变更仍需单独授权。
@@ -93,6 +94,7 @@ S11 腾讯云生产部署证据与剩余边界位于 `docs/verify/s11/production
 自动运营 Agent 项目简介、主图、知识主题与双视口验收记录位于 `docs/verify/auto-operations/auto-operations-closeout.md`。
 数字摩斯项目简介、主图、知识主题与双视口验收记录位于 `docs/verify/digital-morse/digital-morse-closeout.md`。
 深度研究 Agent 项目简介、主图、知识主题与双视口验收记录位于 `docs/verify/deep-research/deep-research-closeout.md`。
+AI 外贸获客系统本地展示、主图、知识主题与双视口验收记录位于 `docs/verify/ai-leadgen/ai-leadgen-closeout.md`。
 
 ## 目录
 

@@ -7,7 +7,15 @@
 **S11-5D ADMIN_INVITES_PRODUCTION_OBSERVED / LIMITED_LAUNCH**
 
 ## next_allowed_pointer
-当前生产实例已观察到真实 HTTPS、live/ready、release smoke、四项目公开页面与主图、管理员密码登录静态合同、邀请码管理产物、未登录 401、内容创作 Agent CTA 授权流程和历史真实 Provider 主链。下一步可由管理员完成认证后的邀请码创建/兑换/停用验收，或进入监控/备份/edge 限流等硬化阶段；在 Lighthouse 和剩余运维门关闭前不得宣称完整 `ONLINE_READY`。
+当前生产实例已观察到真实 HTTPS、live/ready、release smoke、四项目公开页面与主图、管理员密码登录静态合同、邀请码管理产物、未登录 401、内容创作 Agent CTA 授权流程和历史真实 Provider 主链。另有 AI 外贸获客系统已在本地完成作品集展示 slice，但尚未生产知识摄取、push 或部署；生产仍按四项目统计。下一步可由管理员完成认证后的邀请码创建/兑换/停用验收，或进入监控/备份/edge 限流等硬化阶段；在 Lighthouse 和剩余运维门关闭前不得宣称完整 `ONLINE_READY`。
+
+## AI leadgen portfolio local slice (2026-07-19)
+
+- Mode: `STAGED / STANDARD / LOCAL`; status: `LOCAL_READY`，等待用户本地验收。
+- Scope: `/works#ai-leadgen`、`content/site-content.json` 中的项目与六个知识主题、公开知识 Hash 路由、RAG/Chat 评测、真实 Graphite 主图和双宽浏览器 smoke。
+- Verification: `npm test` 595/595、`npm run build` 21 个路由、`npm run chat:eval` 54/54、专属双宽 smoke `failures: []`，共享 S9 桌面/移动/reduced-motion `failures: []`。
+- Boundary: 主图按确认原图使用；未调用 OpenAI、飞书、阿里邮箱或其他真实 Provider，未写生产数据库/生产知识库，未 push、未部署。生产仍保留四项目、33 documents / 39 chunks 的已发布统计。
+- Contract and evidence: `docs/superpowers/specs/2026-07-19-ai-leadgen-works-content-design.md`、`docs/superpowers/plans/2026-07-19-ai-leadgen-portfolio.md`、`docs/verify/ai-leadgen/ai-leadgen-closeout.md`。
 
 ## S11-5D admin invite production release (2026-07-19)
 

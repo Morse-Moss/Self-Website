@@ -85,7 +85,7 @@ test('S9 supersedes historical S6 live-page requirements', () => {
       '/works#content-agent',
       '企业内部脱敏案例',
       '旧 `/works/[slug]` 地址重定向到 `/works#slug`',
-      '首页不再保留完整四项目展厅、职业经历或静态 FAQ',
+      '首页不再保留完整项目展厅、职业经历或静态 FAQ',
       '删除企业内部项目的公开入口、生产截图和可识别部署信息',
       '访问系统按钮',
     ],
