@@ -12,7 +12,7 @@ export type ProjectSlug = (typeof projectSlugs)[number];
 export type ProjectDisclosure = "public" | "internal-redacted";
 
 export type TechStackGroup = {
-  label: "前端" | "后端" | "数据" | "AI / Agent" | "工程与部署";
+  label: string;
   items: string[];
 };
 
@@ -52,6 +52,20 @@ export type ProjectKnowledgeTopic = {
   content: string;
 };
 
+export type ProjectDetails = {
+  overview: string[];
+  coreCapabilities: string[];
+  architecture: {
+    flow?: string;
+    modules: string[];
+  };
+  implementation: {
+    summary: string;
+    contributions: string[];
+    futureDirection?: string;
+  };
+};
+
 export type Project = {
   slug: ProjectSlug;
   name: string;
@@ -71,6 +85,7 @@ export type Project = {
     prompt: string;
   };
   knowledgeTopics?: ProjectKnowledgeTopic[];
+  details?: ProjectDetails;
   caseStudy: CaseStudy;
 };
 
@@ -106,7 +121,7 @@ export type SiteContent = {
     principles: string[];
   };
   home: { worksIntro: string; featuredSlugs: ProjectSlug[] };
-  works: { title: string; intro: string };
+  works: { title: string };
   projects: Project[];
   faq: Array<{ question: string; answer: string }>;
 };

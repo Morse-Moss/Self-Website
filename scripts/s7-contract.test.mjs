@@ -155,10 +155,10 @@ test('content agent uses the approved black-gold main-page design', () => {
   );
   assert.equal(project.media?.width, 1280);
   assert.equal(project.media?.height, 1486);
+  assert.equal(project.media?.label, '界面设计稿 · 示例数据');
   assert.match(project.media?.caption ?? '', /黑金新版主页面设计图/);
   assert.match(project.media?.caption ?? '', /示例数据/);
   assert.match(project.media?.caption ?? '', /不是生产运行截图/);
-  assert.match(project.caseStudy.boundaries.join('\n'), /独立前端视觉壳/);
   assert.ok(existsSync(designUrl), 'approved atelier design image must exist');
   assert.equal(
     createHash('sha256').update(readFileSync(designUrl)).digest('hex'),

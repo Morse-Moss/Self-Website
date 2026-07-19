@@ -32,6 +32,19 @@ interface SiteContent {
     }>;
     capabilities?: string[];
     techStack?: Array<{ label?: string; items?: string[] }>;
+    details?: {
+      overview?: string[];
+      coreCapabilities?: string[];
+      architecture?: {
+        flow?: string;
+        modules?: string[];
+      };
+      implementation?: {
+        summary?: string;
+        contributions?: string[];
+        futureDirection?: string;
+      };
+    };
     caseStudy?: {
       problem?: string;
       role?: string;
@@ -46,6 +59,33 @@ interface SiteContent {
 
 function joinParts(parts: Array<string | undefined>): string {
   return parts.filter((part): part is string => Boolean(part?.trim())).join('\n\n');
+}
+
+function projectDetailParts(
+  project: NonNullable<SiteContent['projects']>[number],
+): Array<string | undefined> {
+  if (project.details) {
+    return [
+      ...(project.details.overview ?? []),
+      project.details.coreCapabilities?.length
+        ? `核心能力:\n${project.details.coreCapabilities.join('\n')}`
+        : undefined,
+      project.details.architecture?.flow,
+      project.details.architecture?.modules?.length
+        ? `系统模块:\n${project.details.architecture.modules.join('\n')}`
+        : undefined,
+      project.details.implementation?.summary,
+      ...(project.details.implementation?.contributions ?? []),
+      project.details.implementation?.futureDirection,
+    ];
+  }
+
+  return [
+    project.caseStudy?.problem,
+    project.caseStudy?.role,
+    ...(project.caseStudy?.decisions ?? []),
+    ...(project.caseStudy?.structure ?? []),
+  ];
 }
 
 export function publicKnowledgeHref(documentId: string): string {
@@ -104,12 +144,7 @@ export function extractPublicKnowledge(content: SiteContent): PublicKnowledgeDoc
             ? `${group.label}:\n${group.items.join('\n')}`
             : undefined,
         ),
-        project.caseStudy?.problem,
-        project.caseStudy?.role,
-        ...(project.caseStudy?.decisions ?? []),
-        ...(project.caseStudy?.structure ?? []),
-        ...(project.caseStudy?.evidence ?? []),
-        ...(project.caseStudy?.boundaries ?? []),
+        ...projectDetailParts(project),
       ]),
     });
 

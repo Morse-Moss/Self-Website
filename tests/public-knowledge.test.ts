@@ -14,6 +14,27 @@ function loadSiteContent() {
   return JSON.parse(fs.readFileSync(contentPath, 'utf8'));
 }
 
+function expectedProjectDetails(project: any): string[] {
+  if (project.details) {
+    return [
+      ...project.details.overview,
+      `核心能力:\n${project.details.coreCapabilities.join('\n')}`,
+      project.details.architecture.flow,
+      `系统模块:\n${project.details.architecture.modules.join('\n')}`,
+      project.details.implementation.summary,
+      ...project.details.implementation.contributions,
+      project.details.implementation.futureDirection,
+    ].filter(Boolean);
+  }
+
+  return [
+    project.caseStudy.problem,
+    project.caseStudy.role,
+    ...project.caseStudy.decisions,
+    ...project.caseStudy.structure,
+  ];
+}
+
 test('extractPublicKnowledge produces the approved site-content and content-agent topic documents', () => {
   const documents = extractPublicKnowledge(loadSiteContent());
 
@@ -132,15 +153,22 @@ test('extractPublicKnowledge limits profile and project content to approved fiel
           (group: { label: string; items: string[] }) =>
             `${group.label}:\n${group.items.join('\n')}`,
         ),
-        project.caseStudy.problem,
-        project.caseStudy.role,
-        ...project.caseStudy.decisions,
-        ...project.caseStudy.structure,
-        ...project.caseStudy.evidence,
-        ...project.caseStudy.boundaries,
+        ...expectedProjectDetails(project),
       ].join('\n\n'),
     );
   }
+});
+
+test('content-agent public knowledge leads with approved value and implementation facts', () => {
+  const documents = extractPublicKnowledge(loadSiteContent());
+  const document = documents.find((item) => item.id === 'project-content-agent');
+
+  assert.ok(document);
+  assert.match(document.content, /企业局域网并投入使用/);
+  assert.match(document.content, /GPT Image 2、Seedance 2、Kling、Veo、Wan/);
+  assert.match(document.content, /项目唯一开发者/);
+  assert.match(document.content, /可审核、可回退的自进化 Agent/);
+  assert.doesNotMatch(document.content, /验证证据|当前边界|采集时间|提交版本|脱敏处理/);
 });
 
 test('extractPublicKnowledge excludes drafts, paths, media, actions, and sanitization metadata', () => {
@@ -179,7 +207,7 @@ test('extractPublicKnowledge excludes drafts, paths, media, actions, and sanitiz
   );
   assert.doesNotMatch(
     internalKnowledge,
-    /https?:\/\/|Railway|login-workbench|capturedAt|commit|生产环境|内网已部署|RUNNING/,
+    /https?:\/\/|Railway|login-workbench|capturedAt|commit|生产环境|RUNNING/,
   );
 });
 

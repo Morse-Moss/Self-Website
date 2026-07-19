@@ -16,7 +16,7 @@
     "expectedDocumentId": "project-content-agent-experience"
   },
   {
-    "query": "哪些图片和视频模型已经真实跑通，哪些只是完成适配？",
+    "query": "内容创作 Agent 接入了哪些图片和视频模型，如何统一适配不同 Provider？",
     "expectedDocumentId": "project-content-agent-models"
   },
   {

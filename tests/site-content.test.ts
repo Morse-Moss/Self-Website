@@ -21,7 +21,7 @@ const expectedSlugs = [
 const expectedProjects = {
   "content-agent": {
     name: "内容创作 Agent 系统",
-    status: "企业内部项目 · 核心系统运行中 · 新版视觉壳已验证",
+    status: "唯一开发者 · 企业局域网已投入使用",
     actions: [],
   },
   "auto-operations": {
@@ -102,7 +102,7 @@ test("internal projects have no external action and disclose approved design med
     const serialized = JSON.stringify(project);
     assert.doesNotMatch(
       serialized,
-      /https?:\/\/|Railway|login-workbench|生产环境|内网已部署|RUNNING/,
+      /https?:\/\/|Railway|login-workbench|生产环境|RUNNING/,
     );
   }
 
@@ -115,7 +115,7 @@ test("internal projects have no external action and disclose approved design med
   );
   assert.equal(
     contentAgent.media.label,
-    "设计图 · 示例数据 · 非生产运行截图",
+    "界面设计稿 · 示例数据",
   );
   assert.match(contentAgent.media.caption, /设计图/);
   assert.match(contentAgent.media.caption, /不是生产运行截图/);
@@ -132,37 +132,55 @@ test("content agent leads with a concise operator pitch and solo technical deliv
     futureDirection?: string;
     askMorse?: { label: string; prompt: string };
     knowledgeTopics?: Array<{ id: string; title: string; content: string }>;
+    details?: {
+      overview: string[];
+      coreCapabilities: string[];
+      architecture: { flow?: string; modules: string[] };
+      implementation: {
+        summary: string;
+        contributions: string[];
+        futureDirection?: string;
+      };
+    };
   };
 
   assert.ok(project);
   assert.equal(
     project.summary,
-    "一套面向电商内容生产的多模态创作系统。用户可以像使用 GPT 一样，通过对话调用 GPT Image 2、Seedance 2 等模型生成图片和视频。",
+    "面向企业的多模态内容创作系统，通过 GPT 式对话生成图片和视频，并持续沉淀 Prompt、Skill 与数字资产。",
   );
   assert.ok(project.summary.length <= 90, "public project summary must stay quickly scannable");
   assert.equal(
     project.ownership,
-    "业务需求来自实际对接；Agent 编排、多模型接入、前后端、任务系统和部署交付均由摩斯独立完成。",
+    "项目需求、产品方向和部分创意来自真实业务对接；摩斯是项目唯一开发者，负责将这些需求完整实现为可运行系统。",
   );
-  assert.match(project.futureDirection ?? "", /未来.*自进化 Agent/);
+  assert.match(project.futureDirection ?? "", /可审核、可回退的自进化 Agent/);
   assert.deepEqual(project.capabilities, [
-    "GPT 式对话创作",
-    "GPT Image 2 / Seedance 2",
-    "多参考图生成",
-    "任务恢复与资产管理",
+    "GPT 式创作",
+    "Prompt 沉淀",
+    "Skill 复用",
+    "多模型接入",
+    "数字资产",
   ]);
   assert.deepEqual(project.askMorse, {
     label: "问数字摩斯",
-    prompt: "我想了解内容创作 Agent 系统：它如何通过对话生成图片和视频，哪些模型已经真实验证，以及摩斯独立完成了哪些技术实现？",
+    prompt: "请介绍内容创作 Agent 的对话式创作、多模型适配、异步任务与数字资产管理，以及摩斯独立完成的技术实现。",
   });
   assert.deepEqual(
     project.knowledgeTopics?.map((topic) => topic.id),
     ["overview", "experience", "models", "engineering", "role", "roadmap"],
   );
   assert.ok(project.knowledgeTopics?.every((topic) => topic.title && topic.content));
-  assert.match(project.caseStudy.role, /业务需求与产品想法来自真实对接/);
-  assert.match(project.caseStudy.role, /唯一开发者/);
-  assert.doesNotMatch(project.caseStudy.role, /独自提出全部业务|独立完成产品设计/);
+  assert.equal(project.details?.overview.length, 2);
+  assert.equal(project.details?.coreCapabilities.length, 6);
+  assert.equal(project.details?.architecture.modules.length, 5);
+  assert.equal(project.details?.implementation.contributions.length, 6);
+  assert.match(project.details?.implementation.summary ?? "", /真实业务对接/);
+  assert.match(project.details?.implementation.summary ?? "", /唯一开发者/);
+  assert.doesNotMatch(
+    project.details?.implementation.summary ?? "",
+    /独自提出全部业务|独立完成产品设计/,
+  );
 });
 
 test("every project has grouped stack and capability evidence", () => {
