@@ -87,6 +87,7 @@ S8 最终验收与真实/Mock 证据边界位于 `docs/verify/s8/s8-closeout.md`
 S9 最终验收、公开内容边界与主线吸收记录位于 `docs/verify/s9/s9-closeout.md`。
 S11 腾讯云生产部署证据与剩余边界位于 `docs/verify/s11/production-closeout.md`。
 数字摩斯项目简介、主图、知识主题与双视口验收记录位于 `docs/verify/digital-morse/digital-morse-closeout.md`。
+深度研究 Agent 项目简介、主图、知识主题与双视口验收记录位于 `docs/verify/deep-research/deep-research-closeout.md`。
 
 ## 目录
 

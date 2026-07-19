@@ -249,30 +249,53 @@
       "slug": "deep-research",
       "name": "深度研究 Agent 系统",
       "type": "深度研究与报告生成系统",
-      "status": "已接受能力持续扩展中",
-      "summary": "用可观察工件、证据覆盖、受限缺口修复和人工发布审批约束深度研究报告。",
+      "status": "唯一开发者 · 核心研究链可用",
+      "summary": "本地优先的多 Agent 深度研究与报告系统，围绕研究问题完成方法发现、证据采集、横纵分析、质量审查与正式报告生成。",
+      "ownership": "项目方向与研究方法吸收实际使用反馈、架构评审和外部系统研究；摩斯是项目发起人和唯一开发者，负责全部技术实现。",
+      "futureDirection": "继续推进 Agent OS 内核、可审核生产记忆、分布式 Worker 和语义级事实核验，支持更长周期、更复杂的研究任务。",
       "featured": true,
       "disclosure": "public",
-      "capabilities": ["多 Agent 研究链", "证据与质量门", "可恢复运行"],
+      "capabilities": ["横纵研究", "证据台账", "论断映射", "缺口修复", "发布审批"],
       "techStack": [
         {
           "label": "前端",
-          "items": ["React", "TypeScript", "Vite", "XYFlow"]
+          "items": ["React", "TypeScript", "Vite", "XYFlow", "Lucide React"]
         },
         {
           "label": "后端",
-          "items": ["Python", "FastAPI", "Pydantic", "HTTPX"]
+          "items": ["Python", "FastAPI", "Pydantic", "Uvicorn", "HTTPX"]
         },
         {
           "label": "AI / Agent",
-          "items": ["固定 hv_analysis 工作流", "证据审查", "人工发布审批"]
+          "items": ["OpenAI-compatible Responses API", "NodeContract DAG", "Tool Gateway", "角色化模型路由"]
         },
         {
-          "label": "工程与部署",
-          "items": ["Pytest", "Docker local runtime"]
+          "label": "检索与证据",
+          "items": ["DuckDuckGo", "Jina Reader", "AnySearch", "Browser CDP", "pypdf"]
+        },
+        {
+          "label": "数据与输出",
+          "items": ["JSONL", "SQLite sidecar", "工件存储", "Markdown", "DOCX"]
+        },
+        {
+          "label": "工程",
+          "items": ["Pytest", "Vitest", "Testing Library", "Docker Compose"]
         }
       ],
-      "media": null,
+      "media": {
+        "src": "/works/deep-research/operator-workbench-example.png",
+        "width": 1440,
+        "height": 1080,
+        "alt": "深度研究 Agent Operator Workbench 示例运行界面",
+        "label": "运行界面 · 示例数据",
+        "caption": "Operator Workbench 示例运行界面，展示运行队列、任务 DAG、治理检查与报告预览。",
+        "evidence": {
+          "capturedAt": "2026-07-19",
+          "commit": "外部只读项目本地构建",
+          "runMode": "本地只读预览",
+          "sanitization": "使用公开示例研究；运行 ID、时间与具体模型标识已替换，不含密钥、真实用户数据或内部路径"
+        }
+      },
       "actions": [
         {
           "kind": "external",
@@ -280,9 +303,77 @@
           "href": "https://github.com/Morse-Moss/Deep-research-sys"
         }
       ],
+      "askMorse": {
+        "label": "问数字摩斯",
+        "prompt": "请介绍深度研究 Agent 的横纵研究、证据治理、缺口修复与人工发布流程，以及摩斯独立完成的技术实现。"
+      },
+      "knowledgeTopics": [
+        {
+          "id": "overview",
+          "title": "项目定位与价值",
+          "content": "深度研究 Agent 系统将研究方法、网络检索、多 Agent 分工、证据治理和报告发布组织成一条可观察工作流，减少长链路研究中的来源丢失、论断失据和完成状态误判。"
+        },
+        {
+          "id": "workflow",
+          "title": "使用流程",
+          "content": "用户输入研究问题并选择研究配置；系统完成方法发现和横纵研究，汇总来源与证据，生成并评估报告，修复关键缺口，完成双 Agent 审校和人工发布审批，最后提供正式报告阅读与下载。"
+        },
+        {
+          "id": "architecture",
+          "title": "核心架构",
+          "content": "Operator Workbench 负责交互与治理，FastAPI 运行时负责任务编排，研究 Agent 通过 Tool Gateway 获取证据，审核链负责质量与发布决策，运行状态、事件和工件统一保存到本地数据目录。"
+        },
+        {
+          "id": "engineering",
+          "title": "关键技术实现",
+          "content": "系统将固定 DAG 与经验证、审批后追加的受限动态节点结合；Agent 通过类型化工件通信；Provider 级联处理网页采集；来源台账和论断映射约束报告；失败任务保留诊断并支持节点边界恢复。"
+        },
+        {
+          "id": "role",
+          "title": "个人技术贡献",
+          "content": "摩斯是项目发起人和唯一开发者，独立完成系统架构、Agent 工作流、模型接入、证据治理、运行时、前后端工作台、数据协议、测试体系和本地交付配置。项目方向与研究方法也吸收实际使用反馈、架构评审和外部系统研究。"
+        },
+        {
+          "id": "roadmap",
+          "title": "未来方向",
+          "content": "未来将完善 Agent OS 通用执行内核、生产记忆闭环、分布式任务执行、语义级事实核验和更丰富的领域研究方法库。"
+        }
+      ],
+      "details": {
+        "overview": [
+          "本地优先的多 Agent 深度研究与报告生成系统。用户提交研究问题后，系统通过固定 hv_analysis 工作流完成领域方法发现、纵向时间线研究、横向对比研究、来源审查、交叉综合、报告起草、论断映射、缺口修复和最终审校。",
+          "正式报告经过证据支持检查、质量评估、Evidence Reviewer、Chief Editor 和人工发布审批后开放。Operator Workbench 集中展示运行队列、任务 DAG、治理状态、证据工件和报告，并支持 Markdown 阅读与 DOCX 下载。"
+        ],
+        "coreCapabilities": [
+          "方法发现：根据研究领域匹配 Domain Profile 与 Domain Playbook，生成研究方法和查询补充。",
+          "多 Agent 协作：Planner、Researcher、Synthesizer、Evaluator、Finalizer 通过类型化工件衔接任务。",
+          "多源证据采集：通过搜索、静态抓取、内容提取和 Browser CDP 获取研究资料。",
+          "论断与证据治理：维护来源台账、证据笔记和 claim-source-map，检查关键论断的证据支持。",
+          "受限缺口修复：根据评估结果执行最多两轮补充检索、证据合并和报告重写。",
+          "发布治理：通过双 Agent 审校、候选报告晋级和人工发布审批控制正式出口。",
+          "可观察运行：展示节点状态、事件、工件、暂停恢复、会话检查点和 Worker 诊断。"
+        ],
+        "architecture": {
+          "flow": "研究问题 -> 分类与方法发现 -> 纵向 / 横向并行研究 -> 来源审查与交叉综合 -> 报告草稿 -> 论断映射与质量评估 -> 缺口修复 -> 最终报告 -> 双 Agent 审校 -> 人工发布审批 -> Markdown / DOCX",
+          "modules": ["工作台层", "编排层", "研究与证据层", "审核发布层", "工件与运行态层"]
+        },
+        "implementation": {
+          "summary": "项目方向与研究方法吸收了实际使用反馈、架构评审和外部系统研究；我是项目发起人和唯一开发者，负责全部技术实现。",
+          "contributions": [
+            "设计并实现 hv_analysis DAG、NodeContract、AgentSpec、事件和类型化工件协议。",
+            "实现 FastAPI 运行时、任务队列、节点并发、暂停恢复、会话检查点与本地 Worker 机制。",
+            "构建搜索、静态抓取、内容提取、Browser CDP 及安全回退链。",
+            "接入 OpenAI-compatible Responses API，建立角色化模型路由、能力检查和结构化输出校验。",
+            "实现来源台账、论断映射、关键支持门、缺口修复、候选晋级和人工发布审批。",
+            "开发 React Operator Workbench，覆盖运行队列、XYFlow DAG、治理检查、证据工件和报告出口。",
+            "建立契约测试、后端测试、前端测试和本地 Docker 运行配置。"
+          ],
+          "futureDirection": "继续推进 Agent OS 内核、可审核生产记忆、分布式 Worker 和语义级事实核验，支持更长周期、更复杂的研究任务。"
+        }
+      },
       "caseStudy": {
         "problem": "长链路研究容易把“报告写得完整”误当作“证据足够”。",
-        "role": "摩斯是项目发起人和开发负责人，负责整个项目的开发与整体架构。",
+        "role": "摩斯是项目发起人和唯一开发者，负责整个项目的开发与全部技术实现；项目方向与研究方法也吸收实际使用反馈、架构评审和外部系统研究。",
         "decisions": [
           "把研究拆成可观察工件、质量门和人工发布审批。",
           "关键证据不足时明确失败，并允许最多两轮受限缺口修复。",

@@ -62,6 +62,11 @@ test('extractPublicKnowledge produces the approved site-content and content-agen
         sourcePath: 'content/site-content.json#projects.deep-research',
         href: '/works#deep-research',
       },
+      ...['overview', 'workflow', 'architecture', 'engineering', 'role', 'roadmap'].map((topic) => ({
+        id: `project-deep-research-${topic}`,
+        sourcePath: `content/site-content.json#projects.deep-research.knowledge.${topic}`,
+        href: '/works#deep-research',
+      })),
       {
         id: 'project-digital-morse',
         sourcePath: 'content/site-content.json#projects.digital-morse',
@@ -117,6 +122,36 @@ test('digital-Morse knowledge topics stay independently retrievable and share on
     assert.equal(document.href, '/works#digital-morse');
     assert.equal(publicKnowledgeHref(documentId), '/works#digital-morse');
   }
+});
+
+test('deep-research knowledge topics stay independently retrievable and share one case href', () => {
+  const content = loadSiteContent();
+  const project = content.projects.find((item: { slug: string }) => item.slug === 'deep-research');
+  const documents = extractPublicKnowledge(content);
+
+  assert.ok(project);
+  assert.equal(project.knowledgeTopics.length, 6);
+  for (const topic of project.knowledgeTopics) {
+    const documentId = `project-deep-research-${topic.id}`;
+    const document = documents.find((item) => item.id === documentId);
+
+    assert.ok(document);
+    assert.equal(document.title, `${project.name}：${topic.title}`);
+    assert.equal(document.content, `${project.name}\n\n${topic.title}\n\n${topic.content}`);
+    assert.equal(document.href, '/works#deep-research');
+    assert.equal(publicKnowledgeHref(documentId), '/works#deep-research');
+  }
+});
+
+test('deep-research public knowledge leads with approved value and implementation facts', () => {
+  const documents = extractPublicKnowledge(loadSiteContent());
+  const document = documents.find((item) => item.id === 'project-deep-research');
+
+  assert.ok(document);
+  assert.match(document.content, /方法发现.*证据采集.*横纵分析/);
+  assert.match(document.content, /唯一开发者/);
+  assert.match(document.content, /人工发布审批/);
+  assert.doesNotMatch(document.content, /开源项目|验证证据|当前边界|采集时间|提交版本/);
 });
 
 test('extractPublicKnowledge limits profile and project content to approved fields', () => {

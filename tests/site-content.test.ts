@@ -31,7 +31,7 @@ const expectedProjects = {
   },
   "deep-research": {
     name: "深度研究 Agent 系统",
-    status: "已接受能力持续扩展中",
+    status: "唯一开发者 · 核心研究链可用",
     actions: [
       {
         kind: "external",
@@ -183,6 +183,45 @@ test("content agent leads with a concise operator pitch and solo technical deliv
   );
 });
 
+test("deep research leads with the approved research and evidence-governance story", () => {
+  const project = getProjectBySlug("deep-research");
+
+  assert.ok(project);
+  assert.equal(
+    project.summary,
+    "本地优先的多 Agent 深度研究与报告系统，围绕研究问题完成方法发现、证据采集、横纵分析、质量审查与正式报告生成。",
+  );
+  assert.equal(
+    project.ownership,
+    "项目方向与研究方法吸收实际使用反馈、架构评审和外部系统研究；摩斯是项目发起人和唯一开发者，负责全部技术实现。",
+  );
+  assert.deepEqual(project.capabilities, [
+    "横纵研究",
+    "证据台账",
+    "论断映射",
+    "缺口修复",
+    "发布审批",
+  ]);
+  assert.deepEqual(
+    project.knowledgeTopics?.map((topic) => topic.id),
+    ["overview", "workflow", "architecture", "engineering", "role", "roadmap"],
+  );
+  assert.equal(project.details?.overview.length, 2);
+  assert.equal(project.details?.coreCapabilities.length, 7);
+  assert.equal(project.details?.architecture.modules.length, 5);
+  assert.equal(project.details?.implementation.contributions.length, 7);
+  assert.match(project.details?.implementation.summary ?? "", /唯一开发者/);
+  assert.match(project.details?.implementation.futureDirection ?? "", /未来方向|Agent OS/);
+  assert.deepEqual(project.actions, [
+    {
+      kind: "external",
+      label: "GitHub",
+      href: "https://github.com/Morse-Moss/Deep-research-sys",
+    },
+  ]);
+  assert.doesNotMatch(JSON.stringify(project), /开源项目/);
+});
+
 test("every project has grouped stack and capability evidence", () => {
   for (const project of getAllProjects()) {
     assert.ok(Array.isArray(project.techStack));
@@ -221,20 +260,23 @@ test("provides six case-study fields for every project", () => {
   }
 });
 
-test("publishes only the two separately approved project media assets", () => {
+test("publishes only the three separately approved project media assets", () => {
   const mediaProjects = getAllProjects().filter((project) => project.media);
 
   assert.deepEqual(
     mediaProjects.map((project) => project.slug),
-    ["content-agent", "digital-morse"],
+    ["content-agent", "deep-research", "digital-morse"],
   );
   assert.equal(mediaProjects[0]?.media?.width, 1280);
   assert.equal(mediaProjects[0]?.media?.height, 1486);
   assert.match(mediaProjects[0]?.media?.evidence.runMode ?? "", /非运行态/);
-  assert.equal(mediaProjects[1]?.media?.width, 576);
-  assert.equal(mediaProjects[1]?.media?.height, 648);
-  assert.match(mediaProjects[1]?.media?.evidence.runMode ?? "", /本地 production build/);
-  assert.equal(mediaProjects[1]?.media?.label, "产品界面 · 示例会话");
+  assert.equal(mediaProjects[1]?.media?.width, 1440);
+  assert.equal(mediaProjects[1]?.media?.height, 1080);
+  assert.equal(mediaProjects[1]?.media?.label, "运行界面 · 示例数据");
+  assert.equal(mediaProjects[2]?.media?.width, 576);
+  assert.equal(mediaProjects[2]?.media?.height, 648);
+  assert.match(mediaProjects[2]?.media?.evidence.runMode ?? "", /本地 production build/);
+  assert.equal(mediaProjects[2]?.media?.label, "产品界面 · 示例会话");
 });
 
 test("keeps the approved global copy and four FAQ topics", () => {
