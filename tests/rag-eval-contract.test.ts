@@ -73,6 +73,11 @@ test('RAG gold set covers every approved public document', () => {
   );
   assert.ok(cases.some((item) => item.expectedDocumentId === 'project-auto-operations'));
   assert.equal(
+    expectedByQuery.get('AI 外贸获客系统采用 React、TypeScript、FastAPI、SQLAlchemy、OpenAI、飞书和阿里邮箱实现了什么？'),
+    'project-ai-leadgen',
+  );
+  assert.equal(expectedByQuery.has('AI 外贸获客系统整体覆盖哪些销售流程？'), false);
+  assert.equal(
     expectedByQuery.get('AI 外贸获客系统如何从获取线索推进到邮件触达和回信跟进？'),
     'project-ai-leadgen-overview',
   );

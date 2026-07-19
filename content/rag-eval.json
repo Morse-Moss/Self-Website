@@ -60,7 +60,7 @@
     "expectedDocumentId": "project-auto-operations-roadmap"
   },
   {
-    "query": "AI 外贸获客系统整体覆盖哪些销售流程？",
+    "query": "AI 外贸获客系统采用 React、TypeScript、FastAPI、SQLAlchemy、OpenAI、飞书和阿里邮箱实现了什么？",
     "expectedDocumentId": "project-ai-leadgen"
   },
   {
