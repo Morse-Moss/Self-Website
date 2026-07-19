@@ -36,6 +36,30 @@
     "expectedDocumentId": "project-auto-operations"
   },
   {
+    "query": "自动运营 Agent 面向谁，如何把分散的运营资料沉淀成内容资产？",
+    "expectedDocumentId": "project-auto-operations-overview"
+  },
+  {
+    "query": "从绑定账号到内容入库、AI 生产和人工确认发布的流程是什么？",
+    "expectedDocumentId": "project-auto-operations-workflow"
+  },
+  {
+    "query": "自动运营系统如何用 XHS Adapter、内容资产层、AutoTask 和 PublishJob 连接完整链路？",
+    "expectedDocumentId": "project-auto-operations-architecture"
+  },
+  {
+    "query": "自动运营 Agent 如何实现能力路由、定时任务、凭据加密和发布预检？",
+    "expectedDocumentId": "project-auto-operations-engineering"
+  },
+  {
+    "query": "自动运营系统的业务想法来自哪里，摩斯独立完成了哪些技术实现？",
+    "expectedDocumentId": "project-auto-operations-role"
+  },
+  {
+    "query": "自动运营 Agent 未来如何根据历史任务和人工反馈优化运营策略？",
+    "expectedDocumentId": "project-auto-operations-roadmap"
+  },
+  {
     "query": "数字摩斯解决什么问题，招聘方、潜在客户和同行能用它做什么？",
     "expectedDocumentId": "project-digital-morse-overview"
   },

@@ -37,7 +37,7 @@ const projectSources = {
     title: '自动运营 Agent 系统',
     sourcePath: 'content/site-content.json#projects.auto-operations',
     href: '/works#auto-operations',
-    content: '自动运营 Agent 系统为内部项目，公开资料只说明职责、技术边界和脱敏证据。',
+    content: '自动运营 Agent 系统把数据发现、内容资产、AI 内容生产、任务编排和受控发布连接为统一运营工作流。',
     score: 1,
   },
   'deep-research': {

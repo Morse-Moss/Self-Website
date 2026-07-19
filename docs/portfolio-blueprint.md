@@ -350,3 +350,16 @@
 - **Content Agent 详情**：项目简介明确其面向企业电商内容团队、已在企业局域网投用；核心能力和架构说明 GPT Image 2、Seedance 2、Kling、Veo、Wan 等模型适配、异步任务与数字资产管理；“我的技术实现”明确摩斯是项目唯一开发者，并将自进化 Agent 写为未来方向。
 - **知识同步**：公共知识优先从结构化 `details` 提取，保留可进一步问答的六个主题；媒体元数据、操作入口、旧 `evidence` 和 `boundaries` 不进入公共知识。
 - **本地验收**：`scripts/content-agent-visual-smoke.py` 负责 Content Agent 的 1440×900 / 390×844 文案、主图、详情、CTA 与溢出检查；`scripts/s9-visual-smoke.mjs` 负责四项目展开、Hash、键盘、滚动、外链隔离、重定向和 reduced-motion 全门禁。截图统一位于 `docs/verify/content-agent/portfolio-content-agent-*.png`。
+
+## 22. 自动运营 Agent 系统展示完成(2026-07-19)
+
+- **优先级**：本节覆盖 §14 中自动运营 Agent 的旧展示状态，沿用 §21 的统一折叠层与五段详情结构。
+- **展示状态**：项目卡使用“唯一开发者 · 已部署运行”，首层展示两行简介、账号矩阵、内容资产化、AI 内容生产、任务编排、受控发布五个能力短词和展开按钮。
+- **主图决定**：使用 `public/works/auto-operations/operations-workbench-design-2026-07-19.png`，展示脱敏运营总览、受控工作流、任务队列和账号健康状态；全部数字、账号和任务名称均为示例数据，首层标注“界面设计稿 · 示例数据”。
+- **展开内容**：详情按“项目简介、核心能力、系统架构、我的技术实现、技术栈”五段呈现；主流程连接授权账号、平台适配、内容库、AI 生产、AutoTask、PublishJob、发布预检和任务回写。
+- **职责口径**：业务需求、产品方向和部分创意来自真实业务对接；摩斯是项目唯一开发者，负责前端、后端、数据模型、平台适配、AI 能力路由、任务编排、安全治理、测试和交付等全部技术实现。
+- **技术口径**：`AI 与平台` 分组展示模型能力路由、OpenAI-compatible Adapter、RunningHub 工作流和 XHS SDK / 签名适配，不公开具体模型名称。
+- **知识与对话**：公共知识新增项目定位与价值、使用流程、核心架构、关键技术实现、个人技术贡献、未来方向六个主题；“问数字摩斯”预填获批问题，不自动发送，也不提供企业系统访问入口。
+- **未来方向**：运营策略 Agent 只作为未来方向，计划基于历史任务、人工反馈和内容质量评估优化选题、内容模板、能力路由与排期建议，并保留人工发布确认。
+- **公开安全**：页面和公共知识不包含公司品牌、真实账号、真实任务、业务数据、生产地址、部署平台、源码、验证证据、当前边界、采集时间、提交版本或运行方式。
+- **本地验收**：内容、知识、主图和 1440×900 / 390×844 浏览器检查由 `tests/site-content.test.ts`、`tests/public-knowledge.test.ts`、`tests/rag-eval-contract.test.ts` 与 `scripts/auto-operations-visual-smoke.py` 负责；完整记录收口在 `docs/verify/auto-operations/auto-operations-closeout.md`。

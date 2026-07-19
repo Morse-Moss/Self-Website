@@ -26,7 +26,7 @@ const expectedProjects = {
   },
   "auto-operations": {
     name: "自动运营 Agent 系统",
-    status: "企业内部项目 · 脱敏展示",
+    status: "唯一开发者 · 已部署运行",
     actions: [],
   },
   "deep-research": {
@@ -119,11 +119,13 @@ test("internal projects have no external action and disclose approved design med
   );
   assert.match(contentAgent.media.caption, /设计图/);
   assert.match(contentAgent.media.caption, /不是生产运行截图/);
-  assert.equal(autoOperations?.media, null);
-  assert.doesNotMatch(
-    JSON.stringify(autoOperations),
-    /capturedAt|commit/,
+  assert.ok(autoOperations?.media);
+  assert.equal(
+    autoOperations.media.src,
+    "/works/auto-operations/operations-workbench-design-2026-07-19.png",
   );
+  assert.equal(autoOperations.media.label, "界面设计稿 · 示例数据");
+  assert.match(autoOperations.media.caption, /示例数据/);
 });
 
 test("content agent leads with a concise operator pitch and solo technical delivery", () => {
@@ -180,6 +182,61 @@ test("content agent leads with a concise operator pitch and solo technical deliv
   assert.doesNotMatch(
     project.details?.implementation.summary ?? "",
     /独自提出全部业务|独立完成产品设计/,
+  );
+});
+
+test("auto operations publishes the approved controlled-workflow story", () => {
+  const project = getProjectBySlug("auto-operations");
+
+  assert.ok(project);
+  assert.equal(
+    project.summary,
+    "面向企业运营团队的小红书智能运营系统，将数据发现、内容沉淀、AI 内容生产、发布校验和任务追踪连接成受控运营工作流。",
+  );
+  assert.ok(project.summary.length <= 90, "public project summary must stay quickly scannable");
+  assert.equal(
+    project.ownership,
+    "业务需求、产品方向和部分创意来自真实业务对接；摩斯是项目唯一开发者，负责将这些输入完整实现为可运行系统。",
+  );
+  assert.match(project.futureDirection ?? "", /可审核、可回退的运营策略 Agent/);
+  assert.deepEqual(project.capabilities, [
+    "账号矩阵",
+    "内容资产化",
+    "AI 内容生产",
+    "任务编排",
+    "受控发布",
+  ]);
+  assert.deepEqual(project.askMorse, {
+    label: "问数字摩斯",
+    prompt: "请介绍自动运营 Agent 的账号矩阵、内容资产、AI 生产、任务编排与受控发布，以及摩斯独立完成的技术实现。",
+  });
+  assert.deepEqual(
+    project.knowledgeTopics?.map((topic) => topic.title),
+    ["项目定位与价值", "使用流程", "核心架构", "关键技术实现", "个人技术贡献", "未来方向"],
+  );
+  assert.equal(project.details?.overview.length, 2);
+  assert.equal(project.details?.coreCapabilities.length, 6);
+  assert.equal(project.details?.architecture.modules.length, 5);
+  assert.equal(project.details?.implementation.contributions.length, 7);
+  assert.match(project.details?.implementation.summary ?? "", /真实业务对接/);
+  assert.match(project.details?.implementation.summary ?? "", /唯一开发者/);
+
+  const aiPlatform = project.techStack.find((group) => group.label === "AI 与平台");
+  assert.deepEqual(aiPlatform?.items, [
+    "模型能力路由",
+    "OpenAI-compatible Adapter",
+    "RunningHub 工作流",
+    "XHS SDK / 签名适配",
+  ]);
+  assert.doesNotMatch(
+    JSON.stringify({
+      summary: project.summary,
+      capabilities: project.capabilities,
+      details: project.details,
+      techStack: project.techStack,
+      knowledgeTopics: project.knowledgeTopics,
+    }),
+    /doubao|豆包|gpt-?\d|seed|kling|veo|wan/i,
   );
 });
 
@@ -260,23 +317,26 @@ test("provides six case-study fields for every project", () => {
   }
 });
 
-test("publishes only the three separately approved project media assets", () => {
+test("publishes only the four separately approved project media assets", () => {
   const mediaProjects = getAllProjects().filter((project) => project.media);
 
   assert.deepEqual(
     mediaProjects.map((project) => project.slug),
-    ["content-agent", "deep-research", "digital-morse"],
+    ["content-agent", "auto-operations", "deep-research", "digital-morse"],
   );
   assert.equal(mediaProjects[0]?.media?.width, 1280);
   assert.equal(mediaProjects[0]?.media?.height, 1486);
   assert.match(mediaProjects[0]?.media?.evidence.runMode ?? "", /非运行态/);
   assert.equal(mediaProjects[1]?.media?.width, 1440);
   assert.equal(mediaProjects[1]?.media?.height, 1080);
-  assert.equal(mediaProjects[1]?.media?.label, "运行界面 · 示例数据");
-  assert.equal(mediaProjects[2]?.media?.width, 576);
-  assert.equal(mediaProjects[2]?.media?.height, 648);
-  assert.match(mediaProjects[2]?.media?.evidence.runMode ?? "", /本地 production build/);
-  assert.equal(mediaProjects[2]?.media?.label, "产品界面 · 示例会话");
+  assert.equal(mediaProjects[1]?.media?.label, "界面设计稿 · 示例数据");
+  assert.equal(mediaProjects[2]?.media?.width, 1440);
+  assert.equal(mediaProjects[2]?.media?.height, 1080);
+  assert.equal(mediaProjects[2]?.media?.label, "运行界面 · 示例数据");
+  assert.equal(mediaProjects[3]?.media?.width, 576);
+  assert.equal(mediaProjects[3]?.media?.height, 648);
+  assert.match(mediaProjects[3]?.media?.evidence.runMode ?? "", /本地 production build/);
+  assert.equal(mediaProjects[3]?.media?.label, "产品界面 · 示例会话");
 });
 
 test("keeps the approved global copy and four FAQ topics", () => {

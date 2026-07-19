@@ -1468,8 +1468,8 @@ async function inspectWorks(client, viewport) {
     `${viewportName}:works:contentAgent:internal-action`,
   );
   check(
-    privacy.autoOperations.images === 0,
-    `${viewportName}:works:autoOperations:internal-image`,
+    privacy.autoOperations.images === 1,
+    `${viewportName}:works:autoOperations:approved-image`,
   );
   check(
     privacy.autoOperations.actions === 0,
