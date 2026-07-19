@@ -1,6 +1,13 @@
 # 自动运营 Agent 系统作品集信息完善 Closeout
 
-## Outcome
+## Latest Production Absorption
+
+- 日期：2026-07-19；模式：`STAGED / CRITICAL / DEPLOYED`。
+- 生产 release：`d83b46f`；`/works#auto-operations`、展开详情与正式主图均已上线并返回 HTTP 200。
+- 生产知识：7 documents / 8 chunks，统一链接 `/works#auto-operations`；全库第二次摄取 33/33 跳过。
+- 全量评测：生产 BGE + pgvector 的 36 条 gold 为 top-3 36/36；本次未调用真实 Chat Provider。
+
+## Historical Local Outcome
 
 - 日期：2026-07-19
 - 模式：`STAGED / STANDARD / LOCAL`
@@ -46,7 +53,7 @@
 - 审查发现并关闭两个 blocker：自动运营专属模型名正则误伤 Content Agent，以及第二项目主图在懒加载完成前被验收脚本判定失败。
 - 修正后聚焦合同、全量测试、生产构建、专属双宽 smoke 与完整 S9 均通过；最终 verdict 为 `PASS`，无开放 blocker。
 
-## Git And Release Boundary
+## Historical Local Git And Release Boundary
 
 - 本轮只吸收自动运营展示内容、六主题知识、RAG/Chat 与视觉评测、脱敏主图、可复现渲染源、验收证据和对应文档。
 - 页面样式、研究报告、其他项目旧截图、概念图及 S6/S8 历史证据不属于本轮，不提交也不回退。

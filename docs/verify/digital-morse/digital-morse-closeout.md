@@ -1,6 +1,13 @@
 # 数字摩斯作品集信息完善 Closeout
 
-## Latest Production Knowledge Sync
+## Latest Production Absorption
+
+- 日期：2026-07-19；模式：`STAGED / CRITICAL / DEPLOYED`。
+- 生产 release：`d83b46f`；`/works#digital-morse`、展开详情与正式主图均已上线并返回 HTTP 200。
+- 生产知识：7 documents / 8 chunks，统一链接 `/works#digital-morse`；全库第二次摄取 33/33 跳过。
+- 全量评测：生产 BGE + pgvector 的 36 条 gold 为 top-3 36/36；本次未调用真实 Chat Provider。
+
+## Historical Production Knowledge Sync
 
 - 日期：2026-07-19
 - 模式：`STAGED / CRITICAL / DEPLOYED`
@@ -13,7 +20,7 @@
 - 运行观察：公网 live/ready 均为 HTTP 200；DB、Embedding 与 Web healthy，Worker 与 Edge running。
 - 本次未调用真实 Chat Provider，也未把具体生成模型版本或云厂商表述写入数字摩斯知识分块。
 
-## Latest Round: Concise Module
+## Historical Round: Concise Module
 
 - 日期：2026-07-19
 - 模式：`STAGED / STANDARD / LOCAL`
@@ -43,7 +50,7 @@
 - `tests/routes-contract.test.ts`、`tests/chat-ui-contract.test.ts`：同步到当前五段作品展示结构。
 - `content/drafts/system-digital-morse.md`：项目独立资料草稿，已同步本地展示。
 
-## Outcome
+## Historical Local Outcome
 
 - 日期：2026-07-19
 - 模式：`STAGED / STANDARD / LOCAL`
@@ -90,7 +97,7 @@
 
 四张截图均只使用本地 fixture 驱动访问与历史状态；验收脚本不发送聊天消息，不调用 Provider。
 
-## Git And Release Boundary
+## Historical Local Git And Release Boundary
 
 - 数字摩斯紧凑展示与知识内容已形成提交 `60738e1` 并进入 `origin/master`；该提交只吸收数字摩斯范围，没有吸收其他线程或不明归属文件。
 - 生产 Web 运行 `4f3d885`，未切换到 `60738e1`；生产 RAG 已按 7 个稳定文档 ID 定向同步 `60738e1` 的数字摩斯资料。

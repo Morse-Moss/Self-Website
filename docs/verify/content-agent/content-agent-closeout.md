@@ -1,6 +1,13 @@
 # 内容创作 Agent 作品集信息完善 Closeout
 
-## Outcome
+## Latest Production Absorption
+
+- 日期：2026-07-19；模式：`STAGED / CRITICAL / DEPLOYED`。
+- 生产 release：`d83b46f`；`/works#content-agent`、展开详情与黑金正式主图均已上线并返回 HTTP 200。
+- 生产知识：7 documents / 8 chunks，统一链接 `/works#content-agent`；全库第二次摄取 33/33 跳过。
+- 全量评测：生产 BGE + pgvector 的 36 条 gold 为 top-3 36/36；本次未调用真实 Chat Provider。
+
+## Historical Local Outcome
 
 - 日期：2026-07-18
 - 模式：`DIRECT / STANDARD / LOCAL`
@@ -48,14 +55,14 @@
 
 旧文案截图 `content-agent-desktop-1440x900.png` 与 `content-agent-mobile-390x844.png` 不作为最终证据，也不进入本轮提交。
 
-## Git And Release Boundary
+## Historical Local Git And Release Boundary
 
 - `b8d6d88 feat: publish content agent portfolio slice` 已位于本地 `master` 与 `origin/master`，但它在并行收尾期间同时吸收了 Digital Morse 的生产状态、证据和边界同步，不能描述为纯 content-agent 提交。
 - 本轮 follow-up 只收口慢 history 竞态、卡片首层披露、知识合同、验收脚本、必要截图与文档口径；其他线程和不明归属文件继续排除。
 - 截至 2026-07-18 本地收尾时，生产仍运行 `39849e1`，未包含 `b8d6d88` 及本轮 follow-up；该条只记录当时边界。
 - 该本地收尾阶段未调用聊天或生成 Provider，未写生产数据库，未 push、未部署、未创建 PR。
 
-## Production Addendum (2026-07-19)
+## Historical Production Addendum (2026-07-19)
 
 - 当前生产 release 为 `b15be68`，已包含 `b8d6d88` 的内容创作 Agent 简介、黑金设计图与六主题知识，以及 follow-up 的公开证据收紧和 CTA 授权竞态修复；`origin/master` 已包含该生产修订。
 - 公网 live/ready、首页、作品页与正式图片均为 HTTP 200，release smoke 返回 `{"ok":true}`；DB、Embedding、Web healthy，Worker 与 Caddy running。
@@ -66,7 +73,7 @@
 
 本轮 follow-up commit 后必须由独立 reviewer 对原四项 blocker 的关闭证据、提交范围和公开口径执行 delta review；只有 verdict 为 PASS 才能关闭本阶段。
 
-## Representative Works Refresh Addendum (2026-07-19)
+## Historical Representative Works Refresh Addendum (2026-07-19)
 
 ### Presentation Contract
 
@@ -97,7 +104,7 @@
 - 独立 reviewer 对 `1211252..edec187` 中的 Content Agent 相关 delta 给出 `PASS`，未发现 blocker；Digital Morse 与 Deep Research 的并行提交已明确排除。
 - reviewer 核对了蓝图 §21、最终内容源、五段详情、展开布局、两套 smoke 的失败传播和四张截图一致性。唯一 FOLLOW-UP 是聚焦 smoke 的禁用审计词扫描发生在展开前；展开详情仍由作品展示、路由内容合同单测与完整 S9 共同覆盖，当前公开页面不存在这些章节，不阻塞收口。
 
-## Production Knowledge Sync Addendum (2026-07-19)
+## Historical Production Knowledge Sync Addendum (2026-07-19)
 
 - 生产 Web、Worker 与 Edge 继续运行冻结 release `4f3d885`；本次只使用独立 ingest 角色，将 `e90b27b` 中 `project-content-agent*` 的 7 个固定文档 ID 定向同步到生产 RAG。
 - 首次定向摄取更新 7 documents / 8 chunks，幂等复验为 0 document 更新、0 chunk 更新、7 documents 跳过；全库保持 21 documents / 24 chunks，没有删除或覆盖其他项目文档。

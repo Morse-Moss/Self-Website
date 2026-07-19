@@ -2,20 +2,20 @@
 
 ## Outcome
 
-- 日期：2026-07-18 首发；2026-07-19 内容、数字摩斯与内容创作 Agent 知识更新
+- 日期：2026-07-18 首发；2026-07-19 四项目页面与生产知识全量更新
 - 模式：`STAGED / CRITICAL / DEPLOYED`
 - 状态：`PRODUCTION_OBSERVED / LIMITED_LAUNCH`
 - 公网入口：`https://aimorse.tech`
-- Web 运行修订：`4f3d885`
+- Web 运行修订：`d83b46f`
 - 实例：腾讯云 Lighthouse 首尔 `lhins-0oly57x8`，公网 `43.133.68.202`
 
 ## Release And Runtime
 
-- `/opt/revolution/current` 指向 `/opt/revolution/releases/4f3d885/revolution`。
+- `/opt/revolution/current` 指向 `/opt/revolution/releases/d83b46f/revolution`。
 - `db`、`embedding`、`web` 为 healthy；`worker` 与 `edge` 为 running。
 - PostgreSQL 16 + pgvector 使用 TLS 和独立 admin/runtime/migration/ingest/backup 凭据。
 - migration 001/002 首次执行和幂等复验通过；grants 完成后 migration 角色不再拥有超级用户权限。
-- 公开知识共 21 documents / 24 chunks；数字摩斯和内容创作 Agent 各为 7 documents / 8 chunks。两组定向摄取幂等复验均为 0 document 更新、0 chunk 更新、7 documents 跳过。
+- 公开知识共 33 documents / 39 chunks；内容创作 Agent、自动运营 Agent、深度研究 Agent 与数字摩斯各有 7 个稳定文档，分别为 8、8、9、8 chunks。第二次全量摄取为 0 document 更新、0 chunk 更新、33 documents 跳过。
 - 首个生产邀请码已创建，但邀请码明文、管理员凭据、TOTP、Provider key、数据库密码和私钥不进入本证据或 Git。
 
 ## Public Observation
@@ -25,6 +25,7 @@
 - `GET https://aimorse.tech/api/health` -> HTTP 200。
 - `GET https://aimorse.tech/` 与 `/works` -> HTTP 200。
 - `GET https://aimorse.tech/works/content-agent/atelier-main-design-2026-07-18.jpg` -> HTTP 200。
+- 自动运营 Agent、深度研究 Agent 与数字摩斯正式主图 -> HTTP 200。
 - `http://aimorse.tech` -> 301 到主域 HTTPS。
 - `https://www.aimorse.tech/works` -> 301 到 `https://aimorse.tech/works`。
 - `MORSE_RELEASE_BASE_URL=https://aimorse.tech npm run release:smoke` -> `{"ok":true}`，同时验证 HSTS、frame、content-type、referrer、permissions policy 和无 `X-Powered-By`。
@@ -54,11 +55,13 @@
 - `39849e1`：pgvector schema 创建只由 migration 管理，init 脚本只管理数据库角色。
 - `b8d6d88`：发布内容创作 Agent 简介、黑金设计图和六主题公开知识。
 - `b15be68`：收紧公开证据口径，并用 `pendingPromptRef` 修复 CTA 在邀请码授权期间丢失预填问题的竞态。
+- `d3f8d77`：发布自动运营作品集模块，并将四项目页面、详情和知识集合纳入同一冻结 release。
+- `d83b46f`：修正自动运营主题拆分后的 RAG gold 漂移；生产 BGE + pgvector 评测达到 top-3 36/36。
 - 部署前 S11 生产合同 10/10、migration 集成 13/13；`b15be68` 独立归档全量测试 557/557、定向测试 48/48、生产构建 19 routes 与敏感信息扫描均通过。
 
 ## Residual Boundaries
 
 - 当前为有限生产发布，不标记完整 `ONLINE_READY`。
 - 仍需生产 Lighthouse `>= 90`、监控、托管备份与恢复演练、入口层速率/连接限制、真实 Bocha/Feishu smoke 和 moderate dependency advisory 处置。
-- 线上 Web release 只来自冻结提交，没有复制本地脏工作区。生产运行 `4f3d885`；数字摩斯 `60738e1` 与内容创作 Agent `e90b27b` 各 7 个知识文档已定向同步到生产 RAG，Web、Worker 与 Edge 未随本次同步切换。
-- 本次知识同步未调用真实 Chat Provider，未创建 PR，也未清理旧 release、上传包或持久卷。
+- 线上 Web release 只来自冻结提交，没有复制本地脏工作区。生产运行 `d83b46f`；四项目页面、正式主图和各 7 个稳定知识文档均已进入生产。
+- 本次内容与知识发布未调用真实 Chat Provider，未创建 PR，也未清理旧 release、上传包或持久卷。

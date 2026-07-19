@@ -96,7 +96,7 @@ npm run production:worker
 
 ## 8. 当前生产状态与硬化余项
 
-首个生产实例在 `39849e1` 完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实对话 smoke 和公网 live/ready/release smoke。当前 Web release 为 `4f3d885`，沿用同一生产拓扑。2026-07-19 又以独立 ingest 角色定向同步 `60738e1` 的数字摩斯 7 documents / 8 chunks，以及 `e90b27b` 的内容创作 Agent 7 documents / 8 chunks；全库保持 21 documents / 24 chunks。数字摩斯 7/7、内容创作 Agent 9/9 定向 RAG 评测均进入 top-3，两组幂等复验均为 7/7 跳过。知识同步没有切换 Web、Worker 或 Edge release，也没有调用真实 Chat Provider；实例细节和内容发布证据以实例手册及 S11 closeout 为准。
+首个生产实例在 `39849e1` 完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实对话 smoke 和公网 live/ready/release smoke。当前 Web release 为 `d83b46f`，沿用同一生产拓扑，并已发布内容创作 Agent、自动运营 Agent、深度研究 Agent 与数字摩斯的简洁页面、展开详情和正式主图。生产公开知识为 33 documents / 39 chunks，其中四项目各 7 个稳定文档；第二次全量摄取为 33/33 跳过。生产 BGE + pgvector 的 36 条 gold 为 top-1 28/36、top-3 36/36，正负阈值均通过。本次内容与知识发布没有调用真实 Chat Provider；实例细节和内容发布证据以实例手册及 S11 closeout 为准。
 
 以下事项完成前保持 `LIMITED_LAUNCH`，不标记完整 `ONLINE_READY`：
 

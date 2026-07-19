@@ -4,16 +4,16 @@
 
 ## 当前生产状态（2026-07-19）
 
-- 状态：`PRODUCTION_OBSERVED / LIMITED_LAUNCH`，Web 运行修订 `4f3d885`。
-- 实例：`lhins-0oly57x8`；`/opt/revolution/current` 指向 `/opt/revolution/releases/4f3d885/revolution`。
+- 状态：`PRODUCTION_OBSERVED / LIMITED_LAUNCH`，Web 运行修订 `d83b46f`。
+- 实例：`lhins-0oly57x8`；`/opt/revolution/current` 指向 `/opt/revolution/releases/d83b46f/revolution`。
 - 拓扑：Caddy edge、Next.js Web、Worker、PostgreSQL 16 + pgvector、CPU BGE/Embedding 均已启动；DB、Embedding 与 Web health 为 healthy。
 - 域名：`aimorse.tech` 与 `www.aimorse.tech` 均解析到 `43.133.68.202`；Let's Encrypt 证书已签发，HTTP 和 `www` 均重定向到主域 HTTPS。
 - 防火墙：腾讯云入站允许 TCP `22/80/443` 与 ICMP；UFW 允许 `22/80/443`，数据库、Embedding 和 Next 内部端口未映射到公网。
-- 数据：migration 001/002 已执行并通过幂等复验；公开知识共 21 documents / 24 chunks，其中数字摩斯和内容创作 Agent 各为 7 documents / 8 chunks。两组定向摄取的幂等复验均为 0 document 更新、0 chunk 更新、7 documents 跳过；migration 临时超级用户权限已撤销。
-- 验证：公网 live、ready、兼容 health、根页、作品页与内容创作 Agent 正式图片均为 HTTP 200；`release:smoke` 通过；真实 Provider smoke 为 HTTP 200 并完成 SSE 输出。
+- 数据：migration 001/002 已执行并通过幂等复验；公开知识共 33 documents / 39 chunks。内容创作 Agent、自动运营 Agent、深度研究 Agent 与数字摩斯各有 7 个稳定文档，分别为 8、8、9、8 chunks；第二次全量摄取为 0 document 更新、0 chunk 更新、33 documents 跳过；migration 临时超级用户权限已撤销。
+- 验证：公网 live、ready、兼容 health、根页、作品页与四项目正式主图均为 HTTP 200；`release:smoke` 通过；生产 BGE + pgvector 的 36 条 gold 为 top-1 28/36、top-3 36/36，正负阈值均通过；历史真实 Provider smoke 为 HTTP 200 并完成 SSE 输出，本次内容与知识发布未调用真实 Chat Provider。
 - 浏览器：1440x900 与 390x844 的作品页和对话框均无横向溢出、控制台 error 为 0；正式图片加载完成；从项目 CTA 输入邀请码后，预填问题保留在输入框且不会自动发送。
 
-仍需保持诚实边界：当前生产域名的 Lighthouse 分数未复测；监控、托管备份、独立 edge 速率/连接限制和真实 Bocha/Feishu smoke 尚未完成。数字摩斯 `60738e1` 与内容创作 Agent `e90b27b` 各 7 个知识文档已定向同步到生产 RAG，但 Web、Worker 与 Edge 仍运行 `4f3d885`，剩余工作区改动没有进入生产。
+仍需保持诚实边界：当前生产域名的 Lighthouse 分数未复测；监控、托管备份、独立 edge 速率/连接限制和真实 Bocha/Feishu smoke 尚未完成。四项目页面与公开知识已进入生产，但剩余工作区改动和未跟踪证据没有进入生产。
 
 ## 发布边界
 

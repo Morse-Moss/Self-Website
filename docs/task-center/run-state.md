@@ -7,17 +7,17 @@
 **S11-5C PRODUCTION_OBSERVED / LIMITED_LAUNCH**
 
 ## next_allowed_pointer
-当前生产实例已观察到真实 HTTPS、live/ready、release smoke、公开页面、内容创作 Agent CTA 授权流程和真实 Provider 主链。下一步只允许从另一条开发线冻结新的明确提交后再发布，或进入监控/备份/edge 限流等硬化阶段；在 Lighthouse 和剩余运维门关闭前不得宣称完整 `ONLINE_READY`。
+当前生产实例已观察到真实 HTTPS、live/ready、release smoke、四项目公开页面与主图、内容创作 Agent CTA 授权流程和历史真实 Provider 主链。下一步只允许从另一条开发线冻结新的明确提交后再发布，或进入监控/备份/edge 限流等硬化阶段；在 Lighthouse 和剩余运维门关闭前不得宣称完整 `ONLINE_READY`。
 
 ## S11-5C production content release (2026-07-19)
 
 - Mode: `STAGED / CRITICAL / DEPLOYED`；状态：`OBSERVED / LIMITED_LAUNCH`。
-- Release: `/opt/revolution/current` 指向 `/opt/revolution/releases/4f3d885/revolution`。Web、Worker 与 Edge 未因本轮知识同步切换 release；发布只使用冻结提交，没有从脏工作区复制文件。
-- Content/Data PASS: 数字摩斯生产 RAG 已按 7 个稳定文档 ID 定向同步 `60738e1`，内容创作 Agent 生产 RAG 已按 7 个稳定文档 ID 定向同步 `e90b27b`。全库 21 documents / 24 chunks，两项目各 7 documents / 8 chunks；两组幂等复验均为 0 document 更新、0 chunk 更新、7 documents 跳过，migration 仍为 001/002。
-- Verification PASS: 数字摩斯 7/7、内容创作 Agent 9/9 定向 RAG 评测均进入 top-3；内容创作 Agent 为 8/9 top-1，最低正例 `0.564173`、最高负例 `0.420975`，正负阈值均通过。公网 live/ready、作品页均为 HTTP 200，release smoke 与相关容器健康。本轮未调用真实 Chat Provider。
+- Release: `/opt/revolution/current` 指向 `/opt/revolution/releases/d83b46f/revolution`。Web、Worker 与 Edge 均已切换；发布只使用冻结提交，没有从脏工作区复制文件。
+- Content/Data PASS: 内容创作 Agent、自动运营 Agent、深度研究 Agent 与数字摩斯页面、展开详情和正式主图已进入生产。生产 RAG 为 33 documents / 39 chunks，其中四项目各 7 个稳定文档，共 28 documents / 33 chunks；第二次全量摄取为 0 document 更新、0 chunk 更新、33 documents 跳过，migration 仍为 001/002。
+- Verification PASS: 生产 BGE + pgvector 的 36 条 gold 为 top-1 28/36、top-3 36/36；最低正例 `0.527623`、最高负例 `0.420975`，正负阈值均通过。公网 live/ready、作品页和四张正式主图均为 HTTP 200，release smoke 与相关容器健康。本轮未调用真实 Chat Provider。
 - Runtime PASS: PostgreSQL/pgvector、CPU BGE、Next.js Web、Worker 与 Caddy 均运行；DB、Embedding、Web healthy，内部端口仍未映射公网。
 - Browser PASS: 1440x900 与 390x844 均无横向溢出，正式图片加载完成，控制台 error 0；从内容创作 Agent CTA 进入、输入邀请码后，预填问题保留在输入框且未自动发送。`b8d6d88` 上的真实 Provider 对话已完整返回并展示公开来源。
-- Residual: 生产 Lighthouse 未复测；监控、托管备份、独立 edge 速率/连接限制、真实 Bocha/Feishu 和 moderate dependency advisory 处置仍未完成。数字摩斯 `60738e1` 与内容创作 Agent `e90b27b` 的知识已进入生产 RAG，紧凑展示尚未随知识同步切换 Web release；其余工作区改动和未跟踪证据未纳入生产。
+- Residual: 生产 Lighthouse 未复测；监控、托管备份、独立 edge 速率/连接限制、真实 Bocha/Feishu 和 moderate dependency advisory 处置仍未完成；其余工作区改动和未跟踪证据未纳入生产。
 - Knowledge reconciliation: README、`CLAUDE.md`、腾讯云运行手册、本运行状态与 S11 生产证据按当前 release 同步；Codex durable memory 未获用户授权，不更新。
 
 ## S11-5B Tencent production deployment (2026-07-18, superseded by S11-5C)

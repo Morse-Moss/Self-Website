@@ -1,6 +1,13 @@
 # 深度研究 Agent 系统作品集信息完善 Closeout
 
-## Outcome
+## Latest Production Absorption
+
+- 日期：2026-07-19；模式：`STAGED / CRITICAL / DEPLOYED`。
+- 生产 release：`d83b46f`；`/works#deep-research`、展开详情与 Operator Workbench 主图均已上线并返回 HTTP 200。
+- 生产知识：7 documents / 9 chunks，统一链接 `/works#deep-research`；全库第二次摄取 33/33 跳过。
+- 全量评测：生产 BGE + pgvector 的 36 条 gold 为 top-3 36/36；本次未调用真实 Chat Provider。
+
+## Historical Local Outcome
 
 - 日期：2026-07-19
 - 模式：`STAGED / STANDARD / LOCAL`
@@ -49,7 +56,7 @@
 - `tests/works-presentation.test.ts`、`tests/site-content.test.ts`、`tests/public-knowledge.test.ts`、`tests/work-asset.test.ts`：展示、知识和资产合同。
 - `docs/portfolio-blueprint.md`、`README.md`：当前需求口径与验收索引。
 
-## Git And Release Boundary
+## Historical Local Git And Release Boundary
 
 - 本次 closeout 只吸收本文件“Changed Surface”列出的深度研究展示、知识、资产、测试与文档增量。
 - 未部署、未创建 PR，也未修改外部项目 `E:\多agent\deep-research-agent`；push 不代表生产环境已更新。
