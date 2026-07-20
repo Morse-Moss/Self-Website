@@ -5,6 +5,7 @@ type Env = Record<string, string | undefined>;
 
 export type ResumeConfigErrorCode =
   | 'RESUME_ENABLED_INVALID'
+  | 'RESUME_COOKIE_INVALID'
   | 'RESUME_DATABASE_URL_INVALID'
   | 'RESUME_PUBLIC_ORIGIN_INVALID'
   | 'RESUME_STORAGE_DIR_INVALID'
@@ -130,6 +131,11 @@ export function loadResumeConfig(env: Env = process.env): ResumeConfig {
     return { enabled: false, cookieName };
   }
   if (enabledValue.trim() !== 'true') fail('RESUME_ENABLED_INVALID');
+  const accessCookieName = env.MORSE_ACCESS_COOKIE?.trim() || 'morse_access';
+  const adminCookieName = env.MORSE_ADMIN_COOKIE?.trim() || 'morse_admin';
+  if (cookieName === accessCookieName || cookieName === adminCookieName) {
+    fail('RESUME_COOKIE_INVALID');
+  }
 
   const storageDir = required(
     env,

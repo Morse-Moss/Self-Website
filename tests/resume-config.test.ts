@@ -93,6 +93,22 @@ test('resume config rejects every explicit non-boolean enable value', () => {
   }
 });
 
+test('enabled resume config rejects chat and admin cookie name collisions', () => {
+  for (const [cookieSetting, cookieName] of [
+    ['MORSE_ACCESS_COOKIE', 'shared_access'],
+    ['MORSE_ADMIN_COOKIE', 'shared_admin'],
+  ] as const) {
+    assertResumeError(
+      () => loadResumeConfig(enabledEnv({
+        MORSE_RESUME_COOKIE: cookieName,
+        [cookieSetting]: cookieName,
+      })),
+      'RESUME_COOKIE_INVALID',
+      [cookieName],
+    );
+  }
+});
+
 test('enabled local resume config loads a direct 32-byte canonical Base64 key', () => {
   const config = loadResumeConfig(enabledEnv());
   assert.equal(config.enabled, true);
