@@ -113,7 +113,7 @@ npm run production:worker
 
 ## 8. 当前生产状态与硬化余项
 
-首个生产实例在 `39849e1` 完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实对话 smoke 和公网 live/ready/release smoke。当前应用 release 为 `44ed094`，沿用同一生产拓扑，并已发布密码登录、邀请码管理、私有导出密码复验、五个项目的简洁页面、展开详情和正式主图，以及首页 Warp Tunnel；五项目统一使用“项目负责人”称呼并保留独立技术实现口径。生产公开知识为 40 documents / 47 chunks；本轮摄取为 0 更新、40 documents 跳过。生产 BGE + pgvector 的 46 条 gold 为 top-1 36/46、top-3 46/46，正负阈值均通过。生产 Lighthouse 13.4.0 的移动端与桌面端 Performance 均为 99。本次发布没有创建生产邀请码明文，也没有调用真实 Chat、Bocha 或 Feishu Provider；实例细节和发布证据以实例手册及 S11 closeout 为准。
+首个生产实例在 `39849e1` 完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实对话 smoke 和公网 live/ready/release smoke。当前应用 release 为 `741ddad`，沿用同一生产拓扑，并已发布密码登录、邀请码管理、私有导出密码复验、五个项目的简洁页面、展开详情和正式主图、首页 Warp Tunnel，以及同模型同协议的三节点 Chat 容灾；五项目统一使用“项目负责人”称呼并保留独立技术实现口径。生产公开知识为 40 documents / 47 chunks；本轮摄取为 0 更新、40 documents 跳过。生产 BGE + pgvector 的 46 条 gold 为 top-1 36/46、top-3 46/46，正负阈值均通过。生产 Lighthouse 13.4.0 的移动端与桌面端 Performance 均为 99。本次发布没有创建生产邀请码明文；主节点、两级接管和运行 Web 容器共完成 4 次受控真实 Chat Provider 调用，未调用 Bocha 或 Feishu；实例细节和发布证据以实例手册及 S11 closeout 为准。
 
 以下事项完成前保持 `LIMITED_LAUNCH`，不标记完整 `ONLINE_READY`：
 

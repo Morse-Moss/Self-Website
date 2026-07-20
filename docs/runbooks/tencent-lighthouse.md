@@ -4,13 +4,13 @@
 
 ## 当前生产状态（2026-07-20）
 
-- 状态：`PRODUCTION_OBSERVED / LIMITED_LAUNCH`，当前应用 release `44ed094`。
-- 实例：`lhins-0oly57x8`；`/opt/revolution/current` 指向 `/opt/revolution/releases/44ed094/revolution`，Web、Worker 与 Edge 的 Compose working directory 均已核对到该冻结 release。
+- 状态：`PRODUCTION_OBSERVED / LIMITED_LAUNCH`，当前应用 release `741ddad`。
+- 实例：`lhins-0oly57x8`；`/opt/revolution/current` 指向 `/opt/revolution/releases/741ddad/revolution`，Web、Worker 与 Edge 的 Compose working directory 均已核对到该冻结 release。
 - 拓扑：Caddy edge、Next.js Web、Worker、PostgreSQL 16 + pgvector、CPU BGE/Embedding 均已启动；DB、Embedding 与 Web health 为 healthy。
 - 域名：`aimorse.tech` 与 `www.aimorse.tech` 均解析到 `43.133.68.202`；Let's Encrypt 证书已签发，HTTP 和 `www` 均重定向到主域 HTTPS。
 - 防火墙：腾讯云入站允许 TCP `22/80/443` 与 ICMP；UFW 允许 `22/80/443`，数据库、Embedding 和 Next 内部端口未映射到公网。
-- 数据：migration 001/002 已执行并通过幂等复验；公开知识共 40 documents / 47 chunks。本轮 Warp Tunnel 发布摄取为 0 更新、40 documents 跳过；migration 临时超级用户权限已撤销。
-- 验证：公网 live、ready、兼容 health、根页、作品页与五项目正式主图均为 HTTP 200；`release:smoke` 通过；生产 BGE + pgvector 的 46 条 gold 为 top-1 36/46、top-3 46/46，正负阈值均通过；历史真实 Provider smoke 为 HTTP 200 并完成 SSE 输出，本次发布未调用真实 Chat、Bocha 或 Feishu Provider。
+- 数据：migration 001/002 已执行并通过幂等复验；公开知识共 40 documents / 47 chunks。本轮 Provider 发布摄取为 0 更新、40 documents 跳过；migration 临时超级用户权限已撤销。
+- 验证：公网 live、ready、兼容 health、根页与作品页均为 HTTP 200；`release:smoke` 通过。Chat 固定使用 `gpt-5.6-terra`、Responses 和 high reasoning；主节点、强制一级接管、强制二级接管及运行 Web 容器主节点共 4 次受控真实调用均返回完整终态和 usage，未保存回答正文、原始 payload 或凭据。真实 Bocha 和 Feishu 本次未调用。
 - 浏览器：首页 Warp Tunnel 与作品页在 1440x900、390x844 和 reduced-motion 场景均无横向溢出、控制台/page error、外部运行时请求或失败；正式图片加载完成；从项目 CTA 输入邀请码后，预填问题保留在输入框且不会自动发送。
 - 性能：生产域名 Lighthouse 13.4.0 移动端与桌面端 Performance 均为 99；桌面 FCP 0.2s、LCP 0.6s、TBT 70ms、CLS 0、Speed Index 1.0s。
 - 管理入口：`https://aimorse.tech/admin` 不在公开导航中。功能基线 `c3f1ec6` 使用密码登录，包含对话复盘、badcase、密码复验导出和邀请码管理；生产脚本不再引用 `totpCode` 或 `inviteTotpCode`。发布验收没有读取生产管理员密码，因此未创建邀请码明文；认证后的创建、兑换与停用按下方顺序由管理员验收。
@@ -70,8 +70,13 @@ MORSE_PUBLIC_ORIGIN=https://aimorse.tech
 MORSE_ADMIN_ALLOWED_ORIGIN=https://aimorse.tech
 OPENAI_API_KEY=<provider-secret>
 OPENAI_BASE_URL=https://<provider-host>/v1
+OPENAI_FALLBACK_1_API_KEY=<provider-secret>
+OPENAI_FALLBACK_1_BASE_URL=https://<fallback-1-host>/v1
+OPENAI_FALLBACK_2_API_KEY=<provider-secret>
+OPENAI_FALLBACK_2_BASE_URL=https://<fallback-2-host>/v1
 OPENAI_CHAT_MODEL=<provider-model>
 OPENAI_CHAT_PROTOCOL=responses
+OPENAI_REASONING_EFFORT=high
 OPENAI_EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5
 EMBEDDING_API_KEY=<random-internal-key>
 MORSE_ADMIN_PASSWORD_HASH=<scrypt-hash>
