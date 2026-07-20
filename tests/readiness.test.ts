@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import os from 'node:os';
 import { test } from 'node:test';
 
 import {
@@ -60,6 +61,59 @@ test('readiness accepts valid runtime config, exact migrations and non-empty kno
     expectedMigrations: manifest,
     pool: poolWith(),
   }));
+});
+
+test('readiness validates enabled resume config in local and production runtimes', async () => {
+  const commonResumeEnv = {
+    MORSE_RESUME_ENABLED: 'true',
+    MORSE_RESUME_STORAGE_DIR: os.tmpdir(),
+    MORSE_RESUME_KEY_VERSION: '1',
+    MORSE_RESUME_FINGERPRINT_SECRET: 'resume-fingerprint-secret-32-bytes',
+  };
+  const localKey = Buffer.alloc(32, 5).toString('base64');
+
+  await assert.doesNotReject(assertApplicationReady({
+    env: {
+      ...runtimeEnv,
+      NODE_ENV: 'development',
+      ...commonResumeEnv,
+      MORSE_RESUME_ENCRYPTION_KEY: localKey,
+      MORSE_RESUME_TRUSTED_PROXY_HOPS: '0',
+    },
+    expectedMigrations: manifest,
+    pool: poolWith(),
+  }));
+
+  for (const env of [
+    {
+      ...runtimeEnv,
+      NODE_ENV: 'development',
+      ...commonResumeEnv,
+      MORSE_RESUME_ENCRYPTION_KEY: 'not-canonical-base64',
+      MORSE_RESUME_TRUSTED_PROXY_HOPS: '0',
+    },
+    {
+      ...runtimeEnv,
+      ...commonResumeEnv,
+      MORSE_RESUME_ENCRYPTION_KEY: localKey,
+      MORSE_RESUME_TRUSTED_PROXY_HOPS: '1',
+    },
+  ]) {
+    await assert.rejects(
+      assertApplicationReady({
+        env,
+        expectedMigrations: manifest,
+        pool: poolWith(),
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof ReadinessError);
+        assert.equal(error.code, 'READINESS_RUNTIME_INVALID');
+        assert.equal(error.message, 'READINESS_RUNTIME_INVALID');
+        assert.doesNotMatch(String(error), /not-canonical|BQUFBQ/u);
+        return true;
+      },
+    );
+  }
 });
 
 test('readiness distinguishes internal failure causes without exposing their values', async () => {

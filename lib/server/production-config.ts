@@ -12,6 +12,7 @@ import {
   isSupportedAdminPasswordHash,
 } from './admin-auth.ts';
 import { loadWorkerConfig, WorkerConfigError } from './worker-config.ts';
+import { loadResumeConfig } from './resume-config.ts';
 
 export type ProductionRole = DatabaseProcessRole;
 type Env = Record<string, string | undefined>;
@@ -168,6 +169,15 @@ function validateWeb(env: Env): void {
     loadInviteAbuseConfig(env);
   } catch {
     fail('PRODUCTION_RUNTIME_CONFIG_INVALID');
+  }
+  let resumeConfig: ReturnType<typeof loadResumeConfig>;
+  try {
+    resumeConfig = loadResumeConfig(env);
+  } catch {
+    fail('PRODUCTION_RESUME_CONFIG_INVALID');
+  }
+  if (resumeConfig.enabled && resumeConfig.trustedProxyHops !== 1) {
+    fail('PRODUCTION_RESUME_CONFIG_INVALID');
   }
 }
 

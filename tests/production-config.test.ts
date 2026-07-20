@@ -1,4 +1,8 @@
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { test } from 'node:test';
 
 import {
@@ -85,6 +89,102 @@ test('production preflight validates only the configuration owned by each role',
     alertsEnabled: null,
     role: 'ingest',
   });
+});
+
+test('non-web production roles never load private resume configuration', () => {
+  const resumeConfigThatMustNotBeRead = {
+    MORSE_RESUME_ENABLED: 'true',
+    MORSE_RESUME_STORAGE_DIR: os.tmpdir(),
+    MORSE_RESUME_ENCRYPTION_KEY_FILE: path.join(
+      os.tmpdir(),
+      'revolution-resume-key-that-does-not-exist',
+    ),
+    MORSE_RESUME_KEY_VERSION: '1',
+    MORSE_RESUME_FINGERPRINT_SECRET: 'resume-fingerprint-secret-32-bytes',
+    MORSE_RESUME_TRUSTED_PROXY_HOPS: '1',
+  };
+
+  assert.deepEqual(validateProductionRole('worker', {
+    ...databaseEnv,
+    ...resumeConfigThatMustNotBeRead,
+    MORSE_ALERTS_ENABLED: 'false',
+  }), {
+    alertsEnabled: false,
+    role: 'worker',
+  });
+  assert.deepEqual(validateProductionRole('migration', {
+    ...databaseEnv,
+    ...resumeConfigThatMustNotBeRead,
+  }), {
+    alertsEnabled: null,
+    role: 'migration',
+  });
+  assert.deepEqual(validateProductionRole('ingest', {
+    ...databaseEnv,
+    ...resumeConfigThatMustNotBeRead,
+    OPENAI_EMBEDDING_API_KEY: 'test-production-embedding-key',
+    OPENAI_EMBEDDING_BASE_URL: 'https://embedding.internal.example/v1',
+    OPENAI_EMBEDDING_MODEL: 'bge-production',
+    MORSE_ALLOW_TEST_EMBEDDINGS: 'false',
+  }), {
+    alertsEnabled: null,
+    role: 'ingest',
+  });
+});
+
+test('web production resume access requires a file key and exactly one trusted proxy', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'revolution-production-resume-'));
+  const keyFile = path.join(directory, 'resume.key');
+  const key = Buffer.alloc(32, 9).toString('base64');
+  try {
+    await writeFile(keyFile, `${key}\n`, 'utf8');
+    const resumeEnv = {
+      MORSE_RESUME_ENABLED: 'true',
+      MORSE_RESUME_STORAGE_DIR: directory,
+      MORSE_RESUME_ENCRYPTION_KEY_FILE: keyFile,
+      MORSE_RESUME_KEY_VERSION: '1',
+      MORSE_RESUME_FINGERPRINT_SECRET: 'resume-fingerprint-secret-32-bytes',
+      MORSE_RESUME_TRUSTED_PROXY_HOPS: '1',
+    };
+
+    assert.deepEqual(validateProductionRole('web', {
+      ...webEnv,
+      ...resumeEnv,
+    }), {
+      alertsEnabled: null,
+      role: 'web',
+    });
+
+    for (const unsafeResumeEnv of [
+      {
+        ...resumeEnv,
+        MORSE_RESUME_TRUSTED_PROXY_HOPS: '0',
+      },
+      {
+        ...resumeEnv,
+        MORSE_RESUME_ENCRYPTION_KEY_FILE: undefined,
+        MORSE_RESUME_ENCRYPTION_KEY: key,
+      },
+    ]) {
+      assert.throws(
+        () => validateProductionRole('web', {
+          ...webEnv,
+          ...unsafeResumeEnv,
+        }),
+        (error: unknown) => {
+          assert.ok(error instanceof ProductionConfigError);
+          assert.equal(error.code, 'PRODUCTION_RESUME_CONFIG_INVALID');
+          assert.equal(error.message, 'PRODUCTION_RESUME_CONFIG_INVALID');
+          assert.doesNotMatch(String(error), new RegExp(key, 'u'));
+          assert.doesNotMatch(String(error), new RegExp(keyFile.replace(/\\/gu, '\\\\'), 'u'));
+          return true;
+        },
+      );
+    }
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+  assert.equal(existsSync(directory), false);
 });
 
 test('production preflight permits only explicitly opted-in private HTTP embeddings', () => {

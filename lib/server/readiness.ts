@@ -5,6 +5,7 @@ import {
   type MigrationManifestEntry,
 } from './migration-manifest.ts';
 import { validateProductionRole } from './production-config.ts';
+import { loadResumeConfig } from './resume-config.ts';
 
 type Env = Record<string, string | undefined>;
 interface QueryPool {
@@ -59,6 +60,7 @@ function validateRuntime(env: Env): void {
       loadServerConfig(env);
       loadAdminConfig(env);
       loadInviteAbuseConfig(env);
+      loadResumeConfig(env);
     }
   } catch {
     throw new ReadinessError('READINESS_RUNTIME_INVALID');
