@@ -37,17 +37,41 @@ const WORKER_CLOSE_TIMEOUT_MS = 5_000;
 const WORKER_MESSAGE_LIMIT_BYTES = 64 * 1024;
 const WORKER_MESSAGE_TIMEOUT_MS = 180_000;
 const WORKER_TERMINATE_TIMEOUT_MS = 15_000;
-const SAFE_SCREENSHOTS = new Set([
-  ...[
-    's9-home-desktop-1440x900.png',
-    's9-home-mobile-390x844.png',
-    's9-home-mobile-390-reduced.png',
-    's9-works-desktop-1440x900.png',
-    's9-works-mobile-390x844.png',
-  ].map((fileName) => `docs/verify/s9/${fileName}`),
-  'docs/verify/capability-matrix/capability-matrix-desktop-1440.png',
-  'docs/verify/capability-matrix/capability-matrix-mobile-390.png',
-  'docs/verify/capability-matrix/capability-matrix-mobile-390-reduced.png',
+const screenshotFiles = {
+  desktop: {
+    capabilities: 'capability-matrix-desktop-1440.png',
+    home: 's9-home-desktop-1440x900.png',
+    works: 's9-works-desktop-1440x900.png',
+  },
+  mobile: {
+    capabilities: 'capability-matrix-mobile-390.png',
+    home: 's9-home-mobile-390x844.png',
+    works: 's9-works-mobile-390x844.png',
+  },
+  'mobile-reduced': {
+    capabilities: 'capability-matrix-mobile-390-reduced.png',
+    home: 's9-home-mobile-390-reduced.png',
+  },
+};
+const SAFE_SCREENSHOT_PREFIXES = [
+  'docs/verify/s9',
+  'docs/verify/capability-matrix',
+];
+const SAFE_SCREENSHOT_FILE_NAMES = new Set(
+  Object.values(screenshotFiles).flatMap((files) => Object.values(files)),
+);
+const SAFE_SCREENSHOTS = new Set(SAFE_SCREENSHOT_PREFIXES.flatMap((prefix) => (
+  [...SAFE_SCREENSHOT_FILE_NAMES].map((fileName) => `${prefix}/${fileName}`)
+)));
+const canonicalScreenshotPrefixByEvidenceDir = new Map([
+  [
+    path.resolve(fileURLToPath(new URL('../docs/verify/s9/', import.meta.url))),
+    'docs/verify/s9',
+  ],
+  [
+    path.resolve(fileURLToPath(new URL('../docs/verify/capability-matrix/', import.meta.url))),
+    'docs/verify/capability-matrix',
+  ],
 ]);
 const SAFE_SLUGS = new Set([
   'content-agent',
@@ -415,23 +439,6 @@ const slugs = [
   'deep-research',
   'digital-morse',
 ];
-const screenshotFiles = {
-  desktop: {
-    capabilities: 'capability-matrix-desktop-1440.png',
-    home: 's9-home-desktop-1440x900.png',
-    works: 's9-works-desktop-1440x900.png',
-  },
-  mobile: {
-    capabilities: 'capability-matrix-mobile-390.png',
-    home: 's9-home-mobile-390x844.png',
-    works: 's9-works-mobile-390x844.png',
-  },
-  'mobile-reduced': {
-    capabilities: 'capability-matrix-mobile-390-reduced.png',
-    home: 's9-home-mobile-390-reduced.png',
-  },
-};
-
 const failures = [];
 const screenshotByName = new Map();
 const routeStatuses = [];
@@ -441,6 +448,13 @@ const horizontalOverflow = [];
 let consoleErrors = 0;
 let pageErrors = 0;
 const externalRuntimeRequestSet = new Set();
+
+function recordScreenshot(fileName) {
+  const summaryPrefix = canonicalScreenshotPrefixByEvidenceDir.get(evidenceDir);
+  if (!summaryPrefix) return;
+  const summaryPath = `${summaryPrefix}/${fileName}`;
+  if (SAFE_SCREENSHOTS.has(summaryPath)) screenshotByName.set(fileName, summaryPath);
+}
 
 class HarnessError extends Error {
   constructor(code) {
@@ -754,7 +768,7 @@ async function captureScreenshot(client, viewportName, kind) {
   }, SCREENSHOT_TIMEOUT_MS);
   const filePath = path.join(evidenceDir, fileName);
   writeFileSync(filePath, Buffer.from(result.data, 'base64'));
-  screenshotByName.set(fileName, `docs/verify/s9/${fileName}`);
+  recordScreenshot(fileName);
 }
 
 async function captureElementScreenshot(client, viewportName, kind, selector) {
@@ -783,7 +797,7 @@ async function captureElementScreenshot(client, viewportName, kind, selector) {
   }, SCREENSHOT_TIMEOUT_MS);
   const filePath = path.join(evidenceDir, fileName);
   writeFileSync(filePath, Buffer.from(result.data, 'base64'));
-  screenshotByName.set(fileName, `docs/verify/capability-matrix/${fileName}`);
+  recordScreenshot(fileName);
 }
 
 async function sampleCanvas(client) {
@@ -917,8 +931,41 @@ async function inspectHome(client, viewport) {
     const capabilityMatrixRect = capabilityMatrix?.getBoundingClientRect();
     const capabilityCardRects = capabilityCards.map((card) => card.getBoundingClientRect());
     const capabilityTolerance = 2;
-    const desktopCapabilityLayout = Boolean(capabilityMatrixRect && capabilityCardRects.length === 5 && Math.abs(capabilityCardRects[0].top - capabilityCardRects[1].top) <= capabilityTolerance && capabilityCardRects[0].right < capabilityCardRects[1].left && Math.abs(capabilityCardRects[4].width - capabilityMatrixRect.width) <= capabilityTolerance);
-    const mobileCapabilityLayout = Boolean(capabilityMatrixRect && capabilityCardRects.length === 5 && capabilityCardRects.every((rect) => Math.abs(rect.width - capabilityMatrixRect.width) <= capabilityTolerance) && capabilityCardRects.every((rect, index) => index === 0 || rect.top > capabilityCardRects[index - 1].top));
+    const firstRowBottom = capabilityCardRects.length === 5
+      ? Math.max(capabilityCardRects[0].bottom, capabilityCardRects[1].bottom)
+      : 0;
+    const secondRowTop = capabilityCardRects.length === 5
+      ? Math.min(capabilityCardRects[2].top, capabilityCardRects[3].top)
+      : 0;
+    const secondRowBottom = capabilityCardRects.length === 5
+      ? Math.max(capabilityCardRects[2].bottom, capabilityCardRects[3].bottom)
+      : 0;
+    const desktopCapabilityLayout = Boolean(
+      capabilityMatrixRect
+      && capabilityCardRects.length === 5
+      && Math.abs(capabilityCardRects[0].top - capabilityCardRects[1].top) <= capabilityTolerance
+      && Math.abs(capabilityCardRects[2].top - capabilityCardRects[3].top) <= capabilityTolerance
+      && Math.abs(capabilityCardRects[0].left - capabilityCardRects[2].left) <= capabilityTolerance
+      && Math.abs(capabilityCardRects[1].right - capabilityCardRects[3].right) <= capabilityTolerance
+      && capabilityCardRects[0].right < capabilityCardRects[1].left
+      && capabilityCardRects[2].right < capabilityCardRects[3].left
+      && secondRowTop >= firstRowBottom - capabilityTolerance
+      && capabilityCardRects[4].top >= secondRowBottom - capabilityTolerance
+      && Math.abs(capabilityCardRects[4].left - capabilityMatrixRect.left) <= capabilityTolerance
+      && Math.abs(capabilityCardRects[4].right - capabilityMatrixRect.right) <= capabilityTolerance
+    );
+    const mobileCapabilityLayout = Boolean(
+      capabilityMatrixRect
+      && capabilityCardRects.length === 5
+      && capabilityCardRects.every((rect) => (
+        Math.abs(rect.left - capabilityMatrixRect.left) <= capabilityTolerance
+        && Math.abs(rect.right - capabilityMatrixRect.right) <= capabilityTolerance
+      ))
+      && capabilityCardRects.every((rect, index) => (
+        index === 0
+        || rect.top >= capabilityCardRects[index - 1].bottom - capabilityTolerance
+      ))
+    );
     const roleVisible = Array.from(document.querySelectorAll('p')).some(
       (element) => element.textContent?.trim() === ${JSON.stringify(publicContent.profile.role)}
         && visible(element),

@@ -128,6 +128,78 @@ test('S9 home hero fills the first viewport before the featured band begins', ()
   assert.doesNotMatch(inspectHome, /nextBandVisible|next-band-not-visible/);
 });
 
+test('S9 capability geometry validates both desktop rows and prevents vertical overlap', () => {
+  const harness = readHarness();
+  const inspectHomeStart = harness.indexOf('async function inspectHome(client, viewport)');
+  const inspectHomeEnd = harness.indexOf('async function inspectWorksShell', inspectHomeStart);
+
+  assert.notEqual(inspectHomeStart, -1, 'inspectHome must exist');
+  assert.notEqual(inspectHomeEnd, -1, 'inspectHome must end before inspectWorksShell');
+  const inspectHome = harness.slice(inspectHomeStart, inspectHomeEnd);
+
+  for (const geometryContract of [
+    /Math\.abs\(capabilityCardRects\[2\]\.top - capabilityCardRects\[3\]\.top\) <= capabilityTolerance/,
+    /Math\.abs\(capabilityCardRects\[0\]\.left - capabilityCardRects\[2\]\.left\) <= capabilityTolerance/,
+    /Math\.abs\(capabilityCardRects\[1\]\.right - capabilityCardRects\[3\]\.right\) <= capabilityTolerance/,
+    /capabilityCardRects\[2\]\.right < capabilityCardRects\[3\]\.left/,
+    /secondRowTop >= firstRowBottom - capabilityTolerance/,
+    /capabilityCardRects\[4\]\.top >= secondRowBottom - capabilityTolerance/,
+    /Math\.abs\(capabilityCardRects\[4\]\.left - capabilityMatrixRect\.left\) <= capabilityTolerance/,
+    /Math\.abs\(capabilityCardRects\[4\]\.right - capabilityMatrixRect\.right\) <= capabilityTolerance/,
+    /Math\.abs\(rect\.left - capabilityMatrixRect\.left\) <= capabilityTolerance/,
+    /Math\.abs\(rect\.right - capabilityMatrixRect\.right\) <= capabilityTolerance/,
+    /rect\.top >= capabilityCardRects\[index - 1\]\.bottom - capabilityTolerance/,
+  ]) {
+    assert.match(inspectHome, geometryContract);
+  }
+});
+
+test('S9 screenshot evidence maps actual canonical directories through one recorder', () => {
+  const harness = readHarness();
+  const captureStart = harness.indexOf('async function captureScreenshot');
+  const sampleStart = harness.indexOf('async function sampleCanvas', captureStart);
+  const inspectHomeStart = harness.indexOf('async function inspectHome(client, viewport)');
+  const inspectHomeEnd = harness.indexOf('async function inspectWorksShell', inspectHomeStart);
+
+  assert.notEqual(captureStart, -1, 'captureScreenshot must exist');
+  assert.notEqual(sampleStart, -1, 'capture helpers must end before sampleCanvas');
+  const captureHelpers = harness.slice(captureStart, sampleStart);
+  const inspectHome = harness.slice(inspectHomeStart, inspectHomeEnd);
+
+  for (const mapping of [
+    /capabilities: 'capability-matrix-desktop-1440\.png'/,
+    /capabilities: 'capability-matrix-mobile-390\.png'/,
+    /capabilities: 'capability-matrix-mobile-390-reduced\.png'/,
+  ]) {
+    assert.match(harness, mapping);
+  }
+  assert.match(
+    inspectHome,
+    /await captureElementScreenshot\(\s*client,\s*viewportName,\s*'capabilities',\s*'\[data-capability-section\]',\s*\);\s*const canvas = await sampleCanvas\(client\);/,
+  );
+  assert.match(harness, /const canonicalScreenshotPrefixByEvidenceDir = new Map\(/);
+  assert.match(harness, /'docs\/verify\/s9'/);
+  assert.match(harness, /'docs\/verify\/capability-matrix'/);
+  assert.match(
+    harness,
+    /const SAFE_SCREENSHOT_FILE_NAMES = new Set\(\s*Object\.values\(screenshotFiles\)\.flatMap\(\(files\) => Object\.values\(files\)\),\s*\);/,
+  );
+  assert.match(
+    harness,
+    /const SAFE_SCREENSHOTS = new Set\(SAFE_SCREENSHOT_PREFIXES\.flatMap\(\(prefix\) => \(\s*\[\.\.\.SAFE_SCREENSHOT_FILE_NAMES\]\.map\(\(fileName\) => `\$\{prefix\}\/\$\{fileName\}`\)\s*\)\)\);/,
+  );
+  assert.match(harness, /function recordScreenshot\(fileName\)/);
+  assert.match(harness, /canonicalScreenshotPrefixByEvidenceDir\.get\(evidenceDir\)/);
+  assert.match(harness, /if \(!summaryPrefix\) return;/);
+  assert.equal(
+    captureHelpers.match(/recordScreenshot\(fileName\);/g)?.length,
+    2,
+    'both screenshot capture helpers must use the shared recorder',
+  );
+  assert.doesNotMatch(captureHelpers, /screenshotByName\.set/);
+  assert.doesNotMatch(captureHelpers, /docs\/verify\/(?:s9|capability-matrix)\/\$\{fileName\}/);
+});
+
 test('S9 samples Canvas pixels from two bounded 160x90 CDP screenshot clips', () => {
   const harness = readHarness();
   const sampleStart = harness.indexOf('async function sampleCanvas(client)');
