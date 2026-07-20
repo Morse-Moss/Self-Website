@@ -33,6 +33,7 @@ function TokenValue({ value }: { value: number }) {
 }
 
 export default function MorseHomeSections({
+  content,
   featuredProjects,
   stats,
 }: {
@@ -40,9 +41,6 @@ export default function MorseHomeSections({
   featuredProjects: Project[];
   stats: DevelopmentStats;
 }) {
-  const capabilityMatrix = featuredProjects.flatMap((project) =>
-    project.capabilities.map((capability) => ({ project, capability })),
-  );
   const metrics = [
     { label: 'AI 协作会话', value: stats.totals.sessions },
     { label: '项目覆盖', value: stats.totals.projects },
@@ -88,22 +86,24 @@ export default function MorseHomeSections({
         </div>
       </section>
 
-      <section className={styles.band} aria-labelledby="capabilities-title">
+      <section className={styles.band} aria-labelledby="capabilities-title" data-capability-section>
         <div className={styles.container}>
-          <header className={styles.sectionHeader} data-reveal>
-            <p className={styles.kicker}>CAPABILITY / EVIDENCE</p>
+          <header className={`${styles.sectionHeader} ${styles.capabilityHeader}`} data-reveal>
+            <p className={styles.kicker}>CAPABILITY PROFILE</p>
             <h2 id="capabilities-title">能力矩阵</h2>
-            <p>每项能力都回指公开项目，不用技术名词替代工程证据。</p>
+            <p>从多个真实项目中沉淀的可复用开发能力。</p>
           </header>
 
-          <ul className={styles.matrix}>
-            {capabilityMatrix.map(({ project, capability }, index) => (
-              <li key={`${project.slug}-${capability}`} data-reveal>
-                <Link href={projectHashHref(project.slug)}>
-                  <span className={styles.matrixIndex}>0{index + 1}</span>
-                  <strong>{capability}</strong>
-                  <span className={styles.matrixProject}>{project.name}</span>
-                </Link>
+          <ul className={styles.matrix} data-capability-matrix>
+            {content.profile.capabilityMatrix.map((capability, index) => (
+              <li key={capability.id} data-capability-card data-reveal>
+                <span className={styles.matrixIndex} aria-hidden="true">
+                  {String(index + 1).padStart(2, '0')}
+                </span>
+                <div className={styles.matrixBody}>
+                  <h3>{capability.title}</h3>
+                  <p>{capability.description}</p>
+                </div>
               </li>
             ))}
           </ul>

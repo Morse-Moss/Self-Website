@@ -130,8 +130,13 @@ test('home leads with Morse, one embedded chat, and the shared shell controls', 
   assert.doesNotMatch(home, /1,200|480|示例数据|Email|WeChat|时间线|FAQ/i);
 });
 
-test('home sections render exactly two public projects, linked capabilities, and non-null facts', () => {
+test('home sections render two public projects, reusable capability cards, and non-null facts', () => {
   const sections = readSource(files.homeSections);
+  const capabilityStart = sections.indexOf('aria-labelledby="capabilities-title"');
+  const capabilityEnd = sections.indexOf('aria-labelledby="facts-title"', capabilityStart);
+  assert.notEqual(capabilityStart, -1);
+  assert.notEqual(capabilityEnd, -1);
+  const capabilitySection = sections.slice(capabilityStart, capabilityEnd);
   const content = JSON.parse(readSource(files.siteContent)) as {
     home: { featuredSlugs: string[] };
     projects: Array<{ slug: string; disclosure: string }>;
@@ -149,19 +154,18 @@ test('home sections render exactly two public projects, linked capabilities, and
   assert.match(sections, /project\.summary/);
   assert.match(sections, /project\.capabilities\.map/);
   assert.match(sections, /projectHashHref/);
-  assert.match(sections, /能力矩阵/);
   assert.match(sections, /开发事实/);
-  assert.match(
-    sections,
-    /const capabilityMatrix = featuredProjects\.flatMap\(\(project\) =>\s*project\.capabilities\.map\(\(capability\) => \(\{ project, capability \}\)\),?\s*\)/s,
-  );
-  assert.match(sections, /projectHashHref\(project\.slug\)/);
-  assert.match(sections, /project\.name/);
-  assert.match(sections, /\{capability\}/);
-  assert.doesNotMatch(
-    sections,
-    /const deepResearchHref|const digitalMorseHref|content\.profile\.capabilities|可观察工件、质量门与可恢复运行|审核公开知识、语义检索与来源展示|受限研究链与人工发布审批|前端、服务端、数据层与验证链闭环/,
-  );
+  assert.match(capabilitySection, /CAPABILITY PROFILE/);
+  assert.match(capabilitySection, /从多个真实项目中沉淀的可复用开发能力/);
+  assert.match(capabilitySection, /content\.profile\.capabilityMatrix\.map/);
+  assert.match(capabilitySection, /data-capability-section/);
+  assert.match(capabilitySection, /data-capability-matrix/);
+  assert.match(capabilitySection, /data-capability-card/);
+  assert.match(capabilitySection, /capability\.id/);
+  assert.match(capabilitySection, /capability\.title/);
+  assert.match(capabilitySection, /capability\.description/);
+  assert.doesNotMatch(capabilitySection, /featuredProjects|project\.|projectHashHref|<Link/);
+  assert.doesNotMatch(sections, /const capabilityMatrix = featuredProjects\.flatMap/);
   assert.match(sections, /\.flatMap\(\(metric\) => metric\.value === null \? \[\] : \[\{ \.\.\.metric, value: metric\.value \}\]\)/);
   assert.match(sections, /activity\.allTime !== null \|\| activity\.last30Days !== null/);
   assert.match(sections, /Intl\.NumberFormat\('zh-CN', \{\s*notation: 'compact',\s*maximumFractionDigits: 1,?\s*\}\)/);
