@@ -125,6 +125,7 @@ test('five failed redemptions lock one source, enqueue one minimal alert, and la
   );
   assert.equal(attempts.rows.filter((row) => row.scope === 'invite_redeem').length, 5);
   assert.equal(attempts.rows.filter((row) => row.scope === 'invite_redeem_lock').length, 1);
+  assert.equal(attempts.rows.some((row) => row.scope.startsWith('resume_')), false);
   assert.ok(attempts.rows.every((row) => row.fingerprint_hash === fingerprintHash));
   assert.ok(attempts.rows.every((row) => row.succeeded === false));
 
