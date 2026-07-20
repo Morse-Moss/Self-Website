@@ -400,6 +400,21 @@ test('new route styles are tokenized, compact, and include mobile overflow safeg
   assert.match(combined, /aspect-ratio/);
 });
 
+test('capability cards use the approved restrained responsive layout', () => {
+  const styles = readSource(files.homeSectionStyles);
+  const tokens = readSource(files.tokens);
+  assert.match(tokens, /--radius-card:\s*6px;/);
+  assert.match(styles, /\.capabilityHeader[\s\S]*?\.kicker::after/);
+  assert.match(styles, /\.matrix\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/);
+  assert.match(styles, /\.matrix li:last-child\s*\{[\s\S]*?grid-column:\s*1\s*\/\s*-1;/);
+  assert.match(styles, /border-radius:\s*var\(--radius-card\);/);
+  assert.match(styles, /background:\s*var\(--surface-glass\);/);
+  assert.match(styles, /box-shadow:\s*inset 0 1px 0 var\(--edge-highlight\);/);
+  assert.match(styles, /@media \(max-width:\s*760px\)[\s\S]*?\.matrix\s*\{[\s\S]*?grid-template-columns:\s*1fr;/);
+  assert.match(styles, /@media \(max-width:\s*760px\)[\s\S]*?\.matrix li:last-child\s*\{[\s\S]*?grid-column:\s*auto;/);
+  assert.doesNotMatch(styles, /matrix[^}]*transform:\s*(?:translate|scale)/s);
+});
+
 test('S9 gallery motion uses exact semantic card and detail duration tokens', () => {
   const tokens = readSource(files.tokens);
   const cardStyles = readSource(files.projectCardStyles);
