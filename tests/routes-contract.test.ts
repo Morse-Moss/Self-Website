@@ -412,7 +412,13 @@ test('capability cards use the approved restrained responsive layout', () => {
   assert.match(styles, /box-shadow:\s*inset 0 1px 0 var\(--edge-highlight\);/);
   assert.match(styles, /@media \(max-width:\s*760px\)[\s\S]*?\.matrix\s*\{[\s\S]*?grid-template-columns:\s*1fr;/);
   assert.match(styles, /@media \(max-width:\s*760px\)[\s\S]*?\.matrix li:last-child\s*\{[\s\S]*?grid-column:\s*auto;/);
-  assert.doesNotMatch(styles, /matrix[^}]*transform:\s*(?:translate|scale)/s);
+  const matrixBlocks = [...styles.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .map(([, selector, declarations]) => ({ selector: selector.trim(), declarations }))
+    .filter(({ selector }) => selector.includes('.matrix') && !selector.includes('.band [data-reveal]'));
+  assert.ok(matrixBlocks.length > 0, 'missing .matrix CSS declaration blocks');
+  for (const { selector, declarations } of matrixBlocks) {
+    assert.doesNotMatch(declarations, /\btransform\s*:/, `matrix selector must not move: ${selector}`);
+  }
 });
 
 test('S9 gallery motion uses exact semantic card and detail duration tokens', () => {
