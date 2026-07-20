@@ -58,6 +58,23 @@ test('migration 003 creates an isolated private resume schema with required inde
       );
       assert.deepEqual(tables.rows.map((row) => row.table_name), resumeTables);
 
+      const sessionAuditColumns = await client.query<{
+        column_name: string;
+        data_type: string;
+        is_nullable: string;
+      }>(
+        `SELECT column_name, data_type, is_nullable
+           FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'resume_sessions'
+            AND column_name IN ('source_ip', 'user_agent')
+          ORDER BY column_name`,
+      );
+      assert.deepEqual(sessionAuditColumns.rows, [
+        { column_name: 'source_ip', data_type: 'inet', is_nullable: 'NO' },
+        { column_name: 'user_agent', data_type: 'text', is_nullable: 'NO' },
+      ]);
+
       const constraints = await client.query<{ definition: string; table_name: string }>(
         `SELECT relation.relname AS table_name,
                 pg_get_constraintdef(constraint_record.oid) AS definition
@@ -76,6 +93,10 @@ test('migration 003 creates an isolated private resume schema with required inde
         constraint.table_name === 'resume_sessions'
         && /FOREIGN KEY \(invite_id\) REFERENCES resume_invites\(id\) ON DELETE RESTRICT/i
           .test(constraint.definition)
+      )));
+      assert.ok(constraints.rows.some((constraint) => (
+        constraint.table_name === 'resume_sessions'
+        && /CHECK[\s\S]*char_length\(user_agent\) <= 1024/i.test(constraint.definition)
       )));
 
       const foreignKeys = await client.query<{ child_table: string; parent_table: string }>(
@@ -188,6 +209,10 @@ test('concurrent transactions can create at most one session for the same resume
   try {
     await runMigrations(database.connectionString);
     const inviteId = randomUUID();
+    const firstSourceIp = '192.0.2.10';
+    const firstUserAgent = `Synthetic Person Browser/${randomUUID()}`;
+    const secondSourceIp = '198.51.100.20';
+    const secondUserAgent = `Synthetic Person Browser/${randomUUID()}`;
     await withPostgresClient(database.connectionString, async (setup) => {
       await setup.query(
         `INSERT INTO resume_invites
@@ -204,18 +229,18 @@ test('concurrent transactions can create at most one session for the same resume
         try {
           await first.query(
             `INSERT INTO resume_sessions
-              (id, invite_id, token_hash, expires_at)
-             VALUES ($1, $2, $3, now() + interval '1 hour')`,
-            [randomUUID(), inviteId, randomHash()],
+              (id, invite_id, token_hash, expires_at, source_ip, user_agent)
+             VALUES ($1, $2, $3, now() + interval '1 hour', $4, $5)`,
+            [randomUUID(), inviteId, randomHash(), firstSourceIp, firstUserAgent],
           );
           const secondPid = await second.query<{ pid: number }>(
             'SELECT pg_backend_pid()::integer AS pid',
           );
           const secondInsert = second.query(
             `INSERT INTO resume_sessions
-              (id, invite_id, token_hash, expires_at)
-             VALUES ($1, $2, $3, now() + interval '1 hour')`,
-            [randomUUID(), inviteId, randomHash()],
+              (id, invite_id, token_hash, expires_at, source_ip, user_agent)
+             VALUES ($1, $2, $3, now() + interval '1 hour', $4, $5)`,
+            [randomUUID(), inviteId, randomHash(), secondSourceIp, secondUserAgent],
           ).then(
             () => ({ status: 'fulfilled' as const }),
             (error: unknown) => ({ error, status: 'rejected' as const }),
@@ -258,6 +283,16 @@ test('concurrent transactions can create at most one session for the same resume
           [inviteId],
         );
         assert.equal(sessions.rows[0].count, 1);
+        const auditMetadata = await first.query<{ source_ip: string; user_agent: string }>(
+          `SELECT host(source_ip) AS source_ip, user_agent
+             FROM resume_sessions
+            WHERE invite_id = $1`,
+          [inviteId],
+        );
+        assert.deepEqual(auditMetadata.rows, [{
+          source_ip: firstSourceIp,
+          user_agent: firstUserAgent,
+        }]);
       });
     });
   } finally {
