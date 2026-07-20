@@ -18,9 +18,9 @@ outcome: authorized visitors can view the current encrypted PDF while public and
 controls:
   execution: STAGED
   risk: CRITICAL
-  delivery: DEPLOYED
+  delivery: LOCAL
 state: CONTRACT
-preset: null
+preset: CEO
 scope:
   owned:
     - db/migrations/003_private_resume.sql
@@ -37,14 +37,26 @@ scope:
     - components/admin/admin-client.ts
     - app/(portfolio)/layout.tsx
     - app/globals.css
+    - content/site-content.json
+    - lib/site-content.ts
     - lib/server/config.ts
     - lib/server/production-config.ts
     - lib/server/readiness.ts
     - scripts/cleanup-expired.mjs
+    - scripts/cleanup-resume-storage.mjs
+    - scripts/rotate-resume-key.mjs
+    - scripts/private-resume-visual-smoke.mjs
+    - scripts/architecture-contract.test.mjs
     - scripts/worker.mjs
     - deploy/caddy/Caddyfile
     - compose.production.yaml
     - .env.example
+    - .dockerignore
+    - README.md
+    - docs/runbooks/production.md
+    - docs/runbooks/tencent-lighthouse.md
+    - docs/superpowers/specs/2026-07-20-private-resume-access-design.md
+    - docs/verify/private-resume/private-resume-closeout.md
     - tests and scripts named in this plan
   forbidden:
     - real resume PDF or extracted resume text
@@ -67,7 +79,7 @@ dod:
   - admin upload, invite creation, and revocation require admin session, same origin, and password reauthentication
   - audit data expires after 30 days and no endpoint claims to detect browser print or save actions
   - public and admin flows pass 1440 and 390 browser checks with zero console errors
-  - production rollout is observed without logging or screenshotting real resume content
+  - local production-mode smoke proves the complete flow with synthetic PDF data only
 approvals:
   - local implementation and local commits are allowed by project rules
   - push, production secret changes, migration execution, upload of the real PDF, invite creation, and deployment require explicit execution-stage authorization
@@ -81,7 +93,7 @@ verification:
     - npm run release:smoke
   real_observation:
     - synthetic PDF only for screenshots and API smoke
-    - production response status, headers, ciphertext metadata, and authorization result only
+    - no production observation is claimed by this LOCAL StagePacket
 review:
   shape: split
   correction_budget: 3
@@ -299,7 +311,9 @@ CREATE TABLE resume_access_events (
   event_type text NOT NULL CHECK (event_type IN (
     'invite_created', 'redeem_succeeded', 'redeem_failed', 'file_returned',
     'session_logged_out', 'invite_disabled', 'expired_cleanup',
-    'document_uploaded', 'document_replaced', 'key_rotated', 'storage_recovery'
+    'document_uploaded', 'document_replaced', 'key_rotation_prepared',
+    'key_rotation_activated', 'key_rotation_finalized',
+    'key_rotation_rolled_back', 'storage_recovery'
   )),
   result_code text NOT NULL CHECK (length(result_code) BETWEEN 1 AND 80),
   invite_id uuid REFERENCES resume_invites(id) ON DELETE SET NULL,
@@ -586,7 +600,7 @@ export function decryptResumePdf(envelope: Buffer, key: Buffer, expectedKeyVersi
 
 - [ ] **Step 4: Implement ciphertext-only, same-filesystem storage**
 
-`writeResumeCiphertext()` must create the private directory with mode `0700`, write only encrypted bytes to a random `.tmp` file with mode `0600`, `fsync`, close, and rename to `<uuid>.morsepdf`. It returns storage name, SHA-256, plaintext bytes, ciphertext bytes, envelope version and key version. On failure it removes the temporary ciphertext; it never writes the plaintext Buffer.
+`writeResumeCiphertext()` must create the private directory with mode `0700`, write only encrypted bytes to a random `.tmp` file with mode `0600`, `fsync`, close, rename to `<uuid>.morsepdf`, then `fsync` the parent directory on the Linux production runtime. It returns storage name, SHA-256, plaintext bytes, ciphertext bytes, envelope version and key version. On failure it removes the temporary ciphertext; it never writes the plaintext Buffer. `removeResumeCiphertext()` also syncs the parent directory after unlink. Windows tests inject the directory-sync adapter because Windows cannot open a directory handle with the same POSIX semantics.
 
 ```ts
 export async function writeResumeCiphertext(input: WriteResumeCiphertextInput): Promise<StoredResume> {
@@ -602,6 +616,7 @@ export async function writeResumeCiphertext(input: WriteResumeCiphertextInput): 
     await handle.sync();
     await handle.close();
     await rename(temporaryPath, finalPath);
+    await syncResumeDirectory(input.storageDir);
   } catch (error) {
     await handle.close().catch(() => undefined);
     await rm(temporaryPath, { force: true });
@@ -623,10 +638,10 @@ export async function writeResumeCiphertext(input: WriteResumeCiphertextInput): 
 
 - [ ] **Step 5: Implement an offline, verify-before-switch key rotation**
 
-`scripts/rotate-resume-key.mjs` accepts only `MORSE_RESUME_OLD_KEY_FILE`, `MORSE_RESUME_NEW_KEY_FILE`, `MORSE_RESUME_OLD_KEY_VERSION` and `MORSE_RESUME_NEW_KEY_VERSION`. It refuses missing files and non-advancing versions, disables logging of input values, reads and decrypts the current ciphertext into memory, writes a new ciphertext with the new key, reads it back with the new key, then locks and updates the current document metadata in one database transaction. Only after commit does it remove the old ciphertext. On failure it keeps the old row/file current and removes the new orphan.
+`scripts/rotate-resume-key.mjs` accepts only file-backed old/new secrets and positive old/new versions. It provides four explicit operations: `prepare`, `activate`, `rollback`, and `finalize`. `prepare` decrypts the current ciphertext into memory, writes and verifies a new non-current `resume_documents` row, and records `key_rotation_prepared`. `activate` atomically flips the one-current pointer but retains the old row and ciphertext. `rollback` flips the pointer back while both secrets still exist. `finalize` is allowed only after an operator supplies the activated document ID observed through the new Web runtime; it then deletes the retired metadata/ciphertext and records `key_rotation_finalized`. No operation logs secret paths, values, plaintext or storage names.
 
 ```ts
-export async function rotateCurrentResumeKey(input: RotateResumeKeyInput): Promise<void> {
+export async function prepareResumeKeyRotation(input: PrepareResumeKeyRotationInput): Promise<PreparedRotation> {
   if (input.newKeyVersion <= input.oldKeyVersion) {
     throw new Error('RESUME_KEY_VERSION_NOT_ADVANCING');
   }
@@ -647,22 +662,18 @@ export async function rotateCurrentResumeKey(input: RotateResumeKeyInput): Promi
     keyVersion: input.newKeyVersion,
   });
   try {
-    await readResumePdf({
-      document: stored,
-      storageDir: input.storageDir,
-      key: input.newKey,
-      expectedKeyVersion: input.newKeyVersion,
-    });
-    await switchCurrentResumeCiphertext(input.pool, current, stored, input.now);
+    await readResumePdf({ document: stored, storageDir: input.storageDir,
+      key: input.newKey, expectedKeyVersion: input.newKeyVersion });
+    await insertPreparedResumeCiphertext(input.pool, current, stored, input.now);
   } catch {
     await removeResumeCiphertext(input.storageDir, stored.storageName).catch(() => undefined);
     throw new Error('RESUME_KEY_ROTATION_FAILED');
   }
-  await removeResumeCiphertext(input.storageDir, current.storageName).catch(() => undefined);
+  return { previousDocumentId: current.id, preparedDocumentId: stored.id };
 }
 ```
 
-`switchCurrentResumeCiphertext()` owns the explicit `BEGIN`/`COMMIT`/`ROLLBACK`, row lock, current-ID recheck, metadata update and `key_rotated` audit event. `rotateCurrentResumeKey()` catches a failed verification or switch, removes `stored.storageName`, and exits with `RESUME_KEY_ROTATION_FAILED` without changing the old row.
+`activatePreparedResumeKey()`, `rollbackResumeKeyRotation()` and `finalizeResumeKeyRotation()` each own explicit `BEGIN`/`COMMIT`/`ROLLBACK`, advisory lock, both document row locks and expected-ID checks. Tests inject failures after ciphertext rename, prepared-row insert, pointer activation, Web verification boundary and retired-file deletion. Every caught cleanup failure records `storage_recovery`; a process crash is recovered idempotently by the next rotation command or Worker without deleting either referenced ciphertext.
 
 - [ ] **Step 6: Run crypto/storage/rotation tests and inspect the temp directory**
 
@@ -687,7 +698,7 @@ git commit -m "feat: encrypt private resume documents"
 
 - [ ] **Step 1: Write failing access-domain tests**
 
-Cover exactly these cases: valid redeem, seven-day expiry, already redeemed, disabled invite, concurrent double redeem, 72-hour expiry, logout, immediate admin revocation, stable unauthorized result, independent `resume_invite_redeem` abuse scope, and an invite note never appearing in a public error.
+Cover exactly these cases: valid redeem, seven-day expiry, a request that waits on the invite row lock until after expiry, already redeemed, disabled invite, concurrent double redeem, 72-hour expiry, logout, immediate admin revocation, stable unauthorized result, independent `resume_invite_redeem` abuse scope, and an invite note never appearing in a public error. Route-level tests must prove that after revocation commits, the next access-status request and next file request both return 401.
 
 ```ts
 test('revoking a redeemed invite invalidates the next authentication', async () => {
@@ -716,14 +727,19 @@ export async function redeemResumeInviteProtected(
   context: ResumeRequestContext,
   policy: ResumeRedeemPolicy,
 ): Promise<RedeemedResumeSession> {
-  const now = policy.now ?? new Date();
   const client = await pool.connect();
   let committed = false;
   try {
     await client.query('BEGIN');
     await lockResumeSource(client, context.fingerprintHash);
-    if (await isResumeSourceLocked(client, context.fingerprintHash, now)) {
-      await recordResumeRedeemFailure(client, context, now, 'UNAVAILABLE', policy.auditRetentionDays);
+    const attemptClock = await client.query<{ checked_at: Date }>(
+      'SELECT clock_timestamp() AS checked_at',
+    );
+    const attemptAt = attemptClock.rows[0].checked_at;
+    if (await isResumeSourceLocked(client, context.fingerprintHash, attemptAt)) {
+      await recordResumeRedeemFailure(
+        client, context, attemptAt, 'UNAVAILABLE', policy.auditRetentionDays,
+      );
       await client.query('COMMIT');
       committed = true;
       throw new ResumeAccessError('RESUME_INVITE_UNAVAILABLE');
@@ -736,16 +752,20 @@ export async function redeemResumeInviteProtected(
       [hashSecret(code.trim())],
     );
     const invite = result.rows[0];
-    if (!invite || invite.disabled_at || invite.redeemed_at || invite.expires_at <= now) {
-      await registerResumeFailure(client, context, now, policy);
+    const checkedAtResult = await client.query<{ checked_at: Date }>(
+      'SELECT clock_timestamp() AS checked_at',
+    );
+    const checkedAt = checkedAtResult.rows[0].checked_at;
+    if (!invite || invite.disabled_at || invite.redeemed_at || invite.expires_at <= checkedAt) {
+      await registerResumeFailure(client, context, checkedAt, policy);
       await client.query('COMMIT');
       committed = true;
       throw new ResumeAccessError('RESUME_INVITE_UNAVAILABLE');
     }
     const token = randomBytes(32).toString('base64url');
     const sessionId = randomUUID();
-    const expiresAt = new Date(now.getTime() + policy.sessionHours * 3_600_000);
-    await client.query('UPDATE resume_invites SET redeemed_at = $2 WHERE id = $1', [invite.id, now]);
+    const expiresAt = new Date(checkedAt.getTime() + policy.sessionHours * 3_600_000);
+    await client.query('UPDATE resume_invites SET redeemed_at = $2 WHERE id = $1', [invite.id, checkedAt]);
     await client.query(
       `INSERT INTO resume_sessions
         (id, invite_id, token_hash, expires_at, source_ip, user_agent, device_info)
@@ -755,7 +775,7 @@ export async function redeemResumeInviteProtected(
     );
     await insertResumeEvent(client, {
       eventType: 'redeem_succeeded', resultCode: 'OK', inviteId: invite.id, sessionId,
-      context, now, auditRetentionDays: policy.auditRetentionDays,
+      context, now: checkedAt, auditRetentionDays: policy.auditRetentionDays,
     });
     await client.query('COMMIT');
     committed = true;
@@ -806,7 +826,7 @@ test('authorized PDF response is private, inline, and never cacheable', async ()
 });
 ```
 
-Also assert that no Cookie, chat invitation, query parameter, Referer, or guessed storage name can access the file without a valid resume Session. `GET /api/resume/access` returns only `{ enabled, authorized, documentAvailable, expiresAt }`.
+Also assert that no Cookie, chat invitation, query parameter, Referer, or guessed storage name can access the file without a valid resume Session. `GET /api/resume/access` returns only `{ enabled, authorized, documentAvailable, expiresAt }`; an absent, expired or revoked resume Session returns that stable body with status 401, while disabled/no-document states remain distinguishable without exposing metadata.
 
 - [ ] **Step 2: Confirm route tests fail**
 
@@ -912,7 +932,7 @@ git commit -m "feat: serve authorized private resumes"
 
 - [ ] **Step 1: Write failing admin tests**
 
-Cover missing admin Cookie, wrong Origin, missing password, wrong password, request too large, wrong extension, wrong MIME, missing `%PDF-`, successful first upload, successful replacement, forced database rollback, forced old-file deletion failure, one-time plaintext invite response, list response without code hashes, and immediate invite/Session revocation.
+Cover missing admin Cookie, wrong Origin, missing password, wrong password, decimal 11,000,000-byte total request overflow, chunked request with a PDF over 10,485,760 bytes, wrong extension, wrong MIME, missing `%PDF-`, successful first upload, successful replacement, forced database rollback, process-window recovery after rename and before database insert, forced old-file deletion failure with `storage_recovery`, one-time plaintext invite response, list response without code hashes, and immediate invite/Session revocation.
 
 ```ts
 test('upload rejects declared PDF content without a PDF header', async () => {
@@ -935,7 +955,7 @@ Expected: FAIL because resume admin services and routes do not exist.
 
 - [ ] **Step 3: Implement safe replacement orchestration**
 
-The replacement order is: validate in memory, write and verify a uniquely named ciphertext, begin database transaction, lock the current-document set, mark old metadata non-current, insert new current metadata, log upload/replace, commit, then remove old ciphertext. A database failure removes the new orphan; an old-file deletion failure leaves a harmless non-current ciphertext for Worker cleanup. At no point is the old current ciphertext removed before the new current row commits.
+The replacement order is: validate in memory, write and verify a uniquely named ciphertext, begin database transaction, lock the current-document set, mark old metadata non-current, insert new current metadata, log upload/replace, commit, then remove old ciphertext. A database failure removes the new orphan; an old-file deletion failure leaves a harmless unreferenced ciphertext for Worker cleanup and records `storage_recovery` in a fresh bounded transaction. A crash after rename but before database insert is recovered by the 24-hour orphan scan. At no point is the old current ciphertext removed before the new current row commits.
 
 ```ts
 export async function replaceCurrentResume(input: ReplaceCurrentResumeInput): Promise<AdminResumeDocument> {
@@ -971,12 +991,16 @@ export async function replaceCurrentResume(input: ReplaceCurrentResumeInput): Pr
   } finally {
     if (!committed) {
       await client.query('ROLLBACK').catch(() => undefined);
-      await removeResumeCiphertext(input.storageDir, stored.storageName).catch(() => undefined);
+      await removeResumeCiphertext(input.storageDir, stored.storageName).catch(async () => {
+        await recordResumeStorageRecovery(input.pool, 'NEW_CIPHERTEXT_CLEANUP_FAILED', input.now);
+      });
     }
     client.release();
   }
   if (oldStorageName) {
-    await removeResumeCiphertext(input.storageDir, oldStorageName).catch(() => undefined);
+    await removeResumeCiphertext(input.storageDir, oldStorageName).catch(async () => {
+      await recordResumeStorageRecovery(input.pool, 'RETIRED_CIPHERTEXT_CLEANUP_FAILED', input.now);
+    });
   }
   return toAdminResumeDocument(stored);
 }
@@ -984,7 +1008,7 @@ export async function replaceCurrentResume(input: ReplaceCurrentResumeInput): Pr
 
 - [ ] **Step 4: Implement protected admin routes**
 
-All POST/DELETE operations run `requireAdmin()`, `hasAdminOrigin()`, then `reauthenticateAdminPassword()`. Upload checks `Content-Length` before `request.formData()` and checks `File.size` after parsing. The dashboard `GET` returns current ciphertext metadata, invite status and at most 100 recent 30-day events; it never returns code hashes, token hashes, encryption configuration or PDF bytes.
+All POST/DELETE operations run `requireAdmin()`, `hasAdminOrigin()`, then `reauthenticateAdminPassword()`. Upload rejects a declared `Content-Length` greater than the edge's decimal `11_000_000`-byte multipart ceiling before `request.formData()`, then enforces the exact binary PDF ceiling `10 * 1024 * 1024 = 10_485_760` bytes from `File.size`; chunked requests cannot bypass the post-parse file check. The dashboard `GET` returns current ciphertext metadata, invite status and at most 100 recent 30-day events; it never returns code hashes, token hashes, encryption configuration or PDF bytes.
 
 Invitation creation uses `randomBytes(18).toString('base64url')`, stores only `hashSecret(code)`, sets `expires_at = now + 7 days`, logs `invite_created`, and returns plaintext once:
 
@@ -1133,11 +1157,13 @@ async function readResumeAccess(signal?: AbortSignal): Promise<ResumeAccessState
   const response = await fetch('/api/resume/access', {
     cache: 'no-store', credentials: 'same-origin', signal,
   });
-  if (!response.ok) return { kind: 'unavailable', message: '简历暂不可用，请稍后再试。' };
-  const payload = await response.json() as ResumeAccessPayload;
+  const payload = await response.json().catch(() => null) as ResumeAccessPayload | null;
+  if (!payload) return { kind: 'unavailable', message: '简历暂不可用，请稍后再试。' };
   if (!payload.enabled || !payload.documentAvailable) {
     return { kind: 'unavailable', message: '简历暂不可用。' };
   }
+  if (response.status === 401) return { kind: 'locked', message: '' };
+  if (!response.ok) return { kind: 'unavailable', message: '简历暂不可用，请稍后再试。' };
   return payload.authorized && payload.expiresAt
     ? { kind: 'authorized', expiresAt: payload.expiresAt }
     : { kind: 'locked', message: '' };
@@ -1195,7 +1221,7 @@ git commit -m "feat: gate resume mode behind server access"
 
 - [ ] **Step 1: Write failing retention and deployment tests**
 
-Assert that expired resume Sessions are removed, expired unused invites are disabled, events older than 30 days are deleted, current ciphertext is never deleted, referenced non-current ciphertext is retained until its row is gone, and an orphan younger than 24 hours is retained. Assert that only `web` and `worker` mount the private volume, the volume is absent from `edge`, `embedding`, `ingest` and `migration`, no encryption key is provided to Worker, and Caddy permits at most 11 MiB only for `POST /api/admin/resume` while retaining the existing 2 MiB limit for every other request.
+Assert that expired resume Sessions are removed, expired unused invites are disabled, events older than 30 days are deleted, current ciphertext is never deleted, referenced non-current ciphertext is retained until its row is gone, and an orphan younger than 24 hours is retained. Assert that only `resume-storage-init`, `web`, and `worker` mount the private volume; the volume is absent from `edge`, `embedding`, `ingest`, and `migration`; only Web receives the encryption-key Secret; storage init applies UID/GID `1001:1001` and mode `0700`; Caddy permits a decimal 11,000,000-byte body only for `POST /api/admin/resume`; the application separately caps the PDF at 10,485,760 bytes; every other edge request retains the existing 2 MB limit; and every `/api/resume`, `/api/resume/*`, `/api/admin/resume`, and `/api/admin/resume/*` request is excluded from Caddy access logs so raw IP/User-Agent exist only in the 30-day application audit domain.
 
 - [ ] **Step 2: Confirm tests fail**
 
@@ -1237,10 +1263,19 @@ Return only counts. Do not return IP, User-Agent, device info, invite notes, tok
 
 - [ ] **Step 5: Add the private named volume and least secret distribution**
 
-Add `revolution_private_resume:/opt/revolution/shared/private/resume` to `web` as read-write because admin upload runs in Web. Add the same volume to `worker` for orphan deletion, but do not call `loadResumeConfig()` from Worker. Store the Base64 key in `deploy/secrets/resume_encryption_key`, mount that Docker Secret only into Web, and set `MORSE_RESUME_ENCRYPTION_KEY_FILE=/run/secrets/resume_encryption_key` only on Web. Keep `MORSE_RESUME_ENCRYPTION_KEY` empty in `.env.production`; Worker, Edge, Embedding, Ingest and Migration must not receive the key file.
+Add a one-shot `resume-storage-init` service using the application image as root solely to create/chown/chmod the named volume before Web and Worker start. Add `revolution_private_resume:/opt/revolution/shared/private/resume` to Web as read-write because admin upload runs in Web and to Worker for orphan deletion, but do not call `loadResumeConfig()` from Worker. Store the Base64 key in `deploy/secrets/resume_encryption_key`, mount that Docker Secret only into Web, and set `MORSE_RESUME_ENCRYPTION_KEY_FILE=/run/secrets/resume_encryption_key` only on Web. Keep `MORSE_RESUME_ENCRYPTION_KEY` empty in `.env.production`; Storage Init, Worker, Edge, Embedding, Ingest and Migration must not receive the key file.
 
 ```yaml
 services:
+  resume-storage-init:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    user: "0:0"
+    restart: "no"
+    volumes:
+      - revolution_private_resume:/opt/revolution/shared/private/resume
+    command: ["sh", "-eu", "-c", "chown 1001:1001 /opt/revolution/shared/private/resume && chmod 0700 /opt/revolution/shared/private/resume"]
   web:
     secrets:
       - resume_encryption_key
@@ -1248,9 +1283,15 @@ services:
       MORSE_RESUME_ENCRYPTION_KEY_FILE: /run/secrets/resume_encryption_key
     volumes:
       - revolution_private_resume:/opt/revolution/shared/private/resume
+    depends_on:
+      resume-storage-init:
+        condition: service_completed_successfully
   worker:
     volumes:
       - revolution_private_resume:/opt/revolution/shared/private/resume
+    depends_on:
+      resume-storage-init:
+        condition: service_completed_successfully
 secrets:
   resume_encryption_key:
     file: ./deploy/secrets/resume_encryption_key
@@ -1271,7 +1312,7 @@ The database runtime role already receives default DML grants; add an explicit v
 
 - [ ] **Step 6: Add an edge request-size exception for the upload route**
 
-Keep the existing 2 MiB default and isolate the 11 MiB multipart allowance to the exact admin upload method/path:
+Keep the existing decimal 2 MB default and isolate the decimal 11 MB multipart allowance to the exact admin upload method/path. Tests send a declared oversized request and a chunked oversized stream through Caddy, then assert 413 without Web handling:
 
 ```caddyfile
 @resumeUpload {
@@ -1298,7 +1339,16 @@ handle {
 }
 ```
 
-Retain the existing redirects, compression and JSON access log. The access log records request metadata and status only; it must not log multipart bodies or headers containing passwords.
+Retain the existing redirects, compression and JSON logging for non-resume traffic. Exclude the complete private-resume visitor and admin route trees from Edge access logs:
+
+```caddyfile
+@privateResumeAuditExcluded {
+  path /api/resume /api/resume/* /api/admin/resume /api/admin/resume/*
+}
+log_skip @privateResumeAuditExcluded
+```
+
+The deployment test sends synthetic requests to all four matcher forms and proves no Edge access-log event is emitted, while a non-resume health request still logs normally. The application remains the sole resume audit writer and deletes those raw IP/User-Agent/device rows after 30 days. No invitation code is ever placed in a URL.
 
 - [ ] **Step 7: Run retention/deployment tests and commit**
 
@@ -1319,6 +1369,8 @@ git commit -m "feat: retain private resume data safely"
 - Modify: `tests/chat-service-integration.test.ts`
 - Modify: `tests/chat-contract.test.ts`
 - Modify: `scripts/architecture-contract.test.mjs`
+- Create: `scripts/scan-private-resume-image.mjs`
+- Create: `tests/resume-image-contract.test.ts`
 - Modify: `.dockerignore`
 
 - [ ] **Step 1: Write failure-first leakage tests**
@@ -1345,7 +1397,16 @@ Expected: the new test initially FAILS on explicit source/build isolation assert
 
 - [ ] **Step 3: Add architectural allowlists, not resume parsing**
 
-The resume modules may be imported only by `/api/resume/*`, `/api/admin/resume/*`, cleanup scripts and resume tests. `lib/server/chat-service.ts`, `lib/server/rag.ts`, `lib/server/knowledge.ts`, `lib/server/public-knowledge.ts`, `lib/server/embedding.ts`, Provider adapters and ingestion scripts must not import any `resume-*` module or query any `resume_*` table.
+Freeze this dependency DAG in `scripts/architecture-contract.test.mjs`:
+
+- `resume-config.ts` may be imported by resume routes, `production-config.ts`, `readiness.ts`, and resume tests.
+- `resume-crypto.ts` may be imported only by `resume-storage.ts` and resume tests.
+- `resume-storage.ts` may be imported by resume file/admin routes, `resume-admin.ts`, rotation/cleanup scripts, and resume tests.
+- `resume-access.ts` may be imported by resume visitor/admin routes, `resume-admin.ts`, `resume-http.ts`, and resume tests.
+- `resume-admin.ts` and `resume-http.ts` may be imported only by their matching routes and resume tests.
+- `rotate-resume-key.mjs` and `cleanup-resume-storage.mjs` are server-only entrypoints and never enter Next client graphs.
+
+`lib/server/chat-service.ts`, `lib/server/rag.ts`, `lib/server/knowledge.ts`, `lib/server/public-knowledge.ts`, `lib/server/embedding.ts`, Provider adapters, search/JD routes and ingestion scripts must not import any resume document/access module or query any `resume_*` table.
 
 Extend `.dockerignore` with local private-resume directory names even though production uses a volume:
 
@@ -1363,12 +1424,16 @@ Run: `npm run build`
 
 Run: `rg -n -S "SYNTHETIC_PRIVATE_RESUME_MARKER_7F42|%PDF-|morse_resume_access|resume_documents" .next/static public content`
 
-Expected: tests and build PASS; scan returns no synthetic marker, PDF bytes, private Cookie name or resume table name in browser-delivered static assets. Server route code may contain the Cookie and table names, so `.next/server` is checked for the synthetic marker only.
+Run: `docker build -t revolution-private-resume:local .`
+
+Run: `node scripts/scan-private-resume-image.mjs revolution-private-resume:local`
+
+Expected: tests and build PASS; browser-asset scan returns no synthetic marker, PDF bytes, private Cookie name or resume table name. The image scanner creates and exports a stopped container filesystem into `tmp/resume-image-scan`, rejects `.morsepdf`, `%PDF-`, the synthetic marker, resume secret files, `.env*`, private-resume directories containing data, and secret values supplied by the test harness, then deletes the container and temporary export in `finally`. Server route code may contain Cookie/table names, so server/image source scans distinguish identifiers from actual private bytes and Secret artifacts.
 
 - [ ] **Step 5: Commit the isolation slice**
 
 ```powershell
-git add -- tests/resume-isolation.test.ts tests/public-knowledge.test.ts tests/chat-service-integration.test.ts tests/chat-contract.test.ts scripts/architecture-contract.test.mjs .dockerignore
+git add -- tests/resume-isolation.test.ts tests/public-knowledge.test.ts tests/chat-service-integration.test.ts tests/chat-contract.test.ts tests/resume-image-contract.test.ts scripts/architecture-contract.test.mjs scripts/scan-private-resume-image.mjs .dockerignore
 git commit -m "test: prove private resume isolation"
 ```
 
@@ -1378,6 +1443,8 @@ git commit -m "test: prove private resume isolation"
 - Create: `scripts/private-resume-visual-smoke.mjs`
 - Create: `docs/verify/private-resume/private-resume-closeout.md`
 - Modify: `README.md`
+- Modify: `docs/runbooks/production.md`
+- Modify: `docs/runbooks/tencent-lighthouse.md`
 - Modify: `docs/superpowers/specs/2026-07-20-private-resume-access-design.md`
 
 - [ ] **Step 1: Add a synthetic local browser smoke**
@@ -1408,20 +1475,22 @@ Compliance review checks every confirmed product rule and security invariant in 
 
 - [ ] **Step 4: Reconcile documentation without private data**
 
-Update README with environment variable names, disabled-by-default behavior, synthetic local verification and the fact that real PDF upload is an administrator-only production operation. Mark the design spec `已实施，待生产观察` only after local verification passes. `docs/verify/private-resume/private-resume-closeout.md` records commit IDs, commands, pass counts, response-header assertions and open external gates; it must not contain screenshots of the PDF, invite plaintext, IP, User-Agent, device data, storage names or secrets.
+Update README with environment variable names, disabled-by-default behavior, synthetic local verification and the fact that real PDF upload is an administrator-only production operation. Update both production runbooks with private-volume initialization, Secret file names, the disabled-first release order, log retention, recovery events and the four-phase key-rotation procedure, without values or private paths outside the container contract. Mark the design spec `已实施，待生产观察` only after local verification passes. `docs/verify/private-resume/private-resume-closeout.md` records commit IDs, commands, pass counts, response-header assertions and open external gates; it must not contain screenshots of the PDF, invite plaintext, IP, User-Agent, device data, storage names or secrets.
 
 - [ ] **Step 5: Commit the locally ready milestone through closeout**
 
 Run the `closeout` skill with the StagePacket and fresh VerificationReceipt. Stage only files named by this plan, leave all unrelated untracked files untouched, invoke `neat-freak`, and require `KNOWLEDGE_RECONCILED` as `updated` or `checked-no-change`.
 
 ```powershell
-git add -- scripts/private-resume-visual-smoke.mjs docs/verify/private-resume/private-resume-closeout.md README.md docs/superpowers/specs/2026-07-20-private-resume-access-design.md
+git add -- scripts/private-resume-visual-smoke.mjs docs/verify/private-resume/private-resume-closeout.md README.md docs/runbooks/production.md docs/runbooks/tencent-lighthouse.md docs/superpowers/specs/2026-07-20-private-resume-access-design.md
 git commit -m "docs: close private resume local milestone"
 ```
 
 - [ ] **Step 6: Stop at the external authorization gate**
 
 Before push or production changes, present: branch and HEAD, exact commits, test/build/smoke receipt, review verdict, migration `003` checksum, required secret names, rollback path and the explicit list of actions requiring authorization. Do not include secret values.
+
+The current `STAGED / CRITICAL / LOCAL + CEO` StagePacket ends here. Steps 7-8 are a separate `STAGED / CRITICAL / DEPLOYED + CEO` StagePacket created only after explicit authorization; local completion must not be reported as deployed or production-observed.
 
 - [ ] **Step 7: After explicit authorization, deploy in recoverable order**
 
@@ -1450,3 +1519,14 @@ Record deployed revision and environment, then mark `OBSERVED`. Run `closeout` a
 - If the new ciphertext is unreadable, keep the feature disabled and re-upload the final PDF with the correct key; never restore a plaintext server copy.
 - If the encryption key is lost, report the encrypted file as unrecoverable and require an administrator re-upload. Do not attempt key recovery from logs, database, browser or build artifacts.
 - If revocation or isolation tests fail, keep resume access disabled even when the rest of the portfolio remains healthy.
+
+Key rotation has its own maintenance boundary:
+
+1. Set `MORSE_RESUME_ENABLED=false`, verify the public entry is closed, and stop Web.
+2. Run `prepare` with one-shot mounts for the old and new Secret files plus the private volume; verify the prepared document ID and ciphertext integrity without outputting either Secret or plaintext.
+3. Run `activate`; keep the old document row, old ciphertext and old Secret mounted only in the maintenance task.
+4. Point Web at the new Secret/version, start Web, enable the feature and verify one approved file response by status/headers/hash only.
+5. If verification fails, stop Web, run `rollback`, restore the old Web Secret/version and verify the old current document.
+6. Only after successful observation run `finalize`, remove the old document/ciphertext and retire the old Secret.
+
+No rotation step may delete the old row, ciphertext or Secret before the new Web runtime has successfully decrypted and returned the activated document.
