@@ -7,6 +7,9 @@ const schemaPath = path.resolve('db/migrations/001_morse_rag.sql');
 const customerServiceMigrationPath = path.resolve(
   'db/migrations/002_s10_customer_service.sql',
 );
+const privateResumeMigrationPath = path.resolve(
+  'db/migrations/003_private_resume.sql',
+);
 
 test('M3 schema provides pgvector retrieval and short-lived access storage', () => {
   const sql = fs.readFileSync(schemaPath, 'utf8');
@@ -68,4 +71,40 @@ test('S10 customer service migration is additive and keeps analytics independent
   assert.doesNotMatch(sql, /last_export_totp_counter/i);
   assert.doesNotMatch(sql, /IF NOT EXISTS/i);
   assert.doesNotMatch(sql, /schema_migrations/i);
+});
+
+test('private resume migration 003 is present', () => {
+  assert.equal(
+    fs.existsSync(privateResumeMigrationPath),
+    true,
+    'db/migrations/003_private_resume.sql must exist',
+  );
+});
+
+test('private resume migration declares an isolated four-table domain', () => {
+  assert.equal(
+    fs.existsSync(privateResumeMigrationPath),
+    true,
+    'db/migrations/003_private_resume.sql must exist',
+  );
+  const sql = fs.readFileSync(privateResumeMigrationPath, 'utf8');
+
+  for (const table of [
+    'resume_documents',
+    'resume_invites',
+    'resume_sessions',
+    'resume_access_events',
+  ]) {
+    assert.match(sql, new RegExp(`CREATE TABLE ${table}`, 'i'));
+  }
+
+  assert.match(sql, /invite_id\s+uuid\s+NOT NULL\s+UNIQUE/i);
+  assert.match(
+    sql,
+    /CREATE UNIQUE INDEX resume_documents_one_current_idx[\s\S]*WHERE\s+is_current(?:\s*=\s*true)?/i,
+  );
+  assert.doesNotMatch(
+    sql,
+    /REFERENCES\s+(?:invite_codes|access_sessions|conversations|conversation_messages)/i,
+  );
 });

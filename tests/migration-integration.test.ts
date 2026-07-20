@@ -89,7 +89,7 @@ test('migration runner bootstraps an empty database in order and is repeatable',
       );
       return { migrations: migrations.rows, tables: tables.rows };
     });
-    assert.deepEqual(firstRows.migrations.map((row) => row.version), ['001', '002']);
+    assert.deepEqual(firstRows.migrations.map((row) => row.version), ['001', '002', '003']);
     assert.ok(firstRows.migrations.every((row) => /^[0-9a-f]{64}$/.test(row.checksum)));
     assert.deepEqual(firstRows.tables.map((row) => row.name), [
       'interaction_turns',
@@ -140,6 +140,7 @@ test('two migration runners serialize an empty database', async () => {
       assert.deepEqual(registrations.rows, [
         { version: '001', count: 1 },
         { version: '002', count: 1 },
+        { version: '003', count: 1 },
       ]);
     });
   } finally {
@@ -215,7 +216,7 @@ test('migration runner baselines a complete 001 database and preserves old data'
         "SELECT id FROM conversation_messages WHERE conversation_id = $1 AND content = 'legacy history'",
         [conversationId],
       );
-      assert.deepEqual(migrations.rows.map((row) => row.version), ['001', '002']);
+      assert.deepEqual(migrations.rows.map((row) => row.version), ['001', '002', '003']);
       assert.equal(invite.rowCount, 1);
       assert.equal(document.rowCount, 1);
       assert.equal(session.rowCount, 1);
@@ -259,6 +260,7 @@ test('two migration runners serialize baseline registration on a complete 001 da
       assert.deepEqual(registrations.rows, [
         { version: '001', count: 1 },
         { version: '002', count: 1 },
+        { version: '003', count: 1 },
       ]);
     });
   } finally {
@@ -345,7 +347,11 @@ test('migration runner accepts an equivalent CRLF and BOM checkout after registr
   try {
     const first = await runMigrations(database.connectionString, directory);
     assert.equal(first.code, 0, first.stderr);
-    for (const fileName of ['001_morse_rag.sql', '002_s10_customer_service.sql']) {
+    for (const fileName of [
+      '001_morse_rag.sql',
+      '002_s10_customer_service.sql',
+      '003_private_resume.sql',
+    ]) {
       const filePath = path.join(directory, fileName);
       const text = await fs.readFile(filePath, 'utf8');
       const crlf = `\uFEFF${text.replace(/\r?\n/gu, '\r\n')}`;
@@ -404,6 +410,10 @@ test('migration runner rejects a partial 002 schema after 001 was registered', a
   try {
     await fs.rm(
       path.join(initialOnlyDirectory, '002_s10_customer_service.sql'),
+      { force: true },
+    );
+    await fs.rm(
+      path.join(initialOnlyDirectory, '003_private_resume.sql'),
       { force: true },
     );
     const initial = await runMigrations(database.connectionString, initialOnlyDirectory);
