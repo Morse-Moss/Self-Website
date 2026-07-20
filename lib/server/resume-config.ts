@@ -60,19 +60,16 @@ function exactPublicOrigin(env: Env): string {
   const raw = required(env, 'MORSE_PUBLIC_ORIGIN', 'RESUME_PUBLIC_ORIGIN_INVALID');
   try {
     const url = new URL(raw);
-    const loopbackHttp = url.protocol === 'http:'
-      && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname);
     if (
-      (url.protocol !== 'https:' && !loopbackHttp)
+      url.origin !== raw
       || url.username
       || url.password
-      || url.pathname !== '/'
       || url.search
       || url.hash
     ) {
       fail('RESUME_PUBLIC_ORIGIN_INVALID');
     }
-    return url.origin;
+    return raw;
   } catch (error) {
     if (error instanceof ResumeConfigError) throw error;
     fail('RESUME_PUBLIC_ORIGIN_INVALID');
@@ -110,7 +107,8 @@ function decodeEncryptionKey(value: string): Buffer {
 function encryptionKey(env: Env): Buffer {
   const directValue = env.MORSE_RESUME_ENCRYPTION_KEY?.trim();
   const filePath = env.MORSE_RESUME_ENCRYPTION_KEY_FILE?.trim();
-  if ((directValue && filePath) || env.NODE_ENV === 'production' && directValue) {
+  const directKeyAllowed = env.NODE_ENV === 'development' || env.NODE_ENV === 'test';
+  if ((directValue && filePath) || (directValue && !directKeyAllowed)) {
     fail('RESUME_ENCRYPTION_KEY_INVALID');
   }
 
@@ -121,7 +119,7 @@ function encryptionKey(env: Env): Buffer {
       fail('RESUME_ENCRYPTION_KEY_INVALID');
     }
   }
-  if (directValue && env.NODE_ENV !== 'production') return decodeEncryptionKey(directValue);
+  if (directValue) return decodeEncryptionKey(directValue);
   fail('RESUME_ENCRYPTION_KEY_INVALID');
 }
 

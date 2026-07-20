@@ -153,6 +153,10 @@ test('resume key sources fail closed without exposing key values or file paths',
         }),
         forbidden: [directKey],
       },
+      ...[undefined, 'staging', 'preview'].map((nodeEnv) => ({
+        env: enabledEnv({ NODE_ENV: nodeEnv }),
+        forbidden: [directKey],
+      })),
       {
         env: enabledEnv({
           MORSE_RESUME_ENCRYPTION_KEY: undefined,
@@ -217,7 +221,8 @@ test('resume key sources fail closed without exposing key values or file paths',
 test('enabled resume config enforces exact origins and required absolute storage', () => {
   for (const publicOrigin of [
     '',
-    'http://resume.example',
+    'https://resume.example/',
+    'https://resume.example:443',
     'https://user:password@resume.example',
     'https://resume.example/private',
     'https://resume.example?mode=private',
@@ -231,15 +236,16 @@ test('enabled resume config enforces exact origins and required absolute storage
   }
 
   for (const publicOrigin of [
-    'https://resume.example/',
+    'https://resume.example',
+    'http://resume.example',
     'http://127.0.0.1:3010',
-    'http://localhost:3010/',
+    'http://localhost:3010',
     'http://[::1]:3010',
   ]) {
     const config = loadResumeConfig(enabledEnv({ MORSE_PUBLIC_ORIGIN: publicOrigin }));
     assert.equal(config.enabled, true);
     if (!config.enabled) assert.fail('expected enabled resume config');
-    assert.equal(config.publicOrigin, new URL(publicOrigin).origin);
+    assert.equal(config.publicOrigin, publicOrigin);
   }
 
   assertResumeError(
