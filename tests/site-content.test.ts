@@ -464,6 +464,20 @@ test("keeps the approved global copy and four FAQ topics", () => {
   assert.match(siteContent.faq[3].question, /快速了解/);
 });
 
+test("publishes five reusable profile capabilities instead of project features", () => {
+  assert.deepEqual(siteContent.profile.capabilityMatrix, [
+    { id: "agent-application-development", title: "Agent 应用开发", description: "把对话、工具调用、任务状态和人工确认串成可运行的 Agent 流程。" },
+    { id: "full-stack-development-deployment", title: "全栈开发与部署", description: "独立完成前端、后端、数据库、异步任务、权限和服务器部署。" },
+    { id: "rag-knowledge-base", title: "RAG 与知识库", description: "完成知识整理、向量检索、来源展示、内容更新和检索效果验证。" },
+    { id: "multi-model-multimodal-integration", title: "多模型与多模态接入", description: "接入文本、图片和视频模型，处理不同模型的参数、素材与任务状态。" },
+    { id: "ai-programming-collaboration", title: "AI 编程协作", description: "结合 Codex、Claude Code、WorkBuddy 完成需求拆解、代码实现、测试与审查，加快复杂项目交付。" },
+  ]);
+  const serialized = JSON.stringify(siteContent.profile.capabilityMatrix);
+  for (const projectFeature of ["横纵研究", "证据台账", "论断映射", "缺口修复", "发布审批", "三类对话工作流", "BGE + pgvector", "停止与恢复"]) {
+    assert.doesNotMatch(serialized, new RegExp(projectFeature.replace("+", "\\+")));
+  }
+});
+
 test("publishes the Digital Morse live status without vendor-specific copy", () => {
   const project = getProjectBySlug("digital-morse");
 
