@@ -98,3 +98,7 @@ CREATE INDEX resume_access_events_recent_idx
   ON resume_access_events(created_at DESC);
 CREATE INDEX resume_access_events_retention_idx
   ON resume_access_events(delete_after);
+CREATE INDEX resume_access_events_session_idx
+  ON resume_access_events(session_id) WHERE session_id IS NOT NULL;
+CREATE INDEX resume_access_events_invite_idx
+  ON resume_access_events(invite_id) WHERE invite_id IS NOT NULL;

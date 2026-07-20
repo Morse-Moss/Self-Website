@@ -25,9 +25,11 @@ function randomHash(): string {
 
 async function runMigrations(connectionString: string): Promise<void> {
   const result = await new Promise<{ code: number | null; stderr: string }>((resolve, reject) => {
+    const environment = { ...process.env, DATABASE_URL: connectionString };
+    delete environment.MORSE_MIGRATIONS_DIR;
     const child = spawn(process.execPath, [migrationRunner], {
       cwd: repoRoot,
-      env: { ...process.env, DATABASE_URL: connectionString },
+      env: environment,
       stdio: ['ignore', 'ignore', 'pipe'],
     });
     let stderr = '';
@@ -124,16 +126,20 @@ test('migration 003 creates an isolated private resume schema with required inde
             AND indexname = ANY($1::text[])
           ORDER BY indexname`,
         [[
+          'resume_access_events_invite_idx',
           'resume_access_events_recent_idx',
           'resume_access_events_retention_idx',
+          'resume_access_events_session_idx',
           'resume_documents_one_current_idx',
           'resume_invites_state_idx',
           'resume_sessions_expiry_idx',
         ]],
       );
       assert.deepEqual(indexes.rows.map((row) => row.indexname), [
+        'resume_access_events_invite_idx',
         'resume_access_events_recent_idx',
         'resume_access_events_retention_idx',
+        'resume_access_events_session_idx',
         'resume_documents_one_current_idx',
         'resume_invites_state_idx',
         'resume_sessions_expiry_idx',
@@ -144,6 +150,12 @@ test('migration 003 creates an isolated private resume schema with required inde
       const inviteStateIndex = indexes.rows.find(
         (index) => index.indexname === 'resume_invites_state_idx',
       );
+      const accessEventInviteIndex = indexes.rows.find(
+        (index) => index.indexname === 'resume_access_events_invite_idx',
+      );
+      const accessEventSessionIndex = indexes.rows.find(
+        (index) => index.indexname === 'resume_access_events_session_idx',
+      );
       assert.match(
         currentIndex?.indexdef ?? '',
         /CREATE UNIQUE INDEX[\s\S]*WHERE\s+\(?is_current(?:\s*=\s*true)?\)?/i,
@@ -152,6 +164,49 @@ test('migration 003 creates an isolated private resume schema with required inde
         inviteStateIndex?.indexdef ?? '',
         /\(disabled_at, redeemed_at, expires_at DESC\)/i,
       );
+      assert.match(
+        accessEventInviteIndex?.indexdef ?? '',
+        /\(invite_id\)\s+WHERE\s+\(?invite_id IS NOT NULL\)?/i,
+      );
+      assert.match(
+        accessEventSessionIndex?.indexdef ?? '',
+        /\(session_id\)\s+WHERE\s+\(?session_id IS NOT NULL\)?/i,
+      );
+
+      const eventTypes = [
+        'invite_created',
+        'redeem_succeeded',
+        'redeem_failed',
+        'file_returned',
+        'session_logged_out',
+        'invite_disabled',
+        'expired_cleanup',
+        'document_uploaded',
+        'document_replaced',
+        'key_rotation_prepared',
+        'key_rotation_activated',
+        'key_rotation_finalized',
+        'key_rotation_rolled_back',
+        'storage_recovery',
+      ];
+      for (const [index, eventType] of eventTypes.entries()) {
+        await client.query(
+          `INSERT INTO resume_access_events (event_type, result_code, delete_after)
+           VALUES ($1, $2, now() + interval '1 day')`,
+          [eventType, `synthetic-${index}`],
+        );
+      }
+      await assert.rejects(
+        client.query(
+          `INSERT INTO resume_access_events (event_type, result_code, delete_after)
+           VALUES ('unknown_event', 'synthetic-invalid', now() + interval '1 day')`,
+        ),
+        (error: unknown) => isPostgresError(error, '23514'),
+      );
+      const storedEvents = await client.query<{ count: number }>(
+        'SELECT count(*)::integer AS count FROM resume_access_events',
+      );
+      assert.equal(storedEvents.rows[0].count, eventTypes.length);
     });
   } finally {
     await database.dispose();
@@ -227,14 +282,18 @@ test('concurrent transactions can create at most one session for the same resume
         await first.query('BEGIN');
         await second.query('BEGIN');
         try {
+          await second.query("SET LOCAL statement_timeout = '6000ms'");
+          const firstPid = await first.query<{ pid: number }>(
+            'SELECT pg_backend_pid()::integer AS pid',
+          );
+          const secondPid = await second.query<{ pid: number }>(
+            'SELECT pg_backend_pid()::integer AS pid',
+          );
           await first.query(
             `INSERT INTO resume_sessions
               (id, invite_id, token_hash, expires_at, source_ip, user_agent)
              VALUES ($1, $2, $3, now() + interval '1 hour', $4, $5)`,
             [randomUUID(), inviteId, randomHash(), firstSourceIp, firstUserAgent],
-          );
-          const secondPid = await second.query<{ pid: number }>(
-            'SELECT pg_backend_pid()::integer AS pid',
           );
           const secondInsert = second.query(
             `INSERT INTO resume_sessions
@@ -246,22 +305,23 @@ test('concurrent transactions can create at most one session for the same resume
             (error: unknown) => ({ error, status: 'rejected' as const }),
           );
 
-          let observedLockWait = false;
-          for (let attempt = 0; attempt < 40; attempt += 1) {
-            const activity = await first.query<{ wait_event_type: string | null }>(
-              'SELECT wait_event_type FROM pg_stat_activity WHERE pid = $1',
-              [secondPid.rows[0].pid],
+          let blockedByFirst = false;
+          const blockingDeadline = Date.now() + 5_000;
+          while (Date.now() < blockingDeadline) {
+            const blockers = await first.query<{ blocked_by_first: boolean }>(
+              `SELECT $1::integer = ANY(pg_blocking_pids($2::integer)) AS blocked_by_first`,
+              [firstPid.rows[0].pid, secondPid.rows[0].pid],
             );
-            if (activity.rows[0]?.wait_event_type === 'Lock') {
-              observedLockWait = true;
+            if (blockers.rows[0]?.blocked_by_first) {
+              blockedByFirst = true;
               break;
             }
-            await delay(25);
+            await delay(Math.min(25, Math.max(1, blockingDeadline - Date.now())));
           }
           assert.equal(
-            observedLockWait,
+            blockedByFirst,
             true,
-            'the second insert must wait on the first transaction before its uniqueness result is known',
+            'pg_blocking_pids must prove the first transaction blocks the second insert',
           );
 
           await first.query('COMMIT');
