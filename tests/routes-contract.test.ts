@@ -25,6 +25,9 @@ const files = {
   projectGalleryStyles: path.resolve('components/works/ProjectGallery.module.css'),
   caseRoute: path.resolve('app/(portfolio)/works/[slug]/page.tsx'),
   caseRouteStyles: path.resolve('app/(portfolio)/works/[slug]/page.module.css'),
+  resumeAccessRoute: path.resolve('app/api/resume/access/route.ts'),
+  resumeFileRoute: path.resolve('app/api/resume/file/route.ts'),
+  resumeHttp: path.resolve('lib/server/resume-http.ts'),
 } as const;
 
 const prohibitedProductPattern = new RegExp(
@@ -375,6 +378,22 @@ test('legacy case routes validate slugs and redirect without rendering independe
   assert.match(source, /redirect\(`\/works#\$\{slug\}`\)/);
   assert.doesNotMatch(source, /CaseStudy|<main|<article/);
   assert.equal(fs.existsSync(files.caseRouteStyles), false);
+});
+
+test('private resume routes stay isolated from chat authorization and public file paths', () => {
+  const access = readSource(files.resumeAccessRoute);
+  const file = readSource(files.resumeFileRoute);
+  const shared = readSource(files.resumeHttp);
+  const source = [access, file, shared].join('\n');
+
+  assert.match(access, /redeemResumeInviteProtected/);
+  assert.match(access, /authenticateResumeSession/);
+  assert.match(file, /authenticateResumeSession/);
+  assert.match(file, /readResumePdf/);
+  assert.match(file, /recordResumeFileReturned/);
+  assert.match(shared, /SameSite|sameSite:\s*'strict'/iu);
+  assert.doesNotMatch(source, /authenticateSession\b|redeemInviteProtected\b|loadAccessConfig|morse_access/);
+  assert.doesNotMatch(source, /public\/|localStorage|sessionStorage|URLSearchParams|OPENAI_|Provider/iu);
 });
 
 test('new route styles are tokenized, compact, and include mobile overflow safeguards', () => {

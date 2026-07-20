@@ -440,3 +440,42 @@ export async function disableResumeInvite(
     client.release();
   }
 }
+
+export async function recordResumeFileReturned(
+  pool: Pool,
+  session: AuthenticatedResumeSession,
+  context: ResumeRequestContext,
+): Promise<void> {
+  validateContext(context);
+  const result = await pool.query(
+    `WITH checked AS (
+       SELECT clock_timestamp() AS now
+     )
+     INSERT INTO resume_access_events
+       (event_type, result_code, invite_id, session_id, source_ip, user_agent,
+        device_info, created_at, delete_after)
+     SELECT 'file_returned', 'OK', invite.id, session.id, $3, $4, $5::jsonb,
+            checked.now, checked.now + ($6::integer * interval '1 day')
+       FROM resume_sessions AS session
+       JOIN resume_invites AS invite ON invite.id = session.invite_id
+       CROSS JOIN checked
+      WHERE session.id = $1
+        AND invite.id = $2
+        AND session.expires_at > checked.now
+        AND session.revoked_at IS NULL
+        AND invite.redeemed_at IS NOT NULL
+        AND invite.disabled_at IS NULL
+     RETURNING resume_access_events.id`,
+    [
+      session.id,
+      session.inviteId,
+      context.ip,
+      context.userAgent,
+      JSON.stringify(context.deviceInfo),
+      DEFAULT_AUDIT_RETENTION_DAYS,
+    ],
+  );
+  if (result.rowCount !== 1) {
+    throw new ResumeAccessError('RESUME_INVITE_UNAVAILABLE');
+  }
+}
