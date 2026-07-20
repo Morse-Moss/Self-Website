@@ -100,6 +100,12 @@ export type SiteFooterLink = {
   href: string;
 };
 
+export type ProfileCapability = {
+  id: string;
+  title: string;
+  description: string;
+};
+
 export type SiteContent = {
   site: {
     name: string;
@@ -124,6 +130,7 @@ export type SiteContent = {
     role: string;
     summary: string;
     capabilities: string[];
+    capabilityMatrix: ProfileCapability[];
     principles: string[];
   };
   home: { worksIntro: string; featuredSlugs: ProjectSlug[] };

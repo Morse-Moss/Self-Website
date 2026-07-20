@@ -113,6 +113,7 @@
   --space-10: 140px;
 
   /* ---------- 圆角 ---------- */
+  --radius-card: 6px;
   --radius-sm:   8px;
   --radius-md:   14px;
   --radius-lg:   22px;

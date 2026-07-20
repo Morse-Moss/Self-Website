@@ -27,6 +27,33 @@
     "role": "Agent 系统开发者 × AI Native 实践者",
     "summary": "我把研究、内容生产、运营协作和个人知识入口做成可验证、可恢复、有人负责最终判断的系统。",
     "capabilities": ["Agent 系统", "RAG", "多 Agent", "全栈开发"],
+    "capabilityMatrix": [
+      {
+        "id": "agent-application-development",
+        "title": "Agent 应用开发",
+        "description": "把对话、工具调用、任务状态和人工确认串成可运行的 Agent 流程。"
+      },
+      {
+        "id": "full-stack-development-deployment",
+        "title": "全栈开发与部署",
+        "description": "独立完成前端、后端、数据库、异步任务、权限和服务器部署。"
+      },
+      {
+        "id": "rag-knowledge-base",
+        "title": "RAG 与知识库",
+        "description": "完成知识整理、向量检索、来源展示、内容更新和检索效果验证。"
+      },
+      {
+        "id": "multi-model-multimodal-integration",
+        "title": "多模型与多模态接入",
+        "description": "接入文本、图片和视频模型，处理不同模型的参数、素材与任务状态。"
+      },
+      {
+        "id": "ai-programming-collaboration",
+        "title": "AI 编程协作",
+        "description": "结合 Codex、Claude Code、WorkBuddy 完成需求拆解、代码实现、测试与审查，加快复杂项目交付。"
+      }
+    ],
     "principles": [
       "先定义事实与安全边界，再让 AI 加速。",
       "把重复工作沉淀为可检查、可恢复的流程。",

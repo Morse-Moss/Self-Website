@@ -157,50 +157,91 @@
   font-weight: 700;
 }
 
+.capabilityHeader .kicker::after {
+  display: block;
+  width: var(--space-7);
+  height: 1px;
+  margin-top: var(--space-2);
+  background: var(--accent);
+  content: "";
+  opacity: .72;
+}
+
 .matrix {
-  border-bottom: 1px solid var(--line-faint);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
 }
 
 .matrix li {
+  position: relative;
+  display: flex;
   min-width: 0;
-  border-top: 1px solid var(--line-faint);
-}
-
-.matrix a {
-  display: grid;
-  grid-template-columns: 52px minmax(0, 1fr) minmax(150px, 0.5fr);
+  min-height: 176px;
+  flex-direction: column;
   gap: var(--space-5);
-  align-items: center;
-  min-height: 76px;
-  padding: var(--space-3) 0;
-  transition:
-    color var(--dur-fast) var(--ease),
-    padding var(--dur-fast) var(--ease);
+  padding: var(--space-5);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface-glass);
+  box-shadow: inset 0 1px 0 var(--edge-highlight);
+  transition: border-color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
 }
 
-.matrix a:hover {
-  padding-right: var(--space-3);
-  padding-left: var(--space-3);
-  color: var(--accent);
+.matrix li::before {
+  position: absolute;
+  top: -1px;
+  left: var(--space-5);
+  width: var(--space-7);
+  height: 1px;
+  background: var(--accent);
+  content: "";
+  opacity: .62;
+}
+
+@media (hover: hover) {
+  .matrix li:hover {
+    border-color: var(--line-strong);
+    background: var(--elevated-glass);
+  }
+}
+
+.matrix li:last-child {
+  grid-column: 1 / -1;
+  min-height: 136px;
 }
 
 .matrixIndex {
   color: var(--accent);
+  font-family: var(--font-mono);
   font-size: var(--fs-2xs);
 }
 
-.matrix strong {
+.matrixBody {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: auto;
+}
+
+.matrixBody h3 {
+  margin: 0;
+  color: var(--ink);
   font-size: var(--fs-h3);
   letter-spacing: 0;
 }
 
-.matrixProject {
+.matrixBody p {
+  max-width: 42rem;
+  margin: 0;
   color: var(--muted);
+  line-height: 1.8;
 }
 
-.matrixProject {
-  text-align: right;
-  font-size: var(--fs-sm);
+.matrix li:last-child .matrixBody {
+  grid-template-columns: minmax(200px, .42fr) minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-6);
 }
 
 .metrics {
@@ -376,15 +417,19 @@
     grid-template-columns: 1fr;
   }
 
-  .matrix a {
-    grid-template-columns: 40px minmax(0, 1fr);
-    gap: var(--space-2) var(--space-3);
-    padding: var(--space-4) 0;
+  .matrix {
+    grid-template-columns: 1fr;
   }
 
-  .matrixProject {
-    grid-column: 2;
-    text-align: left;
+  .matrix li,
+  .matrix li:last-child {
+    grid-column: auto;
+    min-height: 0;
+  }
+
+  .matrix li:last-child .matrixBody {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
   }
 }
 
