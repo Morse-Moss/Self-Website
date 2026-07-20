@@ -13,6 +13,7 @@ const providerConfig = {
   firstByteTimeoutMs: 50,
   totalTimeoutMs: 100,
   providerConcurrency: 4,
+  reasoningEffort: 'high' as const,
 };
 
 async function* fakeResponseStream() {
@@ -149,6 +150,7 @@ test('OpenAIProvider sends safe Responses options and preserves missing usage', 
     instructions: 'Use evidence only.',
     input: [{ role: 'user', content: 'Hello' }],
     max_output_tokens: 400,
+    reasoning: { effort: 'high' },
     stream: true,
     store: false,
   });
@@ -216,6 +218,7 @@ test('OpenAIProvider streams Chat Completions without falling back to Responses'
       { role: 'user', content: 'Hello' },
     ],
     max_completion_tokens: 400,
+    reasoning_effort: 'high',
     stream: true,
     stream_options: { include_usage: true },
   });
@@ -512,6 +515,29 @@ test('OpenAIProvider stops after three empty completed attempts', async () => {
     (error as { code?: string }).code === 'PROVIDER_RESPONSE_INCOMPLETE'
   ));
   assert.equal(createCalls, 3);
+});
+
+test('OpenAIProvider can disable same-node retries when failover nodes are configured', async () => {
+  let createCalls = 0;
+  const provider = new OpenAIProvider({
+    responses: {
+      create: async () => {
+        createCalls += 1;
+        throw Object.assign(new Error('private gateway payload'), { status: 502 });
+      },
+    },
+  }, {
+    embeddings: { create: async () => ({ data: [] }) },
+  }, { ...providerConfig, outputlessMaxAttempts: 1 });
+  const iterator = provider.streamAnswer({
+    instructions: 'Use evidence only.',
+    messages: [{ role: 'user', content: 'Hello' }],
+  })[Symbol.asyncIterator]();
+
+  await assert.rejects(iterator.next(), (error: unknown) => (
+    (error as { code?: string }).code === 'PROVIDER_UNAVAILABLE'
+  ));
+  assert.equal(createCalls, 1);
 });
 
 test('OpenAIProvider does not retry a permanent HTTP failure', async () => {

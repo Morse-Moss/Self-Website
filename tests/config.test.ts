@@ -14,6 +14,11 @@ const completeEnv: Record<string, string> = {
   OPENAI_BASE_URL: 'http://127.0.0.1:8080/v1',
   OPENAI_CHAT_MODEL: 'test-chat',
   OPENAI_CHAT_PROTOCOL: 'chat_completions',
+  OPENAI_REASONING_EFFORT: 'high',
+  OPENAI_FALLBACK_1_API_KEY: 'fallback-one-key',
+  OPENAI_FALLBACK_1_BASE_URL: 'https://fallback-one.example/v1',
+  OPENAI_FALLBACK_2_API_KEY: 'fallback-two-key',
+  OPENAI_FALLBACK_2_BASE_URL: 'https://fallback-two.example/v1',
   OPENAI_COMPAT_USER_AGENT: 'Mozilla/5.0 MorsePortfolio/1.0',
   OPENAI_EMBEDDING_API_KEY: 'embedding-key',
   OPENAI_EMBEDDING_BASE_URL: 'http://127.0.0.1:18091/v1',
@@ -37,6 +42,11 @@ test('loadServerConfig parses access, provider, lifecycle, and optional pricing 
   assert.equal(config.maxMessagesPerSession, 30);
   assert.equal(config.chatModel, 'test-chat');
   assert.equal(config.chatProtocol, 'chat_completions');
+  assert.equal(config.reasoningEffort, 'high');
+  assert.deepEqual(config.openaiFallbacks, [
+    { apiKey: 'fallback-one-key', baseUrl: 'https://fallback-one.example/v1' },
+    { apiKey: 'fallback-two-key', baseUrl: 'https://fallback-two.example/v1' },
+  ]);
   assert.equal(config.openaiUserAgent, 'Mozilla/5.0 MorsePortfolio/1.0');
   assert.equal(config.openaiBaseUrl, 'http://127.0.0.1:8080/v1');
   assert.equal(config.embeddingApiKey, 'embedding-key');
@@ -212,6 +222,21 @@ test('loadServerConfig rejects an unsupported explicit chat protocol', () => {
   assert.throws(
     () => loadServerConfig({ ...completeEnv, OPENAI_CHAT_PROTOCOL: 'automatic' }),
     /OPENAI_CHAT_PROTOCOL.*responses.*chat_completions/,
+  );
+});
+
+test('loadServerConfig validates reasoning effort and complete fallback pairs', () => {
+  assert.throws(
+    () => loadServerConfig({ ...completeEnv, OPENAI_REASONING_EFFORT: 'extreme' }),
+    /OPENAI_REASONING_EFFORT/,
+  );
+  assert.throws(
+    () => loadServerConfig({ ...completeEnv, OPENAI_FALLBACK_1_API_KEY: '' }),
+    /OPENAI_FALLBACK_1_API_KEY.*OPENAI_FALLBACK_1_BASE_URL/,
+  );
+  assert.throws(
+    () => loadServerConfig({ ...completeEnv, OPENAI_FALLBACK_2_BASE_URL: '' }),
+    /OPENAI_FALLBACK_2_API_KEY.*OPENAI_FALLBACK_2_BASE_URL/,
   );
 });
 

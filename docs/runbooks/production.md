@@ -47,6 +47,8 @@ npm run production:worker
 - `MORSE_ALLOW_TEST_EMBEDDINGS=true` 在生产直接拒绝。
 - `MORSE_LOCAL_RELEASE_SMOKE=true` 只供 loopback production-build harness 使用，正式角色启动器直接拒绝。
 - `MORSE_ALERTS_ENABLED` 必须显式为 `true` 或 `false`。关闭告警时 Worker 仍执行 retention cleanup。
+- Chat 主节点使用 `OPENAI_API_KEY` / `OPENAI_BASE_URL`；最多两个备用节点分别使用完整的 `OPENAI_FALLBACK_1_*` 和 `OPENAI_FALLBACK_2_*` 成对配置。生产备用 URL 必须是无凭据 HTTPS URL，缺 key 或缺 URL 均 fail closed。
+- 三个 Chat 节点共享 `OPENAI_CHAT_MODEL`、`OPENAI_CHAT_PROTOCOL`、`OPENAI_REASONING_EFFORT` 和兼容 User-Agent。切换顺序固定为主节点、备用 1、备用 2，只在尚未输出正文时发生；已有部分回答或访客停止后不再切换。每个节点仍受单节点总超时约束，整次切换共享“单节点总超时 × 节点数”的上限。Embedding 继续使用独立配置。
 - 所有 key、密码、webhook、DB URL 和 CA 只从部署 Secret Store 或主机受限环境文件注入，不进入 Git、镜像层和日志。
 
 完整变量名与本地默认值见 `.env.example`。示例值不是生产凭据，也不是生产安全配置。
@@ -127,6 +129,6 @@ npm run production:worker
 
 1. live 失败：Web 进程或 edge 路由故障。
 2. live 成功、ready 失败：依次检查稳定 preflight code、DB TLS/连接、migration、知识 ingest。
-3. Web ready、对话失败：检查 Provider/Embedding/Search incident，不打印请求正文或凭据。
+3. Web ready、对话失败：按主节点、备用 1、备用 2 的顺序检查 Chat Provider，再检查 Embedding/Search incident；不打印请求正文、响应正文或凭据。
 4. Outbox 堆积：检查 Worker 是否运行、alert mode、DB lease、Feishu 响应和 attempt cap。
 5. cleanup 过期：检查 Worker 稳定日志、DB lock 竞争和最后成功时间；不要手工绕过 10 天保留 SQL 顺序。

@@ -33,6 +33,11 @@ const webEnv = {
   OPENAI_BASE_URL: 'https://gateway.example/v1',
   OPENAI_CHAT_MODEL: 'gpt-production',
   OPENAI_CHAT_PROTOCOL: 'responses',
+  OPENAI_REASONING_EFFORT: 'high',
+  OPENAI_FALLBACK_1_API_KEY: 'fallback-one-key',
+  OPENAI_FALLBACK_1_BASE_URL: 'https://fallback-one.example/v1',
+  OPENAI_FALLBACK_2_API_KEY: 'fallback-two-key',
+  OPENAI_FALLBACK_2_BASE_URL: 'https://fallback-two.example/v1',
   OPENAI_EMBEDDING_API_KEY: 'test-production-embedding-key',
   OPENAI_EMBEDDING_BASE_URL: 'https://embedding.internal.example/v1',
   OPENAI_EMBEDDING_MODEL: 'bge-production',
@@ -144,6 +149,14 @@ test('production preflight fails closed with stable codes and never echoes value
     ['PRODUCTION_PROVIDER_CONFIG_INVALID', {
       ...webEnv,
       OPENAI_BASE_URL: 'https://gateway.example/v1?unsafe=override',
+    }],
+    ['PRODUCTION_PROVIDER_CONFIG_INVALID', {
+      ...webEnv,
+      OPENAI_FALLBACK_1_BASE_URL: 'http://fallback-one.example/v1',
+    }],
+    ['PRODUCTION_PROVIDER_CONFIG_INVALID', {
+      ...webEnv,
+      OPENAI_FALLBACK_2_API_KEY: '',
     }],
     ['PRODUCTION_LOCAL_SMOKE_FORBIDDEN', {
       ...webEnv,

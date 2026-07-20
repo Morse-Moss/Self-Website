@@ -74,7 +74,7 @@ node --test scripts/architecture-contract.test.mjs
 - 已向访客输出正文后不得自动重试 Provider，避免重复回答。
 - 只有幂等且尚未输出正文的瞬时失败可以有界重试；SDK 自带重试保持关闭，除非有独立合同与测试证明不会叠加。
 - `AbortSignal` 必须从 HTTP 断线或用户停止一直传播到检索、Search、Embedding 和 Provider。
-- 降级必须显式且诚实。禁止隐式切模型、切协议、使用 mock 冒充真实 Provider，或把联网失败写成已经核验。
+- 降级必须显式且诚实。禁止隐式切模型、切协议、使用 mock 冒充真实 Provider，或把联网失败写成已经核验；同模型、同协议的多 endpoint 容灾必须由显式配置定义顺序，并且只允许在正文输出前切换。
 - Provider 失败、停止或持久化失败必须完成补偿；不得保留孤立 runtime user message，也不得错误扣减额度。
 
 ## 6. Provider、联网与外部副作用

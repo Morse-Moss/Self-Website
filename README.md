@@ -12,7 +12,7 @@
 - S7 多页作品集已完成：首页、作品索引、四个项目案例、共享导航/页脚/简历入口和唯一公开内容源均已进入正式站。
 - S8 智能客服文字对话闭环已完成并进入 `origin/master`：三类访客意图、失败补偿、幂等重放、公开来源、可恢复重试、双宽浏览器验证和分层评测均已通过。
 - S9 Morse 作品集重设计已完成并进入 `origin/master`：首页以 `Morse` 为主身份，作品集改为四项目单页折叠；企业内部项目只公开获批的脱敏事实与示例媒体，不提供系统访问入口。全视口首屏、1440/390 双宽、减弱动画和 Lighthouse 门禁均已通过。
-- S10 数字摩斯智能客服已达到 `MAINLINE_PROVIDER_READY / CHAT_UX_LOCAL_READY`：访客三流程、自动搜索、管理后台与离线评测完成；19/19 Mock E2E、1440/390 真实浏览器、543/543 零 skip 全量测试、BGE/pgvector 语义评测和 19/19 生产构建均已通过。2026-07-17 针对中转 WAF 和易变模型目录加入显式兼容 User-Agent，并以 Provider 当前可用模型配置完成验收；随后修复默认问题只填框、等待态仍显示建议、Markdown 源码外露、来源编号不清和 OpenAI-compatible 中转间歇性空输出/502。聊天区已扩大；正文“依据”和底部来源统一遵循不打断合同：当前页资料静态显示，项目案例和联网资料在新标签页打开，不能改变当前对话 URL、消息或 transcript 滚动位置。Responses 只有在尚未输出正文且属于空完成、incomplete 或明确瞬时 HTTP 状态时才进行最多 3 次总尝试，永久 4xx、显式 failed/error 和已有部分回答均不重试。空完成或 incomplete 轮次如返回 usage，会计入最终真实用量。最新持久化 usage 证据 turn `e9d03006-2cbd-40dd-a31c-1cd65c6b6e45` 到达 SSE `done` 和数据库 `completed`，usage 为 5766 输入 / 102 输出 token；本轮另有三个真实浏览器 turn `45d91a62-38b9-4505-9a80-5e7b563a2cb2`、`3023fc9a-af03-45e0-91c6-3994022a1fc5` 与 `389f9ccd-9f42-451f-a641-050bad5f1106` 均为 `completed`，额度各从 30 降到 29；最新一轮延迟 15706ms、5 个检索来源、`used_search=false`。中转未返回 usage，费用保持未知。真实博查/飞书未验收；S10 当时未部署，当前生产状态以 S11 条目为准。
+- S10 数字摩斯智能客服已达到 `MAINLINE_PROVIDER_READY / CHAT_UX_LOCAL_READY`：访客三流程、自动搜索、管理后台与离线评测完成；19/19 Mock E2E、1440/390 真实浏览器、543/543 零 skip 全量测试、BGE/pgvector 语义评测和 19/19 生产构建均已通过。2026-07-17 针对中转 WAF 和易变模型目录加入显式兼容 User-Agent，并以 Provider 当前可用模型配置完成验收；随后修复默认问题只填框、等待态仍显示建议、Markdown 源码外露、来源编号不清和 OpenAI-compatible 中转间歇性空输出/502。聊天区已扩大；正文“依据”和底部来源统一遵循不打断合同：当前页资料静态显示，项目案例和联网资料在新标签页打开，不能改变当前对话 URL、消息或 transcript 滚动位置。未配置备用节点时，Responses 仍只在零正文的空完成、incomplete 或明确瞬时 HTTP 状态下进行最多 3 次同节点尝试；配置备用节点后，每个节点最多尝试一次，并在任何节点级错误且零正文时按主节点、备用 1、备用 2 切换。已有部分回答或访客主动停止时不会切换；可用 usage 会累计。最新持久化 usage 证据 turn `e9d03006-2cbd-40dd-a31c-1cd65c6b6e45` 到达 SSE `done` 和数据库 `completed`，usage 为 5766 输入 / 102 输出 token；本轮另有三个真实浏览器 turn `45d91a62-38b9-4505-9a80-5e7b563a2cb2`、`3023fc9a-af03-45e0-91c6-3994022a1fc5` 与 `389f9ccd-9f42-451f-a641-050bad5f1106` 均为 `completed`，额度各从 30 降到 29；最新一轮延迟 15706ms、5 个检索来源、`used_search=false`。中转未返回 usage，费用保持未知。真实博查/飞书未验收；S10 当时未部署，当前生产状态以 S11 条目为准。
 - 管理员固定入口为 `/admin`，不出现在公开导航；生产使用独立管理员密码登录，有效管理 Session 内可生成和停用邀请码，导出私有数据时重新输入密码。安全边界仍包括 scrypt、五次失败锁定、30 分钟 Strict Session、精确 Origin 和服务端权限校验。
 - S11 生产部署已于 2026-07-18 达到 `PRODUCTION_OBSERVED / LIMITED_LAUNCH`，并在 2026-07-20 将首页 Warp Tunnel、五项目作品集和生产知识更新到 `44ed094`：`aimorse.tech` 与 `www.aimorse.tech` 的 Caddy/HTTPS、Web、Worker、PostgreSQL/pgvector 和 CPU BGE 均在运行；生产 migration、最小数据库 grants、公开知识摄取、历史真实 Provider smoke、live/ready 与 release smoke 已通过。
 - 内容创作 Agent、自动运营 Agent、深度研究 Agent、数字摩斯与 AI 外贸获客系统的简洁页面、正式主图和展开详情均已进入生产 Web；五张主图、公网页面和健康接口均为 HTTP 200。
@@ -75,6 +75,8 @@ npm run session:cleanup
 `GET /api/health/live` 只报告进程存活；`GET /api/health/ready` 与兼容入口 `GET /api/health` 只返回通用 `{ "ok": true|false }`，并以运行配置、数据库、migration checksum 和非空公开知识为就绪条件，不公开 Provider、费用、表名或 chunk 数。完整生产边界见 `docs/runbooks/production.md`。
 
 部分 OpenAI-compatible 中转会拦截 SDK 默认 User-Agent。仅在模型列表用默认 SDK 请求返回 403、而同凭据的受控兼容请求返回 200 时，设置 `OPENAI_COMPAT_USER_AGENT`；值必须是单行且不超过 256 字符。2026-07-17 本地直连验收使用 `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Revolution/1.0`，该值不含秘密，但属于当前中转兼容配置，部署时仍需重新验证。模型 ID 必须以中转实时 `/models` 返回为准，不能把某次目录快照当作持久事实。
+
+Chat 可通过 `OPENAI_FALLBACK_1_API_KEY` / `OPENAI_FALLBACK_1_BASE_URL` 和 `OPENAI_FALLBACK_2_API_KEY` / `OPENAI_FALLBACK_2_BASE_URL` 配置两个有序备用 endpoint。三个节点共享模型、协议、reasoning effort 和兼容 User-Agent；只在零正文时切换，Embedding 不参与该切换。
 
 ## 验证
 

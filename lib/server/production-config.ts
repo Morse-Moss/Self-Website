@@ -142,11 +142,19 @@ function validateWeb(env: Env): void {
     fail('PRODUCTION_INVITE_SECRET_INVALID');
   }
   const providerBaseUrl = env.OPENAI_BASE_URL?.trim() || 'https://api.openai.com/v1';
+  const fallbackPairs = [1, 2].map((index) => ({
+    apiKey: env[`OPENAI_FALLBACK_${index}_API_KEY`]?.trim(),
+    baseUrl: env[`OPENAI_FALLBACK_${index}_BASE_URL`]?.trim(),
+  }));
   if (
     !env.OPENAI_API_KEY?.trim()
     || !env.OPENAI_CHAT_MODEL?.trim()
     || !['responses', 'chat_completions'].includes(env.OPENAI_CHAT_PROTOCOL?.trim() ?? '')
     || !exactHttpsUrl(providerBaseUrl)
+    || fallbackPairs.some(({ apiKey, baseUrl }) => (
+      Boolean(apiKey) !== Boolean(baseUrl)
+      || (Boolean(baseUrl) && !exactHttpsUrl(baseUrl))
+    ))
   ) {
     fail('PRODUCTION_PROVIDER_CONFIG_INVALID');
   }

@@ -267,7 +267,7 @@
 - **产品目标**：把现有受控文字对话补成可本地验收的智能客服。三种流程为自由对话、JD 匹配和需求初诊；不是独立客服 SaaS。
 - **访问与记忆**：邀请码最长 72 小时；每次 access session 和可恢复上下文为 12 小时，不做跨 Session 长期记忆。
 - **RAG**：使用本地 BGE + PostgreSQL/pgvector，公开知识唯一 live source 继续是 `content/site-content.json`；不部署 Milvus/Qdrant，不读取 `content/drafts/**` 补答案。
-- **模型**：使用配置化 OpenAI-compatible 中转 GPT；协议明确选择 Responses 或 Chat Completions，单次请求不自动跨协议回退。模型、base URL、超时和并发均由服务端配置。
+- **模型**：使用配置化 OpenAI-compatible 中转 GPT；协议明确选择 Responses 或 Chat Completions，单次请求不自动跨协议或跨模型回退。模型、主备 endpoint 顺序、reasoning effort、超时和并发均由服务端配置；同模型、同协议的备用 endpoint 只允许在尚未输出正文时接管。
 - **自动联网**：由服务端判断是否调用博查，访客没有搜索开关。每轮最多一次、每 Session 最多五次；S10 只消费标题、摘要和经校验的 HTTPS URL，不抓任意网页正文，不把搜索结果写回知识库。
 - **事实与引用**：Morse 的履历、项目状态、数字、联系方式和能力事实只能由站内审核知识确认；网页只补外部背景。引用链接只能由服务端产生，模型不能自行生成可点击 URL。
 - **数据保留**：运行态 history 随 12 小时 Session 清理；原始问题、回答、搜索词和来源另存 10 天，不脱敏，仅私有管理后台可见。页面不向访客展示数据保留提示；10 天后删除原文，只保留无正文聚合。
@@ -279,6 +279,7 @@
 - **阶段合同**：`docs/task-center/s10-smart-customer-service.md`；详细设计：`docs/superpowers/specs/2026-07-15-s10-smart-customer-service-design.md`；实施计划：`docs/superpowers/plans/2026-07-15-s10-smart-customer-service.md`。
 - **实现状态（2026-07-18）**：S10 已达到 `MAINLINE_PROVIDER_READY / CHAT_UX_LOCAL_READY`，既有主体由 merge commit `e0a53f2` 吸收到本地 `master`，对话交互和中转恢复修正继续在本地 `master` 收口。访客三流程、真实停止与恢复、自动搜索降级、独立 Admin、badcase、fresh-TOTP 导出和离线评测均已实现；当前 19/19 Mock E2E、四张授权态 1440/390 截图、控制台/溢出、543/543 零 skip 全量测试、9 文档/10 chunk 的本地 CPU BGE + pgvector 评测与 19/19 生产构建通过。RAG 最终结果为 top1 18/20、top3 20/20，最低正例 0.460884、最高负例 0.420975，0.45 正负阈值均通过。运行固定使用已验收的 `gpt-5.4`，部署时仍必须实时核对中转 `/models`。默认问题直接发送，流式等待时只显示“数字摩斯正在思考”；内部 `[来源N]` 不作为访客文案，正文显示“依据：资料标题”，底部只列实际引用的具名资料。正文依据与底部来源统一遵循不打断合同：当前页资料静态显示，站内项目和联网资料在新标签页打开，原对话 URL、消息和 transcript 滚动位置保持不变。聊天区在桌面扩大至 560px 上限，嵌入式与移动端高度同步增加。OpenAI-compatible 中转若仅返回 `output_text.done`，适配层会恢复最终正文；若尚未输出正文且发生空完成、incomplete、408/409/429 或 5xx，则在共享总超时内进行最多 3 次总尝试，并累计空完成或 incomplete 轮次返回的 usage。永久 4xx、明确 failed/error 或已有部分回答均不重试。最新持久化 usage 证据 turn `e9d03006-2cbd-40dd-a31c-1cd65c6b6e45` 为 SSE `done`、数据库 `completed`、19362ms、usage 5766/102；本轮三个真实浏览器 turn `45d91a62-38b9-4505-9a80-5e7b563a2cb2`、`3023fc9a-af03-45e0-91c6-3994022a1fc5` 与 `389f9ccd-9f42-451f-a641-050bad5f1106` 也均为 `completed`，额度各从 30 降到 29；最新一轮延迟 15706ms、5 个检索来源、`used_search=false`。中转未返回 usage，费用保持未知。真实博查/飞书未调用；当前修正未 push、未部署。
 - **邀请码管理增量（2026-07-19）**：提交 `50a7663` 已实现管理员生成、复制一次、状态列表和停用邀请码；`48d13b9` 随后按产品决策将管理员流程简化为密码登录、有效 Session 内直接管理邀请码、导出时重输密码。两项功能已由 merge commit `c3f1ec6` 吸收到 `master`、push 并部署到腾讯云；公网 `/admin`、未登录 401、密码流程静态合同、live/ready 与 release smoke 已观察通过，生产邀请码明文和真实 Provider 未在发布验收中创建或调用。
+- **三节点 Chat 容灾增量（2026-07-20）**：Chat 可配置一个主节点和两个有序备用节点，固定使用同一模型、协议和 reasoning effort。节点发生认证、限流、超时、5xx、空完成或协议失败时，只有在尚未输出任何正文的前提下才进入下一节点；已有部分回答或访客主动停止时立即终止，不拼接不同节点的正文。配置备用节点后每个节点最多发起一次无正文尝试，整次切换共享“单节点总超时 × 节点数”的明确上限，失败轮次可用 usage 累加到最终结果；Embedding 继续走独立配置，不参与 Chat 节点切换。
 
 ## 16. S11 模块化架构、工程治理与上线安全（2026-07-18）
 

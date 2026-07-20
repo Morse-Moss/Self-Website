@@ -116,6 +116,34 @@ function chatProtocol(env: Env): 'responses' | 'chat_completions' {
   return value;
 }
 
+export type OpenAIReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+
+function reasoningEffort(env: Env): OpenAIReasoningEffort | undefined {
+  const value = env.OPENAI_REASONING_EFFORT?.trim();
+  if (!value) return undefined;
+  if (!['none', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(value)) {
+    throw new Error(
+      'OPENAI_REASONING_EFFORT must be none, minimal, low, medium, high, or xhigh.',
+    );
+  }
+  return value as OpenAIReasoningEffort;
+}
+
+function openAiFallbacks(env: Env): Array<{ apiKey: string; baseUrl: string }> {
+  const fallbacks: Array<{ apiKey: string; baseUrl: string }> = [];
+  for (const index of [1, 2]) {
+    const apiKeyName = `OPENAI_FALLBACK_${index}_API_KEY`;
+    const baseUrlName = `OPENAI_FALLBACK_${index}_BASE_URL`;
+    const apiKey = env[apiKeyName]?.trim();
+    const baseUrl = env[baseUrlName]?.trim();
+    if (Boolean(apiKey) !== Boolean(baseUrl)) {
+      throw new Error(`${apiKeyName} and ${baseUrlName} must both be set or both be omitted.`);
+    }
+    if (apiKey && baseUrl) fallbacks.push({ apiKey, baseUrl });
+  }
+  return fallbacks;
+}
+
 function optionalHeaderValue(env: Env, name: string): string | undefined {
   const value = env[name]?.trim();
   if (!value) return undefined;
@@ -306,6 +334,8 @@ export function loadServerConfig(env: Env = process.env) {
     openaiUserAgent: optionalHeaderValue(env, 'OPENAI_COMPAT_USER_AGENT'),
     chatModel: required(env, 'OPENAI_CHAT_MODEL'),
     chatProtocol: chatProtocol(env),
+    reasoningEffort: reasoningEffort(env),
+    openaiFallbacks: openAiFallbacks(env),
     embeddingApiKey: env.OPENAI_EMBEDDING_API_KEY?.trim() || openaiApiKey,
     embeddingBaseUrl: env.OPENAI_EMBEDDING_BASE_URL?.trim() || openaiBaseUrl,
     embeddingModel: required(env, 'OPENAI_EMBEDDING_MODEL'),
