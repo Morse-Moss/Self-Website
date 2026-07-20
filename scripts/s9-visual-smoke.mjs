@@ -38,12 +38,17 @@ const WORKER_MESSAGE_LIMIT_BYTES = 64 * 1024;
 const WORKER_MESSAGE_TIMEOUT_MS = 180_000;
 const WORKER_TERMINATE_TIMEOUT_MS = 15_000;
 const SAFE_SCREENSHOTS = new Set([
-  's9-home-desktop-1440x900.png',
-  's9-home-mobile-390x844.png',
-  's9-home-mobile-390-reduced.png',
-  's9-works-desktop-1440x900.png',
-  's9-works-mobile-390x844.png',
-].map((fileName) => `docs/verify/s9/${fileName}`));
+  ...[
+    's9-home-desktop-1440x900.png',
+    's9-home-mobile-390x844.png',
+    's9-home-mobile-390-reduced.png',
+    's9-works-desktop-1440x900.png',
+    's9-works-mobile-390x844.png',
+  ].map((fileName) => `docs/verify/s9/${fileName}`),
+  'docs/verify/capability-matrix/capability-matrix-desktop-1440.png',
+  'docs/verify/capability-matrix/capability-matrix-mobile-390.png',
+  'docs/verify/capability-matrix/capability-matrix-mobile-390-reduced.png',
+]);
 const SAFE_SLUGS = new Set([
   'content-agent',
   'auto-operations',
@@ -412,14 +417,17 @@ const slugs = [
 ];
 const screenshotFiles = {
   desktop: {
+    capabilities: 'capability-matrix-desktop-1440.png',
     home: 's9-home-desktop-1440x900.png',
     works: 's9-works-desktop-1440x900.png',
   },
   mobile: {
+    capabilities: 'capability-matrix-mobile-390.png',
     home: 's9-home-mobile-390x844.png',
     works: 's9-works-mobile-390x844.png',
   },
   'mobile-reduced': {
+    capabilities: 'capability-matrix-mobile-390-reduced.png',
     home: 's9-home-mobile-390-reduced.png',
   },
 };
@@ -749,6 +757,35 @@ async function captureScreenshot(client, viewportName, kind) {
   screenshotByName.set(fileName, `docs/verify/s9/${fileName}`);
 }
 
+async function captureElementScreenshot(client, viewportName, kind, selector) {
+  const fileName = screenshotFiles[viewportName]?.[kind];
+  if (!fileName) return;
+
+  const clip = await client.evaluate(`(() => {
+    const target = document.querySelector(${JSON.stringify(selector)});
+    if (!(target instanceof HTMLElement)) return null;
+    const rect = target.getBoundingClientRect();
+    return {
+      x: window.scrollX + rect.left,
+      y: window.scrollY + rect.top,
+      width: rect.width,
+      height: rect.height,
+    };
+  })()`);
+  if (!clip) {
+    throw new HarnessError(`${viewportName}:home:capability-screenshot-target`);
+  }
+  const result = await client.send('Page.captureScreenshot', {
+    captureBeyondViewport: true,
+    clip: { ...clip, scale: 1 },
+    format: 'png',
+    fromSurface: true,
+  }, SCREENSHOT_TIMEOUT_MS);
+  const filePath = path.join(evidenceDir, fileName);
+  writeFileSync(filePath, Buffer.from(result.data, 'base64'));
+  screenshotByName.set(fileName, `docs/verify/capability-matrix/${fileName}`);
+}
+
 async function sampleCanvas(client) {
   const sample = await client.evaluate(`(() => {
     const canvas = document.querySelector('[data-testid="warp-tunnel-canvas"]');
@@ -875,6 +912,13 @@ async function inspectHome(client, viewport) {
     const featured = document.querySelector('#featured-title')?.closest('section');
     const capability = document.querySelector('#capabilities-title');
     const facts = document.querySelector('#facts-title');
+    const capabilityMatrix = document.querySelector('[data-capability-matrix]');
+    const capabilityCards = Array.from(document.querySelectorAll('[data-capability-card]'));
+    const capabilityMatrixRect = capabilityMatrix?.getBoundingClientRect();
+    const capabilityCardRects = capabilityCards.map((card) => card.getBoundingClientRect());
+    const capabilityTolerance = 2;
+    const desktopCapabilityLayout = Boolean(capabilityMatrixRect && capabilityCardRects.length === 5 && Math.abs(capabilityCardRects[0].top - capabilityCardRects[1].top) <= capabilityTolerance && capabilityCardRects[0].right < capabilityCardRects[1].left && Math.abs(capabilityCardRects[4].width - capabilityMatrixRect.width) <= capabilityTolerance);
+    const mobileCapabilityLayout = Boolean(capabilityMatrixRect && capabilityCardRects.length === 5 && capabilityCardRects.every((rect) => Math.abs(rect.width - capabilityMatrixRect.width) <= capabilityTolerance) && capabilityCardRects.every((rect, index) => index === 0 || rect.top > capabilityCardRects[index - 1].top));
     const roleVisible = Array.from(document.querySelectorAll('p')).some(
       (element) => element.textContent?.trim() === ${JSON.stringify(publicContent.profile.role)}
         && visible(element),
@@ -895,6 +939,8 @@ async function inspectHome(client, viewport) {
       canvasExists: canvas instanceof HTMLCanvasElement,
       canvasPointerNone: canvas ? getComputedStyle(canvas).pointerEvents === 'none' : false,
       canvasSized: Boolean(canvasRect && canvasRect.width >= innerWidth && canvasRect.height >= innerHeight),
+      capabilityCardCount: capabilityCardRects.length,
+      capabilityLayoutValid: innerWidth > 760 ? desktopCapabilityLayout : mobileCapabilityLayout,
       capabilityVisible: visible(capability),
       chatCount: document.querySelectorAll('[data-testid="morse-chat"]').length,
       chatEmbedded: chat?.getAttribute('data-variant') === 'embedded',
@@ -922,6 +968,8 @@ async function inspectHome(client, viewport) {
   check(state.chatCount === 1 && state.chatEmbedded, `${viewportName}:home:embedded-chat-count`);
   check(state.featuredCount === 2, `${viewportName}:home:featured-count`);
   check(state.capabilityVisible, `${viewportName}:home:capability-matrix`);
+  check(state.capabilityCardCount === 5, `${viewportName}:home:capability-card-count`);
+  check(state.capabilityLayoutValid, `${viewportName}:home:capability-layout`);
   check(state.factsVisible, `${viewportName}:home:development-facts`);
   check(state.nextBandBelowFold, `${viewportName}:home:next-band-entered-first-viewport`);
   check(state.headerFixed && state.mainClearsHeader, `${viewportName}:home:fixed-header-overlap`);
@@ -961,6 +1009,12 @@ async function inspectHome(client, viewport) {
     `${viewportName}:home:scroll-reveal`,
   );
   await delay(120);
+  await captureElementScreenshot(
+    client,
+    viewportName,
+    'capabilities',
+    '[data-capability-section]',
+  );
 
   const canvas = await sampleCanvas(client);
   if (!canvas) {
@@ -1674,6 +1728,9 @@ const screenshotOrder = [
   's9-home-mobile-390-reduced.png',
   's9-works-desktop-1440x900.png',
   's9-works-mobile-390x844.png',
+  'capability-matrix-desktop-1440.png',
+  'capability-matrix-mobile-390.png',
+  'capability-matrix-mobile-390-reduced.png',
 ];
 const screenshots = screenshotOrder.flatMap((fileName) => (
   screenshotByName.has(fileName) ? [screenshotByName.get(fileName)] : []
