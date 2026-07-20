@@ -4,10 +4,19 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**S11-5G WARP_TUNNEL_PRODUCTION_OBSERVED / LIMITED_LAUNCH**
+**S11-5H CHAT_PROVIDER_FAILOVER_PRODUCTION_OBSERVED / LIMITED_LAUNCH**
 
 ## next_allowed_pointer
-当前生产实例运行 `44ed094`，首页 Warp Tunnel、五项目公开状态、详情、FAQ 和知识均已上线。公网双宽、知识摄取、RAG、live/ready、release smoke 及生产 Lighthouse 移动端/桌面端 99 均已观察通过。生产硬化余项仍包括监控、托管备份与恢复、edge 流量限制、真实 Bocha/Feishu smoke、moderate advisory 处置和更多国内网络可达性复核；关闭前不得宣称完整 `ONLINE_READY`。
+当前生产实例运行 `741ddad`，三节点 Chat 容灾、首页 Warp Tunnel、五项目公开状态、详情、FAQ 和知识均已上线。公网健康、Provider 接管、知识摄取、RAG、release smoke 及生产 Lighthouse 移动端/桌面端 99 均已观察通过。生产硬化余项仍包括监控、托管备份与恢复、edge 流量限制、真实 Bocha/Feishu smoke、moderate advisory 处置和更多国内网络可达性复核；关闭前不得宣称完整 `ONLINE_READY`。
+
+## Three-node Chat Provider production release (2026-07-20)
+
+- Mode: `DIRECT / CRITICAL / DEPLOYED`; status: `OBSERVED / LIMITED_LAUNCH`。
+- Release: `741ddad` 已进入 `origin/master`，并从该精确 Git 提交归档到 `/opt/revolution/releases/741ddad/revolution`；`/opt/revolution/current` 及 Web、Worker、Edge working directory 均指向该 release，旧 release 与持久卷保留。
+- Runtime: `gpt-5.6-terra`、Responses、high reasoning；主节点为 `sub.exellome.online`，备用 1 为 `worldclawpro.ai`，备用 2 为 `ai.sandongs.com`。节点只在零正文时切换，部分输出和访客停止均不切换；Embedding 保持独立。
+- Verification: focused 59/59、全量 609/609、`npm run chat:eval` 54/54 且 external calls 0、生产构建 21 routes。切流前主节点、强制主节点失败、强制前两节点失败三种真实调用均 PASS；切流后运行 Web 容器主节点复验 PASS，共 4 次调用，均有正文、完整终态和 usage，未保存回答正文或原始 payload。
+- Production: migration 001/002、grants、摄取 0 更新/40 documents 跳过；公网 live/ready/health、首页、作品页和 release smoke 均通过。Web、Worker、Edge restart count 均为 0，近 15 分钟错误关键词计数均为 0。
+- Boundary: 未创建生产邀请码明文，未调用 Bocha/Feishu，未清理旧 release 或持久卷；完整邀请码到 SSE/DB 的浏览器对话未在本轮重新创建。
 
 ## Homepage Warp Tunnel production release (2026-07-20)
 
