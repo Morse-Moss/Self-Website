@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 
 import {
   ProductionConfigError,
@@ -27,12 +27,19 @@ const validAdminPasswordHash = [
   Buffer.alloc(64).toString('base64url'),
 ].join('$');
 
+const providerKeyDirectory = mkdtempSync(path.join(os.tmpdir(), 'revolution-provider-key-'));
+const providerKeyFile = path.join(providerKeyDirectory, 'provider.key');
+writeFileSync(providerKeyFile, `${Buffer.alloc(32, 13).toString('base64')}\n`, 'utf8');
+after(() => rmSync(providerKeyDirectory, { force: true, recursive: true }));
+
 const webEnv = {
   ...databaseEnv,
   MORSE_PUBLIC_ORIGIN: 'https://morse.example',
   MORSE_ADMIN_ALLOWED_ORIGIN: 'https://morse.example',
   MORSE_ADMIN_PASSWORD_HASH: validAdminPasswordHash,
   MORSE_INVITE_FINGERPRINT_SECRET: 'invite-fingerprint-secret-32-bytes',
+  MORSE_PROVIDER_CONFIG_KEY_FILE: providerKeyFile,
+  MORSE_PROVIDER_CONFIG_KEY_VERSION: '1',
   OPENAI_API_KEY: 'test-production-chat-key',
   OPENAI_BASE_URL: 'https://gateway.example/v1',
   OPENAI_CHAT_MODEL: 'gpt-production',
@@ -261,6 +268,19 @@ test('production preflight fails closed with stable codes and never echoes value
     ['PRODUCTION_LOCAL_SMOKE_FORBIDDEN', {
       ...webEnv,
       MORSE_LOCAL_RELEASE_SMOKE: 'true',
+    }],
+    ['PRODUCTION_PROVIDER_MANAGEMENT_CONFIG_INVALID', {
+      ...webEnv,
+      MORSE_PROVIDER_CONFIG_KEY_FILE: undefined,
+    }],
+    ['PRODUCTION_PROVIDER_MANAGEMENT_CONFIG_INVALID', {
+      ...webEnv,
+      MORSE_PROVIDER_CONFIG_KEY_FILE: undefined,
+      MORSE_PROVIDER_CONFIG_KEY: Buffer.alloc(32, 13).toString('base64'),
+    }],
+    ['PRODUCTION_PROVIDER_MOCK_FORBIDDEN', {
+      ...webEnv,
+      MORSE_PROVIDER_MOCK_ORIGIN: 'http://127.0.0.1:4010',
     }],
   ] as const;
 

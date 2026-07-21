@@ -10,6 +10,9 @@ const customerServiceMigrationPath = path.resolve(
 const privateResumeMigrationPath = path.resolve(
   'db/migrations/003_private_resume.sql',
 );
+const adminApiMigrationPath = path.resolve(
+  'db/migrations/004_admin_api_management.sql',
+);
 
 test('M3 schema provides pgvector retrieval and short-lived access storage', () => {
   const sql = fs.readFileSync(schemaPath, 'utf8');
@@ -107,4 +110,34 @@ test('private resume migration declares an isolated four-table domain', () => {
     sql,
     /REFERENCES\s+(?:invite_codes|access_sessions|conversations|conversation_messages)/i,
   );
+});
+
+test('admin API management migration declares the versioned encrypted routing domain', () => {
+  assert.equal(
+    fs.existsSync(adminApiMigrationPath),
+    true,
+    'db/migrations/004_admin_api_management.sql must exist',
+  );
+  const sql = fs.readFileSync(adminApiMigrationPath, 'utf8');
+
+  for (const table of [
+    'ai_connections',
+    'ai_model_presets',
+    'ai_route_revisions',
+    'ai_route_targets',
+    'ai_runtime_state',
+    'ai_config_events',
+    'interaction_provider_attempts',
+  ]) {
+    assert.match(sql, new RegExp(`CREATE TABLE ${table}`, 'i'));
+  }
+
+  assert.match(sql, /UNIQUE\s*\(series_id,\s*version\)/i);
+  assert.match(sql, /api_key_ciphertext[\s\S]*api_key_iv[\s\S]*api_key_tag/i);
+  assert.match(sql, /DEFERRABLE INITIALLY DEFERRED/i);
+  assert.match(sql, /position[\s\S]*BETWEEN 0 AND 5/i);
+  assert.match(sql, /INSERT INTO ai_runtime_state[\s\S]*VALUES\s*\(true,\s*NULL,\s*0\)/i);
+  assert.match(sql, /ON DELETE CASCADE/i);
+  assert.match(sql, /ALTER TABLE usage_events[\s\S]*estimated_cost_usd DROP NOT NULL/i);
+  assert.doesNotMatch(sql, /DROP TABLE|DROP COLUMN/i);
 });

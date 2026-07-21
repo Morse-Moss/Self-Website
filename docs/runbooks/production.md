@@ -30,7 +30,7 @@ npm run production:worker
 
 | 角色 | 必需边界 | 不需要的权限或配置 |
 |---|---|---|
-| Web | runtime DB、HTTPS public/admin origin、Admin 与 invite secrets、Chat/Embedding 配置；启用私密简历时需要简历密文卷和加密 Secret | DDL、建库、Feishu webhook |
+| Web | runtime DB、HTTPS public/admin origin、Admin 与 invite secrets、Chat/Embedding 配置、Provider 配置主密钥文件；启用私密简历时需要简历密文卷和加密 Secret | DDL、建库、Feishu webhook |
 | Worker | runtime DB、显式 `MORSE_ALERTS_ENABLED`、简历密文卷；启用告警时需要 Feishu webhook | Chat/Embedding、Admin 凭据、简历加密密钥、DDL |
 | Migration | migration DB 凭据与 TLS | Provider、Admin、Feishu |
 | Ingest | ingest DB、Embedding 配置与 TLS | Chat、Admin、Feishu |
@@ -49,6 +49,7 @@ npm run production:worker
 - `MORSE_ALERTS_ENABLED` 必须显式为 `true` 或 `false`。关闭告警时 Worker 仍执行 retention cleanup。
 - Chat 主节点使用 `OPENAI_API_KEY` / `OPENAI_BASE_URL`；最多两个备用节点分别使用完整的 `OPENAI_FALLBACK_1_*` 和 `OPENAI_FALLBACK_2_*` 成对配置。生产备用 URL 必须是无凭据 HTTPS URL，缺 key 或缺 URL 均 fail closed。
 - 三个 Chat 节点共享 `OPENAI_CHAT_MODEL`、`OPENAI_CHAT_PROTOCOL`、`OPENAI_REASONING_EFFORT` 和兼容 User-Agent。切换顺序固定为主节点、备用 1、备用 2，只在尚未输出正文时发生；已有部分回答或访客停止后不再切换。每个节点仍受单节点总超时约束，整次切换共享“单节点总超时 × 节点数”的上限。Embedding 继续使用独立配置。
+- 数据库 Provider 配置使用独立 32-byte 随机主密钥执行 AES-256-GCM 加密。生产只接受 `MORSE_PROVIDER_CONFIG_KEY_FILE` 和正整数 `MORSE_PROVIDER_CONFIG_KEY_VERSION`；直接值 `MORSE_PROVIDER_CONFIG_KEY`、mock origin 和私网 HTTP Provider override 均 fail closed。该 Secret 只挂载给 Web，Worker、Migration、Ingest 与 edge 不得读取。
 - 私密简历默认使用 `MORSE_RESUME_ENABLED=false`。生产首次发布必须保持关闭，完成 migration `003`、私有卷初始化、最小 grants、健康检查和回滚检查后，才可在单独授权下启用。
 - 启用私密简历时，Web 还必须获得 `MORSE_RESUME_STORAGE_DIR`、`MORSE_RESUME_ENCRYPTION_KEY_FILE`、`MORSE_RESUME_KEY_VERSION`、`MORSE_RESUME_FINGERPRINT_SECRET`、`MORSE_RESUME_TRUSTED_PROXY_HOPS` 和独立 `MORSE_RESUME_COOKIE`。生产禁止使用直接值 `MORSE_RESUME_ENCRYPTION_KEY`；加密密钥只通过名为 `resume_encryption_key` 的部署 Secret 文件挂载给 Web。
 - Worker 只挂载简历密文卷用于保留期清理，不读取加密密钥。聊天、Embedding、Search、Ingest、Migration 和 edge 均不得获得简历文件或密钥。
@@ -60,7 +61,7 @@ npm run production:worker
 
 1. 创建受限网络内的 PostgreSQL/pgvector，并完成 TLS 与角色授权。升级现有实例时先生成并校验数据库备份。
 2. 在 `MORSE_RESUME_ENABLED=false` 下初始化权限为 `0700` 的简历密文卷；不要上传 PDF。
-3. 使用 migration 角色执行 `npm run production:migrate`，核对 migration `003` checksum，再执行最小 grants。
+3. 先生成并权限化 Provider 配置主密钥文件，再使用 migration 角色执行 `npm run production:migrate`，核对 migration `003`/`004` checksum，执行最小 grants，并以 `deploy/postgres/verify-ai-config-runtime.sql` 验证 runtime 权限。
 4. 启动并验证生产 Embedding 服务。
 5. 使用 ingest 角色执行 `npm run production:ingest`；重复执行应全量跳过。
 6. 保持私密简历关闭，启动单副本 Web 和单实例 Worker，检查 `/api/health/live`、`/api/health/ready` 和公开页面。
@@ -129,6 +130,7 @@ npm run production:worker
 - 每次发布记录不可变镜像 digest，保留上一个已观察版本。
 - 应用配置或行为异常且 schema 兼容时，将 Web/Worker 回滚到上一 digest，再执行 live/ready 和文本 smoke。
 - migration 只追加，不提供 down migration。若新版本已改变 schema 且旧镜像不兼容，禁止盲目回滚；停止发布并按对应 migration 的前向修复方案恢复。
+- migration `004` 应用后，回滚下限是仍能识别 `004` manifest、`ai_runtime_state` 单例和新增可空列的 Stage 1 兼容镜像；不得切回只认识 001-003 的二进制，也不得删除 Provider 配置表或伪造 migration registry。
 - 私密简历异常时先设置 `MORSE_RESUME_ENABLED=false` 并只重启 Web/Worker；保留 migration `003`、密文卷和 Secret，不执行 down migration或删除数据。确认旧镜像忽略新增表后才可切回上一冻结版本。
 - 不从脏工作树构建或部署；发布必须指向已冻结 commit。
 

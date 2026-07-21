@@ -89,7 +89,7 @@ test('migration runner bootstraps an empty database in order and is repeatable',
       );
       return { migrations: migrations.rows, tables: tables.rows };
     });
-    assert.deepEqual(firstRows.migrations.map((row) => row.version), ['001', '002', '003']);
+    assert.deepEqual(firstRows.migrations.map((row) => row.version), ['001', '002', '003', '004']);
     assert.ok(firstRows.migrations.every((row) => /^[0-9a-f]{64}$/.test(row.checksum)));
     assert.deepEqual(firstRows.tables.map((row) => row.name), [
       'interaction_turns',
@@ -141,6 +141,7 @@ test('two migration runners serialize an empty database', async () => {
         { version: '001', count: 1 },
         { version: '002', count: 1 },
         { version: '003', count: 1 },
+        { version: '004', count: 1 },
       ]);
     });
   } finally {
@@ -216,7 +217,7 @@ test('migration runner baselines a complete 001 database and preserves old data'
         "SELECT id FROM conversation_messages WHERE conversation_id = $1 AND content = 'legacy history'",
         [conversationId],
       );
-      assert.deepEqual(migrations.rows.map((row) => row.version), ['001', '002', '003']);
+    assert.deepEqual(migrations.rows.map((row) => row.version), ['001', '002', '003', '004']);
       assert.equal(invite.rowCount, 1);
       assert.equal(document.rowCount, 1);
       assert.equal(session.rowCount, 1);
@@ -261,6 +262,7 @@ test('two migration runners serialize baseline registration on a complete 001 da
         { version: '001', count: 1 },
         { version: '002', count: 1 },
         { version: '003', count: 1 },
+        { version: '004', count: 1 },
       ]);
     });
   } finally {
@@ -416,6 +418,10 @@ test('migration runner rejects a partial 002 schema after 001 was registered', a
       path.join(initialOnlyDirectory, '003_private_resume.sql'),
       { force: true },
     );
+    await fs.rm(
+      path.join(initialOnlyDirectory, '004_admin_api_management.sql'),
+      { force: true },
+    );
     const initial = await runMigrations(database.connectionString, initialOnlyDirectory);
     assert.equal(initial.code, 0, initial.stderr);
     await withPostgresClient(database.connectionString, async (client) => {
@@ -488,6 +494,237 @@ test('S10 analytics tables do not reference 12-hour runtime tables and usage sta
         { column_name: 'input_tokens', is_nullable: 'YES' },
         { column_name: 'output_tokens', is_nullable: 'YES' },
       ]);
+    });
+  } finally {
+    await database.dispose();
+  }
+});
+
+test('migration 004 upgrades a populated 001-003 database without rewriting existing data', async () => {
+  const database = await createDisposablePostgresDatabase();
+  const through003 = await copyMigrations();
+  const turnId = randomUUID();
+  const inviteId = randomUUID();
+  try {
+    await fs.rm(path.join(through003, '004_admin_api_management.sql'), { force: true });
+    const initial = await runMigrations(database.connectionString, through003);
+    assert.equal(initial.code, 0, initial.stderr);
+    await withPostgresClient(database.connectionString, async (client) => {
+      await client.query(
+        `INSERT INTO interaction_turns
+          (id, access_session_id, workflow, audience_intent, question, status, delete_after)
+         VALUES ($1, $2, 'chat', 'general', 'preserve interaction', 'completed', now() + interval '10 days')`,
+        [turnId, randomUUID()],
+      );
+      await client.query(
+        `INSERT INTO resume_invites
+          (id, code_hash, trusted_person_note, expires_at, created_by_admin_session)
+         VALUES ($1, $2, 'preserve invite', now() + interval '1 day', $3)`,
+        [inviteId, 'f'.repeat(64), randomUUID()],
+      );
+    });
+
+    const upgraded = await runMigrations(database.connectionString);
+    assert.equal(upgraded.code, 0, upgraded.stderr);
+    await withPostgresClient(database.connectionString, async (client) => {
+      const versions = await client.query<{ version: string }>(
+        'SELECT version FROM schema_migrations ORDER BY version',
+      );
+      const interaction = await client.query<{ question: string }>(
+        'SELECT question FROM interaction_turns WHERE id = $1',
+        [turnId],
+      );
+      const invite = await client.query<{ trusted_person_note: string }>(
+        'SELECT trusted_person_note FROM resume_invites WHERE id = $1',
+        [inviteId],
+      );
+      assert.deepEqual(versions.rows.map((row) => row.version), ['001', '002', '003', '004']);
+      assert.deepEqual(interaction.rows, [{ question: 'preserve interaction' }]);
+      assert.deepEqual(invite.rows, [{ trusted_person_note: 'preserve invite' }]);
+    });
+  } finally {
+    await fs.rm(through003, { force: true, recursive: true });
+    await database.dispose();
+  }
+});
+
+test('migration 004 enforces singleton runtime state and complete one-to-six routes', async () => {
+  const database = await createDisposablePostgresDatabase();
+  try {
+    const result = await runMigrations(database.connectionString);
+    assert.equal(result.code, 0, result.stderr);
+    await withPostgresClient(database.connectionString, async (client) => {
+      const runtime = await client.query<{ active_route_revision_id: string | null; lock_version: number }>(
+        `SELECT active_route_revision_id, lock_version::integer AS lock_version
+           FROM ai_runtime_state WHERE id = true`,
+      );
+      assert.deepEqual(runtime.rows, [{ active_route_revision_id: null, lock_version: 0 }]);
+      await assert.rejects(
+        client.query('INSERT INTO ai_runtime_state (id, lock_version) VALUES (false, 0)'),
+        (error: unknown) => typeof error === 'object' && error !== null
+          && 'code' in error && error.code === '23514',
+      );
+
+      await client.query('BEGIN');
+      try {
+        await client.query(
+          `INSERT INTO ai_route_revisions
+            (id, revision_number, activation_kind, activated_at, actor_admin_session_id)
+           VALUES ($1, 1, 'activate', now(), $2)`,
+          [randomUUID(), randomUUID()],
+        );
+        await assert.rejects(
+          client.query('COMMIT'),
+          (error: unknown) => typeof error === 'object' && error !== null
+            && 'code' in error && error.code === '23514',
+        );
+      } finally {
+        await client.query('ROLLBACK');
+      }
+    });
+  } finally {
+    await database.dispose();
+  }
+});
+
+test('migration 004 protects audit retention and provider attempt attribution', async () => {
+  const database = await createDisposablePostgresDatabase();
+  try {
+    const result = await runMigrations(database.connectionString);
+    assert.equal(result.code, 0, result.stderr);
+    await withPostgresClient(database.connectionString, async (client) => {
+      const event = await client.query<{ id: string }>(
+        `INSERT INTO ai_config_events (event_type, result_code, status)
+         VALUES ('connection_created', 'AI_CONFIG_CREATED', 'succeeded') RETURNING id::text`,
+      );
+      await assert.rejects(
+        client.query('UPDATE ai_config_events SET result_code = $2 WHERE id = $1', [
+          event.rows[0].id,
+          'AI_CONFIG_REWRITTEN',
+        ]),
+        (error: unknown) => typeof error === 'object' && error !== null
+          && 'code' in error && error.code === '23514',
+      );
+      await assert.rejects(
+        client.query('DELETE FROM ai_config_events WHERE id = $1', [event.rows[0].id]),
+        (error: unknown) => typeof error === 'object' && error !== null
+          && 'code' in error && error.code === '23514',
+      );
+
+      const turnId = randomUUID();
+      await client.query(
+        `INSERT INTO interaction_turns
+          (id, access_session_id, workflow, audience_intent, question, status, delete_after)
+         VALUES ($1, $2, 'chat', 'general', 'attempt constraints', 'completed', now() + interval '10 days')`,
+        [turnId, randomUUID()],
+      );
+      const baseAttempt = [
+        turnId,
+        0,
+        'environment',
+        'Environment',
+        'Environment model',
+        'gpt-environment',
+        'responses',
+        'd'.repeat(64),
+        'completed',
+      ];
+      await assert.rejects(
+        client.query(
+          `INSERT INTO interaction_provider_attempts
+            (interaction_turn_id, attempt_index, source_type, connection_version_id,
+             connection_display_name, model_display_name, model_id, protocol,
+             config_digest, status, completed_at)
+           VALUES ($1,$2,$3,$10,$4,$5,$6,$7,$8,$9,now())`,
+          [...baseAttempt, randomUUID()],
+        ),
+        (error: unknown) => typeof error === 'object' && error !== null
+          && 'code' in error && error.code === '23514',
+      );
+      await assert.rejects(
+        client.query(
+          `INSERT INTO interaction_provider_attempts
+            (interaction_turn_id, attempt_index, source_type,
+             connection_display_name, model_display_name, model_id, protocol,
+             config_digest, status, cost_complete, completed_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,true,now())`,
+          baseAttempt,
+        ),
+        (error: unknown) => typeof error === 'object' && error !== null
+          && 'code' in error && error.code === '23514',
+      );
+      await assert.rejects(
+        client.query(
+          `INSERT INTO interaction_provider_attempts
+            (interaction_turn_id, attempt_index, source_type,
+             connection_display_name, model_display_name, model_id, protocol,
+             config_digest, status)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [baseAttempt[0], 1, ...baseAttempt.slice(2)],
+        ),
+        (error: unknown) => typeof error === 'object' && error !== null
+          && 'code' in error && error.code === '23514',
+      );
+      await assert.rejects(
+        client.query(
+          `INSERT INTO interaction_provider_attempts
+            (interaction_turn_id, attempt_index, source_type,
+             connection_display_name, model_display_name, model_id, protocol,
+             config_digest, status, usage_complete, completed_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,true,now())`,
+          [baseAttempt[0], 2, ...baseAttempt.slice(2)],
+        ),
+        (error: unknown) => typeof error === 'object' && error !== null
+          && 'code' in error && error.code === '23514',
+      );
+      await client.query(
+        `INSERT INTO interaction_provider_attempts
+          (interaction_turn_id, attempt_index, source_type,
+           connection_display_name, model_display_name, model_id, protocol,
+           config_digest, status, usage_complete, input_tokens, output_tokens,
+           cost_complete, completed_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,true,10,5,false,now())`,
+        baseAttempt,
+      );
+      await assert.rejects(
+        client.query(
+          `INSERT INTO usage_events
+            (provider, model, input_tokens, output_tokens, estimated_cost_usd,
+             interaction_turn_id, cost_complete)
+           VALUES ('openai-compatible', 'gpt-environment', 10, 5, NULL, $1, false)`,
+          [turnId],
+        ),
+        (error: unknown) => typeof error === 'object' && error !== null
+          && 'code' in error && error.code === '23514',
+      );
+      await assert.rejects(
+        client.query(
+          `INSERT INTO usage_events
+            (provider, model, input_tokens, output_tokens, estimated_cost_usd,
+             interaction_turn_id, provider_attempt_index, cost_complete)
+           VALUES ('openai-compatible', 'gpt-environment', 10, 5, NULL, $1, 5, false)`,
+          [turnId],
+        ),
+        (error: unknown) => typeof error === 'object' && error !== null
+          && 'code' in error && error.code === '23503',
+      );
+      await assert.rejects(
+        client.query(
+          `INSERT INTO usage_events
+            (provider, model, input_tokens, output_tokens, estimated_cost_usd,
+             interaction_turn_id, provider_attempt_index, cost_complete)
+           VALUES ('openai-compatible', 'gpt-environment', 10, 5, NULL, $1, 0, true)`,
+          [turnId],
+        ),
+        (error: unknown) => typeof error === 'object' && error !== null
+          && 'code' in error && error.code === '23514',
+      );
+      const usageDefault = await client.query<{ column_default: string | null }>(
+        `SELECT column_default FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'usage_events'
+            AND column_name = 'estimated_cost_usd'`,
+      );
+      assert.deepEqual(usageDefault.rows, [{ column_default: null }]);
     });
   } finally {
     await database.dispose();

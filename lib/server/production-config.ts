@@ -13,6 +13,7 @@ import {
 } from './admin-auth.ts';
 import { loadWorkerConfig, WorkerConfigError } from './worker-config.ts';
 import { loadResumeConfig } from './resume-config.ts';
+import { loadAiConfigKey } from './ai-config.ts';
 
 export type ProductionRole = DatabaseProcessRole;
 type Env = Record<string, string | undefined>;
@@ -141,6 +142,18 @@ function validateWeb(env: Env): void {
   }
   if ((env.MORSE_INVITE_FINGERPRINT_SECRET?.trim().length ?? 0) < 32) {
     fail('PRODUCTION_INVITE_SECRET_INVALID');
+  }
+  if (Object.entries(env).some(([name, value]) => (
+    value?.trim()
+    && name.startsWith('MORSE_PROVIDER_')
+    && (name.includes('MOCK') || name.includes('PRIVATE_HTTP'))
+  ))) {
+    fail('PRODUCTION_PROVIDER_MOCK_FORBIDDEN');
+  }
+  try {
+    loadAiConfigKey(env);
+  } catch {
+    fail('PRODUCTION_PROVIDER_MANAGEMENT_CONFIG_INVALID');
   }
   const providerBaseUrl = env.OPENAI_BASE_URL?.trim() || 'https://api.openai.com/v1';
   const fallbackPairs = [1, 2].map((index) => ({

@@ -59,8 +59,8 @@
 
 - 数据库连接与数据库 TLS 配置；
 - 管理员密码哈希、管理域名和 Session 策略；
-- `MORSE_PROVIDER_ENCRYPTION_KEY`，内容为 Base64 编码的 32 字节随机密钥；
-- `MORSE_PROVIDER_ENCRYPTION_KEY_VERSION`，首版使用明确的非空版本标识；
+- `MORSE_PROVIDER_CONFIG_KEY_FILE`，生产 Web 通过文件读取 Base64 编码的 32 字节随机密钥；development/test 可改用 `MORSE_PROVIDER_CONFIG_KEY` 直接值；
+- `MORSE_PROVIDER_CONFIG_KEY_VERSION`，首版使用明确的正整数版本；
 - 当前 `OPENAI_*` Chat 配置，作为只读环境应急线路；
 - Embedding、搜索、预算门、超时和并发等非 Provider 凭据配置。
 
@@ -243,6 +243,7 @@
 - `DELETE /api/admin/providers/models/[modelId]`：归档或删除模型；
 - `POST /api/admin/providers/[connectionId]/discover`：显式调用兼容 `/models`；
 - `POST /api/admin/providers/models/[modelId]/test`：显式真实测试；
+- `POST /api/admin/providers/runtime/environment/[targetKey]/test`：显式测试只读环境主节点或 fallback，不允许借此修改环境配置；
 - `POST /api/admin/providers/routes/activate`：原子激活或回退；
 - `GET /api/admin/providers/events`：分页读取安全审计事件。
 
@@ -278,7 +279,7 @@
 
 ### 11.2 真实测试
 
-连接测试绑定完整运行摘要，包括连接版本、Key、Base URL、模型、协议、reasoning effort、User-Agent 和输出限制。
+连接测试绑定完整运行摘要，包括连接版本、Key、Base URL、模型、协议、reasoning effort、User-Agent 和输出限制。数据库模型通过逻辑模型 ID 测试；只读环境目标通过稳定的 `primary`、`fallback-1`、`fallback-2` target key 测试，结果同样绑定环境配置摘要且不返回环境 Key。
 
 测试调用：
 
