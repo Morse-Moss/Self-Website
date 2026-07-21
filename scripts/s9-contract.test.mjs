@@ -97,6 +97,25 @@ test('S9 gallery count follows the canonical slug list', () => {
   assert.doesNotMatch(harness, /=== 4/);
 });
 
+test('S9 gallery collapse checks ignore unrelated global disclosure buttons', () => {
+  const harness = readHarness();
+  const collapseStart = harness.indexOf('async function assertAllCollapsed');
+  const collapseEnd = harness.indexOf('async function verifyExternalClickIsolation', collapseStart);
+
+  assert.notEqual(collapseStart, -1, 'assertAllCollapsed must exist');
+  assert.notEqual(collapseEnd, -1, 'assertAllCollapsed must end before external-link checks');
+  const collapseCheck = harness.slice(collapseStart, collapseEnd);
+
+  assert.match(
+    collapseCheck,
+    /document\.querySelectorAll\('\[data-project-slug\] button\[aria-expanded\]'\)/,
+  );
+  assert.doesNotMatch(
+    collapseCheck,
+    /document\.querySelectorAll\('button\[aria-expanded\]'\)/,
+  );
+});
+
 test('S9 home hero fills the first viewport before the featured band begins', () => {
   const heroStyles = readUtf8('app/styles/hero.module.css');
   const harness = readHarness();

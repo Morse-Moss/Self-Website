@@ -1263,7 +1263,7 @@ async function waitForStaleDetailsRemoved(client, viewportName, activeSlug, labe
 
 async function assertAllCollapsed(client, viewportName, label) {
   await waitFor(client, `(() => {
-    const buttons = Array.from(document.querySelectorAll('button[aria-expanded]'));
+    const buttons = Array.from(document.querySelectorAll('[data-project-slug] button[aria-expanded]'));
     return buttons.length === ${slugs.length}
       && buttons.every((button) => button.getAttribute('aria-expanded') === 'false')
       && document.querySelectorAll('[data-project-slug][data-expanded="true"]').length === 0;
