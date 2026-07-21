@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import {
   BUDGET_LEVELS,
   CHAT_AUDIENCE_INTENTS,
+  CHAT_BEHAVIOR_VERSIONS,
   CHAT_ERROR_CODES,
   CHAT_MODES,
   CHAT_PHASES,
@@ -23,6 +24,7 @@ test('chat contract exposes the exact shipped workflow and public value sets', (
     'collaboration',
     'peer',
   ]);
+  assert.deepEqual(CHAT_BEHAVIOR_VERSIONS, ['v1', 'v2']);
   assert.deepEqual(CHAT_WORKFLOWS, ['chat', 'jd_match', 'diagnosis']);
   assert.deepEqual(CHAT_PHASES, ['routing', 'knowledge', 'web', 'answering', 'handoff']);
   assert.deepEqual(CHAT_SOURCE_KINDS, ['local', 'official', 'github', 'web']);
@@ -99,6 +101,7 @@ test('public chat contracts expose no private resume capability or identifier', 
   const serialized = JSON.stringify({
     modes: CHAT_MODES,
     audienceIntents: CHAT_AUDIENCE_INTENTS,
+    behaviorVersions: CHAT_BEHAVIOR_VERSIONS,
     workflows: CHAT_WORKFLOWS,
     phases: CHAT_PHASES,
     sources: CHAT_SOURCE_KINDS,

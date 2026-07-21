@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import {
@@ -198,6 +199,71 @@ test('loadServerConfig parses kill switch, heartbeat, and fixed retention settin
     () => loadServerConfig({ ...completeEnv, MORSE_CHAT_ENABLED: 'yes' }),
     /MORSE_CHAT_ENABLED.*true.*false/,
   );
+});
+
+test('loadServerConfig parses chat v2 rollout controls with fail-closed defaults', () => {
+  const defaults = loadServerConfig(completeEnv);
+  assert.equal(defaults.chatV2Enabled, false);
+  assert.equal(defaults.chatV2CanaryPercent, 0);
+  assert.deepEqual(defaults.chatV2CanaryInviteIds, new Set());
+  assert.equal(defaults.hedgedFailoverEnabled, false);
+  assert.equal(defaults.chatSafeMode, false);
+
+  const inviteId = '22222222-2222-4222-8222-222222222222';
+  const enabled = loadServerConfig({
+    ...completeEnv,
+    MORSE_CHAT_V2_ENABLED: 'true',
+    MORSE_CHAT_V2_CANARY_PERCENT: '25',
+    MORSE_CHAT_V2_CANARY_INVITE_IDS: `${inviteId.toUpperCase()}, ${inviteId}`,
+    MORSE_CHAT_HEDGED_FAILOVER_ENABLED: 'true',
+    MORSE_CHAT_SAFE_MODE: 'true',
+  });
+  assert.equal(enabled.chatV2Enabled, true);
+  assert.equal(enabled.chatV2CanaryPercent, 25);
+  assert.deepEqual(enabled.chatV2CanaryInviteIds, new Set([inviteId]));
+  assert.equal(enabled.hedgedFailoverEnabled, true);
+  assert.equal(enabled.chatSafeMode, true);
+});
+
+test('loadServerConfig rejects invalid chat v2 rollout controls', () => {
+  for (const value of ['-1', '101', '1.5', 'not-a-number']) {
+    assert.throws(
+      () => loadServerConfig({ ...completeEnv, MORSE_CHAT_V2_CANARY_PERCENT: value }),
+      /MORSE_CHAT_V2_CANARY_PERCENT.*0.*100/,
+    );
+  }
+
+  for (const value of [
+    '22222222222242228222222222222222',
+    '22222222-2222-0222-8222-222222222222',
+    '22222222-2222-4222-7222-222222222222',
+    'not-a-uuid',
+  ]) {
+    assert.throws(
+      () => loadServerConfig({ ...completeEnv, MORSE_CHAT_V2_CANARY_INVITE_IDS: value }),
+      /MORSE_CHAT_V2_CANARY_INVITE_IDS.*UUID/,
+    );
+  }
+
+  for (const name of [
+    'MORSE_CHAT_V2_ENABLED',
+    'MORSE_CHAT_HEDGED_FAILOVER_ENABLED',
+    'MORSE_CHAT_SAFE_MODE',
+  ]) {
+    assert.throws(
+      () => loadServerConfig({ ...completeEnv, [name]: 'yes' }),
+      new RegExp(`${name}.*true.*false`),
+    );
+  }
+});
+
+test('.env.example keeps every chat v2 control disabled by default', () => {
+  const example = readFileSync(new URL('../.env.example', import.meta.url), 'utf8');
+  assert.match(example, /^MORSE_CHAT_V2_ENABLED=false$/m);
+  assert.match(example, /^MORSE_CHAT_V2_CANARY_PERCENT=0$/m);
+  assert.match(example, /^MORSE_CHAT_V2_CANARY_INVITE_IDS=$/m);
+  assert.match(example, /^MORSE_CHAT_HEDGED_FAILOVER_ENABLED=false$/m);
+  assert.match(example, /^MORSE_CHAT_SAFE_MODE=false$/m);
 });
 
 test('loadServerConfig rejects interaction retention other than ten days', () => {

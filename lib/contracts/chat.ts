@@ -12,6 +12,9 @@ export type ChatAudienceIntent = typeof CHAT_AUDIENCE_INTENTS[number];
 export const CHAT_WORKFLOWS = ['chat', 'jd_match', 'diagnosis'] as const;
 export type ChatWorkflow = typeof CHAT_WORKFLOWS[number];
 
+export const CHAT_BEHAVIOR_VERSIONS = ['v1', 'v2'] as const;
+export type ChatBehaviorVersion = typeof CHAT_BEHAVIOR_VERSIONS[number];
+
 export const CHAT_PHASES = ['routing', 'knowledge', 'web', 'answering', 'handoff'] as const;
 export type ChatPhase = typeof CHAT_PHASES[number];
 

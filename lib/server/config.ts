@@ -93,6 +93,19 @@ function booleanSetting(env: Env, name: string, fallback: boolean): boolean {
   throw new Error(`${name} must be true or false.`);
 }
 
+function uuidList(env: Env, name: string): ReadonlySet<string> {
+  const values = env[name]?.split(',').map((value) => value.trim()).filter(Boolean) ?? [];
+  const unique = new Set<string>();
+  for (const value of values) {
+    const normalized = value.toLowerCase();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(normalized)) {
+      throw new Error(`${name} must contain comma-separated canonical UUID values.`);
+    }
+    unique.add(normalized);
+  }
+  return unique;
+}
+
 function tokenRates(env: Env): TokenRates | null {
   const input = env.MORSE_INPUT_USD_PER_MILLION?.trim();
   const output = env.MORSE_OUTPUT_USD_PER_MILLION?.trim();
@@ -325,6 +338,13 @@ export function loadServerConfig(env: Env = process.env) {
   const openaiApiKey = required(env, 'OPENAI_API_KEY');
   const openaiBaseUrl = env.OPENAI_BASE_URL?.trim() || undefined;
   const search = searchSettings(env);
+  const chatV2CanaryPercent = boundedNonNegativeInteger(
+    env,
+    'MORSE_CHAT_V2_CANARY_PERCENT',
+    0,
+    100,
+  );
+  const chatV2CanaryInviteIds = uuidList(env, 'MORSE_CHAT_V2_CANARY_INVITE_IDS');
 
   return {
     ...access,
@@ -352,6 +372,11 @@ export function loadServerConfig(env: Env = process.env) {
     historyMessageLimit: positiveNumber(env, 'MORSE_HISTORY_MESSAGE_LIMIT', 12),
     retrievalLimit: positiveNumber(env, 'MORSE_RETRIEVAL_LIMIT', 5),
     chatEnabled: booleanSetting(env, 'MORSE_CHAT_ENABLED', true),
+    chatV2Enabled: booleanSetting(env, 'MORSE_CHAT_V2_ENABLED', false),
+    chatV2CanaryPercent,
+    chatV2CanaryInviteIds,
+    hedgedFailoverEnabled: booleanSetting(env, 'MORSE_CHAT_HEDGED_FAILOVER_ENABLED', false),
+    chatSafeMode: booleanSetting(env, 'MORSE_CHAT_SAFE_MODE', false),
     sseHeartbeatMs: positiveInteger(env, 'MORSE_SSE_HEARTBEAT_MS', 15_000),
     interactionRetentionDays: interactionRetentionDays(env),
     tokenRates: tokenRates(env),
