@@ -17,6 +17,8 @@ import {
 } from './workflows/diagnosis.ts';
 import { normalizeJobDescription } from './workflows/jd-match.ts';
 
+export { buildV2SystemInstructions } from './chat-prompt.ts';
+
 export type { ChatAudienceIntent, ChatMode, ChatWorkflow } from '../contracts/chat.ts';
 
 export interface NormalizedChatRequest {
