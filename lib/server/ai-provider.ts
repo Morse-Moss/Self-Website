@@ -17,6 +17,35 @@ export interface AnswerRequest {
   instructions: string;
   messages: AiMessage[];
   reasoningEffort?: AnswerReasoningEffort;
+  execution?: AnswerExecutionOptions;
+}
+
+export type ProviderAttemptEvent =
+  | { type: 'started'; attemptNo: number; providerAlias: string; launchKind: 'primary' | 'hedge' | 'failover'; startedAt: Date; startDelayMs: number }
+  | { type: 'first_byte'; attemptNo: number; providerAlias: string; firstByteMs: number }
+  | { type: 'completed' | 'failed' | 'aborted'; attemptNo: number; providerAlias: string; durationMs: number; winner: boolean; errorCode: string | null; usage: TokenUsage | null };
+
+export interface AnswerExecutionOptions {
+  executionId: string;
+  releasePolicy: 'segment' | 'complete';
+  minimumBufferCharacters: number;
+  totalTimeoutMs: number;
+  hedgingEnabled: boolean;
+  delaysMs: readonly number[];
+  acceptCandidate(text: string, complete: boolean): boolean;
+  reserveHedgedAttempt(event: Extract<ProviderAttemptEvent, { type: 'started' }>): Promise<boolean>;
+  onAttempt(event: ProviderAttemptEvent): Promise<void>;
+}
+
+export type AnswerExecutionErrorCode = 'OUTPUT_GUARD_REJECTED' | 'PROVIDER_INCOMPLETE';
+
+export class AnswerExecutionError extends Error {
+  readonly code: AnswerExecutionErrorCode;
+  constructor(code: AnswerExecutionErrorCode) {
+    super(code);
+    this.name = 'AnswerExecutionError';
+    this.code = code;
+  }
 }
 
 export type ProviderSourceType = 'database' | 'environment';
@@ -79,6 +108,7 @@ export type AnswerEvent =
       attempts?: ProviderAttempt[];
       costComplete?: boolean;
       knownCostUsd?: number | null;
+      providerAlias?: string;
       usage: TokenUsage | null;
       usageComplete?: boolean;
       winner?: ProviderWinner | null;

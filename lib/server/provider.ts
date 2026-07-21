@@ -7,10 +7,10 @@ import {
 } from './openai-provider.ts';
 import type {
   AiProvider,
-  ProviderAnswerTarget,
   ProviderTargetSnapshot,
 } from './ai-provider.ts';
 import { FailoverAiProvider } from './failover-ai-provider.ts';
+import { ProviderHealthRegistry } from './provider-health.ts';
 import { BochaSearchProvider } from './bocha-search-provider.ts';
 import type { loadServerConfig } from './config.ts';
 import {
@@ -30,6 +30,7 @@ type ProviderFactoryConfig = Pick<ServerConfig,
   | 'providerFirstByteTimeoutMs'
   | 'providerTotalTimeoutMs'
 >;
+const sharedProviderHealthRegistry = new ProviderHealthRegistry();
 
 export interface ResolvedChatTarget {
   apiKey: string;
@@ -71,7 +72,7 @@ export function createProviderFromTargets(
   }
   const policy = input.policy ?? createProviderOutboundPolicy();
   const embeddingClient = createEmbeddingClient(config);
-  const answerTargets: ProviderAnswerTarget[] = targets.map((target) => {
+  const answerTargets = targets.map((target, position) => {
     const provider = new OpenAIProvider(
       createChatClient(target, policy),
       embeddingClient,
@@ -86,14 +87,20 @@ export function createProviderFromTargets(
         totalTimeoutMs: config.providerTotalTimeoutMs,
         providerConcurrency: config.providerConcurrency,
         reasoningEffort: target.reasoningEffort,
+        outputlessMaxAttempts: targets.length > 1 ? 1 : undefined,
       },
     );
-    return { provider, snapshot: target.snapshot };
+    return {
+      alias: position === 0 ? 'primary' : `fallback-${position}`,
+      provider,
+      snapshot: target.snapshot,
+    };
   });
   return new FailoverAiProvider(
     answerTargets[0].provider,
     answerTargets,
     config.providerTotalTimeoutMs,
+    sharedProviderHealthRegistry,
   );
 }
 
