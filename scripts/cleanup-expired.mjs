@@ -72,6 +72,10 @@ export async function cleanupExpired({
       'DELETE FROM access_attempts WHERE expires_at <= $1::timestamptz',
       [cleanupNow],
     );
+    const aiConfigEvents = await client.query(
+      'DELETE FROM ai_config_events WHERE delete_after <= $1::timestamptz',
+      [cleanupNow],
+    );
     await client.query(
       `INSERT INTO resume_access_events
         (event_type, result_code, invite_id, session_id, source_ip, user_agent, device_info, created_at, delete_after)
@@ -122,6 +126,7 @@ export async function cleanupExpired({
       deletedAdminSessions: adminSessions.rowCount ?? 0,
       deletedAlertOutbox: alertOutbox.rowCount ?? 0,
       deletedAccessAttempts: accessAttempts.rowCount ?? 0,
+      deletedAiConfigEvents: aiConfigEvents.rowCount ?? 0,
       deletedResumeSessions: resumeSessions.rowCount ?? 0,
       disabledResumeInvites: resumeInvites.rowCount ?? 0,
       deletedResumeEvents: resumeEvents.rowCount ?? 0,

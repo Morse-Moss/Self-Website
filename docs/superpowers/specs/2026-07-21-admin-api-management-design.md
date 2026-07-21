@@ -2,7 +2,7 @@
 
 日期：2026-07-21
 
-状态：设计已确认，Stage 1-2 已在隔离分支本地实现
+状态：设计已确认，Stage 1-3 已在隔离分支本地实现
 
 预期实施合同：`STAGED / CRITICAL / LOCAL`
 
@@ -12,7 +12,7 @@
 
 本设计只管理 Chat Provider。Embedding、BGE、pgvector 维度、知识摄取和 RAG 数据继续由部署环境控制，不能从该页面修改。
 
-设计已确认，Stage 1 数据库、加密、存储兼容基线和 Stage 2 请求级运行路由、受控出站、failover 与终态遥测已在隔离分支本地实现并验证；Stage 3 管理 API 与 Stage 4 `/admin/api` UI 尚未实现。当前未读取真实 API Key，未执行真实 Provider 调用、生产迁移或部署。
+设计已确认，Stage 1 数据库、加密、存储兼容基线，Stage 2 请求级运行路由、受控出站、failover 与终态遥测，以及 Stage 3 安全管理 API 已在隔离分支本地实现并验证；Stage 4 `/admin/api` UI 尚未实现。当前未读取真实 API Key，只使用 fake transport 与受控 loopback Mock，未执行真实 Provider 调用、生产迁移或部署。
 
 ## 2. 当前基线与剩余问题
 
@@ -24,10 +24,12 @@
 - 每个目标只发起一次 OpenAI-compatible 网络尝试，整条路由共享总截止时间，任何正文输出后不再 failover；
 - completed、failed 与 stopped 终态在同一事务中保存每次 attempt、winner、usage 和成本完整性，重放不重复归因；
 - Embedding 与 RAG 继续只读取部署环境，不进入数据库 Chat route；
-- `/admin` 只提供对话复盘、邀请码和导出，没有 Provider 配置入口；
-- 管理 API、显式发现/测试、激活/回退和安全删除仍未实现。
+- `/admin` 仍只提供对话复盘、邀请码和导出，尚无 Provider 配置 UI；
+- `/api/admin/providers/**` 已提供严格 Session、Origin、密码复验和 no-store 合同，支持版本化配置、显式发现/测试、原子激活/回退、安全删除和审计分页；
+- Provider 操作使用管理员级全局单飞和共享每分钟三次额度，限流与激活失败以独立事务记录稳定 denied 审计；
+- 激活数据库目标会在事务内解密具体模型版本、校验主密钥并重新计算摘要，未知提交结果不会被伪记为 denied。
 
-因此，Stage 2 已具备消费不可变活动快照的运行能力，但管理员仍不能通过产品入口保存、测试、切换或删除失效线路；这些能力由 Stage 3-4 完成。
+因此，Stage 3 已具备完整服务端管理能力，但管理员仍不能通过产品页面操作；Stage 4 将完成 `/admin/api` 工作台、集成回归和视觉验收。
 
 ## 3. 已确认的产品规则
 

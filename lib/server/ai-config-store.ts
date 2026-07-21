@@ -238,6 +238,32 @@ export async function createConnectionWithModel(
   return { connectionSeriesId, connectionVersionId, modelSeriesId, modelVersionId };
 }
 
+export async function createModelForConnection(
+  client: TransactionClient,
+  connectionSeriesId: string,
+  input: ModelInput,
+  configKey: AiConfigKey,
+): Promise<{
+  connectionVersion: number;
+  modelSeriesId: string;
+  modelVersionId: string;
+}> {
+  await assertTransaction(client);
+  const current = await currentConnectionForUpdate(client, connectionSeriesId);
+  const connection = decryptConnection(current, configKey);
+  const model = normalizeModel(input);
+  const modelSeriesId = randomUUID();
+  const modelVersionId = randomUUID();
+  await insertModel(client, connection, model, configKey, {
+    connectionVersionId: current.id,
+    id: modelVersionId,
+    previousVersionId: null,
+    seriesId: modelSeriesId,
+    version: 1,
+  });
+  return { connectionVersion: current.version, modelSeriesId, modelVersionId };
+}
+
 async function currentConnectionForUpdate(
   client: Queryable,
   seriesId: string,
@@ -376,15 +402,64 @@ export async function createModelVersion(
   return { modelVersion, modelVersionId };
 }
 
+export interface ResolvedModelRuntime {
+  apiKey: string;
+  connection: { baseUrl: string; displayName: string; id: string; userAgent: string | null; version: number };
+  model: ModelInput & { configDigest: string; id: string; seriesId: string; version: number };
+}
+
+type ModelRuntimeRow = ModelRow & ConnectionRow & {
+  connection_display_name: string;
+  connection_id: string;
+  connection_series_id: string;
+  connection_version: number;
+};
+
+function resolvedModelRuntime(row: ModelRuntimeRow, configKey: AiConfigKey): ResolvedModelRuntime {
+  const connectionRow: ConnectionRow = {
+    ...row,
+    display_name: row.connection_display_name,
+    id: row.connection_id,
+    series_id: row.connection_series_id,
+    version: row.connection_version,
+  };
+  const connection = decryptConnection(connectionRow, configKey);
+  const model: ModelInput = {
+    displayName: row.display_name,
+    inputUsdPerMillion: row.input_usd_per_million,
+    maxOutputTokens: row.max_output_tokens,
+    modelId: row.model_id,
+    outputUsdPerMillion: row.output_usd_per_million,
+    protocol: row.protocol,
+    reasoningEffort: row.reasoning_effort,
+  };
+  if (runtimeDigest(connection, model, configKey.key) !== row.config_digest) {
+    throw new AiConfigError('AI_CONFIG_SECRET_UNAVAILABLE');
+  }
+  return {
+    apiKey: connection.apiKey,
+    connection: {
+      baseUrl: connection.baseUrl,
+      displayName: connection.displayName,
+      id: connectionRow.id,
+      userAgent: connection.userAgent,
+      version: connectionRow.version,
+    },
+    model: {
+      ...model,
+      configDigest: row.config_digest,
+      id: row.id,
+      seriesId: row.series_id,
+      version: row.version,
+    },
+  };
+}
+
 export async function resolveModelRuntime(
   client: Queryable,
   modelSeriesId: string,
   configKey: AiConfigKey,
-): Promise<{
-  apiKey: string;
-  connection: { baseUrl: string; displayName: string; id: string; userAgent: string | null; version: number };
-  model: ModelInput & { configDigest: string; id: string; seriesId: string; version: number };
-}> {
+): Promise<ResolvedModelRuntime> {
   const result = await client.query<ModelRow & ConnectionRow>(
     `SELECT m.id, m.series_id, m.version, m.connection_version_id,
             m.display_name, m.model_id, m.protocol, m.reasoning_effort,
@@ -401,44 +476,36 @@ export async function resolveModelRuntime(
       ORDER BY m.version DESC LIMIT 1`,
     [modelSeriesId],
   );
-  const row = result.rows[0] as (ModelRow & ConnectionRow & {
-    connection_display_name: string;
-    connection_id: string;
-    connection_series_id: string;
-    connection_version: number;
-  }) | undefined;
+  const row = result.rows[0] as ModelRuntimeRow | undefined;
   if (!row) throw new AiConfigError('AI_CONFIG_NOT_FOUND');
-  const connectionRow: ConnectionRow = {
-    ...row,
-    display_name: row.connection_display_name,
-    id: row.connection_id,
-    series_id: row.connection_series_id,
-    version: row.connection_version,
-  };
-  const connection = decryptConnection(connectionRow, configKey);
-  return {
-    apiKey: connection.apiKey,
-    connection: {
-      baseUrl: connection.baseUrl,
-      displayName: connection.displayName,
-      id: connectionRow.id,
-      userAgent: connection.userAgent,
-      version: connectionRow.version,
-    },
-    model: {
-      configDigest: row.config_digest,
-      displayName: row.display_name,
-      id: row.id,
-      inputUsdPerMillion: row.input_usd_per_million,
-      maxOutputTokens: row.max_output_tokens,
-      modelId: row.model_id,
-      outputUsdPerMillion: row.output_usd_per_million,
-      protocol: row.protocol,
-      reasoningEffort: row.reasoning_effort,
-      seriesId: row.series_id,
-      version: row.version,
-    },
-  };
+  return resolvedModelRuntime(row, configKey);
+}
+
+export async function resolveModelVersionRuntime(
+  client: TransactionClient,
+  modelVersionId: string,
+  configKey: AiConfigKey,
+): Promise<ResolvedModelRuntime> {
+  await assertTransaction(client);
+  const result = await client.query<ModelRuntimeRow>(
+    `SELECT m.id, m.series_id, m.version, m.connection_version_id,
+            m.display_name, m.model_id, m.protocol, m.reasoning_effort,
+            m.max_output_tokens, m.input_usd_per_million::text,
+            m.output_usd_per_million::text, m.config_digest,
+            c.id AS connection_id, c.series_id AS connection_series_id,
+            c.version AS connection_version, c.display_name AS connection_display_name,
+            c.base_url, c.user_agent, c.api_key_ciphertext, c.api_key_iv,
+            c.api_key_tag, c.key_version
+       FROM ai_model_presets m
+       JOIN ai_connections c ON c.id = m.connection_version_id
+      WHERE m.id = $1 AND m.deleted_at IS NULL
+        AND c.deleted_at IS NULL AND c.secret_destroyed_at IS NULL
+      FOR UPDATE OF m, c`,
+    [modelVersionId],
+  );
+  const row = result.rows[0];
+  if (!row) throw new AiConfigError('AI_CONFIG_TARGET_DELETED');
+  return resolvedModelRuntime(row, configKey);
 }
 
 export async function listAiConfigCatalog(client: Queryable): Promise<{

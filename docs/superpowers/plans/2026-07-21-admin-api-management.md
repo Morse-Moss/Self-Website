@@ -489,6 +489,7 @@ state: CONTRACT
 preset: null
 scope:
   owned:
+    - lib/server/ai-config-store.ts
     - lib/server/admin-provider-config.ts
     - lib/server/provider-config-input.ts
     - app/api/admin/_shared.ts
@@ -499,6 +500,9 @@ scope:
     - tests/admin-provider-api-contract.test.ts
     - tests/operations-scripts.test.ts
     - tests/worker.test.ts
+    - docs/portfolio-blueprint.md
+    - docs/superpowers/specs/2026-07-21-admin-api-management-design.md
+    - docs/superpowers/plans/2026-07-21-admin-api-management.md
   forbidden:
     - visitor-facing model selection
     - arbitrary headers or arbitrary HTTP methods
@@ -523,13 +527,15 @@ verification:
     - node --env-file-if-exists=.env.local --test tests/provider-config-input.test.ts tests/admin-provider-integration.test.ts tests/admin-provider-api-contract.test.ts
     - node --env-file-if-exists=.env.local --test tests/operations-scripts.test.ts tests/worker.test.ts
   stage_exit:
-    - node --env-file-if-exists=.env.local --test tests/admin-auth.test.ts tests/admin-api-contract.test.ts tests/failover-provider.test.ts tests/provider-outbound.test.ts
+    - node --env-file-if-exists=.env.local --test tests/admin-auth.test.ts tests/admin-api-contract.test.ts tests/failover-provider.test.ts tests/provider-outbound.test.ts tests/provider-runtime.test.ts
   real_observation:
     - injected fake transport or explicit local mock only
 review:
   shape: split
   correction_budget: 2
-knowledge_impact: []
+knowledge_impact:
+  - docs/portfolio-blueprint.md
+  - docs/superpowers/specs/2026-07-21-admin-api-management-design.md
 non_goals:
   - UI
   - automatic health polling
@@ -651,7 +657,7 @@ session、跨 origin Key、DNS rebinding、rate-limit race、secret/log leakage 
 通过后提交：
 
 ```powershell
-git add -- lib/server/admin-provider-config.ts lib/server/provider-config-input.ts app/api/admin/_shared.ts app/api/admin/providers scripts/cleanup-expired.mjs tests/provider-config-input.test.ts tests/admin-provider-integration.test.ts tests/admin-provider-api-contract.test.ts tests/operations-scripts.test.ts tests/worker.test.ts
+git add -- lib/server/ai-config-store.ts lib/server/admin-provider-config.ts lib/server/provider-config-input.ts app/api/admin/_shared.ts app/api/admin/providers scripts/cleanup-expired.mjs tests/provider-config-input.test.ts tests/admin-provider-integration.test.ts tests/admin-provider-api-contract.test.ts tests/operations-scripts.test.ts tests/worker.test.ts docs/portfolio-blueprint.md docs/superpowers/specs/2026-07-21-admin-api-management-design.md docs/superpowers/plans/2026-07-21-admin-api-management.md
 git commit -m "feat: add secure admin provider APIs"
 ```
 

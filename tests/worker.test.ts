@@ -37,6 +37,28 @@ test('cleanup is import-safe and skips all deletes when the transaction lock is 
   assert.equal(released, true);
 });
 
+test('cleanup deletes expired AI config events in the locked transaction and reports the count', async () => {
+  const queries: string[] = [];
+  const client = {
+    async query(sql: string) {
+      queries.push(sql);
+      if (sql.includes('pg_try_advisory_xact_lock')) return { rows: [{ acquired: true }] };
+      return { rowCount: sql.includes('DELETE FROM ai_config_events') ? 2 : 0, rows: [] };
+    },
+    release() {},
+  };
+
+  const result = await cleanupExpired({
+    now: new Date('2035-01-01T00:00:00.000Z'),
+    pool: { async connect() { return client; } },
+  });
+
+  assert.equal(result.deletedAiConfigEvents, 2);
+  const deleteIndex = queries.findIndex((query) => query.includes('DELETE FROM ai_config_events'));
+  assert.ok(deleteIndex > queries.findIndex((query) => query.includes('pg_try_advisory_xact_lock')));
+  assert.ok(deleteIndex < queries.indexOf('COMMIT'));
+});
+
 test('worker configuration requires an explicit alert mode and uses frozen intervals', () => {
   assert.deepEqual(loadWorkerConfig({ MORSE_ALERTS_ENABLED: 'false' }), {
     alertsEnabled: false,
