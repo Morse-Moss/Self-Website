@@ -89,7 +89,10 @@ test('migration runner bootstraps an empty database in order and is repeatable',
       );
       return { migrations: migrations.rows, tables: tables.rows };
     });
-    assert.deepEqual(firstRows.migrations.map((row) => row.version), ['001', '002', '003', '004']);
+    assert.deepEqual(
+      firstRows.migrations.map((row) => row.version),
+      ['001', '002', '003', '004', '005'],
+    );
     assert.ok(firstRows.migrations.every((row) => /^[0-9a-f]{64}$/.test(row.checksum)));
     assert.deepEqual(firstRows.tables.map((row) => row.name), [
       'interaction_turns',
@@ -142,6 +145,7 @@ test('two migration runners serialize an empty database', async () => {
         { version: '002', count: 1 },
         { version: '003', count: 1 },
         { version: '004', count: 1 },
+        { version: '005', count: 1 },
       ]);
     });
   } finally {
@@ -217,7 +221,10 @@ test('migration runner baselines a complete 001 database and preserves old data'
         "SELECT id FROM conversation_messages WHERE conversation_id = $1 AND content = 'legacy history'",
         [conversationId],
       );
-    assert.deepEqual(migrations.rows.map((row) => row.version), ['001', '002', '003', '004']);
+    assert.deepEqual(
+      migrations.rows.map((row) => row.version),
+      ['001', '002', '003', '004', '005'],
+    );
       assert.equal(invite.rowCount, 1);
       assert.equal(document.rowCount, 1);
       assert.equal(session.rowCount, 1);
@@ -263,6 +270,7 @@ test('two migration runners serialize baseline registration on a complete 001 da
         { version: '002', count: 1 },
         { version: '003', count: 1 },
         { version: '004', count: 1 },
+        { version: '005', count: 1 },
       ]);
     });
   } finally {
@@ -353,6 +361,8 @@ test('migration runner accepts an equivalent CRLF and BOM checkout after registr
       '001_morse_rag.sql',
       '002_s10_customer_service.sql',
       '003_private_resume.sql',
+      '004_admin_api_management.sql',
+      '005_chat_v2.sql',
     ]) {
       const filePath = path.join(directory, fileName);
       const text = await fs.readFile(filePath, 'utf8');
@@ -420,6 +430,10 @@ test('migration runner rejects a partial 002 schema after 001 was registered', a
     );
     await fs.rm(
       path.join(initialOnlyDirectory, '004_admin_api_management.sql'),
+      { force: true },
+    );
+    await fs.rm(
+      path.join(initialOnlyDirectory, '005_chat_v2.sql'),
       { force: true },
     );
     const initial = await runMigrations(database.connectionString, initialOnlyDirectory);
@@ -507,6 +521,7 @@ test('migration 004 upgrades a populated 001-003 database without rewriting exis
   const inviteId = randomUUID();
   try {
     await fs.rm(path.join(through003, '004_admin_api_management.sql'), { force: true });
+    await fs.rm(path.join(through003, '005_chat_v2.sql'), { force: true });
     const initial = await runMigrations(database.connectionString, through003);
     assert.equal(initial.code, 0, initial.stderr);
     await withPostgresClient(database.connectionString, async (client) => {
@@ -538,7 +553,10 @@ test('migration 004 upgrades a populated 001-003 database without rewriting exis
         'SELECT trusted_person_note FROM resume_invites WHERE id = $1',
         [inviteId],
       );
-      assert.deepEqual(versions.rows.map((row) => row.version), ['001', '002', '003', '004']);
+      assert.deepEqual(
+        versions.rows.map((row) => row.version),
+        ['001', '002', '003', '004', '005'],
+      );
       assert.deepEqual(interaction.rows, [{ question: 'preserve interaction' }]);
       assert.deepEqual(invite.rows, [{ trusted_person_note: 'preserve invite' }]);
     });
@@ -725,6 +743,54 @@ test('migration 004 protects audit retention and provider attempt attribution', 
             AND column_name = 'estimated_cost_usd'`,
       );
       assert.deepEqual(usageDefault.rows, [{ column_default: null }]);
+    });
+  } finally {
+    await database.dispose();
+  }
+});
+
+test('chat v2 migration adds stable assignment and metadata-only provider attempts', async () => {
+  const database = await createDisposablePostgresDatabase();
+  try {
+    const result = await runMigrations(database.connectionString);
+    assert.equal(result.code, 0, result.stderr);
+    await withPostgresClient(database.connectionString, async (client) => {
+      const behaviorColumn = await client.query<{
+        data_type: string;
+        is_nullable: string;
+      }>(
+        `SELECT data_type, is_nullable
+           FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'access_sessions'
+            AND column_name = 'chat_behavior_version'`,
+      );
+      const attemptPrimaryKey = await client.query<{ column_name: string }>(
+        `SELECT key_column.column_name
+           FROM information_schema.table_constraints AS constraint_record
+           JOIN information_schema.key_column_usage AS key_column
+             ON key_column.constraint_catalog = constraint_record.constraint_catalog
+            AND key_column.constraint_schema = constraint_record.constraint_schema
+            AND key_column.constraint_name = constraint_record.constraint_name
+          WHERE constraint_record.table_schema = 'public'
+            AND constraint_record.table_name = 'chat_provider_attempts'
+            AND constraint_record.constraint_type = 'PRIMARY KEY'
+          ORDER BY key_column.ordinal_position`,
+      );
+      const rawTextColumns = await client.query<{ column_name: string }>(
+        `SELECT column_name
+           FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'chat_provider_attempts'
+            AND column_name ~ '(question|answer|prompt|jd|url|key|payload|content|request|response)'`,
+      );
+
+      assert.deepEqual(behaviorColumn.rows, [{ data_type: 'text', is_nullable: 'YES' }]);
+      assert.deepEqual(
+        attemptPrimaryKey.rows.map((row) => row.column_name),
+        ['interaction_turn_id', 'execution_id', 'attempt_no'],
+      );
+      assert.equal(rawTextColumns.rowCount, 0);
     });
   } finally {
     await database.dispose();
