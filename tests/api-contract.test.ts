@@ -54,6 +54,10 @@ test('chat API authenticates server-side and emits only the public SSE contract'
   assert.match(source, /CHAT_DISABLED/);
   assert.match(source, /INVALID_CHAT_REQUEST/);
   assert.match(source, /createChatRouteStream/);
+  assert.match(source, /resolveProviderRuntime/);
+  assert.match(source, /await resolveProviderRuntime\(pool, config\)/);
+  assert.match(source, /provider:\s*providerRuntime\.provider/);
+  assert.doesNotMatch(fs.readFileSync(chatRoutePath, 'utf8'), /createProvider\(/);
   assert.match(source, /createSseStream/);
   assert.match(source, /emit\(event\.type, event\)/);
   assert.match(source, /emit\('error', \{ code: publicErrorCode\(error\) \}\)/);
@@ -130,7 +134,7 @@ test('chat provider applies the configured compatibility user agent only to its 
 
   assert.match(
     source,
-    /defaultHeaders:\s*config\.openaiUserAgent\s*\?\s*\{\s*'User-Agent':\s*config\.openaiUserAgent\s*\}\s*:\s*undefined/,
+    /defaultHeaders:\s*target\.userAgent\s*\?\s*\{\s*'User-Agent':\s*target\.userAgent\s*\}\s*:\s*undefined/,
   );
   assert.equal((source.match(/defaultHeaders:/g) ?? []).length, 1);
 });

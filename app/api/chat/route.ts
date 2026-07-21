@@ -6,7 +6,8 @@ import { createChatRouteStream } from '@/lib/server/chat-route-stream';
 import { runChat } from '@/lib/server/chat-service';
 import { loadServerConfig } from '@/lib/server/config';
 import { getPool } from '@/lib/server/db';
-import { createProvider, createSearchProvider } from '@/lib/server/provider';
+import { createSearchProvider } from '@/lib/server/provider';
+import { resolveProviderRuntime } from '@/lib/server/provider-runtime';
 
 export const runtime = 'nodejs';
 
@@ -36,12 +37,19 @@ export async function POST(request: NextRequest) {
   const session = await authenticateSession(pool, token);
   if (!session) return jsonError('ACCESS_REQUIRED', 401);
 
+  let providerRuntime: Awaited<ReturnType<typeof resolveProviderRuntime>>;
+  try {
+    providerRuntime = await resolveProviderRuntime(pool, config);
+  } catch {
+    return jsonError('CHAT_NOT_CONFIGURED', 503);
+  }
+
   const stream = createChatRouteStream({
     requestSignal: request.signal,
     heartbeatMs: config.sseHeartbeatMs,
     runChat: (signal) => runChat({
       pool,
-      provider: createProvider(config),
+      provider: providerRuntime.provider,
       searchProvider: createSearchProvider(config),
       accessSessionId: session.id,
       request: chatRequest,

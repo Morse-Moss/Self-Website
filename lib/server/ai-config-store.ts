@@ -599,14 +599,17 @@ export async function readActiveRouteRaw(
     connection_display_name: string;
     database_model_version_id: string | null;
     environment_target_key: 'primary' | 'fallback-1' | 'fallback-2' | null;
+    input_usd_per_million: string | null;
     model_display_name: string;
     model_id: string;
     position: number;
     protocol: 'responses' | 'chat_completions';
+    output_usd_per_million: string | null;
     source_type: 'database' | 'environment';
   }>(
     `SELECT position, source_type, database_model_version_id, environment_target_key,
-            connection_display_name, model_display_name, model_id, protocol, config_digest
+            connection_display_name, model_display_name, model_id, protocol, config_digest,
+            input_usd_per_million::text, output_usd_per_million::text
        FROM ai_route_targets WHERE route_revision_id = $1 ORDER BY position`,
     [row.id],
   );
@@ -622,10 +625,12 @@ export async function readActiveRouteRaw(
       connectionDisplayName: target.connection_display_name,
       databaseModelVersionId: target.database_model_version_id,
       environmentTargetKey: target.environment_target_key,
+      inputUsdPerMillion: target.input_usd_per_million,
       modelDisplayName: target.model_display_name,
       modelId: target.model_id,
       position: target.position,
       protocol: target.protocol,
+      outputUsdPerMillion: target.output_usd_per_million,
       sourceType: target.source_type,
     })),
   };

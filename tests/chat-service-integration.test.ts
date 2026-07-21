@@ -4,7 +4,14 @@ import { after, before, test } from 'node:test';
 
 import pg, { type Pool as PgPool } from 'pg';
 
-import type { AiMessage, AiProvider, AnswerEvent, AnswerRequest } from '../lib/server/ai-provider.ts';
+import {
+  ProviderRunError,
+  type AiMessage,
+  type AiProvider,
+  type AnswerEvent,
+  type AnswerRequest,
+  type ProviderAttempt,
+} from '../lib/server/ai-provider.ts';
 import { redeemInvite } from '../lib/server/access.ts';
 import { normalizeChatRequest } from '../lib/server/chat-core.ts';
 import { ChatServiceError, runChat, type ChatServiceEvent } from '../lib/server/chat-service.ts';
@@ -133,6 +140,108 @@ class NullUsageProvider extends FakeProvider {
     this.requests.push(request);
     yield { type: 'delta', text: 'Completed answer with unavailable usage. [source 1]' };
     yield { type: 'done', usage: null };
+  }
+}
+
+function routedAttempt(input: {
+  attemptIndex: number;
+  position: number;
+  status: ProviderAttempt['status'];
+  usage: ProviderAttempt['usage'];
+  inputRate: string;
+  outputRate: string;
+  errorCode?: string | null;
+}): ProviderAttempt {
+  const startedAt = new Date(now.getTime() + input.attemptIndex * 100);
+  const completedAt = new Date(startedAt.getTime() + 50);
+  const knownCostUsd = input.usage
+    ? (
+        input.usage.inputTokens * Number(input.inputRate)
+        + input.usage.outputTokens * Number(input.outputRate)
+      ) / 1_000_000
+    : null;
+  return {
+    attemptIndex: input.attemptIndex,
+    completedAt,
+    configDigest: String(input.position + 1).repeat(64),
+    connectionDisplayName: `Connection ${input.position}`,
+    connectionVersionId: null,
+    costComplete: input.usage !== null,
+    errorCode: input.errorCode ?? null,
+    firstByteLatencyMs: input.status === 'completed' ? 10 : null,
+    inputUsdPerMillion: input.inputRate,
+    knownCostUsd,
+    modelDisplayName: `Model ${input.position}`,
+    modelId: `model-${input.position}`,
+    modelVersionId: null,
+    outputUsdPerMillion: input.outputRate,
+    position: input.position,
+    protocol: 'responses',
+    routeRevisionId: null,
+    sourceType: 'environment',
+    startedAt,
+    status: input.status,
+    totalLatencyMs: 50,
+    usage: input.usage,
+    usageComplete: input.usage !== null,
+  };
+}
+
+class RoutedProvider extends FakeProvider {
+  readonly attempts = [
+    routedAttempt({
+      attemptIndex: 0,
+      position: 0,
+      status: 'failed',
+      usage: { inputTokens: 10, outputTokens: 2 },
+      inputRate: '1',
+      outputRate: '2',
+      errorCode: 'PROVIDER_UNAVAILABLE',
+    }),
+    routedAttempt({
+      attemptIndex: 1,
+      position: 1,
+      status: 'completed',
+      usage: { inputTokens: 20, outputTokens: 4 },
+      inputRate: '3',
+      outputRate: '6',
+    }),
+  ];
+
+  override async *streamAnswer(request: AnswerRequest): AsyncIterable<AnswerEvent> {
+    this.requests.push(request);
+    yield { type: 'attempt', attempt: this.attempts[0] };
+    yield { type: 'delta', text: 'Routed answer. [source 1]' };
+    yield { type: 'attempt', attempt: this.attempts[1] };
+    yield {
+      type: 'done',
+      attempts: this.attempts,
+      costComplete: true,
+      knownCostUsd: 0.000098,
+      usage: { inputTokens: 30, outputTokens: 6 },
+      usageComplete: true,
+      winner: { ...this.attempts[1], attemptIndex: 1 },
+    };
+  }
+}
+
+class RoutedFailingProvider extends FakeProvider {
+  readonly attempts = [
+    routedAttempt({
+      attemptIndex: 0,
+      position: 0,
+      status: 'failed',
+      usage: { inputTokens: 10, outputTokens: 2 },
+      inputRate: '1',
+      outputRate: '2',
+      errorCode: 'PROVIDER_UNAVAILABLE',
+    }),
+  ];
+
+  override async *streamAnswer(request: AnswerRequest): AsyncIterable<AnswerEvent> {
+    this.requests.push(request);
+    yield { type: 'attempt', attempt: this.attempts[0] };
+    throw new ProviderRunError('PROVIDER_UNAVAILABLE', this.attempts);
   }
 }
 
@@ -2434,7 +2543,7 @@ test('runChat retries ambiguous compensation as an idempotent terminal no-op', {
   try {
     await assert.rejects(consumeChat({
       pool: ambiguousPool,
-      provider: new FailingProvider(),
+      provider: new RoutedFailingProvider(),
       accessSessionId: fixture.accessSessionId,
       request: {
         message: 'Fail once and compensate once.',
@@ -2453,13 +2562,25 @@ test('runChat retries ambiguous compensation as an idempotent terminal no-op', {
       messageCount: 0,
       conversationRows: 0,
       messageRows: 0,
-      usageRows: 0,
+      usageRows: 1,
       interactionRows: 1,
     });
     const interaction = await readInteraction(turnId);
     assert.equal(interaction.status, 'failed');
     assert.equal(interaction.error_code, 'PROVIDER_UNAVAILABLE');
     assert.equal(interaction.answer, null);
+    const attempts = await pool!.query(
+      `SELECT attempt_index FROM interaction_provider_attempts
+        WHERE interaction_turn_id = $1 ORDER BY attempt_index`,
+      [turnId],
+    );
+    assert.deepEqual(attempts.rows, [{ attempt_index: 0 }]);
+    const usage = await pool!.query(
+      `SELECT provider_attempt_index FROM usage_events
+        WHERE interaction_turn_id = $1 ORDER BY provider_attempt_index`,
+      [turnId],
+    );
+    assert.deepEqual(usage.rows, [{ provider_attempt_index: 0 }]);
   } finally {
     await cleanupFailureFixture(fixture);
   }
@@ -2536,6 +2657,105 @@ test('runChat reports a stable safety signal when fresh compensation recovery al
   } finally {
     console.error = originalConsoleError;
     state.forceRelease();
+    await cleanupFailureFixture(fixture);
+  }
+});
+
+test('runChat persists routed attempts, winner attribution, and per-attempt cost exactly once', {
+  skip: !pool,
+}, async () => {
+  const fixture = await createFailureFixture('provider-runtime-attribution');
+  const turnId = randomUUID();
+  const provider = new RoutedProvider();
+  const input = {
+    pool: pool!,
+    provider,
+    accessSessionId: fixture.accessSessionId,
+    request: {
+      message: 'Persist routed provider attempts.',
+      mode: 'general' as const,
+      audienceIntent: 'general',
+      conversationId: null,
+      turnId,
+    },
+    config,
+    now,
+  };
+  try {
+    await consumeChat(input);
+    await consumeChat(input);
+    const interaction = await pool!.query<{
+      provider: string;
+      model: string;
+      target_position: number;
+      provider_protocol: string;
+      input_tokens: number;
+      output_tokens: number;
+      known_cost_usd: string;
+      estimated_cost_usd: string;
+      usage_complete: boolean;
+      cost_complete: boolean;
+    }>(
+      `SELECT provider, model, target_position, provider_protocol,
+              input_tokens, output_tokens, known_cost_usd::text,
+              estimated_cost_usd::text, usage_complete, cost_complete
+         FROM interaction_turns WHERE id = $1`,
+      [turnId],
+    );
+    assert.deepEqual(interaction.rows, [{
+      provider: 'Connection 1',
+      model: 'model-1',
+      target_position: 1,
+      provider_protocol: 'responses',
+      input_tokens: 30,
+      output_tokens: 6,
+      known_cost_usd: '0.000098',
+      estimated_cost_usd: '0.000098',
+      usage_complete: true,
+      cost_complete: true,
+    }]);
+    const attempts = await pool!.query<{
+      attempt_index: number;
+      status: string;
+      input_tokens: number;
+      output_tokens: number;
+      known_cost_usd: string;
+    }>(
+      `SELECT attempt_index, status, input_tokens, output_tokens, known_cost_usd::text
+         FROM interaction_provider_attempts
+        WHERE interaction_turn_id = $1 ORDER BY attempt_index`,
+      [turnId],
+    );
+    assert.deepEqual(attempts.rows, [
+      {
+        attempt_index: 0,
+        status: 'failed',
+        input_tokens: 10,
+        output_tokens: 2,
+        known_cost_usd: '0.000014',
+      },
+      {
+        attempt_index: 1,
+        status: 'completed',
+        input_tokens: 20,
+        output_tokens: 4,
+        known_cost_usd: '0.000084',
+      },
+    ]);
+    const usage = await pool!.query<{
+      provider_attempt_index: number;
+      estimated_cost_usd: string;
+    }>(
+      `SELECT provider_attempt_index, estimated_cost_usd::text
+         FROM usage_events WHERE interaction_turn_id = $1
+        ORDER BY provider_attempt_index`,
+      [turnId],
+    );
+    assert.deepEqual(usage.rows, [
+      { provider_attempt_index: 0, estimated_cost_usd: '0.000014' },
+      { provider_attempt_index: 1, estimated_cost_usd: '0.000084' },
+    ]);
+  } finally {
     await cleanupFailureFixture(fixture);
   }
 });
@@ -2649,7 +2869,7 @@ test('runChat treats a driver error after durable completion COMMIT as completed
 }, async () => {
   const fixture = await createFailureFixture('s10-ambiguous-completion-commit');
   const turnId = randomUUID();
-  const provider = new FakeProvider();
+  const provider = new RoutedProvider();
   let completedDmlSeen = false;
   let injected = false;
   const ambiguousPool = new Proxy(pool!, {
@@ -2709,9 +2929,14 @@ test('runChat treats a driver error after durable completion COMMIT as completed
       messageCount: 1,
       conversationRows: 1,
       messageRows: 2,
-      usageRows: 1,
+      usageRows: 2,
       interactionRows: 1,
     });
+    const attempts = await pool!.query(
+      'SELECT attempt_index FROM interaction_provider_attempts WHERE interaction_turn_id = $1',
+      [turnId],
+    );
+    assert.equal(attempts.rowCount, 2);
   } finally {
     await cleanupFailureFixture(fixture);
   }

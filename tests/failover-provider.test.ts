@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { AiProvider, AnswerEvent, AnswerRequest } from '../lib/server/ai-provider.ts';
+import type {
+  AiProvider,
+  AnswerEvent,
+  AnswerRequest,
+  ProviderAnswerTarget,
+} from '../lib/server/ai-provider.ts';
 import { FailoverAiProvider } from '../lib/server/failover-ai-provider.ts';
 import { OpenAIProviderError } from '../lib/server/openai-provider.ts';
 
@@ -38,6 +43,66 @@ async function collect(provider: AiProvider): Promise<AnswerEvent[]> {
   return events;
 }
 
+function target(provider: AiProvider, position: number): ProviderAnswerTarget {
+  return {
+    provider,
+    snapshot: {
+      configDigest: String(position).repeat(64),
+      connectionDisplayName: `Connection ${position}`,
+      connectionVersionId: null,
+      inputUsdPerMillion: position === 0 ? '1' : null,
+      modelDisplayName: `Model ${position}`,
+      modelId: `model-${position}`,
+      modelVersionId: null,
+      outputUsdPerMillion: position === 0 ? '2' : null,
+      position,
+      protocol: 'responses',
+      routeRevisionId: null,
+      sourceType: 'environment',
+    },
+  };
+}
+
+test('FailoverAiProvider records six ordered attempts and freezes the winner snapshot', async () => {
+  const providers = Array.from({ length: 6 }, (_, position) => (
+    position < 5
+      ? new FakeProvider([], new OpenAIProviderError(
+        'PROVIDER_RESPONSE_INCOMPLETE',
+        { inputTokens: position + 1, outputTokens: 1 },
+      ))
+      : new FakeProvider([
+        { type: 'delta', text: 'Recovered' },
+        { type: 'done', usage: { inputTokens: 20, outputTokens: 4 } },
+      ])
+  ));
+  const provider = new FailoverAiProvider(
+    providers[0],
+    providers.map(target),
+    1_000,
+  );
+
+  const events = await collect(provider);
+  assert.deepEqual(events.map((event) => event.type), [
+    'attempt', 'attempt', 'attempt', 'attempt', 'attempt',
+    'delta', 'attempt', 'done',
+  ]);
+  const attempts = events.filter((event) => event.type === 'attempt').map((event) => event.attempt);
+  assert.deepEqual(attempts.map((attempt) => attempt.attemptIndex), [0, 1, 2, 3, 4, 5]);
+  assert.deepEqual(attempts.map((attempt) => attempt.status), [
+    'failed', 'failed', 'failed', 'failed', 'failed', 'completed',
+  ]);
+  assert.equal(attempts[0].knownCostUsd, 0.000003);
+  assert.equal(attempts[1].costComplete, false);
+  const done = events.at(-1);
+  assert.equal(done?.type, 'done');
+  if (done?.type !== 'done') throw new Error('missing done event');
+  assert.equal(done.winner?.attemptIndex, 5);
+  assert.equal(done.winner?.modelId, 'model-5');
+  assert.deepEqual(done.usage, { inputTokens: 35, outputTokens: 9 });
+  assert.equal(done.usageComplete, true);
+  assert.equal(done.costComplete, false);
+});
+
 test('FailoverAiProvider moves to the next node only before output starts', async () => {
   const primary = new FakeProvider([], new OpenAIProviderError(
     'PROVIDER_RESPONSE_INCOMPLETE',
@@ -49,10 +114,13 @@ test('FailoverAiProvider moves to the next node only before output starts', asyn
   ]);
   const provider = new FailoverAiProvider(primary, [primary, fallback], 1_000);
 
-  assert.deepEqual(await collect(provider), [
-    { type: 'delta', text: 'Hello' },
-    { type: 'done', usage: { inputTokens: 30, outputTokens: 6 } },
-  ]);
+  const events = await collect(provider);
+  assert.deepEqual(events.map((event) => event.type), ['attempt', 'delta', 'attempt', 'done']);
+  const done = events.at(-1);
+  assert.equal(done?.type, 'done');
+  if (done?.type !== 'done') throw new Error('missing done event');
+  assert.deepEqual(done.usage, { inputTokens: 30, outputTokens: 6 });
+  assert.equal(done.winner?.attemptIndex, 1);
 });
 
 test('FailoverAiProvider tries three configured nodes in order', async () => {
@@ -87,10 +155,15 @@ test('FailoverAiProvider tries three configured nodes in order', async () => {
     1_000,
   );
 
-  assert.deepEqual(await collect(provider), [
-    { type: 'delta', text: 'Recovered' },
-    { type: 'done', usage: null },
+  const events = await collect(provider);
+  assert.deepEqual(events.map((event) => event.type), [
+    'attempt', 'attempt', 'delta', 'attempt', 'done',
   ]);
+  const done = events.at(-1);
+  assert.equal(done?.type, 'done');
+  if (done?.type !== 'done') throw new Error('missing done event');
+  assert.equal(done.winner?.attemptIndex, 2);
+  assert.equal(done.usage, null);
   assert.deepEqual(calls, ['primary', 'fallback-1', 'fallback-2']);
 });
 
@@ -106,8 +179,11 @@ test('FailoverAiProvider never switches nodes after partial output', async () =>
 
   await assert.rejects(async () => {
     for await (const event of provider.streamAnswer(request)) events.push(event);
-  }, primaryError);
-  assert.deepEqual(events, [{ type: 'delta', text: 'Partial' }]);
+  }, (error: unknown) => (
+    (error as { name?: string; code?: string }).name === 'ProviderRunError'
+    && (error as { code?: string }).code === primaryError.code
+  ));
+  assert.deepEqual(events.map((event) => event.type), ['delta', 'attempt']);
 });
 
 test('FailoverAiProvider uses the primary provider for embeddings and stops on abort', async () => {

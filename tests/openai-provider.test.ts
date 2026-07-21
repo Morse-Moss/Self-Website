@@ -316,144 +316,59 @@ test('OpenAIProvider rejects a Responses incomplete terminal event', async () =>
   ));
 });
 
-test('OpenAIProvider retries one empty incomplete Responses attempt before emitting output', async () => {
+test('OpenAIProvider performs one network attempt for an incomplete Responses target', async () => {
   let createCalls = 0;
   const provider = new OpenAIProvider({
     responses: {
       create: async () => {
         createCalls += 1;
-        if (createCalls === 1) {
-          return (async function* () {
-            yield {
-              type: 'response.incomplete' as const,
-              response: {
-                usage: { input_tokens: 15, output_tokens: 5, total_tokens: 20 },
-              },
-            };
-          })();
-        }
-        return fakeResponseStream();
+        return (async function* () {
+          yield {
+            type: 'response.incomplete' as const,
+            response: {
+              usage: { input_tokens: 15, output_tokens: 5, total_tokens: 20 },
+            },
+          };
+        })();
       },
     },
   }, {
     embeddings: { create: async () => ({ data: [] }) },
   }, providerConfig);
-
-  const events = [];
-  for await (const event of provider.streamAnswer({
+  const iterator = provider.streamAnswer({
     instructions: 'Use evidence only.',
     messages: [{ role: 'user', content: 'Hello' }],
-  })) {
-    events.push(event);
-  }
+  })[Symbol.asyncIterator]();
 
-  assert.equal(createCalls, 2);
-  assert.deepEqual(events, [
-    { type: 'delta', text: 'Hello' },
-    { type: 'delta', text: ' Morse' },
-    { type: 'done', usage: { inputTokens: 135, outputTokens: 35 } },
-  ]);
+  await assert.rejects(iterator.next(), (error: unknown) => (
+    (error as { code?: string }).code === 'PROVIDER_RESPONSE_INCOMPLETE'
+    && (error as { usage?: unknown }).usage !== null
+  ));
+  assert.equal(createCalls, 1);
 });
 
-test('OpenAIProvider retries two empty completed Responses attempts and accounts for their usage', async () => {
+test('OpenAIProvider performs one network attempt for a transient HTTP target failure', async () => {
   let createCalls = 0;
   const provider = new OpenAIProvider({
     responses: {
       create: async () => {
         createCalls += 1;
-        if (createCalls <= 2) {
-          return (async function* () {
-            yield {
-              type: 'response.completed' as const,
-              response: {
-                usage: { input_tokens: 15, output_tokens: 5, total_tokens: 20 },
-              },
-            };
-          })();
-        }
-        return fakeResponseStream();
+        throw Object.assign(new Error('private gateway payload'), { status: 502 });
       },
     },
   }, {
     embeddings: { create: async () => ({ data: [] }) },
   }, providerConfig);
-
-  const events = [];
-  for await (const event of provider.streamAnswer({
+  const iterator = provider.streamAnswer({
     instructions: 'Use evidence only.',
     messages: [{ role: 'user', content: 'Hello' }],
-  })) {
-    events.push(event);
-  }
+  })[Symbol.asyncIterator]();
 
-  assert.equal(createCalls, 3);
-  assert.deepEqual(events, [
-    { type: 'delta', text: 'Hello' },
-    { type: 'delta', text: ' Morse' },
-    { type: 'done', usage: { inputTokens: 150, outputTokens: 40 } },
-  ]);
-});
-
-test('OpenAIProvider retries a transient HTTP failure only before output starts', async () => {
-  let createCalls = 0;
-  const provider = new OpenAIProvider({
-    responses: {
-      create: async () => {
-        createCalls += 1;
-        if (createCalls === 1) {
-          throw Object.assign(new Error('private gateway payload'), { status: 502 });
-        }
-        return fakeResponseStream();
-      },
-    },
-  }, {
-    embeddings: { create: async () => ({ data: [] }) },
-  }, providerConfig);
-
-  const events = [];
-  for await (const event of provider.streamAnswer({
-    instructions: 'Use evidence only.',
-    messages: [{ role: 'user', content: 'Hello' }],
-  })) {
-    events.push(event);
-  }
-
-  assert.equal(createCalls, 2);
-  assert.deepEqual(events, [
-    { type: 'delta', text: 'Hello' },
-    { type: 'delta', text: ' Morse' },
-    { type: 'done', usage: { inputTokens: 120, outputTokens: 30 } },
-  ]);
-});
-
-test('OpenAIProvider retries every supported transient HTTP status before output starts', async () => {
-  for (const status of [408, 409, 429, 500, 599]) {
-    let createCalls = 0;
-    const provider = new OpenAIProvider({
-      responses: {
-        create: async () => {
-          createCalls += 1;
-          if (createCalls === 1) {
-            throw Object.assign(new Error('private transient payload'), { status });
-          }
-          return fakeResponseStream();
-        },
-      },
-    }, {
-      embeddings: { create: async () => ({ data: [] }) },
-    }, providerConfig);
-
-    const events = [];
-    for await (const event of provider.streamAnswer({
-      instructions: 'Use evidence only.',
-      messages: [{ role: 'user', content: 'Hello' }],
-    })) {
-      events.push(event);
-    }
-
-    assert.equal(createCalls, 2, `status ${status} should be retried once`);
-    assert.equal(events.at(-1)?.type, 'done');
-  }
+  await assert.rejects(iterator.next(), (error: unknown) => (
+    (error as { code?: string }).code === 'PROVIDER_UNAVAILABLE'
+    && !(error as Error).message.includes('private gateway payload')
+  ));
+  assert.equal(createCalls, 1);
 });
 
 test('OpenAIProvider never retries a transient HTTP failure after partial output', async () => {
@@ -492,7 +407,7 @@ test('OpenAIProvider never retries a transient HTTP failure after partial output
   assert.equal(createCalls, 1);
 });
 
-test('OpenAIProvider stops after three empty completed attempts', async () => {
+test('OpenAIProvider rejects one empty completed Responses attempt', async () => {
   let createCalls = 0;
   const provider = new OpenAIProvider({
     responses: {
@@ -513,29 +428,6 @@ test('OpenAIProvider stops after three empty completed attempts', async () => {
 
   await assert.rejects(iterator.next(), (error: unknown) => (
     (error as { code?: string }).code === 'PROVIDER_RESPONSE_INCOMPLETE'
-  ));
-  assert.equal(createCalls, 3);
-});
-
-test('OpenAIProvider can disable same-node retries when failover nodes are configured', async () => {
-  let createCalls = 0;
-  const provider = new OpenAIProvider({
-    responses: {
-      create: async () => {
-        createCalls += 1;
-        throw Object.assign(new Error('private gateway payload'), { status: 502 });
-      },
-    },
-  }, {
-    embeddings: { create: async () => ({ data: [] }) },
-  }, { ...providerConfig, outputlessMaxAttempts: 1 });
-  const iterator = provider.streamAnswer({
-    instructions: 'Use evidence only.',
-    messages: [{ role: 'user', content: 'Hello' }],
-  })[Symbol.asyncIterator]();
-
-  await assert.rejects(iterator.next(), (error: unknown) => (
-    (error as { code?: string }).code === 'PROVIDER_UNAVAILABLE'
   ));
   assert.equal(createCalls, 1);
 });

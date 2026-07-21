@@ -46,10 +46,12 @@ export interface AiRouteTargetSnapshot {
   connectionDisplayName: string;
   databaseModelVersionId: string | null;
   environmentTargetKey: 'primary' | 'fallback-1' | 'fallback-2' | null;
+  inputUsdPerMillion: string | null;
   modelDisplayName: string;
   modelId: string;
   position: number;
   protocol: AiChatProtocol;
+  outputUsdPerMillion: string | null;
   sourceType: AiRouteSourceType;
 }
 
