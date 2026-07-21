@@ -2,9 +2,9 @@
 
 Date: 2026-07-21
 Revision: 2
-Status: Approved in conversation; written revision pending user review
+Status: Approved by the candidate on 2026-07-21
 
-The existing implementation plan at `docs/superpowers/plans/2026-07-21-ai-native-dual-resume.md` targets Revision 1 and is superseded by this revision. It must not be reused; a replacement plan will be written only after the candidate reviews and approves this specification.
+The existing Revision 1 implementation is superseded by this revision. The replacement implementation plan at `docs/superpowers/plans/2026-07-21-ai-native-dual-resume.md` must implement this approved specification.
 
 ## 1. Objective
 
