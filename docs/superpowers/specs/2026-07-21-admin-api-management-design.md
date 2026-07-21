@@ -12,7 +12,7 @@
 
 本设计只管理 Chat Provider。Embedding、BGE、pgvector 维度、知识摄取和 RAG 数据继续由部署环境控制，不能从该页面修改。
 
-本轮只完成设计确认；未修改运行代码或数据库，未读取真实 API Key，未执行 Provider 调用，也未部署。
+设计已确认，Stage 1 数据库、加密、存储兼容基线已在隔离分支本地实现并验证；Stage 2–4 的运行路由、管理 API 与 `/admin/api` UI 尚未实现。当前未读取真实 API Key，未执行 Provider 调用、生产迁移或部署。
 
 ## 2. 当前状态与问题
 

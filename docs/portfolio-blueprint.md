@@ -379,7 +379,7 @@
 - **明确非能力**：Apify、Apollo、WhatsApp、多源联系人交叉验证、正式页面内 Google Maps 自动采集、AI 自动写开发信、AI 自动生成或发送客户回复、生产部署和规模化获客成果不得写成当前已完成功能。
 - **验收与发布**：内容、路由、公共知识、正负评测合同、595/595 全量测试、54/54 Chat eval、21 路由构建和 1440×900 / 390×844 浏览器检查均已通过。页面与六主题知识由 `c90d153` 发布，RAG gold 修正由 `ff03c1d` 发布，负责人称呼统一由 `693e56b` 发布；生产为 40 documents / 47 chunks，46 条 gold top-3 46/46。该发布只代表 Revolution 作品集与公开知识上线，不改变 `E:\Two` 源系统的本地 MVP 状态，也不放宽上条未实现能力边界。
 
-## 24. `/admin` OpenAI-Compatible API 管理（2026-07-21，设计已确认，尚未实现）
+## 24. `/admin` OpenAI-Compatible API 管理（2026-07-21，Stage 1 已完成）
 
 - **需求权威**：详细设计为 `docs/superpowers/specs/2026-07-21-admin-api-management-design.md`；本节只固化需求入口和当前状态，不能把已确认设计描述为已实现、已测试或已部署能力。
 - **管理范围**：只有管理员可以在 `/admin/api` 管理全站 Chat Provider；访客不能选择模型或中转。首版只支持 OpenAI-compatible `responses` / `chat_completions`，Embedding、BGE、pgvector 维度、RAG 和搜索 Provider 不进入该页面。
