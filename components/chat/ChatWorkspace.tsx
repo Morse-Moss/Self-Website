@@ -11,13 +11,13 @@ import styles from '../MorseChat.module.css';
 
 const starterIntents = [
   {
-    label: '招人的',
+    label: '招聘',
     mode: 'interviewer' as const,
     audienceIntent: 'recruiter' as const,
     prompt: '请从招聘方视角介绍最匹配的项目、能力证据和仍需补充的信息。',
   },
   {
-    label: '找人做事的',
+    label: '合作',
     mode: 'general' as const,
     audienceIntent: 'collaboration' as const,
     prompt: '我想了解摩斯会如何分析并推进一个 AI 系统需求。',

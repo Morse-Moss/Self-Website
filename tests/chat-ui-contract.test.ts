@@ -179,6 +179,10 @@ test('starter questions send immediately and pending assistants replace the empt
 
   assert.match(hook, /function sendStarter/);
   assert.match(hook, /sendSnapshot\(\{[\s\S]*message:\s*input\.prompt/);
+  assert.match(workspace, /label:\s*['"]招聘['"][\s\S]*?mode:\s*['"]interviewer['"][\s\S]*?audienceIntent:\s*['"]recruiter['"]/);
+  assert.match(workspace, /label:\s*['"]合作['"][\s\S]*?mode:\s*['"]general['"][\s\S]*?audienceIntent:\s*['"]collaboration['"]/);
+  assert.match(workspace, /label:\s*['"]同行交流['"][\s\S]*?mode:\s*['"]general['"][\s\S]*?audienceIntent:\s*['"]peer['"]/);
+  assert.doesNotMatch(workspace, /招人的|找人做事的/);
   assert.match(workspace, /onClick=\{\(\) => chat\.sendStarter\(intent\)\}/);
   assert.match(workspace, /type="button"/);
   assert.match(transcript, /数字摩斯正在思考/);

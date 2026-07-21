@@ -174,7 +174,7 @@ async function unlock(client, openDialog = true) {
   await submitInvite(client, inviteCode);
   await waitFor(
     client,
-    `Array.from(document.querySelectorAll('button')).some((button) => button.textContent?.trim() === '招人的')`,
+    `Array.from(document.querySelectorAll('button')).some((button) => button.textContent?.trim() === '招聘')`,
     'authorized chat',
   );
 }
@@ -306,8 +306,8 @@ async function runViewport({ expectRetry, height, key, starter, width }) {
     })()`);
 
     const starters = {
-      recruiter: await inspectStarter(client, '招人的'),
-      collaboration: await inspectStarter(client, '找人做事的'),
+      recruiter: await inspectStarter(client, '招聘'),
+      collaboration: await inspectStarter(client, '合作'),
       peer: await inspectStarter(client, '同行交流'),
     };
     await inspectStarter(client, starter);
@@ -434,7 +434,7 @@ const desktop = await runViewport({
   key: 'desktop-1440x900',
   width: 1440,
   height: 900,
-  starter: '招人的',
+  starter: '招聘',
   expectRetry: true,
 });
 const mobile = await runViewport({
