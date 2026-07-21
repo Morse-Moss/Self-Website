@@ -4,17 +4,17 @@
 
 ## 当前生产状态（2026-07-21）
 
-- 状态：`PRODUCTION_OBSERVED / LIMITED_LAUNCH`，当前应用 release `b6ddad5`。
-- 实例：`lhins-0oly57x8`；2026-07-21 只读核验 `/opt/revolution/current` 指向 `/opt/revolution/releases/b6ddad5/revolution`，公网 live/ready 均为 HTTP 200。
+- 状态：`PRODUCTION_OBSERVED / LIMITED_LAUNCH`，当前应用 release `233a3a5`，私密简历保持 disabled-first。
+- 实例：`lhins-0oly57x8`；2026-07-21 `/opt/revolution/current` 指向 `/opt/revolution/releases/233a3a5/revolution`，Web、Worker 与 Edge working directory 均指向该 release，公网 live/ready 均为 HTTP 200。
 - 拓扑：Caddy edge、Next.js Web、Worker、PostgreSQL 16 + pgvector、CPU BGE/Embedding 均已启动；DB、Embedding 与 Web health 为 healthy。
 - 域名：`aimorse.tech` 与 `www.aimorse.tech` 均解析到 `43.133.68.202`；Let's Encrypt 证书已签发，HTTP 和 `www` 均重定向到主域 HTTPS。
 - 防火墙：腾讯云入站允许 TCP `22/80/443` 与 ICMP；UFW 允许 `22/80/443`，数据库、Embedding 和 Next 内部端口未映射到公网。
-- 数据：migration 001/002 已执行并通过幂等复验；公开知识共 40 documents / 47 chunks。本轮 Provider 发布摄取为 0 更新、40 documents 跳过；migration 临时超级用户权限已撤销。
+- 数据：migration 001/002/003 已执行并通过幂等复验；`003` checksum 为 `6acd5ca32728e6c7ee962d7e8a91beaca52dba36efaa0ad4e96fb9cb3aad3ee7`，runtime 私密表 grants 通过，migration 临时超级用户权限已撤销。公开知识共 40 documents / 47 chunks，最近一次摄取为 0 更新、40 documents 跳过。
 - 验证：公网 live、ready、兼容 health、根页与作品页均为 HTTP 200；`release:smoke` 通过。Chat 固定使用 `gpt-5.6-terra`、Responses 和 high reasoning；主节点、强制一级接管、强制二级接管及运行 Web 容器主节点共 4 次受控真实调用均返回完整终态和 usage，未保存回答正文、原始 payload 或凭据。真实 Bocha 和 Feishu 本次未调用。
 - 浏览器：首页 Warp Tunnel 与作品页在 1440x900、390x844 和 reduced-motion 场景均无横向溢出、控制台/page error、外部运行时请求或失败；正式图片加载完成；从项目 CTA 输入邀请码后，预填问题保留在输入框且不会自动发送。
 - 性能：生产域名 Lighthouse 13.4.0 移动端与桌面端 Performance 均为 99；桌面 FCP 0.2s、LCP 0.6s、TBT 70ms、CLS 0、Speed Index 1.0s。
 - 管理入口：`https://aimorse.tech/admin` 不在公开导航中。功能基线 `c3f1ec6` 使用密码登录，包含对话复盘、badcase、密码复验导出和邀请码管理；生产脚本不再引用 `totpCode` 或 `inviteTotpCode`。发布验收没有读取生产管理员密码，因此未创建邀请码明文；认证后的创建、兑换与停用按下方顺序由管理员验收。
-- 私密简历：本地分支已达到 `LOCAL_READY`，但生产 release `b6ddad5` 不包含简历 API、migration `003`、私有卷、简历 Secret、真实 PDF 或简历邀请码；不得把本地验收描述为已上线。
+- 私密简历：代码、API、migration `003`、权限为 `0700` 的私有卷和权限为 `0600` 的文件型 Secret 已部署；Web 可读取 Secret，Worker 不挂载 Secret。`MORSE_RESUME_ENABLED=false`，四张私密表总行数为 0，真实 PDF 和真实简历邀请码均未创建；不得把 disabled-first 发布描述为已启用。
 
 仍需保持诚实边界：监控、托管备份与恢复演练、独立 edge 速率/连接限制、真实 Bocha/Feishu smoke、moderate dependency advisory 处置和更多国内网络可达性复核尚未完成。首页 Warp Tunnel、五项目页面与公开知识已进入生产，但剩余工作区改动和未跟踪证据没有进入生产。
 

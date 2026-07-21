@@ -4,10 +4,19 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**S11-5H CHAT_PROVIDER_FAILOVER_PRODUCTION_OBSERVED / LIMITED_LAUNCH**
+**PRIVATE_RESUME_DISABLED_FIRST_PRODUCTION_OBSERVED / LIMITED_LAUNCH**
 
 ## next_allowed_pointer
-当前生产实例运行 `741ddad`，三节点 Chat 容灾、首页 Warp Tunnel、五项目公开状态、详情、FAQ 和知识均已上线。公网健康、Provider 接管、知识摄取、RAG、release smoke 及生产 Lighthouse 移动端/桌面端 99 均已观察通过。生产硬化余项仍包括监控、托管备份与恢复、edge 流量限制、真实 Bocha/Feishu smoke、moderate advisory 处置和更多国内网络可达性复核；关闭前不得宣称完整 `ONLINE_READY`。
+当前生产实例运行 `233a3a5`，私密简历代码、migration `003`、私有卷和 Secret 已按 disabled-first 合同部署；开关保持 `false`，真实 PDF 与真实邀请码均不存在。后续只允许在新授权下依次启用、上传最终 PDF、创建受控邀请码和观察；生产硬化余项关闭前不得宣称完整 `ONLINE_READY`。
+
+## Private resume disabled-first production release (2026-07-21)
+
+- Mode: `STAGED / CRITICAL / DEPLOYED`; status: `OBSERVED / FEATURE_DISABLED / LIMITED_LAUNCH`。
+- Release: `233a3a5` 已进入 `origin/master`，归档 SHA-256 为 `580651def3c19bc66ca8e7f215ba9ea4f0dfcdcb585b9c8482e0a331f158df7e`；`/opt/revolution/current` 及 Web、Worker、Edge working directory 均指向 `/opt/revolution/releases/233a3a5/revolution`。知识收口提交晚于运行 release，不改变生产镜像。
+- Data/Security: migration `003` checksum 与仓库一致，runtime grants PASS，migration `rolsuper=false`，四张私密表总行数 0；Web 可读取文件型 Secret，Worker 不挂载 Secret，私有卷为 `0700` / `1001:1001`。
+- Verification: 生产构建 25 routes；live/ready/root/works/admin 均为 HTTP 200，release smoke PASS，`/api/resume/file` 为 404，访问状态为 `enabled=false`。1440x900、390x844 与 reduced-motion 浏览器回归无 failure、console/page error、外部运行时请求或横向溢出，五个项目均可展开。
+- Recovery: migration 前备份为 `/opt/revolution/shared/backups/pre-75f621a-20260721T101836Z.dump`，SHA-256 `488b4af882e679cbb434cf86d31cbb3c34b9d4e7e20909d01de06a982333f588`；旧 releases、数据库备份和持久卷保留。
+- Boundary: 未启用简历、未上传真实 PDF、未创建/兑换真实简历邀请码、未轮换密钥、未清理旧 release 或私密数据。
 
 ## Three-node Chat Provider production release (2026-07-20)
 
