@@ -379,7 +379,7 @@
 - **明确非能力**：Apify、Apollo、WhatsApp、多源联系人交叉验证、正式页面内 Google Maps 自动采集、AI 自动写开发信、AI 自动生成或发送客户回复、生产部署和规模化获客成果不得写成当前已完成功能。
 - **验收与发布**：内容、路由、公共知识、正负评测合同、595/595 全量测试、54/54 Chat eval、21 路由构建和 1440×900 / 390×844 浏览器检查均已通过。页面与六主题知识由 `c90d153` 发布，RAG gold 修正由 `ff03c1d` 发布，负责人称呼统一由 `693e56b` 发布；生产为 40 documents / 47 chunks，46 条 gold top-3 46/46。该发布只代表 Revolution 作品集与公开知识上线，不改变 `E:\Two` 源系统的本地 MVP 状态，也不放宽上条未实现能力边界。
 
-## 24. `/admin` OpenAI-Compatible API 管理（2026-07-21，Stage 1 已完成）
+## 24. `/admin` OpenAI-Compatible API 管理（2026-07-21，Stage 2 已完成）
 
 - **需求权威**：详细设计为 `docs/superpowers/specs/2026-07-21-admin-api-management-design.md`；本节只固化需求入口和当前状态，不能把已确认设计描述为已实现、已测试或已部署能力。
 - **管理范围**：只有管理员可以在 `/admin/api` 管理全站 Chat Provider；访客不能选择模型或中转。首版只支持 OpenAI-compatible `responses` / `chat_completions`，Embedding、BGE、pgvector 维度、RAG 和搜索 Provider 不进入该页面。
@@ -387,4 +387,4 @@
 - **路由规则**：活动路由为一条主线路加零至五条备用线路。新增或运行摘要变化的目标必须在最近 30 分钟内由管理员主动完成真实测试才可激活；保存配置不自动调用 Provider。新活动版本原子切换且无需重启，已开始的流式请求固定使用旧快照，任何目标输出正文后均不得继续 failover。
 - **删除规则**：从未被引用的配置允许密码复验后物理删除；有历史引用但当前未使用的配置保留 tombstone。删除单个模型不得销毁仍供同连接其他模型使用的共享 Key，只有删除整个历史连接时才销毁连接密文；活动目标必须先从路由移除，环境目标不能删除。
 - **安全边界**：所有写操作复用管理员 Session 与精确 Origin 校验，Key 写入、Base URL/origin 变化、模型发现、真实测试、激活、回退和删除还需密码复验；旧 Key 跨 origin 复用另需显式确认。生产 Base URL 只允许公网 HTTPS，全部 DNS 结果必须校验，实际连接绑定已验证 IP 并禁止重定向。响应、日志、审计、截图和测试证据不得包含 Key、密文、Authorization、访客内容或 Provider 原始 payload。
-- **当前状态**：Stage 1 数据库兼容基线已在隔离分支本地实现并验证：新增 migration `004`、版本化连接/模型/路由 schema、环境文件主密钥、AES-256-GCM 加密、脱敏存储接口、最小数据库权限和 readiness 检查；Chat 仍只使用现有环境路由。运行路由与终态遥测、管理 API 与安全、`/admin/api` UI 和生产迁移均尚未完成；未使用真实凭据，未执行 Provider 调用，未 push 或部署。后续仍按其余三个 StagePacket 分别测试、审查与 closeout。
+- **当前状态**：Stage 1 数据库兼容基线与 Stage 2 请求级运行路由已在隔离分支本地实现并验证：新增 migration `004`、版本化连接/模型/路由 schema、环境文件主密钥、AES-256-GCM 加密、脱敏存储接口、受控出站、一主五备快照、共享总截止时间、单目标单次尝试和终态 attempt/winner/usage/cost 幂等归因；无 active route 时继续使用现有环境一主两备，Embedding、RAG 与搜索保持原路径。管理 API 与安全、`/admin/api` UI 和生产迁移均尚未完成；未使用真实凭据，未执行真实 Provider 调用，未 push 或部署。后续仍按 Stage 3-4 分别测试、审查与 closeout。

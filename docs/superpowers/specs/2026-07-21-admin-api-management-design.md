@@ -2,7 +2,7 @@
 
 日期：2026-07-21
 
-状态：设计已确认，待实施计划
+状态：设计已确认，Stage 1-2 已在隔离分支本地实现
 
 预期实施合同：`STAGED / CRITICAL / LOCAL`
 
@@ -12,20 +12,22 @@
 
 本设计只管理 Chat Provider。Embedding、BGE、pgvector 维度、知识摄取和 RAG 数据继续由部署环境控制，不能从该页面修改。
 
-设计已确认，Stage 1 数据库、加密、存储兼容基线已在隔离分支本地实现并验证；Stage 2–4 的运行路由、管理 API 与 `/admin/api` UI 尚未实现。当前未读取真实 API Key，未执行 Provider 调用、生产迁移或部署。
+设计已确认，Stage 1 数据库、加密、存储兼容基线和 Stage 2 请求级运行路由、受控出站、failover 与终态遥测已在隔离分支本地实现并验证；Stage 3 管理 API 与 Stage 4 `/admin/api` UI 尚未实现。当前未读取真实 API Key，未执行真实 Provider 调用、生产迁移或部署。
 
-## 2. 当前状态与问题
+## 2. 当前基线与剩余问题
 
-当前 Chat 配置完全来自进程环境变量：
+当前隔离分支的 Chat 运行基线为：
 
 - `loadServerConfig()` 读取主线路的 API Key、Base URL、模型、协议和 reasoning effort；
-- `createProvider()` 在每个 Chat 请求开始时创建 OpenAI-compatible 客户端；
-- 最多两个备用节点只能覆盖 API Key 和 Base URL，所有节点共享同一模型、协议和输出限制；
-- `/api/chat` 把 Provider 名固定记录为 `openai`，无法准确说明真正成功的备用线路；
+- 数据库没有 active route 时继续使用一主两备环境线路，保持升级兼容；
+- 数据库存在 active route 时，`/api/chat` 在建立 SSE 前一次解析并固定一至六个独立目标；损坏、删除、摘要不符或无法解密时返回稳定 503，不降级到环境线路；
+- 每个目标只发起一次 OpenAI-compatible 网络尝试，整条路由共享总截止时间，任何正文输出后不再 failover；
+- completed、failed 与 stopped 终态在同一事务中保存每次 attempt、winner、usage 和成本完整性，重放不重复归因；
+- Embedding 与 RAG 继续只读取部署环境，不进入数据库 Chat route；
 - `/admin` 只提供对话复盘、邀请码和导出，没有 Provider 配置入口；
-- PostgreSQL 没有 Provider 配置、活动版本、测试结果或配置审计表。
+- 管理 API、显式发现/测试、激活/回退和安全删除仍未实现。
 
-因此，当前切换模型或中转需要修改部署环境并重启进程，不能保存多套配置、测试后切换、原子回退或安全删除失效线路。
+因此，Stage 2 已具备消费不可变活动快照的运行能力，但管理员仍不能通过产品入口保存、测试、切换或删除失效线路；这些能力由 Stage 3-4 完成。
 
 ## 3. 已确认的产品规则
 

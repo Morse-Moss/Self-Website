@@ -322,6 +322,9 @@ scope:
     - tests/chat-service-integration.test.ts
     - tests/readiness.test.ts
     - tests/rag-integration.test.ts
+    - docs/portfolio-blueprint.md
+    - docs/superpowers/specs/2026-07-21-admin-api-management-design.md
+    - docs/superpowers/plans/2026-07-21-admin-api-management.md
   forbidden:
     - admin write APIs
     - admin UI
@@ -349,7 +352,9 @@ verification:
 review:
   shape: split
   correction_budget: 2
-knowledge_impact: []
+knowledge_impact:
+  - docs/portfolio-blueprint.md
+  - docs/superpowers/specs/2026-07-21-admin-api-management-design.md
 non_goals:
   - config mutation
   - paid connection test
@@ -465,7 +470,7 @@ Chat Completions、认证失败、首字节延迟、无输出、流中断、usag
 abort、stream 状态机、事务幂等和 cost completeness。通过后提交：
 
 ```powershell
-git add -- lib/server/ai-provider.ts lib/server/openai-provider.ts lib/server/failover-ai-provider.ts lib/server/provider.ts lib/server/provider-outbound.ts lib/server/provider-runtime.ts lib/server/chat-service.ts lib/server/interaction-log.ts lib/server/readiness.ts app/api/chat/route.ts scripts/mock-openai.mjs tests/provider-outbound.test.ts tests/provider-runtime.test.ts tests/openai-provider.test.ts tests/failover-provider.test.ts tests/chat-route-stream.test.ts tests/chat-service-integration.test.ts tests/readiness.test.ts tests/rag-integration.test.ts
+git add -- lib/server/ai-provider.ts lib/server/openai-provider.ts lib/server/failover-ai-provider.ts lib/server/provider.ts lib/server/provider-outbound.ts lib/server/provider-runtime.ts lib/server/chat-service.ts lib/server/interaction-log.ts lib/server/readiness.ts app/api/chat/route.ts scripts/mock-openai.mjs tests/provider-outbound.test.ts tests/provider-runtime.test.ts tests/openai-provider.test.ts tests/failover-provider.test.ts tests/chat-route-stream.test.ts tests/chat-service-integration.test.ts tests/readiness.test.ts tests/rag-integration.test.ts docs/portfolio-blueprint.md docs/superpowers/specs/2026-07-21-admin-api-management-design.md docs/superpowers/plans/2026-07-21-admin-api-management.md
 git commit -m "feat: route chat through dynamic provider snapshots"
 ```
 
