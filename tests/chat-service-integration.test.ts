@@ -874,6 +874,52 @@ test('runChat retrieves sources, streams answer, and persists short-term memory 
   ]);
 });
 
+test('runChat Provider payload events and persisted history exclude the private resume domain', {
+  skip: !pool,
+}, async () => {
+  const fixture = await createFailureFixture('resume-isolation-provider');
+  const isolatedProvider = new FakeProvider();
+  const events: ChatServiceEvent[] = [];
+  try {
+    for await (const event of runChat({
+      pool: pool!,
+      provider: isolatedProvider,
+      accessSessionId: fixture.accessSessionId,
+      request: {
+        message: 'Explain one approved public project.',
+        mode: 'general',
+        audienceIntent: 'general',
+        conversationId: null,
+        turnId: null,
+      },
+      config,
+      now,
+    })) {
+      events.push(event);
+    }
+    const history = await pool!.query<{ role: string; content: string }>(
+      `SELECT message.role, message.content
+         FROM conversation_messages AS message
+         JOIN conversations AS conversation ON conversation.id = message.conversation_id
+        WHERE conversation.access_session_id = $1
+        ORDER BY message.id`,
+      [fixture.accessSessionId],
+    );
+    const serialized = JSON.stringify({
+      provider: isolatedProvider.requests,
+      embedding: isolatedProvider.embedInputs,
+      events,
+      history: history.rows,
+    });
+    assert.doesNotMatch(
+      serialized,
+      /SYNTHETIC_PRIVATE_RESUME_MARKER_7F42|morse_resume_access|resume_documents|resume_invites|resume_sessions|resume_access_events|private[\\/]resume|trustedPersonNote/i,
+    );
+  } finally {
+    await cleanupFailureFixture(fixture);
+  }
+});
+
 test('runChat rejects requests after the access-session message limit', { skip: !pool }, async () => {
   await assert.rejects(async () => {
     for await (const _event of runChat({

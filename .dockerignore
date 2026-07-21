@@ -21,3 +21,6 @@ compose*.yml
 compose*.yaml
 deploy/postgres/tls
 deploy/secrets
+private
+private-resume
+*.morsepdf

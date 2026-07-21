@@ -94,3 +94,18 @@ test('chat source contract preserves the public JSON field shape', () => {
     score: 0.9,
   });
 });
+
+test('public chat contracts expose no private resume capability or identifier', () => {
+  const serialized = JSON.stringify({
+    modes: CHAT_MODES,
+    audienceIntents: CHAT_AUDIENCE_INTENTS,
+    workflows: CHAT_WORKFLOWS,
+    phases: CHAT_PHASES,
+    sources: CHAT_SOURCE_KINDS,
+    errors: CHAT_ERROR_CODES,
+  });
+  assert.doesNotMatch(
+    serialized,
+    /resume|morse_resume_access|resume_documents|private[\\/]resume|trustedPersonNote/i,
+  );
+});

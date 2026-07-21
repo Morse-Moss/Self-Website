@@ -9,7 +9,7 @@ import ts from 'typescript';
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const sourceRoots = ['app', 'components', 'lib'];
-const sourceExtensions = new Set(['.ts', '.tsx']);
+const sourceExtensions = new Set(['.ts', '.tsx', '.mjs']);
 const nodeBuiltins = new Set([
   ...builtinModules,
   ...builtinModules.map((moduleName) => `node:${moduleName}`),
@@ -178,6 +178,77 @@ function findBoundaryViolations(imports) {
   return [...new Set(violations)].sort();
 }
 
+async function buildGuardedImportIndex() {
+  const roots = ['app', 'components', 'lib', 'scripts'];
+  const discovered = (
+    await Promise.all(roots.map((root) => collectSourceFiles(path.join(repositoryRoot, root))))
+  ).flat().sort();
+  const sourceFiles = new Set(discovered);
+  const importers = new Map();
+  const sources = new Map();
+
+  for (const file of discovered) {
+    const source = await fs.readFile(path.join(repositoryRoot, ...file.split('/')), 'utf8');
+    sources.set(file, source);
+    for (const specifier of ts.preProcessFile(source, true, true).importedFiles.map((item) => item.fileName)) {
+      const target = resolveInternalImport(file, specifier, sourceFiles);
+      if (!target) continue;
+      const current = importers.get(target) ?? [];
+      current.push(file);
+      importers.set(target, current);
+    }
+  }
+  return { importers, sources };
+}
+
+function isResumeRoute(file) {
+  return file.startsWith('app/api/resume/') || file.startsWith('app/api/admin/resume/');
+}
+
+function isAllowedResumeImporter(target, importer) {
+  if (target === 'lib/server/resume-config.ts') {
+    return isResumeRoute(importer)
+      || ['lib/server/production-config.ts', 'lib/server/readiness.ts'].includes(importer);
+  }
+  if (target === 'lib/server/resume-crypto.ts') {
+    return importer === 'lib/server/resume-storage.ts';
+  }
+  if (target === 'lib/server/resume-storage.ts') {
+    return isResumeRoute(importer)
+      || importer === 'lib/server/resume-admin.ts'
+      || importer === 'scripts/rotate-resume-key.mjs';
+  }
+  if (target === 'lib/server/resume-access.ts') {
+    return isResumeRoute(importer)
+      || ['lib/server/resume-admin.ts', 'lib/server/resume-http.ts'].includes(importer);
+  }
+  if (target === 'lib/server/resume-admin.ts') {
+    return importer.startsWith('app/api/admin/resume/');
+  }
+  if (target === 'lib/server/resume-http.ts') {
+    return importer.startsWith('app/api/resume/');
+  }
+  return false;
+}
+
+function isIsolationDomain(file) {
+  return [
+    'lib/server/chat-service.ts',
+    'lib/server/rag.ts',
+    'lib/server/knowledge.ts',
+    'lib/server/public-knowledge.ts',
+    'lib/server/embedding.ts',
+    'scripts/ingest-knowledge.mjs',
+  ].includes(file)
+    || (file.startsWith('lib/server/') && file.endsWith('provider.ts'))
+    || (file.startsWith('scripts/') && path.posix.basename(file).includes('ingest'))
+    || file.startsWith('lib/server/search')
+    || file.startsWith('lib/server/workflows/jd-')
+    || file.startsWith('app/api/chat/')
+    || file.startsWith('app/api/search/')
+    || file.startsWith('app/api/jd-');
+}
+
 test('production TypeScript dependency graph is acyclic', async () => {
   const { graph } = await buildGraph();
   const cycles = findCycles(graph);
@@ -196,4 +267,48 @@ test('production TypeScript modules respect layer boundaries', async () => {
     [],
     `layer boundary violations:\n${violations.join('\n')}`,
   );
+});
+
+test('private resume modules have an explicit server-only importer allowlist', async () => {
+  const { importers } = await buildGuardedImportIndex();
+  const targets = [
+    'lib/server/resume-config.ts',
+    'lib/server/resume-crypto.ts',
+    'lib/server/resume-storage.ts',
+    'lib/server/resume-access.ts',
+    'lib/server/resume-admin.ts',
+    'lib/server/resume-http.ts',
+  ];
+  const violations = targets.flatMap((target) => (
+    (importers.get(target) ?? [])
+      .filter((importer) => !isAllowedResumeImporter(target, importer))
+      .map((importer) => `${importer} -> ${target}`)
+  ));
+  assert.deepEqual(violations, [], `private resume import violations:\n${violations.join('\n')}`);
+});
+
+test('resume maintenance entrypoints never enter a Next or client graph', async () => {
+  const { importers } = await buildGuardedImportIndex();
+  const allowed = new Map([
+    ['scripts/rotate-resume-key.mjs', new Set()],
+    ['scripts/cleanup-resume-storage.mjs', new Set(['scripts/worker.mjs'])],
+  ]);
+  const violations = [...allowed].flatMap(([target, targetAllowed]) => (
+    (importers.get(target) ?? [])
+      .filter((importer) => !targetAllowed.has(importer))
+      .map((importer) => `${importer} -> ${target}`)
+  ));
+  assert.deepEqual(violations, [], `resume maintenance import violations:\n${violations.join('\n')}`);
+});
+
+test('chat RAG Provider search JD and ingestion domains cannot access private resume state', async () => {
+  const { sources } = await buildGuardedImportIndex();
+  const violations = [];
+  for (const [file, source] of sources) {
+    if (!isIsolationDomain(file)) continue;
+    if (/resume-(?:config|crypto|storage|access|admin|http)|\bresume_(?:documents|invites|sessions|access_events)\b|private[\\/]resume/iu.test(source)) {
+      violations.push(file);
+    }
+  }
+  assert.deepEqual(violations, [], `private resume isolation violations:\n${violations.join('\n')}`);
 });

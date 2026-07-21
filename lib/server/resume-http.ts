@@ -9,7 +9,13 @@ import type {
   ResumeRedeemPolicy,
   ResumeRequestContext,
 } from './resume-access.ts';
-import type { EnabledResumeConfig } from './resume-config.ts';
+
+interface ResumeHttpConfig {
+  trustedProxyHops: number;
+  fingerprintSecret: string;
+  sessionHours: number;
+  auditRetentionDays: number;
+}
 
 export const RESUME_NO_STORE_HEADERS = {
   'Cache-Control': 'private, no-store, max-age=0',
@@ -55,7 +61,7 @@ export function hashResumeSourceFingerprint(secret: string, source: string): str
 
 export function resumeRequestContext(
   request: NextRequest,
-  config: EnabledResumeConfig,
+  config: ResumeHttpConfig,
 ): ResumeRequestContext {
   const source = trustedInviteSource(
     request.headers.get('x-forwarded-for'),
@@ -74,7 +80,7 @@ export function resumeRequestContext(
   };
 }
 
-export function resumeRedeemPolicy(config: EnabledResumeConfig): ResumeRedeemPolicy {
+export function resumeRedeemPolicy(config: ResumeHttpConfig): ResumeRedeemPolicy {
   return {
     sessionHours: config.sessionHours,
     attemptWindowSeconds: 10 * 60,

@@ -229,6 +229,22 @@ test('extractPublicKnowledge limits profile and project content to approved fiel
   }
 });
 
+test('extractPublicKnowledge ignores private resume-shaped fields', () => {
+  const content = loadSiteContent();
+  const documents = extractPublicKnowledge({
+    ...content,
+    privateResume: {
+      trustedPersonNote: 'SYNTHETIC_PRIVATE_RESUME_MARKER_7F42',
+      storagePath: '/opt/revolution/shared/private/resume/private.morsepdf',
+      table: 'resume_documents',
+    },
+  });
+  assert.doesNotMatch(
+    JSON.stringify(documents),
+    /SYNTHETIC_PRIVATE_RESUME_MARKER_7F42|resume_documents|private[\\/]resume|trustedPersonNote/i,
+  );
+});
+
 test('content-agent public knowledge leads with approved value and implementation facts', () => {
   const documents = extractPublicKnowledge(loadSiteContent());
   const document = documents.find((item) => item.id === 'project-content-agent');
