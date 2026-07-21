@@ -30,8 +30,8 @@ npm run production:worker
 
 | 角色 | 必需边界 | 不需要的权限或配置 |
 |---|---|---|
-| Web | runtime DB、HTTPS public/admin origin、Admin 与 invite secrets、Chat/Embedding 配置 | DDL、建库、Feishu webhook |
-| Worker | runtime DB、显式 `MORSE_ALERTS_ENABLED`；启用时需要 Feishu webhook | Chat/Embedding、Admin 凭据、DDL |
+| Web | runtime DB、HTTPS public/admin origin、Admin 与 invite secrets、Chat/Embedding 配置；启用私密简历时需要简历密文卷和加密 Secret | DDL、建库、Feishu webhook |
+| Worker | runtime DB、显式 `MORSE_ALERTS_ENABLED`、简历密文卷；启用告警时需要 Feishu webhook | Chat/Embedding、Admin 凭据、简历加密密钥、DDL |
 | Migration | migration DB 凭据与 TLS | Provider、Admin、Feishu |
 | Ingest | ingest DB、Embedding 配置与 TLS | Chat、Admin、Feishu |
 
@@ -49,20 +49,24 @@ npm run production:worker
 - `MORSE_ALERTS_ENABLED` 必须显式为 `true` 或 `false`。关闭告警时 Worker 仍执行 retention cleanup。
 - Chat 主节点使用 `OPENAI_API_KEY` / `OPENAI_BASE_URL`；最多两个备用节点分别使用完整的 `OPENAI_FALLBACK_1_*` 和 `OPENAI_FALLBACK_2_*` 成对配置。生产备用 URL 必须是无凭据 HTTPS URL，缺 key 或缺 URL 均 fail closed。
 - 三个 Chat 节点共享 `OPENAI_CHAT_MODEL`、`OPENAI_CHAT_PROTOCOL`、`OPENAI_REASONING_EFFORT` 和兼容 User-Agent。切换顺序固定为主节点、备用 1、备用 2，只在尚未输出正文时发生；已有部分回答或访客停止后不再切换。每个节点仍受单节点总超时约束，整次切换共享“单节点总超时 × 节点数”的上限。Embedding 继续使用独立配置。
+- 私密简历默认使用 `MORSE_RESUME_ENABLED=false`。生产首次发布必须保持关闭，完成 migration `003`、私有卷初始化、最小 grants、健康检查和回滚检查后，才可在单独授权下启用。
+- 启用私密简历时，Web 还必须获得 `MORSE_RESUME_STORAGE_DIR`、`MORSE_RESUME_ENCRYPTION_KEY_FILE`、`MORSE_RESUME_KEY_VERSION`、`MORSE_RESUME_FINGERPRINT_SECRET`、`MORSE_RESUME_TRUSTED_PROXY_HOPS` 和独立 `MORSE_RESUME_COOKIE`。生产禁止使用直接值 `MORSE_RESUME_ENCRYPTION_KEY`；加密密钥只通过名为 `resume_encryption_key` 的部署 Secret 文件挂载给 Web。
+- Worker 只挂载简历密文卷用于保留期清理，不读取加密密钥。聊天、Embedding、Search、Ingest、Migration 和 edge 均不得获得简历文件或密钥。
 - 所有 key、密码、webhook、DB URL 和 CA 只从部署 Secret Store 或主机受限环境文件注入，不进入 Git、镜像层和日志。
 
 完整变量名与本地默认值见 `.env.example`。示例值不是生产凭据，也不是生产安全配置。
 
 ## 4. 首次启动顺序
 
-1. 创建受限网络内的 PostgreSQL/pgvector，并完成 TLS 与角色授权。
-2. 使用 migration 角色执行 `npm run production:migrate`。
-3. 启动并验证生产 Embedding 服务。
-4. 使用 ingest 角色执行 `npm run production:ingest`；重复执行应全量跳过。
-5. 启动单副本 Web，检查 `/api/health/live` 和 `/api/health/ready`。
-6. 启动单实例 Worker。
-7. 优先通过 `/admin` 创建新的 72 小时邀请码；管理页面不可用时使用 CLI 应急后备。完成一次受控文本对话 smoke。
+1. 创建受限网络内的 PostgreSQL/pgvector，并完成 TLS 与角色授权。升级现有实例时先生成并校验数据库备份。
+2. 在 `MORSE_RESUME_ENABLED=false` 下初始化权限为 `0700` 的简历密文卷；不要上传 PDF。
+3. 使用 migration 角色执行 `npm run production:migrate`，核对 migration `003` checksum，再执行最小 grants。
+4. 启动并验证生产 Embedding 服务。
+5. 使用 ingest 角色执行 `npm run production:ingest`；重复执行应全量跳过。
+6. 保持私密简历关闭，启动单副本 Web 和单实例 Worker，检查 `/api/health/live`、`/api/health/ready` 和公开页面。
+7. 优先通过 `/admin` 创建新的聊天邀请码；管理页面不可用时使用 CLI 应急后备。完成一次受控文本对话 smoke。
 8. 在真实 TLS edge 后执行 `MORSE_RELEASE_BASE_URL=https://... npm run release:smoke`。
+9. 只有在前述步骤与回滚路径通过且获得单独授权后，才启用私密简历并重启 Web/Worker；先观察未上传 PDF 的锁定入口，再由管理员上传真实最终 PDF。
 
 `/api/health/live` 不访问依赖。`/api/health/ready` 和兼容入口 `/api/health` 只有在运行配置有效、数据库可达、migration 版本与 checksum 完整、公开知识非空时返回 `200 {"ok":true}`；失败统一返回 `503 {"ok":false}`，不得泄漏模型、费用、表名、chunk 数或内部异常。
 
@@ -81,18 +85,35 @@ npm run production:worker
 | `POST /api/admin/invites` | 管理员 Session + 精确 Origin | 生成邀请码；只在本次响应返回明文 |
 | `PATCH /api/admin/invites/[inviteId]` | 管理员 Session + 精确 Origin | 仅允许将邀请码停用 |
 
+### 4.2 私密简历运维
+
+- 公开入口只显示授权状态；真实 PDF 只通过 `GET /api/resume/file` 在有效简历 Session 下解密返回。响应必须保持 `Content-Type: application/pdf`、`Cache-Control: private, no-store`、`X-Content-Type-Options: nosniff` 和内联 disposition。
+- 管理员在 `/admin` 上传最终 PDF、创建一人一码的简历邀请或停用邀请。明文邀请码只在创建响应中出现一次；停用后关联简历 Session 下一次请求立即失效。聊天邀请码与简历邀请码互不升级权限。
+- 简历访问事件只记录受控元数据，30 天后由 Worker 删除。Worker 还会删除至少 24 小时且无数据库引用的密文/临时文件；清理或文件事务异常必须写入 `storage_recovery`，不能静默吞掉。
+- 备份必须把数据库、加密密文卷和密钥版本作为一个恢复集合校验，同时将密钥材料与密文备份分离保管。不得备份明文 PDF、邀请码明文、Session token、原始请求或响应正文。未完成一次隔离恢复演练前，不宣称私密简历可灾备恢复。
+
+密钥轮换使用 `scripts/rotate-resume-key.mjs` 的四阶段协议，并在受控维护窗口执行：
+
+1. `prepare`：向一次性运维容器只读挂载旧/新密钥文件，设置 `MORSE_RESUME_OLD_KEY_FILE`、`MORSE_RESUME_NEW_KEY_FILE`、`MORSE_RESUME_OLD_KEY_VERSION` 和 `MORSE_RESUME_NEW_KEY_VERSION` 后重新加密并校验；当前指针不变。
+2. `activate <previous-id> <prepared-id>`：原子切换当前文档；随后替换 Web 的 `resume_encryption_key` 和 `MORSE_RESUME_KEY_VERSION`，重启并观察文件响应和健康状态。
+3. 观察失败且尚未 finalize 时执行 `rollback <previous-id> <activated-id>`，恢复旧 Secret/版本并重新观察。
+4. 观察通过后执行 `finalize <activated-id> <retired-id> <observed-id>`；只有指针与观察目标一致时才删除退役行和密文。
+
+每个阶段只接受稳定 `RESUME_KEY_ROTATION_OK`。数据库提交状态不明确、指针不一致、密文清理失败或出现 `storage_recovery` 时必须停止，不得盲目重试、覆盖旧密钥或手工删除文件。
+
 ## 5. Worker 行为
 
 - Outbox 默认每 5 秒轮询，单轮受 `MORSE_ALERT_DISPATCH_LIMIT` 限制。
 - 连续基础设施错误按 5、10、20、40、60 秒有界退避，成功后复位。
 - retention cleanup 在启动时执行，之后每小时执行。
 - cleanup 使用 PostgreSQL transaction advisory lock；另一个 Worker 已持锁时跳过本轮，不并发删除。
+- 简历 Session、邀请码和访问审计按独立保留合同清理；原始访问审计固定 30 天，过期无引用密文和临时文件由同一 Worker 周期受控清理。
 - SIGINT/SIGTERM 停止新一轮工作并关闭数据库池。
 - Feishu custom webhook 仍是至少一次投递。远端成功但本地写入 `sent` 前崩溃时可能重复，不能对外承诺 exactly-once。
 
 ## 6. 重建式灾备演练
 
-当前恢复目标是恢复公开服务，不承诺恢复 12 小时 Session 或 10 天 interaction analytics：
+当前公开服务的恢复不承诺恢复 12 小时 Session 或 10 天 interaction analytics。私密简历启用后，恢复演练必须另行证明数据库行、加密卷和对应密钥版本一致；缺少其中任一项时只能由管理员重新上传最终 PDF：
 
 1. 在隔离的新数据库上启用 pgvector。
 2. 执行全部 migration。
@@ -108,12 +129,12 @@ npm run production:worker
 - 每次发布记录不可变镜像 digest，保留上一个已观察版本。
 - 应用配置或行为异常且 schema 兼容时，将 Web/Worker 回滚到上一 digest，再执行 live/ready 和文本 smoke。
 - migration 只追加，不提供 down migration。若新版本已改变 schema 且旧镜像不兼容，禁止盲目回滚；停止发布并按对应 migration 的前向修复方案恢复。
-- S11-5A 没有 schema 变化，因此本切片可以按应用镜像整体回滚。
+- 私密简历异常时先设置 `MORSE_RESUME_ENABLED=false` 并只重启 Web/Worker；保留 migration `003`、密文卷和 Secret，不执行 down migration或删除数据。确认旧镜像忽略新增表后才可切回上一冻结版本。
 - 不从脏工作树构建或部署；发布必须指向已冻结 commit。
 
 ## 8. 当前生产状态与硬化余项
 
-首个生产实例在 `39849e1` 完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实对话 smoke 和公网 live/ready/release smoke。当前应用 release 为 `741ddad`，沿用同一生产拓扑，并已发布密码登录、邀请码管理、私有导出密码复验、五个项目的简洁页面、展开详情和正式主图、首页 Warp Tunnel，以及同模型同协议的三节点 Chat 容灾；五项目统一使用“项目负责人”称呼并保留独立技术实现口径。生产公开知识为 40 documents / 47 chunks；本轮摄取为 0 更新、40 documents 跳过。生产 BGE + pgvector 的 46 条 gold 为 top-1 36/46、top-3 46/46，正负阈值均通过。生产 Lighthouse 13.4.0 的移动端与桌面端 Performance 均为 99。本次发布没有创建生产邀请码明文；主节点、两级接管和运行 Web 容器共完成 4 次受控真实 Chat Provider 调用，未调用 Bocha 或 Feishu；实例细节和发布证据以实例手册及 S11 closeout 为准。
+首个生产实例在 `39849e1` 完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实对话 smoke 和公网 live/ready/release smoke。2026-07-21 只读核验的当前应用 release 为 `b6ddad5`，沿用同一生产拓扑，并已发布密码登录、邀请码管理、私有导出密码复验、五个项目的简洁页面、展开详情和正式主图、首页 Warp Tunnel、三节点 Chat 容灾及“招聘 / 合作 / 同行交流”入口。生产 migration 仍为 001/002，私密简历分支、migration `003`、私有卷、密钥和真实 PDF 均未部署。生产公开知识为 40 documents / 47 chunks；最近一次摄取为 0 更新、40 documents 跳过。生产 BGE + pgvector 的 46 条 gold 为 top-1 36/46、top-3 46/46，正负阈值均通过。生产 Lighthouse 13.4.0 的移动端与桌面端 Performance 均为 99；实例细节和历史发布证据以实例手册及 S11 closeout 为准。
 
 以下事项完成前保持 `LIMITED_LAUNCH`，不标记完整 `ONLINE_READY`：
 
@@ -124,6 +145,7 @@ npm run production:worker
 - 获得当次授权后分别执行真实 Bocha 和 Feishu smoke。
 - 复核并处置当前生产依赖审计中的 moderate advisory，不执行无评估的 `audit fix`。
 - 将经人工确认的最终内容与素材冻结成新提交后再发布；不得从当前脏工作区直接覆盖生产。
+- 私密简历需要单独授权完成 push/主线吸收、数据库备份、migration `003`、私有卷与 Secret 初始化、disabled-first 切流、真实 PDF 上传和生产观察。
 
 ## 9. 故障定位顺序
 

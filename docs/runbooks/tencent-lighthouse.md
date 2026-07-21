@@ -2,10 +2,10 @@
 
 本文对应 `aimorse.tech` 的生产部署。当前实例为腾讯云 Lighthouse 首尔节点，公网地址为 `43.133.68.202`。境外节点不需要 ICP 备案；DNS 解析和 HTTPS 证书签发已完成，域名实名状态继续由腾讯云注册控制台维护。
 
-## 当前生产状态（2026-07-20）
+## 当前生产状态（2026-07-21）
 
-- 状态：`PRODUCTION_OBSERVED / LIMITED_LAUNCH`，当前应用 release `741ddad`。
-- 实例：`lhins-0oly57x8`；`/opt/revolution/current` 指向 `/opt/revolution/releases/741ddad/revolution`，Web、Worker 与 Edge 的 Compose working directory 均已核对到该冻结 release。
+- 状态：`PRODUCTION_OBSERVED / LIMITED_LAUNCH`，当前应用 release `b6ddad5`。
+- 实例：`lhins-0oly57x8`；2026-07-21 只读核验 `/opt/revolution/current` 指向 `/opt/revolution/releases/b6ddad5/revolution`，公网 live/ready 均为 HTTP 200。
 - 拓扑：Caddy edge、Next.js Web、Worker、PostgreSQL 16 + pgvector、CPU BGE/Embedding 均已启动；DB、Embedding 与 Web health 为 healthy。
 - 域名：`aimorse.tech` 与 `www.aimorse.tech` 均解析到 `43.133.68.202`；Let's Encrypt 证书已签发，HTTP 和 `www` 均重定向到主域 HTTPS。
 - 防火墙：腾讯云入站允许 TCP `22/80/443` 与 ICMP；UFW 允许 `22/80/443`，数据库、Embedding 和 Next 内部端口未映射到公网。
@@ -14,6 +14,7 @@
 - 浏览器：首页 Warp Tunnel 与作品页在 1440x900、390x844 和 reduced-motion 场景均无横向溢出、控制台/page error、外部运行时请求或失败；正式图片加载完成；从项目 CTA 输入邀请码后，预填问题保留在输入框且不会自动发送。
 - 性能：生产域名 Lighthouse 13.4.0 移动端与桌面端 Performance 均为 99；桌面 FCP 0.2s、LCP 0.6s、TBT 70ms、CLS 0、Speed Index 1.0s。
 - 管理入口：`https://aimorse.tech/admin` 不在公开导航中。功能基线 `c3f1ec6` 使用密码登录，包含对话复盘、badcase、密码复验导出和邀请码管理；生产脚本不再引用 `totpCode` 或 `inviteTotpCode`。发布验收没有读取生产管理员密码，因此未创建邀请码明文；认证后的创建、兑换与停用按下方顺序由管理员验收。
+- 私密简历：本地分支已达到 `LOCAL_READY`，但生产 release `b6ddad5` 不包含简历 API、migration `003`、私有卷、简历 Secret、真实 PDF 或简历邀请码；不得把本地验收描述为已上线。
 
 仍需保持诚实边界：监控、托管备份与恢复演练、独立 edge 速率/连接限制、真实 Bocha/Feishu smoke、moderate dependency advisory 处置和更多国内网络可达性复核尚未完成。首页 Warp Tunnel、五项目页面与公开知识已进入生产，但剩余工作区改动和未跟踪证据没有进入生产。
 
@@ -83,20 +84,45 @@ MORSE_ADMIN_PASSWORD_HASH=<scrypt-hash>
 MORSE_INVITE_FINGERPRINT_SECRET=<random-secret>
 MORSE_ALERTS_ENABLED=false
 MORSE_SEARCH_ENABLED=false
+MORSE_RESUME_ENABLED=false
+MORSE_RESUME_COOKIE=morse_resume_access
+MORSE_RESUME_KEY_VERSION=1
+MORSE_RESUME_FINGERPRINT_SECRET=<random-secret>
+MORSE_RESUME_TRUSTED_PROXY_HOPS=1
 ```
+
+`compose.production.yaml` 固定把 `revolution_private_resume` 挂载到 Web/Worker，并只把 `resume_encryption_key` Secret 挂载给 Web。`MORSE_RESUME_STORAGE_DIR` 和 `MORSE_RESUME_ENCRYPTION_KEY_FILE` 由 Compose 注入，禁止在 `.env.production` 改成宿主机任意路径。首次准备这些资源仍属于私密简历部署授权，不能因为命令已写入手册就提前执行。
 
 ## 发布顺序
 
 ```bash
 docker compose --env-file .env.production -f compose.production.yaml build
 docker compose --env-file .env.production -f compose.production.yaml up -d db embedding
+docker compose --env-file .env.production -f compose.production.yaml run --rm resume-storage-init
 docker compose --env-file .env.production -f compose.production.yaml run --rm migration
 docker compose --env-file .env.production -f compose.production.yaml --profile ops run --rm grants
 docker compose --env-file .env.production -f compose.production.yaml run --rm ingest
 docker compose --env-file .env.production -f compose.production.yaml up -d web worker edge
 ```
 
-迁移完成后 `grants` 会撤销 migration 角色的临时超级用户权限。重复执行 migration 和 ingest 应分别保持幂等，第二次入库应跳过未变化内容。
+迁移完成后 `grants` 会撤销 migration 角色的临时超级用户权限。重复执行 migration 和 ingest 应分别保持幂等，第二次入库应跳过未变化内容。私密简历首次部署必须先保持 `MORSE_RESUME_ENABLED=false` 完成上述序列，核对 migration `003` checksum 为 `6acd5ca32728e6c7ee962d7e8a91beaca52dba36efaa0ad4e96fb9cb3aad3ee7`、runtime grants、live/ready 和公开 release smoke，再在单独授权下切换开关并只重启 Web/Worker。
+
+## 私密简历首次启用与密钥轮换
+
+1. 获得私密简历生产授权后，在受限主机上生成 `deploy/secrets/resume_encryption_key`，所有者设为容器 Web UID/GID `1001:1001`、权限 `0600`；确认数据库备份可读取、私有卷权限为 `0700`、Web 能读取该 Secret、Worker 不能读取它。生成命令不得回显密钥：
+
+   ```bash
+   umask 077
+   openssl rand -base64 32 > /opt/revolution/deploy/secrets/resume_encryption_key
+   chown 1001:1001 /opt/revolution/deploy/secrets/resume_encryption_key
+   chmod 600 /opt/revolution/deploy/secrets/resume_encryption_key
+   ```
+
+2. 设置 `MORSE_RESUME_ENABLED=true` 并重启 Web/Worker；先观察未上传 PDF 的公开入口，不创建邀请码。
+3. 真实最终 PDF 只能由管理员通过 `/admin` 上传；不得使用 SCP 写入卷，不得截图或记录正文。上传后只核对密文大小/SHA-256、数据库当前指针、PDF 响应状态与安全头。
+4. 只有再次授权后才创建一个真实简历邀请码并完成受控兑换；明文不进入终端历史、文档、截图或日志。
+
+密钥轮换在一次性受控运维容器中运行 `node scripts/rotate-resume-key.mjs`，旧/新密钥都以只读文件挂载，依次执行 `prepare`、`activate`、观察、`finalize`；观察失败时在 finalize 前执行 `rollback`。每一步的参数与停止条件见平台无关运行手册。发生指针不一致、提交状态未知或 `storage_recovery` 时立即停止，不覆盖旧 Secret、不删除密文，并先关闭 `MORSE_RESUME_ENABLED`。
 
 ## DNS、端口和检查
 
@@ -117,4 +143,4 @@ docker compose --env-file .env.production -f compose.production.yaml ps
 
 应用镜像按 Git 提交保留 digest。无 schema 变化的发布可以停止 `edge/web/worker` 并切回上一 digest；迁移是前向追加，不执行猜测性的 down migration。若新 schema 与旧镜像不兼容，停止发布并按对应 migration 设计修复或重建数据库。
 
-当前数据策略是可重建优先：公开知识从仓库重新 ingest，短期会话和交互分析按既定保留期处理，不把原始对话复制到临时备份。是否启用腾讯云快照或独立加密备份，需要在首轮真实恢复演练后单独决定。
+公开知识继续从仓库重新 ingest，短期会话和交互分析按既定保留期处理，不把原始对话复制到临时备份。私密简历启用后不属于“可重建数据”：数据库、加密密文卷和对应密钥版本必须分离备份并共同恢复验证；任何备份都不得包含明文 PDF、邀请码明文或 Session token。是否启用腾讯云快照或独立加密备份，需要在首轮真实恢复演练后单独决定。

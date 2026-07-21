@@ -14,7 +14,7 @@
 - S9 Morse 作品集重设计已完成并进入 `origin/master`：首页以 `Morse` 为主身份，作品集改为四项目单页折叠；企业内部项目只公开获批的脱敏事实与示例媒体，不提供系统访问入口。全视口首屏、1440/390 双宽、减弱动画和 Lighthouse 门禁均已通过。
 - S10 数字摩斯智能客服已达到 `MAINLINE_PROVIDER_READY / CHAT_UX_LOCAL_READY`：访客三流程、自动搜索、管理后台与离线评测完成；19/19 Mock E2E、1440/390 真实浏览器、543/543 零 skip 全量测试、BGE/pgvector 语义评测和 19/19 生产构建均已通过。2026-07-17 针对中转 WAF 和易变模型目录加入显式兼容 User-Agent，并以 Provider 当前可用模型配置完成验收；随后修复默认问题只填框、等待态仍显示建议、Markdown 源码外露、来源编号不清和 OpenAI-compatible 中转间歇性空输出/502。聊天区已扩大；正文“依据”和底部来源统一遵循不打断合同：当前页资料静态显示，项目案例和联网资料在新标签页打开，不能改变当前对话 URL、消息或 transcript 滚动位置。未配置备用节点时，Responses 仍只在零正文的空完成、incomplete 或明确瞬时 HTTP 状态下进行最多 3 次同节点尝试；配置备用节点后，每个节点最多尝试一次，并在任何节点级错误且零正文时按主节点、备用 1、备用 2 切换。已有部分回答或访客主动停止时不会切换；可用 usage 会累计。最新持久化 usage 证据 turn `e9d03006-2cbd-40dd-a31c-1cd65c6b6e45` 到达 SSE `done` 和数据库 `completed`，usage 为 5766 输入 / 102 输出 token；本轮另有三个真实浏览器 turn `45d91a62-38b9-4505-9a80-5e7b563a2cb2`、`3023fc9a-af03-45e0-91c6-3994022a1fc5` 与 `389f9ccd-9f42-451f-a641-050bad5f1106` 均为 `completed`，额度各从 30 降到 29；最新一轮延迟 15706ms、5 个检索来源、`used_search=false`。中转未返回 usage，费用保持未知。真实博查/飞书未验收；S10 当时未部署，当前生产状态以 S11 条目为准。
 - 管理员固定入口为 `/admin`，不出现在公开导航；生产使用独立管理员密码登录，有效管理 Session 内可生成和停用邀请码，导出私有数据时重新输入密码。安全边界仍包括 scrypt、五次失败锁定、30 分钟 Strict Session、精确 Origin 和服务端权限校验。
-- S11 生产部署已于 2026-07-18 达到 `PRODUCTION_OBSERVED / LIMITED_LAUNCH`，并在 2026-07-20 将三节点 Chat 容灾更新到 `741ddad`：`aimorse.tech` 与 `www.aimorse.tech` 的 Caddy/HTTPS、Web、Worker、PostgreSQL/pgvector 和 CPU BGE 均在运行；生产 migration、最小数据库 grants、公开知识摄取、live/ready 与 release smoke 已通过。
+- S11 生产部署已于 2026-07-18 达到 `PRODUCTION_OBSERVED / LIMITED_LAUNCH`，并在 2026-07-20 将页面与聊天入口更新到 `b6ddad5`：`aimorse.tech` 与 `www.aimorse.tech` 的 Caddy/HTTPS、Web、Worker、PostgreSQL/pgvector 和 CPU BGE 均在运行；生产 migration、最小数据库 grants、公开知识摄取、live/ready 与 release smoke 已通过。2026-07-21 再次只读核验 release 指针为 `b6ddad5`，公网 live/ready 均为 200。
 - 生产 Chat 固定使用 `gpt-5.6-terra`、Responses 和 high reasoning，按主节点、备用 1、备用 2 顺序切换。切流前分别强制验证两级故障接管，切流后从运行 Web 容器复验主节点；共 4 次受控真实调用均返回完整终态和 usage，未保存回答正文、原始 payload 或凭据。
 - 内容创作 Agent、自动运营 Agent、深度研究 Agent、数字摩斯与 AI 外贸获客系统的简洁页面、正式主图和展开详情均已进入生产 Web；五张主图、公网页面和健康接口均为 HTTP 200。
 - 生产 RAG 已全量收敛到 40 documents / 47 chunks；此前首轮摄取更新 10 documents / 16 chunks，当前 Provider 发布摄取为 0 更新、40 documents 跳过。生产 BGE + pgvector 的 46 条 gold 为 top-1 36/46、top-3 46/46，正负阈值均通过。
@@ -23,6 +23,7 @@
 - 当前仍不标记 `ONLINE_READY`：监控、托管备份与恢复演练、edge 速率/连接限制、真实 Bocha/Feishu smoke、moderate dependency advisory 处置及更多国内网络可达性复核仍待完成；剩余工作区改动与未跟踪证据未复制到服务器。
 - M3-RAG 基础能力继续复用短期邀请码、PostgreSQL + pgvector、OpenAI 适配层、SSE、短期会话和费用门；本地 BGE 语义向量已接入。S8 的 3 次历史 `runChat` 未完成，但已由 2026-07-17 的 S10 真实 Provider 全链 PASS 更新当前结论；历史失败记录不删除，也不由 Mock 替代。
 - 本次部署为用户明确授权的生产发布；后续 push、再次部署和远端变更仍需单独授权。
+- 私密简历访问已在 `codex/private-resume-access` 完成本地实现与合成数据验收：独立邀请码和 Session、AES-256-GCM 密文存储、管理员上传、撤销、30 天审计清理、密钥轮换、RAG/Provider/镜像隔离及 1440/390 双宽流程均通过。该分支尚未 push、合并或部署，生产仍没有私密简历 API、真实 PDF、简历密钥或简历邀请码。
 
 ## 本地运行
 
@@ -79,6 +80,19 @@ npm run session:cleanup
 
 Chat 可通过 `OPENAI_FALLBACK_1_API_KEY` / `OPENAI_FALLBACK_1_BASE_URL` 和 `OPENAI_FALLBACK_2_API_KEY` / `OPENAI_FALLBACK_2_BASE_URL` 配置两个有序备用 endpoint。三个节点共享模型、协议、reasoning effort 和兼容 User-Agent；只在零正文时切换，Embedding 不参与该切换。
 
+## 私密简历本地验证与生产边界
+
+私密简历默认关闭：未设置 `MORSE_RESUME_ENABLED` 或设为 `false` 时，Web 不开放授权、解密或文件返回，也不读取生产简历密钥；已初始化的 Worker 仍可按保留合同清理过期行和无引用密文。启用时需要 `DATABASE_URL`、`MORSE_PUBLIC_ORIGIN`、`MORSE_RESUME_STORAGE_DIR`、`MORSE_RESUME_ENCRYPTION_KEY_FILE`、`MORSE_RESUME_KEY_VERSION`、`MORSE_RESUME_FINGERPRINT_SECRET` 和 `MORSE_RESUME_TRUSTED_PROXY_HOPS`；`MORSE_RESUME_COOKIE` 可覆盖独立 Cookie 名，但不得与聊天或管理员 Cookie 重名。生产只接受文件型加密密钥，明文环境变量 `MORSE_RESUME_ENCRYPTION_KEY` 仅允许 development/test。
+
+本地验收只使用一次性数据库、随机测试密钥和合成 PDF：
+
+```powershell
+npm run build
+node scripts/private-resume-visual-smoke.mjs http://127.0.0.1:3010
+```
+
+脚本在生产构建服务存活期间执行 `release:smoke`，覆盖 1440x900 与 390x844 的未授权、无效码、兑换、退出、过期、撤销、无文档、管理员上传和邀请码管理；不调用真实 Provider，也不保留 PDF 画面。真实最终 PDF 只能在获得生产部署和上传授权后，通过已认证的 `/admin` 上传；不得写入 Git、`public/`、公开知识、构建镜像、截图或日志。
+
 ## 验证
 
 ```powershell
@@ -99,6 +113,7 @@ S11 腾讯云生产部署证据与剩余边界位于 `docs/verify/s11/production
 数字摩斯项目简介、主图、知识主题与双视口验收记录位于 `docs/verify/digital-morse/digital-morse-closeout.md`。
 深度研究 Agent 项目简介、主图、知识主题与双视口验收记录位于 `docs/verify/deep-research/deep-research-closeout.md`。
 AI 外贸获客系统本地展示、主图、知识主题与双视口验收记录位于 `docs/verify/ai-leadgen/ai-leadgen-closeout.md`。
+私密简历本地安全、浏览器、构建和外部部署门禁位于 `docs/verify/private-resume/private-resume-closeout.md`。
 
 ## 目录
 
