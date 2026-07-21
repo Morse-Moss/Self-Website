@@ -216,6 +216,14 @@ export async function getAdminResumeDashboard(pool: Pool, now = new Date()) {
       redeemedAt: row.redeemed_at ? (row.redeemed_at as Date).toISOString() : null,
       disabledAt: row.disabled_at ? (row.disabled_at as Date).toISOString() : null,
     })),
-    events: events.rows.map((row) => ({ ...row, source_ip: row.source_ip ? String(row.source_ip) : null })),
+    events: events.rows.map((row) => ({
+      id: String(row.id),
+      eventType: String(row.event_type),
+      resultCode: String(row.result_code),
+      ip: row.source_ip ? String(row.source_ip) : null,
+      userAgent: row.user_agent ? String(row.user_agent) : null,
+      deviceInfo: row.device_info as Record<string, string>,
+      createdAt: (row.created_at as Date).toISOString(),
+    })),
   };
 }

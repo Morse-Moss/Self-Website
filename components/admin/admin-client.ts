@@ -24,6 +24,34 @@ export interface AdminInviteList {
   items: AdminInvite[];
 }
 
+export interface AdminResumeDashboard {
+  document: null | {
+    id: string;
+    plaintextBytes: number;
+    ciphertextBytes: number;
+    cipherSha256: string;
+    keyVersion: number;
+    uploadedAt: string;
+  };
+  invites: Array<{
+    id: string;
+    trustedPersonNote: string;
+    createdAt: string;
+    expiresAt: string;
+    redeemedAt: string | null;
+    disabledAt: string | null;
+  }>;
+  events: Array<{
+    id: string;
+    eventType: string;
+    resultCode: string;
+    ip: string | null;
+    userAgent: string | null;
+    deviceInfo: Record<string, string>;
+    createdAt: string;
+  }>;
+}
+
 export interface AdminFilters {
   from: string;
   to: string;

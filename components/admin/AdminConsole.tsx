@@ -6,6 +6,7 @@ import AdminExportDialog from './AdminExportDialog';
 import AdminFilters from './AdminFilters';
 import AdminInviteDialog from './AdminInviteDialog';
 import AdminLogin from './AdminLogin';
+import AdminResumePanel from './AdminResumePanel';
 import AdminTurnDetailPanel from './AdminTurnDetail';
 import AdminTurnList from './AdminTurnList';
 import {
@@ -48,6 +49,7 @@ export default function AdminConsole() {
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [resumeOpen, setResumeOpen] = useState(false);
   const [notice, setNotice] = useState('');
 
   function resetPrivateState() {
@@ -60,6 +62,7 @@ export default function AdminConsole() {
     setMobileDetailOpen(false);
     setExportOpen(false);
     setInviteOpen(false);
+    setResumeOpen(false);
     setNotice('');
   }
 
@@ -282,6 +285,14 @@ export default function AdminConsole() {
           </span>
           <button
             className={styles.secondaryButton}
+            data-testid="admin-resume-open"
+            type="button"
+            onClick={() => setResumeOpen(true)}
+          >
+            简历管理
+          </button>
+          <button
+            className={styles.secondaryButton}
             data-testid="admin-invites-open"
             type="button"
             onClick={() => setInviteOpen(true)}
@@ -357,6 +368,13 @@ export default function AdminConsole() {
       <AdminInviteDialog
         open={inviteOpen}
         onClose={() => setInviteOpen(false)}
+        onUnauthorized={requireLogin}
+        onComplete={setNotice}
+      />
+
+      <AdminResumePanel
+        open={resumeOpen}
+        onClose={() => setResumeOpen(false)}
         onUnauthorized={requireLogin}
         onComplete={setNotice}
       />

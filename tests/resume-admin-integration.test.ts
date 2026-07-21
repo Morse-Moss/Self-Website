@@ -129,7 +129,19 @@ test('resume invite plaintext is one-time, dashboard omits hashes, and disable r
   const stored = await pool.query<{ code_hash: string; row: string }>('SELECT code_hash, row_to_json(resume_invites)::text AS row FROM resume_invites WHERE id=$1', [created.id]);
   assert.equal(stored.rows[0].code_hash, hashSecret(created.code));
   assert.doesNotMatch(stored.rows[0].row, new RegExp(created.code, 'u'));
-  assert.doesNotMatch(JSON.stringify(await getAdminResumeDashboard(pool)), /code_hash|token_hash/iu);
+  const dashboard = await getAdminResumeDashboard(pool);
+  assert.doesNotMatch(JSON.stringify(dashboard), /code_hash|token_hash/iu);
+  assert.deepEqual(Object.keys(dashboard.events[0]).sort(), [
+    'createdAt',
+    'deviceInfo',
+    'eventType',
+    'id',
+    'ip',
+    'resultCode',
+    'userAgent',
+  ]);
+  assert.equal(dashboard.events[0].eventType, 'invite_created');
+  assert.equal(dashboard.events[0].resultCode, 'OK');
   const context = { ip: '192.0.2.91', userAgent: 'Synthetic/1', deviceInfo: {}, fingerprintHash: hashSecret('resume-admin-fingerprint') };
   const session = await redeemResumeInviteProtected(pool, created.code, context, { sessionHours: 72, attemptWindowSeconds: 600, maxFailedAttempts: 5, lockSeconds: 900, auditRetentionDays: 30 });
   assert.ok(await authenticateResumeSession(pool, session.token));

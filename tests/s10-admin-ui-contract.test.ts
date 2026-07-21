@@ -8,6 +8,7 @@ const consolePath = path.join(adminDirectory, 'AdminConsole.tsx');
 const detailPath = path.join(adminDirectory, 'AdminTurnDetail.tsx');
 const invitePath = path.join(adminDirectory, 'AdminInviteDialog.tsx');
 const inviteStylePath = path.join(adminDirectory, 'AdminInviteDialog.module.css');
+const resumePanelPath = path.join(adminDirectory, 'AdminResumePanel.tsx');
 const clientPath = path.join(adminDirectory, 'admin-client.ts');
 const stylePath = path.join(adminDirectory, 'AdminConsole.module.css');
 const layoutPath = path.resolve('app/admin/layout.tsx');
@@ -189,6 +190,14 @@ test('admin exposes invite management from the existing private console', () => 
   for (const state of ['正在加载邀请码', '还没有邀请码', '重新加载']) {
     assert.match(inviteSource, new RegExp(state, 'u'));
   }
+});
+
+test('admin exposes private resume management from the existing toolbar', () => {
+  const consoleSource = read(consolePath);
+  const panelSource = read(resumePanelPath);
+  assert.match(consoleSource, /data-testid=['"]admin-resume-open['"]/u);
+  assert.match(consoleSource, /<AdminResumePanel/u);
+  assert.doesNotMatch(panelSource, /localStorage|sessionStorage|document\.cookie/u);
 });
 
 test('admin invite plaintext is one-time, memory-only, and has explicit copy failure feedback', () => {
