@@ -6,6 +6,8 @@ import path from 'node:path';
 import { test } from 'node:test';
 
 import { buildSystemInstructions, normalizeChatRequest } from '../lib/server/chat-core.ts';
+import { inspectChatAnswer } from '../lib/server/chat-output-guard.ts';
+import { buildSafeChatAnswer } from '../lib/server/chat-safe-answer.ts';
 import { extractPublicKnowledge } from '../lib/server/public-knowledge.ts';
 
 const marker = 'SYNTHETIC_PRIVATE_RESUME_MARKER_7F42';
@@ -115,4 +117,35 @@ test('Docker build context excludes every local private resume artifact form', (
   assert.match(dockerignore, /^private$/mu);
   assert.match(dockerignore, /^private-resume$/mu);
   assert.match(dockerignore, /^\*\.morsepdf$/mu);
+});
+
+test('chat guard inputs and safe answers contain no private resume data', () => {
+  const publicSources = extractPublicKnowledge(JSON.parse(
+    fs.readFileSync(path.resolve('content/site-content.json'), 'utf8'),
+  ));
+  const safe = buildSafeChatAnswer({
+    intent: 'project',
+    sources: publicSources.slice(0, 2).map((document, index) => ({
+      chunkId: `${document.id}:${index}`,
+      documentId: document.id,
+      title: document.title,
+      sourcePath: document.sourcePath,
+      href: document.href,
+      content: document.content,
+      score: 1,
+    })),
+  });
+  const guardInput = {
+    answer: safe?.text ?? '',
+    intent: 'project' as const,
+    workflow: 'chat' as const,
+    question: '介绍公开项目。',
+    sourceCount: safe?.sources.length ?? 0,
+  };
+
+  assert.equal(inspectChatAnswer(guardInput).ok, true);
+  assert.doesNotMatch(
+    JSON.stringify({ guardInput, safe }),
+    /morse_resume_access|resume_documents|private[\\/]resume|trustedPersonNote/i,
+  );
 });

@@ -17,6 +17,15 @@ export interface KnowledgeSource {
 // and ten unrelated queries (maximum negative top score 0.421).
 export const LOCAL_EVIDENCE_MIN_SCORE = 0.45;
 
+export function filterRelevantKnowledge(
+  sources: KnowledgeSource[],
+  minimumScore = LOCAL_EVIDENCE_MIN_SCORE,
+): KnowledgeSource[] {
+  return sources.filter((source) => (
+    Number.isFinite(source.score) && source.score >= minimumScore
+  ));
+}
+
 export function hasSufficientLocalEvidence(sources: KnowledgeSource[]): boolean {
   const topScore = Math.max(
     ...sources.map((source) => Number.isFinite(source.score) ? source.score : Number.NEGATIVE_INFINITY),

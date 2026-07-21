@@ -3,7 +3,12 @@ import { after, test } from 'node:test';
 
 import pg from 'pg';
 
-import { hasSufficientLocalEvidence, retrieveKnowledge } from '../lib/server/rag.ts';
+import {
+  filterRelevantKnowledge,
+  hasSufficientLocalEvidence,
+  retrieveKnowledge,
+  type KnowledgeSource,
+} from '../lib/server/rag.ts';
 
 const { Pool } = pg;
 const connectionString = process.env.DATABASE_URL;
@@ -11,6 +16,30 @@ const pool = connectionString ? new Pool({ connectionString }) : null;
 
 after(async () => {
   await pool?.end();
+});
+
+function source(documentId: string, score: number): KnowledgeSource {
+  return {
+    chunkId: `${documentId}:1`,
+    documentId,
+    title: documentId,
+    sourcePath: `content/site-content.json#${documentId}`,
+    href: `/works#${documentId}`,
+    content: documentId,
+    score,
+  };
+}
+
+test('filterRelevantKnowledge removes every source below the calibrated gate', () => {
+  assert.deepEqual(
+    filterRelevantKnowledge([
+      source('keep', 0.51),
+      source('boundary', 0.45),
+      source('drop', 0.449),
+      source('nan', Number.NaN),
+    ]).map((item) => item.documentId),
+    ['keep', 'boundary'],
+  );
 });
 
 test('retrieveKnowledge returns citable pgvector evidence ordered by cosine score', {
