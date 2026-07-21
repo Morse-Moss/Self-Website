@@ -7,6 +7,7 @@ import { FeishuAlertProvider } from '../lib/server/feishu-alert-provider.ts';
 import { validateProductionRole } from '../lib/server/production-config.ts';
 import { loadWorkerConfig } from '../lib/server/worker-config.ts';
 import { cleanupExpired as cleanupExpiredOperation } from './cleanup-expired.mjs';
+import { cleanupResumeStorage as cleanupResumeStorageOperation } from './cleanup-resume-storage.mjs';
 import { dispatchAvailableAlerts } from './dispatch-alerts.mjs';
 
 export { loadWorkerConfig } from '../lib/server/worker-config.ts';
@@ -35,6 +36,7 @@ function abortableSleep(milliseconds, signal) {
  *   env?: Record<string, string|undefined>,
  *   signal: AbortSignal,
  *   cleanupExpired?: (input: any) => Promise<any>,
+ *   cleanupResumeStorage?: (input: any) => Promise<any>,
  *   dispatchAlerts?: (input: any) => Promise<any>,
  *   sleep?: (milliseconds: number, signal: AbortSignal) => Promise<void>,
  *   clock?: () => number,
@@ -46,6 +48,7 @@ export async function runWorker({
   env = process.env,
   signal,
   cleanupExpired = cleanupExpiredOperation,
+  cleanupResumeStorage = cleanupResumeStorageOperation,
   dispatchAlerts,
   sleep = abortableSleep,
   clock = () => Date.now(),
@@ -63,6 +66,12 @@ export async function runWorker({
         const iterationNow = clock();
         if (iterationNow >= nextCleanupAt) {
           await cleanupExpired({ pool, now: new Date(iterationNow) });
+          const storageDir = env.MORSE_RESUME_STORAGE_DIR?.trim();
+          if (storageDir) await cleanupResumeStorage({
+            pool,
+            storageDir,
+            now: new Date(iterationNow),
+          });
           nextCleanupAt = iterationNow + config.cleanupIntervalMs;
         }
         if (config.alertsEnabled) {

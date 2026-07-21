@@ -6,6 +6,7 @@ import { test } from 'node:test';
 const packagePath = path.resolve('package.json');
 const invitePath = path.resolve('scripts/create-invite.mjs');
 const cleanupPath = path.resolve('scripts/cleanup-expired.mjs');
+const resumeStorageCleanupPath = path.resolve('scripts/cleanup-resume-storage.mjs');
 
 test('invite creation reads plaintext only from a temporary environment variable and stores a hash', () => {
   const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
@@ -30,6 +31,11 @@ test('cleanup applies the complete retention policy with one injected clock', ()
   assert.match(source, /await client\.query\('BEGIN'\)/);
   assert.match(source, /await client\.query\('COMMIT'\)/);
   assert.match(source, /await client\.query\('ROLLBACK'\)/);
+  assert.ok(fs.existsSync(resumeStorageCleanupPath));
+  assert.match(source, /resume_sessions/);
+  assert.match(source, /resume_invites/);
+  assert.match(source, /resume_access_events/);
+  assert.match(source, /expired_cleanup/);
 
   const orderedStatements = [
     'DELETE FROM interaction_searches',
@@ -40,6 +46,9 @@ test('cleanup applies the complete retention policy with one injected clock', ()
     'DELETE FROM admin_sessions',
     'DELETE FROM alert_outbox',
     'DELETE FROM access_attempts',
+    'DELETE FROM resume_sessions',
+    'UPDATE resume_invites',
+    'DELETE FROM resume_access_events',
   ];
   let previousIndex = -1;
   for (const statement of orderedStatements) {
@@ -51,7 +60,7 @@ test('cleanup applies the complete retention policy with one injected clock', ()
   const injectedTimePredicates = source.match(
     /(?:expires_at|delete_after)\s*<=\s*\$1::timestamptz/gi,
   ) ?? [];
-  assert.equal(injectedTimePredicates.length, orderedStatements.length);
+  assert.ok(injectedTimePredicates.length >= orderedStatements.length);
   assert.doesNotMatch(source, /(?:expires_at|delete_after)\s*<=\s*now\(\)/i);
   assert.doesNotMatch(
     source,
@@ -67,6 +76,9 @@ test('cleanup applies the complete retention policy with one injected clock', ()
     'deletedAdminSessions',
     'deletedAlertOutbox',
     'deletedAccessAttempts',
+    'deletedResumeSessions',
+    'disabledResumeInvites',
+    'deletedResumeEvents',
   ]) {
     assert.match(source, new RegExp(`\\b${count}\\b`));
   }

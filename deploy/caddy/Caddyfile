@@ -1,28 +1,49 @@
 {
-  admin off
+	admin off
 }
 
 http://aimorse.tech, http://www.aimorse.tech {
-  redir https://aimorse.tech{uri} permanent
+	redir https://aimorse.tech{uri} permanent
 }
 
 https://www.aimorse.tech {
-  redir https://aimorse.tech{uri} permanent
+	redir https://aimorse.tech{uri} permanent
 }
 
 https://aimorse.tech {
-  encode zstd gzip
+	encode zstd gzip
 
-  request_body {
-    max_size 2MB
-  }
+	@resumeUpload {
+		method POST
+		path /api/admin/resume
+	}
 
-  log {
-    output stdout
-    format json
-  }
+	@privateResumeAuditExcluded {
+		path /api/resume /api/resume/* /api/admin/resume /api/admin/resume/*
+	}
 
-  reverse_proxy web:3000 {
-    flush_interval -1
-  }
+	log_skip @privateResumeAuditExcluded
+
+	handle @resumeUpload {
+		request_body {
+			max_size 11MB
+		}
+		reverse_proxy web:3000 {
+			flush_interval -1
+		}
+	}
+
+	handle {
+		request_body {
+			max_size 2MB
+		}
+		reverse_proxy web:3000 {
+			flush_interval -1
+		}
+	}
+
+	log {
+		output stdout
+		format json
+	}
 }

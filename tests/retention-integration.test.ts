@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { mkdtemp, readdir, rm, utimes, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import type { PoolClient } from 'pg';
@@ -24,6 +26,9 @@ interface ScriptResult {
 interface CleanupCounts {
   deactivatedInvites: number;
   deletedAccessAttempts: number;
+  deletedResumeSessions: number;
+  disabledResumeInvites: number;
+  deletedResumeEvents: number;
   deletedAdminSessions: number;
   deletedAlertOutbox: number;
   deletedDiagnoses: number;
@@ -82,6 +87,9 @@ const zeroCounts: CleanupCounts = {
   deletedAdminSessions: 0,
   deletedAlertOutbox: 0,
   deletedAccessAttempts: 0,
+  deletedResumeSessions: 0,
+  disabledResumeInvites: 0,
+  deletedResumeEvents: 0,
 };
 
 interface InteractionRetentionRow {
@@ -349,7 +357,7 @@ test('cleanup enforces the 12-hour and 10-day retention boundaries idempotently'
       assert.equal((await client.query('SELECT id FROM knowledge_documents WHERE id = $1', [documentId])).rowCount, 1);
       assert.deepEqual(
         (await client.query<{ version: string }>('SELECT version FROM schema_migrations ORDER BY version')).rows,
-        [{ version: '001' }, { version: '002' }],
+        [{ version: '001' }, { version: '002' }, { version: '003' }],
       );
       assert.equal((await client.query('SELECT id FROM admin_sessions')).rowCount, 0);
       assert.equal((await client.query('SELECT id FROM alert_outbox')).rowCount, 0);
@@ -388,5 +396,128 @@ test('cleanup enforces the 12-hour and 10-day retention boundaries idempotently'
     );
   } finally {
     await database.dispose();
+  }
+});
+
+test('resume retention removes expired sessions and old events without deleting current ciphertext', async () => {
+  const database = await createDisposablePostgresDatabase();
+  const storageDir = await mkdtemp(path.join(os.tmpdir(), 'revolution-resume-retention-'));
+  const now = new Date('2035-02-01T00:00:00.000Z');
+  const oldTime = new Date(now.getTime() - 2 * 24 * 60 * 60_000);
+  const youngTime = new Date(now.getTime() - 60 * 60_000);
+  const currentName = `${randomUUID()}.morsepdf`;
+  const retiredName = `${randomUUID()}.morsepdf`;
+  const orphanName = `${randomUUID()}.morsepdf`;
+  const youngOrphanName = `${randomUUID()}.morsepdf`;
+  const oldTempName = 'upload-old.tmp';
+  const youngTempName = 'upload-young.tmp';
+  const inviteId = randomUUID();
+  const retiredId = randomUUID();
+
+  try {
+    const migration = await runScript(migrationRunner, { DATABASE_URL: database.connectionString });
+    assert.equal(migration.code, 0, migration.stderr);
+    for (const name of [currentName, retiredName, orphanName, youngOrphanName, oldTempName, youngTempName]) {
+      await writeFile(path.join(storageDir, name), 'ciphertext-fixture');
+    }
+    await utimes(path.join(storageDir, currentName), oldTime, oldTime);
+    await utimes(path.join(storageDir, retiredName), oldTime, oldTime);
+    await utimes(path.join(storageDir, orphanName), oldTime, oldTime);
+    await utimes(path.join(storageDir, youngOrphanName), youngTime, youngTime);
+    await utimes(path.join(storageDir, oldTempName), oldTime, oldTime);
+    await utimes(path.join(storageDir, youngTempName), youngTime, youngTime);
+
+    await withPostgresClient(database.connectionString, async (client) => {
+      await client.query(
+        `INSERT INTO resume_documents
+          (id, storage_name, cipher_sha256, plaintext_bytes, ciphertext_bytes,
+           envelope_version, key_version, uploaded_by_admin_session, uploaded_at, activated_at, is_current)
+         VALUES ($1, $2, $3, 100, 164, 1, 1, $4, $5, $5, true),
+                ($6, $7, $8, 100, 164, 1, 1, $4, $5, $5, false)`,
+        [randomUUID(), currentName, 'a'.repeat(64), randomUUID(), oldTime, retiredId, retiredName, 'b'.repeat(64)],
+      );
+      await client.query(
+        `INSERT INTO resume_invites
+          (id, code_hash, trusted_person_note, created_at, expires_at, created_by_admin_session)
+         VALUES ($1, $2, 'expired synthetic invite', $3, $4, $5)`,
+        [inviteId, 'c'.repeat(64), new Date(now.getTime() - 3 * 24 * 60 * 60_000), new Date(now.getTime() - 60_000), randomUUID()],
+      );
+      await client.query(
+        `INSERT INTO resume_sessions
+          (id, invite_id, token_hash, created_at, last_seen_at, expires_at, source_ip, user_agent)
+         VALUES ($1, $2, $3, $4, $4, $5, '0.0.0.0', 'synthetic')`,
+        [randomUUID(), inviteId, 'd'.repeat(64), new Date(now.getTime() - 2 * 24 * 60 * 60_000), new Date(now.getTime() - 60_000)],
+      );
+      await client.query(
+        `INSERT INTO resume_access_events
+          (event_type, result_code, created_at, delete_after, user_agent)
+         VALUES ('file_returned', 'OLD_EVENT', $1, $2, 'synthetic')`,
+        [oldTime, new Date(now.getTime() - 60_000)],
+      );
+    });
+
+    const { cleanupResumeStorage } = await import('../scripts/cleanup-resume-storage.mjs');
+    const storagePool = { query: (sql: string, params?: unknown[]) => withPostgresClient(database.connectionString, (client) => client.query(sql, params)) };
+    const firstStorage = await cleanupResumeStorage({ pool: storagePool, storageDir, now, minimumAgeMs: 24 * 60 * 60_000 });
+    assert.equal(firstStorage.deletedFiles, 1);
+    assert.equal(firstStorage.deletedTempFiles, 1);
+    assert.ok((await readdir(storageDir)).includes(currentName));
+    assert.ok((await readdir(storageDir)).includes(retiredName));
+    assert.ok((await readdir(storageDir)).includes(youngOrphanName));
+    assert.ok((await readdir(storageDir)).includes(youngTempName));
+    assert.equal((await readdir(storageDir)).includes(orphanName), false);
+
+    const cleanup = await runCleanup(database.connectionString, now.toISOString(), []);
+    assert.equal(cleanup.deletedResumeSessions, 1);
+    assert.equal(cleanup.disabledResumeInvites, 1);
+    assert.equal(cleanup.deletedResumeEvents, 1);
+
+    await withPostgresClient(database.connectionString, async (client) => {
+      const cleanupEvents = await client.query<{
+        result_code: string;
+        invite_id: string | null;
+        session_id: string | null;
+        source_ip: string | null;
+        user_agent: string | null;
+      }>(
+        `SELECT result_code, invite_id, session_id, source_ip::text, user_agent
+           FROM resume_access_events
+          WHERE event_type = 'expired_cleanup'
+          ORDER BY result_code`,
+      );
+      assert.deepEqual(cleanupEvents.rows, [
+        {
+          result_code: 'INVITE_EXPIRED',
+          invite_id: inviteId,
+          session_id: null,
+          source_ip: null,
+          user_agent: null,
+        },
+        {
+          result_code: 'SESSION_EXPIRED',
+          invite_id: inviteId,
+          session_id: null,
+          source_ip: '0.0.0.0/32',
+          user_agent: 'synthetic',
+        },
+      ]);
+      await client.query('DELETE FROM resume_documents WHERE id = $1', [retiredId]);
+    });
+    const repeatedCleanup = await runCleanup(database.connectionString, now.toISOString(), []);
+    assert.equal(repeatedCleanup.deletedResumeSessions, 0);
+    assert.equal(repeatedCleanup.disabledResumeInvites, 0);
+    assert.equal(repeatedCleanup.deletedResumeEvents, 0);
+    await withPostgresClient(database.connectionString, async (client) => {
+      assert.equal((await client.query(
+        "SELECT 1 FROM resume_access_events WHERE event_type = 'expired_cleanup'",
+      )).rowCount, 2);
+    });
+    const secondStorage = await cleanupResumeStorage({ pool: storagePool, storageDir, now, minimumAgeMs: 24 * 60 * 60_000 });
+    assert.equal(secondStorage.deletedFiles, 1);
+    assert.equal((await readdir(storageDir)).includes(currentName), true);
+    assert.equal((await readdir(storageDir)).includes(retiredName), false);
+  } finally {
+    await database.dispose();
+    await rm(storageDir, { force: true, recursive: true });
   }
 });

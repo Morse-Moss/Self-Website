@@ -55,6 +55,16 @@ services:
       retries: 30
       start_period: 30s
 
+  resume-storage-init:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    user: "0:0"
+    restart: "no"
+    volumes:
+      - revolution_private_resume:/opt/revolution/shared/private/resume
+    command: ["sh", "-eu", "-c", "chown 1001:1001 /opt/revolution/shared/private/resume && chmod 0700 /opt/revolution/shared/private/resume"]
+
   migration:
     build:
       context: .
@@ -112,6 +122,8 @@ services:
       MORSE_DATABASE_SSL_MODE: require
       MORSE_LOCAL_RELEASE_SMOKE: "false"
       MORSE_DATABASE_POOL_MAX: ${MORSE_WEB_POOL_MAX:-6}
+      MORSE_RESUME_STORAGE_DIR: /opt/revolution/shared/private/resume
+      MORSE_RESUME_ENCRYPTION_KEY_FILE: /run/secrets/resume_encryption_key
       OPENAI_EMBEDDING_BASE_URL: http://embedding:18091/v1
       OPENAI_EMBEDDING_API_KEY: ${EMBEDDING_API_KEY}
       MORSE_EMBEDDING_ALLOW_PRIVATE_HTTP: "true"
@@ -120,6 +132,12 @@ services:
         condition: service_healthy
       embedding:
         condition: service_healthy
+      resume-storage-init:
+        condition: service_completed_successfully
+    secrets:
+      - resume_encryption_key
+    volumes:
+      - revolution_private_resume:/opt/revolution/shared/private/resume
     expose:
       - "3000"
     networks:
@@ -145,9 +163,14 @@ services:
       MORSE_DATABASE_SSL_MODE: require
       MORSE_LOCAL_RELEASE_SMOKE: "false"
       MORSE_DATABASE_POOL_MAX: ${MORSE_WORKER_POOL_MAX:-3}
+      MORSE_RESUME_STORAGE_DIR: /opt/revolution/shared/private/resume
     depends_on:
       db:
         condition: service_healthy
+      resume-storage-init:
+        condition: service_completed_successfully
+    volumes:
+      - revolution_private_resume:/opt/revolution/shared/private/resume
     networks:
       - internal
     command: ["node", "scripts/run-production.mjs", "worker"]
@@ -188,6 +211,7 @@ services:
 volumes:
   revolution_pgdata:
   revolution_embedding_models:
+  revolution_private_resume:
   revolution_caddy_data:
   revolution_caddy_config:
 
@@ -202,6 +226,8 @@ secrets:
     file: ./deploy/secrets/db_ingest_password
   db_backup_password:
     file: ./deploy/secrets/db_backup_password
+  resume_encryption_key:
+    file: ./deploy/secrets/resume_encryption_key
 
 networks:
   internal:

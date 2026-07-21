@@ -138,6 +138,32 @@ test('worker runs startup cleanup, skips delivery when disabled and shuts down c
   assert.deepEqual(sleeps, [5_000]);
 });
 
+test('worker cleans private resume storage with an explicit path and no resume config load', async () => {
+  const controller = new AbortController();
+  const calls: Array<{ storageDir: string; now: Date }> = [];
+
+  await runWorker({
+    cleanupExpired: async () => ({ skipped: false }),
+    cleanupResumeStorage: async ({ storageDir, now }: { storageDir: string; now: Date }) => {
+      calls.push({ storageDir, now });
+      return { deletedFiles: 0, retainedFiles: 0, deletedTempFiles: 0 };
+    },
+    env: {
+      MORSE_ALERTS_ENABLED: 'false',
+      MORSE_RESUME_STORAGE_DIR: '/opt/revolution/shared/private/resume',
+    },
+    logger: { log() {}, error() {} },
+    pool: { async end() {} },
+    signal: controller.signal,
+    clock: () => 1_735_689_600_000,
+    sleep: async () => { controller.abort(); },
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].storageDir, '/opt/revolution/shared/private/resume');
+  assert.equal(calls[0].now.toISOString(), '2025-01-01T00:00:00.000Z');
+});
+
 test('worker backs off infrastructure failures and emits only stable event codes', async () => {
   const controller = new AbortController();
   const sleeps: number[] = [];
