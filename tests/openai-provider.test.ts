@@ -161,6 +161,39 @@ test('OpenAIProvider sends safe Responses options and preserves missing usage', 
   ]);
 });
 
+test('OpenAIProvider lets one Responses turn lower reasoning without changing the default', async () => {
+  const bodies: Record<string, unknown>[] = [];
+  const provider = new OpenAIProvider({
+    responses: {
+      create: async (body: Record<string, unknown>) => {
+        bodies.push(body);
+        return fakeResponseStream();
+      },
+    },
+  }, {
+    embeddings: { create: async () => ({ data: [] }) },
+  }, providerConfig);
+
+  for await (const _event of provider.streamAnswer({
+    instructions: 'Social turn.',
+    messages: [{ role: 'user', content: 'Hello' }],
+    reasoningEffort: 'low',
+  })) {
+    // Consume the stream so the request is fully exercised.
+  }
+  for await (const _event of provider.streamAnswer({
+    instructions: 'Grounded turn.',
+    messages: [{ role: 'user', content: 'Explain the architecture' }],
+  })) {
+    // Consume the stream so the request is fully exercised.
+  }
+
+  assert.deepEqual(bodies.map((body) => body.reasoning), [
+    { effort: 'low' },
+    { effort: 'high' },
+  ]);
+});
+
 test('OpenAIProvider streams Chat Completions without falling back to Responses', async () => {
   let responseCalls = 0;
   let chatBody: Record<string, unknown> | undefined;
@@ -227,6 +260,40 @@ test('OpenAIProvider streams Chat Completions without falling back to Responses'
     { type: 'delta', text: 'Hello' },
     { type: 'done', usage: { inputTokens: 21, outputTokens: 4 } },
   ]);
+});
+
+test('OpenAIProvider lets one Chat Completions turn lower reasoning', async () => {
+  let chatBody: Record<string, unknown> | undefined;
+  const provider = new OpenAIProvider({
+    chat: {
+      completions: {
+        create: async (body: Record<string, unknown>) => {
+          chatBody = body;
+          return (async function* () {
+            yield {
+              choices: [{ delta: { content: 'Hello' }, finish_reason: 'stop' }],
+              usage: null,
+            };
+          })();
+        },
+      },
+    },
+  }, {
+    embeddings: { create: async () => ({ data: [] }) },
+  }, {
+    ...providerConfig,
+    protocol: 'chat_completions',
+  });
+
+  for await (const _event of provider.streamAnswer({
+    instructions: 'Social turn.',
+    messages: [{ role: 'user', content: 'Hello' }],
+    reasoningEffort: 'low',
+  })) {
+    // Consume the stream so the request is fully exercised.
+  }
+
+  assert.equal(chatBody?.reasoning_effort, 'low');
 });
 
 test('OpenAIProvider reports null when Chat Completions omits usage', async () => {

@@ -1,5 +1,6 @@
 import { EMBEDDING_DIMENSIONS } from './embedding.ts';
 import type { TokenRates } from './budget.ts';
+import type { AnswerReasoningEffort } from './ai-provider.ts';
 
 type Env = Record<string, string | undefined>;
 
@@ -129,9 +130,7 @@ function chatProtocol(env: Env): 'responses' | 'chat_completions' {
   return value;
 }
 
-export type OpenAIReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
-
-function reasoningEffort(env: Env): OpenAIReasoningEffort | undefined {
+function reasoningEffort(env: Env): AnswerReasoningEffort | undefined {
   const value = env.OPENAI_REASONING_EFFORT?.trim();
   if (!value) return undefined;
   if (!['none', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(value)) {
@@ -139,7 +138,7 @@ function reasoningEffort(env: Env): OpenAIReasoningEffort | undefined {
       'OPENAI_REASONING_EFFORT must be none, minimal, low, medium, high, or xhigh.',
     );
   }
-  return value as OpenAIReasoningEffort;
+  return value as AnswerReasoningEffort;
 }
 
 function openAiFallbacks(env: Env): Array<{ apiKey: string; baseUrl: string }> {

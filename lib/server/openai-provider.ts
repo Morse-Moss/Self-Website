@@ -1,6 +1,10 @@
 import type { TokenUsage } from './budget.ts';
-import type { AiProvider, AnswerEvent, AnswerRequest } from './ai-provider.ts';
-import type { OpenAIReasoningEffort } from './config.ts';
+import type {
+  AiProvider,
+  AnswerEvent,
+  AnswerReasoningEffort,
+  AnswerRequest,
+} from './ai-provider.ts';
 import { Semaphore } from './concurrency.ts';
 import {
   createTimeoutSignal,
@@ -112,7 +116,8 @@ export interface OpenAIProviderConfig {
   firstByteTimeoutMs: number;
   totalTimeoutMs: number;
   providerConcurrency: number;
-  reasoningEffort?: OpenAIReasoningEffort;
+  reasoningEffort?: AnswerReasoningEffort;
+  outputlessMaxAttempts?: number;
 }
 
 const generationSemaphores = new Map<number, Semaphore>();
@@ -308,14 +313,15 @@ export class OpenAIProvider implements AiProvider {
     const responses = this.chatClient.responses;
     if (!responses) throw new Error('Configured Responses client is unavailable.');
 
+    const effectiveReasoningEffort = request.reasoningEffort ?? this.config.reasoningEffort;
     const stream = streamWithTimeout({
       create: (requestSignal) => responses.create({
         model: this.config.chatModel,
         instructions: request.instructions,
         input: request.messages,
         max_output_tokens: this.config.maxOutputTokens,
-        ...(this.config.reasoningEffort
-          ? { reasoning: { effort: this.config.reasoningEffort } }
+        ...(effectiveReasoningEffort
+          ? { reasoning: { effort: effectiveReasoningEffort } }
           : {}),
         stream: true,
         store: false,
@@ -365,6 +371,7 @@ export class OpenAIProvider implements AiProvider {
     const completions = this.chatClient.chat?.completions;
     if (!completions) throw new Error('Configured Chat Completions client is unavailable.');
 
+    const effectiveReasoningEffort = request.reasoningEffort ?? this.config.reasoningEffort;
     const stream = streamWithTimeout({
       create: (requestSignal) => completions.create({
         model: this.config.chatModel,
@@ -373,8 +380,8 @@ export class OpenAIProvider implements AiProvider {
           ...request.messages,
         ],
         max_completion_tokens: this.config.maxOutputTokens,
-        ...(this.config.reasoningEffort
-          ? { reasoning_effort: this.config.reasoningEffort }
+        ...(effectiveReasoningEffort
+          ? { reasoning_effort: effectiveReasoningEffort }
           : {}),
         stream: true,
         stream_options: { include_usage: true },

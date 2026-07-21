@@ -5,9 +5,18 @@ export interface AiMessage {
   content: string;
 }
 
+export type AnswerReasoningEffort =
+  | 'none'
+  | 'minimal'
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'xhigh';
+
 export interface AnswerRequest {
   instructions: string;
   messages: AiMessage[];
+  reasoningEffort?: AnswerReasoningEffort;
 }
 
 export type ProviderSourceType = 'database' | 'environment';
