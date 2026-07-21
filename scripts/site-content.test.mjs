@@ -88,18 +88,12 @@ test('S3 resume mode exposes stable persistence and print contract labels', () =
   assert.match(content.resumeMode.printLabel, /打印/);
 });
 
-test('S7 resume mode keeps the pre-hydration body-class guard on the public content source', () => {
-  const rootLayout = fs.readFileSync(rootLayoutPath, 'utf8');
+test('private resume access removes the pre-hydration public resume sheet', () => {
   const portfolioLayout = fs.readFileSync(portfolioLayoutPath, 'utf8');
 
-  assert.match(rootLayout, /suppressHydrationWarning/);
-  assert.match(portfolioLayout, /next\/script/);
-  assert.match(portfolioLayout, /strategy="beforeInteractive"/);
-  assert.match(portfolioLayout, /siteContent\.site\.resumeMode\.storageKey/);
-  assert.match(portfolioLayout, /siteContent\.site\.resumeMode\.bodyClass/);
+  assert.doesNotMatch(portfolioLayout, /next\/script|beforeInteractive/);
+  assert.doesNotMatch(portfolioLayout, /ResumeSheet|localStorage|resume-mode-boot/);
   assert.doesNotMatch(portfolioLayout, /s3Content/);
-  assert.match(portfolioLayout, /localStorage\.getItem/);
-  assert.match(portfolioLayout, /document\.documentElement\.classList\.add/);
 });
 
 test('S3 visual smoke is repeatable and proves reduced-motion stillness', () => {

@@ -21,7 +21,6 @@
   transition:
     background-color var(--dur-fast) var(--ease),
     border-color var(--dur-fast) var(--ease),
-    color var(--dur-fast) var(--ease),
     transform var(--dur-fast) var(--ease);
 }
 
@@ -32,12 +31,6 @@
 
 .toggle:active {
   transform: translateY(1px);
-}
-
-.toggle[aria-pressed="true"] {
-  background: var(--accent);
-  color: var(--accent-ink);
-  border-color: var(--accent);
 }
 
 .inline {
@@ -54,62 +47,232 @@
   box-shadow: 0 0 10px var(--accent-glow);
 }
 
-.toggle[aria-pressed="true"] .signal {
-  background: var(--accent-ink);
-  box-shadow: none;
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-chat) + 10);
+  display: grid;
+  place-items: center;
+  padding: var(--space-5);
+  background: var(--panel-glass);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
 }
 
-.printButton,
-.exitButton {
-  display: inline-flex;
+.dialog {
+  width: min(100%, 520px);
+  max-height: calc(100dvh - var(--space-8));
+  overflow: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+}
+
+.dialogHeader {
+  display: flex;
+  min-height: 84px;
   align-items: center;
-  justify-content: center;
-  min-height: 44px;
-  padding: 0 var(--space-5);
-  border: 1px solid var(--paper-ink);
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--line-faint);
+}
+
+.dialogHeader p,
+.readyLabel {
+  margin: 0 0 var(--space-1);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--fs-3xs);
+}
+
+.dialogHeader h2,
+.dialogBody h3,
+.dialogBody p {
+  margin: 0;
+  letter-spacing: 0;
+}
+
+.dialogHeader h2 {
+  font-size: var(--fs-h3);
+}
+
+.closeButton {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  border: 1px solid var(--line-faint);
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--paper-ink);
-  font: inherit;
-  font-weight: 700;
+  color: var(--muted);
+  font-size: var(--fs-h3);
   cursor: pointer;
-  transition:
-    background-color var(--dur-fast) var(--ease),
-    color var(--dur-fast) var(--ease);
 }
 
-.printButton:hover,
-.exitButton:hover {
-  background: var(--paper-ink);
-  color: var(--paper);
+.dialogBody {
+  min-height: 290px;
+  padding: var(--space-6);
 }
 
-:global(html.resume-mode) .toggle {
-  background: var(--paper-glass);
-  color: var(--paper-ink);
-  border-color: var(--paper-line);
+.stateMessage {
+  display: grid;
+  min-height: 220px;
+  place-items: center;
+  color: var(--muted);
+  text-align: center;
 }
 
-:global(html.resume-mode) .toggle[aria-pressed="true"] {
-  background: var(--paper-ink);
-  color: var(--paper);
-  border-color: var(--paper-ink);
+.accessForm,
+.authorized,
+.unavailable {
+  display: grid;
+  gap: var(--space-5);
 }
 
-@media (max-width: 560px) {
+.accessForm > div,
+.authorized > div:first-child,
+.unavailable {
+  gap: var(--space-2);
+}
+
+.accessForm h3,
+.authorized h3,
+.unavailable h3 {
+  font-size: var(--fs-h3);
+}
+
+.accessForm p,
+.authorized p,
+.unavailable p {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.accessForm label {
+  display: grid;
+  gap: var(--space-2);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
+.accessForm input {
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--line-faint);
+  border-radius: var(--radius-sm);
+  outline: 0;
+  background: var(--input-glass);
+  color: var(--ink);
+  font-family: var(--font-mono);
+}
+
+.accessForm input:focus {
+  border-color: var(--accent);
+}
+
+.error {
+  color: var(--status-amber) !important;
+}
+
+.primaryAction,
+.actions button,
+.unavailable button {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--space-5);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink);
+  font-weight: 700;
+  text-align: center;
+  cursor: pointer;
+}
+
+.primaryAction {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.printLink {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--space-5);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+  text-align: center;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+.unavailable {
+  min-height: 220px;
+  align-content: center;
+  text-align: center;
+}
+
+.unavailable button {
+  justify-self: center;
+}
+
+.closeButton:disabled,
+.primaryAction:disabled,
+.actions button:disabled {
+  cursor: wait;
+  opacity: .55;
+}
+
+@media (max-width: 640px) {
   .toggle {
-    top: var(--space-3);
-    right: var(--space-3);
     min-height: 44px;
     padding: 0 var(--space-3);
     font-size: var(--fs-2xs);
   }
+
+  .backdrop {
+    padding: 0;
+  }
+
+  .dialog {
+    width: 100%;
+    height: 100dvh;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .dialogHeader {
+    min-height: 72px;
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .dialogBody {
+    min-height: 0;
+    padding: var(--space-5) var(--space-4);
+  }
+
+  .actions {
+    grid-template-columns: 1fr;
+  }
 }
 
-@media print {
-  .toggle,
-  .exitButton,
-  .printButton {
-    display: none !important;
+@media (prefers-reduced-motion: reduce) {
+  .toggle {
+    transition: none;
   }
 }

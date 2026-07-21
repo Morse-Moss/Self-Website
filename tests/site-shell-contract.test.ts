@@ -51,11 +51,9 @@ test('root layout owns only global document metadata and styles', () => {
   );
 });
 
-test('portfolio layout owns the persistent public shell and resume surface', () => {
+test('portfolio layout owns the persistent public shell without embedding a resume', () => {
   const layout = readSource(portfolioLayoutPath);
 
-  assert.match(layout, /siteContent\.site\.resumeMode\.storageKey/);
-  assert.match(layout, /siteContent\.site\.resumeMode\.bodyClass/);
   assert.doesNotMatch(layout, /import\s+SiteShell|<SiteShell/);
 
   assert.equal(count(layout, /<AmbientBackground\s*\/>/g), 1);
@@ -63,12 +61,11 @@ test('portfolio layout owns the persistent public shell and resume surface', () 
   assert.equal(count(layout, /<ScrollEffects\s*\/>/g), 1);
   assert.equal(count(layout, /<SiteHeader\b/g), 1);
   assert.equal(count(layout, /<SiteFooter\b/g), 1);
-  assert.equal(count(layout, /<ResumeSheet\b/g), 1);
+  assert.equal(count(layout, /<ResumeSheet\b/g), 0);
   assert.equal(count(layout, /data-standard-content/g), 1);
   assert.match(layout, /<SiteHeader\s+site=\{siteContent\.site\}\s*\/>/);
   assert.match(layout, /<SiteFooter\s+footer=\{siteContent\.site\.footer\}\s*\/>/);
-  assert.match(layout, /printLabel=\{siteContent\.site\.resumeMode\.printLabel\}/);
-  assert.match(layout, /resumeMode=\{siteContent\.site\.resumeMode\}/);
+  assert.doesNotMatch(layout, /next\/script|resume-mode-boot|localStorage|data-resume-section/);
   assert.doesNotMatch(layout, /<MorseChat\b/);
 });
 
@@ -147,41 +144,22 @@ test('footer renders approved copy and maps only configured external links', () 
   assert.doesNotMatch(footer, /Email|WeChat|微信|邮箱/i);
 });
 
-test('ResumeSheet contains the approved profile and project statuses without stats or contact', () => {
-  const resume = readSource(resumePath);
-
-  assert.match(resume, /data-resume-section/);
-  assert.match(resume, /profile\.title/);
-  assert.match(resume, /profile\.role/);
-  assert.match(resume, /profile\.summary/);
-  assert.match(resume, /profile\.principles\.map/);
-  assert.match(resume, /projects\.map/);
-  assert.match(resume, /project\.name/);
-  assert.match(resume, /project\.status/);
-  assert.match(resume, /<ResumePrintButton\b/);
-  assert.match(resume, /<ResumeModeExitButton\s+config=\{resumeMode\}\s*\/>/);
-  assert.doesNotMatch(resume, /stats|contact|Email|WeChat/i);
-});
-
-test('resume sheet exit resets DOM mode, persistence, scroll, and header-toggle state', () => {
+test('resume mode delegates authorization to the private resume API', () => {
   const resumeMode = readSource(resumeModePath);
 
-  assert.match(resumeMode, /export function ResumeModeExitButton/);
-  assert.match(resumeMode, /applyResumeMode\(false,\s*config\.bodyClass\)/);
-  assert.match(resumeMode, /localStorage\.setItem\(config\.storageKey,\s*['"]false['"]\)/);
-  assert.match(resumeMode, /window\.scrollTo\(\{\s*top:\s*0,\s*behavior:\s*['"]auto['"]\s*\}\)/);
-  assert.match(resumeMode, /morse-resume-mode:change/);
-  assert.match(resumeMode, /addEventListener\(RESUME_MODE_CHANGE_EVENT/);
-  assert.match(resumeMode, /removeEventListener\(RESUME_MODE_CHANGE_EVENT/);
+  assert.match(resumeMode, /\/api\/resume\/access/);
+  assert.match(resumeMode, /\/api\/resume\/file/);
+  assert.doesNotMatch(resumeMode, /localStorage|sessionStorage|document\.cookie|applyResumeMode/);
+  assert.equal(fs.existsSync(resumePath), false);
 });
 
-test('ResumeModeToggle supports header-inline positioning without changing its behavior', () => {
+test('ResumeModeToggle remains a header-inline command', () => {
   const resumeMode = readSource(resumeModePath);
 
   assert.match(resumeMode, /inline\??:\s*boolean/);
   assert.match(resumeMode, /inline\s*\?\s*styles\.inline/);
-  assert.match(resumeMode, /aria-pressed=\{active\}/);
-  assert.match(resumeMode, /localStorage\.setItem/);
+  assert.match(resumeMode, /aria-haspopup=['"]dialog['"]/);
+  assert.doesNotMatch(resumeMode, /aria-pressed/);
 });
 
 test('MorseSignalCanvas uses one bounded native loop with responsive and lifecycle guards', () => {
@@ -255,13 +233,6 @@ test('shell and canvas styles keep interaction above a tokenized non-blocking ba
   assert.match(canvasRule, /pointer-events:\s*none/);
   assert.match(canvasRule, /background:\s*var\(--bg\)/);
   assert.doesNotMatch(styles, /#[0-9a-f]{3,8}|rgba?\(|hsla?\(/i);
-
-  for (const surfaceRule of [
-    readRule(siteStyles, '.resumePaper'),
-    readRule(siteStyles, '.projectList li'),
-  ]) {
-    assert.doesNotMatch(surfaceRule, /var\(--radius-(?:md|lg|pill)\)/);
-  }
 
   const signalRule = readRule(resumeStyles, '.signal');
   assert.match(signalRule, /width:\s*7px/);

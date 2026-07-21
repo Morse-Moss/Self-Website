@@ -435,10 +435,7 @@ test("keeps the approved global copy and four FAQ topics", () => {
       { label: "作品集", href: "/works" },
     ],
     resumeMode: {
-      storageKey: "morse.resumeMode",
-      bodyClass: "resume-mode",
       toggleLabel: "简历模式",
-      printLabel: "打印 / 存 PDF",
     },
     footer: {
       morse: "-- --- .-. ... .",

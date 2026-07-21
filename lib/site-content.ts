@@ -112,10 +112,7 @@ export type SiteContent = {
     description: string;
     nav: Array<{ label: string; href: "/" | "/works" }>;
     resumeMode: {
-      storageKey: string;
-      bodyClass: string;
       toggleLabel: string;
-      printLabel: string;
     };
     footer: {
       morse: string;
