@@ -104,6 +104,7 @@ export default function ChatWorkspace({
         messagesRef={messagesRef}
         onScroll={onMessagesScroll}
         onRetry={(assistantId, snapshot) => chat.retry(assistantId, snapshot)}
+        onStop={chat.stop}
         streaming={chat.streaming}
         empty={empty}
       />

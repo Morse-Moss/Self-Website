@@ -11,6 +11,10 @@ const phaseLabels: Record<ChatPhase, string> = {
   handoff: '已进入转交队列',
 };
 
+export function chatPhaseLabel(phase: ChatPhase): string {
+  return phaseLabels[phase];
+}
+
 export default function ChatPhaseStatus({
   phase,
   diagnosisStatus,

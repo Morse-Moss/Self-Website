@@ -1,6 +1,7 @@
 import type { RefObject, UIEvent } from 'react';
 
 import ChatMessageContent from './ChatMessageContent';
+import ChatPendingState from './ChatPendingState';
 import ChatSources from './ChatSources';
 import type { ChatMessage, ChatRequestSnapshot } from './useMorseChat';
 
@@ -11,6 +12,7 @@ export default function ChatTranscript({
   messagesRef,
   onScroll,
   onRetry,
+  onStop,
   streaming,
   empty,
 }: {
@@ -18,6 +20,7 @@ export default function ChatTranscript({
   messagesRef: RefObject<HTMLDivElement | null>;
   onScroll(event: UIEvent<HTMLDivElement>): void;
   onRetry(assistantId: string, snapshot: ChatRequestSnapshot): void;
+  onStop(): void;
   streaming: boolean;
   empty: React.ReactNode;
 }) {
@@ -36,7 +39,6 @@ export default function ChatTranscript({
           data-message-role={message.role}
           className={message.role === 'user' ? styles.userMessage : styles.assistantMessage}
           data-error={message.error || undefined}
-          data-degraded={message.degraded || undefined}
           data-stream-state={message.role === 'assistant'
             ? (message.complete ? 'done' : message.error ? 'error' : message.stopped ? 'stopped' : 'pending')
             : undefined}
@@ -50,17 +52,15 @@ export default function ChatTranscript({
             && !message.text
             && !message.error
             && !message.stopped ? (
-              <p className={styles.thinkingState}>
-                <span className={styles.thinkingDot} aria-hidden="true" />
-                数字摩斯正在思考
-              </p>
+              <ChatPendingState
+                startedAtMs={message.startedAtMs ?? Date.now()}
+                phase={message.phase}
+                onStop={onStop}
+              />
             ) : null}
           {message.stopped ? <span className={styles.messageState}>已停止</span> : null}
           {message.diagnosisStatus === 'handoff_pending' ? (
             <span className={styles.messageState}>已进入转交队列</span>
-          ) : null}
-          {message.complete && message.degraded ? (
-            <span className={styles.messageState}>简要结果</span>
           ) : null}
           {message.complete ? (
             <ChatSources

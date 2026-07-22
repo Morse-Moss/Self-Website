@@ -186,25 +186,19 @@ test('starter questions send immediately and pending assistants replace the empt
   assert.doesNotMatch(workspace, /招人的|找人做事的/);
   assert.match(workspace, /onClick=\{\(\) => chat\.sendStarter\(intent\)\}/);
   assert.match(workspace, /type="button"/);
-  assert.match(transcript, /数字摩斯正在思考/);
+  assert.match(transcript, /<ChatPendingState/);
   assert.match(transcript, /!message\.text[\s\S]*!message\.error[\s\S]*!message\.stopped/);
 });
 
-test('recruitment entry stays evidence-led and degraded completion is labeled in place', () => {
+test('recruitment entry stays evidence-led without presenting automatic degraded completion', () => {
   const workspace = readChatSource('ChatWorkspace.tsx');
   const hook = readChatSource('useMorseChat.ts');
   const transcript = readChatSource('ChatTranscript.tsx');
 
   assert.match(workspace, /prompt:\s*['"]请介绍与岗位最相关的项目和能力证据。['"]/u);
   assert.doesNotMatch(workspace, /仍需补充的信息/u);
-  assert.match(hook, /degraded\?:\s*boolean/u);
-  assert.match(
-    hook,
-    /event === ['"]done['"][\s\S]*degraded:\s*payload\.degraded === true/u,
-  );
-  assert.match(transcript, /message\.complete\s*&&\s*message\.degraded/u);
-  assert.match(transcript, /简要结果/u);
-  assert.match(transcript, /data-degraded=\{message\.degraded \|\| undefined\}/u);
+  assert.doesNotMatch(transcript, /简要结果/u);
+  assert.doesNotMatch(transcript, /data-degraded=/u);
 });
 
 test('project CTA opens Digital Morse with the approved content-agent question prefilled', () => {
@@ -245,7 +239,10 @@ test('structured intake supports 12,000-character JD and five-field diagnosis', 
   assert.match(diagnosis, /totalCharacters/);
   assert.match(diagnosis, /6_500/);
   assert.match(diagnosis, /6,500/);
-  assert.match(hook, /diagnosisStatus:\s*['"]handoff_pending['"]/);
+  assert.match(
+    hook,
+    /payload\.stage\s*===\s*['"]handoff['"][\s\S]*['"]handoff_pending['"]/,
+  );
   assert.match(diagnosis, /提交初诊/);
 });
 
@@ -261,33 +258,32 @@ test('recoverable retry reuses the assistant row without a second user bubble', 
   assert.match(transcript, /已停止/);
 });
 
-test('switching clears provisional output and automatic replay is bounded to one visible turn', () => {
+test('one submit sends one request and switching never clears visible output', () => {
   const hook = readChatSource('useMorseChat.ts');
   const contract = readIfPresent(chatContractPath);
 
   assert.match(contract, /CHAT_PHASES\s*=\s*\[[\s\S]*['"]switching['"]/);
   assert.match(contract, /type:\s*['"]done['"][\s\S]*degraded:\s*boolean/);
-  assert.match(hook, /payload\.stage\s*===\s*['"]switching['"][\s\S]*text:\s*['"]['"]/);
-  assert.match(
-    hook,
-    /payload\.stage\s*===\s*['"]switching['"][\s\S]*sources:\s*assistant\.sources/,
-  );
-  assert.match(hook, /AUTO_REPLAY_MAX_ATTEMPTS\s*=\s*3/);
-  assert.match(hook, /AUTO_REPLAY_DELAYS_MS\s*=\s*\[250,\s*1_000\]/);
-  assert.match(hook, /isAutoReplayChatError/);
-  assert.match(hook, /attempt\s*<\s*AUTO_REPLAY_MAX_ATTEMPTS/);
-  assert.match(
-    hook,
-    /catch \(error\)[\s\S]*setPhase\(['"]switching['"]\)[\s\S]*text:\s*['"]['"][\s\S]*sources:\s*\[\][\s\S]*const delayMs/,
-  );
-  assert.match(hook, /removeEventListener\(['"]abort['"]/);
-  assert.match(
-    hook,
-    /function waitForReplayDelay[\s\S]*signal\.aborted[\s\S]*Promise\.reject\(signal\.reason\)/,
-  );
+  assert.equal((hook.match(/fetch\(['"]\/api\/chat['"]/g) ?? []).length, 1);
+  assert.doesNotMatch(hook, /AUTO_REPLAY_MAX_ATTEMPTS|AUTO_REPLAY_DELAYS_MS|waitForReplayDelay/);
+  assert.doesNotMatch(hook, /for \(let attempt/);
+  assert.doesNotMatch(hook, /payload\.stage\s*===\s*['"]switching['"][\s\S]{0,180}text:\s*['"]['"]/);
   assert.match(hook, /body:\s*JSON\.stringify\(\{\s*\.\.\.requestBody,\s*conversationId\s*\}\)/);
   assert.match(hook, /const assistantId = retryAssistantId \?\? crypto\.randomUUID\(\)/);
   assert.doesNotMatch(hook, /requestSnapshot\.turnId\s*=/);
+});
+
+test('pending assistant contains progress, phase, elapsed time and stop affordance', () => {
+  const pending = readChatSource('ChatPendingState.tsx');
+  const transcript = readChatSource('ChatTranscript.tsx');
+
+  assert.match(pending, /role="progressbar"/);
+  assert.match(pending, /elapsedSeconds\s*>=\s*8/);
+  assert.match(pending, /elapsedSeconds\s*>=\s*30/);
+  assert.match(pending, /onStop/);
+  assert.match(pending, /data-testid="morse-chat-pending"/);
+  assert.match(transcript, /startedAtMs/);
+  assert.match(transcript, /onStop/);
 });
 
 test('MorseChat retains the S9 embedded and overlay shell behavior', () => {

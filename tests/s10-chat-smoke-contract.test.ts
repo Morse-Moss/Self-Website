@@ -39,9 +39,9 @@ test('S10 scenario registry covers the complete visitor and admin contract', () 
     'jd-match',
     'diagnosis',
     'phase-status',
-    'provider-hedge',
+    'serial-provider-failover',
     'switching-recovery',
-    'degraded-result',
+    'explicit-provider-failure',
     'original-retry',
     'stop-compensation',
     'refresh-history',
@@ -146,6 +146,7 @@ test('S10 harness uses stable UI observability for every required workflow', () 
     'data-workflow="jd_match"',
     'data-workflow="diagnosis"',
     'morse-chat-phase',
+    'morse-chat-pending',
     'data-stream-state="stopped"',
     'data-source-group="local"',
     'data-source-group="web"',
@@ -198,13 +199,12 @@ test('S10 proves the one-time invite lifecycle and mobile dialog geometry', () =
   );
 });
 
-test('S10 lets an interrupted mock delta become visible before breaking the stream', () => {
+test('S10 stages one serial failover after a planned provider failure', () => {
   const source = readFileSync(harnessUrl, 'utf8');
-  const match = /const S10_INTERRUPT_SETTLE_MS = (\d+);/u.exec(source);
 
-  assert.ok(match, 'the interrupted stream needs an explicit settle window');
-  assert.ok(Number(match[1]) >= 100);
-  assert.match(source, /setTimeout\(\(\) => response\.destroy\(\), S10_INTERRUPT_SETTLE_MS\)/u);
+  assert.match(source, /failNextThenHoldFailover\(\)[\s\S]*answerPlans\.push\('fail', 'hold'\)/u);
+  assert.match(source, /internal:plan-fail/u);
+  assert.doesNotMatch(source, /interruptThenHoldReplay|delayNextPrimary|S10_INTERRUPT_SETTLE_MS/u);
 });
 
 test('S10 captures the four approved chat-v2 evidence states', () => {
@@ -214,12 +214,12 @@ test('S10 captures the four approved chat-v2 evidence states', () => {
     'chat-v2-recruitment-desktop-1440x900.png',
     'chat-v2-recruitment-mobile-390x844.png',
     'chat-v2-switching-desktop-1440x900.png',
-    'chat-v2-degraded-mobile-390x844.png',
+    'chat-v2-pending-mobile-390x844.png',
   ]) {
     assert.match(source, new RegExp(fileName.replaceAll('.', '\\.')));
   }
   assert.match(source, /path\.join\(repoRoot, 'docs', 'verify', 'chat-v2'\)/u);
-  const switchingState = source.indexOf("'switching:provisional-cleared'");
+  const switchingState = source.indexOf("'switching:pending-in-place'");
   const switchingCentered = source.indexOf('await centerInViewport(page, SELECTORS.chatPanel)', switchingState);
   const switchingCapture = source.indexOf("'chat-v2-switching-desktop-1440x900.png'", switchingState);
   assert.ok(
@@ -230,7 +230,7 @@ test('S10 captures the four approved chat-v2 evidence states', () => {
   );
 });
 
-test('S10 proves social isolation, in-place recovery, degraded labeling, and rollout id copy', () => {
+test('S10 proves social isolation, in-place recovery, explicit failure, and rollout id copy', () => {
   const source = readFileSync(harnessUrl, 'utf8');
 
   for (const marker of [
@@ -238,7 +238,9 @@ test('S10 proves social isolation, in-place recovery, degraded labeling, and rol
     'recruitment:answer',
     'switching:visible',
     'switching:same-assistant',
-    'degraded:label',
+    'failover:primary-then-backup',
+    'provider-failure:error',
+    'provider-failure:no-degraded-result',
     'retry:same-assistant',
     'retry:same-user',
     'admin:invite-id-copy',
@@ -258,7 +260,7 @@ test('S10 records the transient mobile switching phase instead of polling only t
   assert.ok(mobileStart >= 0 && adminStart > mobileStart);
   assert.ok(
     mobileSource.indexOf('await installPhaseProbe(page)')
-      < mobileSource.indexOf('openAiProxy.interruptThenHoldReplay()'),
+      < mobileSource.indexOf('openAiProxy.failNextThenHoldFailover()'),
     'the phase probe must be active before mobile recovery starts',
   );
   assert.match(

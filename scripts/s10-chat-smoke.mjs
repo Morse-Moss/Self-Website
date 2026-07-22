@@ -55,9 +55,9 @@ export const S10_SCENARIOS = Object.freeze([
   'jd-match',
   'diagnosis',
   'phase-status',
-  'provider-hedge',
+  'serial-provider-failover',
   'switching-recovery',
-  'degraded-result',
+  'explicit-provider-failure',
   'original-retry',
   'stop-compensation',
   'refresh-history',
@@ -82,7 +82,6 @@ const CONNECTION_TIMEOUT_MS = 8_000;
 const INTERACTION_TIMEOUT_MS = 30_000;
 const BUILD_TIMEOUT_MS = 120_000;
 const APP_START_TIMEOUT_MS = 90_000;
-const S10_INTERRUPT_SETTLE_MS = 250;
 const CHILD_OUTPUT_LIMIT = 16 * 1024;
 const STATIC_EVIDENCE_QUERY = '深度研究系统如何确保报告可信？';
 const SEARCH_EVIDENCE_QUERY = '请查证 Next.js 当前版本的官方文档与 GitHub 资料。';
@@ -112,7 +111,7 @@ const SELECTORS = Object.freeze({
   stoppedMessage: 'article[data-message-role="assistant"][data-stream-state="stopped"]',
   localSources: '[data-source-group="local"]',
   webSources: '[data-source-group="web"]',
-  degradedMessage: 'article[data-message-role="assistant"][data-degraded="true"]',
+  pendingState: '[data-testid="morse-chat-pending"]',
   adminLogin: '[data-testid="admin-login-form"]',
   adminConsole: '[data-testid="admin-console"]',
   adminList: '[data-testid="admin-turn-list"]',
@@ -394,7 +393,6 @@ function createControllableOpenAiProxy(upstreamPort) {
   let heldPromise = null;
   let failAnswers = false;
   let remainingEmbeddingFailures = 0;
-  let primaryDelayMs = 0;
   const answerPlans = [];
   const observations = [];
 
@@ -463,23 +461,6 @@ function createControllableOpenAiProxy(upstreamPort) {
     response.end('data: [DONE]\n\n');
   }
 
-  function interruptAfterVisibleDelta(response) {
-    response.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-    });
-    response.write(`data: ${JSON.stringify({
-      type: 'response.output_text.delta',
-      delta: '**事实依据：**\n\n- 数字摩斯以公开项目资料回答，并保留可核验来源。[来源1]\n',
-      item_id: 'interrupted',
-      output_index: 0,
-      sequence_number: 1,
-      logprobs: [],
-    })}\n\n`);
-    setTimeout(() => response.destroy(), S10_INTERRUPT_SETTLE_MS);
-  }
-
   function forward(body, request, response) {
     const upstream = http.request({
       hostname: '127.0.0.1',
@@ -522,15 +503,6 @@ function createControllableOpenAiProxy(upstreamPort) {
         response.end('{"error":{"message":"temporary_unavailable"}}');
         return;
       }
-      if (primaryDelayMs > 0 && authorization === 'Bearer mock-primary-key') {
-        const delayMs = primaryDelayMs;
-        primaryDelayMs = 0;
-        setTimeout(() => {
-          if (!response.destroyed) emitValidAnswer(response, body);
-        }, delayMs);
-        return;
-      }
-
       const plan = answerPlans.shift();
       if (typeof plan === 'object' && plan?.type === 'delay') {
         observations.push({ path: 'internal:delay-scheduled', authorization: '' });
@@ -550,8 +522,10 @@ function createControllableOpenAiProxy(upstreamPort) {
         emitGuardRejectedAnswer(response);
         return;
       }
-      if (plan === 'interrupt') {
-        interruptAfterVisibleDelta(response);
+      if (plan === 'fail') {
+        observations.push({ path: 'internal:plan-fail', authorization });
+        response.writeHead(503, { 'content-type': 'application/json' });
+        response.end('{"error":{"message":"planned_provider_failure"}}');
         return;
       }
       if (plan === 'hold') {
@@ -580,9 +554,9 @@ function createControllableOpenAiProxy(upstreamPort) {
     delayNextAnswer(milliseconds) {
       answerPlans.push({ type: 'delay', milliseconds });
     },
-    interruptThenHoldReplay() {
+    failNextThenHoldFailover() {
       if (heldResolve) throw new HarnessError('mock:hold-already-pending');
-      answerPlans.push('interrupt', 'hold');
+      answerPlans.push('fail', 'hold');
       heldPromise = new Promise((resolve) => { heldResolve = resolve; });
       return heldPromise;
     },
@@ -594,9 +568,6 @@ function createControllableOpenAiProxy(upstreamPort) {
     },
     setFailAnswers(value) {
       failAnswers = Boolean(value);
-    },
-    delayNextPrimary(milliseconds) {
-      primaryDelayMs = milliseconds;
     },
     resetObservations() {
       observations.length = 0;
@@ -613,7 +584,6 @@ function createControllableOpenAiProxy(upstreamPort) {
         pendingPlans: answerPlans.map((plan) => typeof plan === 'string' ? plan : plan.type),
         failAnswers,
         remainingEmbeddingFailures,
-        primaryDelayMs,
       };
     },
     releaseHeldResponse() {
@@ -877,7 +847,6 @@ async function submitChatValue(page, inputSelector, value) {
     const last = messages.at(-1);
     return {
       state: last?.getAttribute('data-stream-state') ?? null,
-      degraded: last?.getAttribute('data-degraded') === 'true',
       text: last?.querySelector('[data-testid="morse-chat-message-content"]')?.textContent ?? '',
       localSources: last?.querySelectorAll(${JSON.stringify(SELECTORS.localSources)}).length ?? 0,
       webSources: last?.querySelectorAll(${JSON.stringify(SELECTORS.webSources)}).length ?? 0,
@@ -975,7 +944,9 @@ async function runVisitorScenarios({
     const pending = assistants[assistants.length - 1];
     return assistants.length > ${starterBaseline}
       && pending?.getAttribute('data-stream-state') === 'pending'
-      && pending.textContent?.includes('数字摩斯正在思考')
+      && Boolean(pending.querySelector(${JSON.stringify(SELECTORS.pendingState)}))
+      && Boolean(pending.querySelector('[role="progressbar"]'))
+      && Boolean(pending.querySelector('[data-action="stop"]'))
       && !pending.querySelector('[aria-label="回答来源"]')
       && !transcript?.querySelector('[data-starter-intent]');
   })()`, 'starter:pending-state');
@@ -1038,49 +1009,15 @@ async function runVisitorScenarios({
   checks.add('social-chat');
 
   openAiProxy.resetObservations();
-  const hedgeBudgetTurnIds = Array.from({ length: 4 }, () => randomUUID());
-  await withPostgresClient(connectionString, (client) => client.query(
-    `INSERT INTO interaction_turns
-       (id, access_session_id, workflow, audience_intent, question, answer, status,
-        completed_at, delete_after, invite_label)
-     SELECT fixture_id, $2, 'chat', 'general', $3, $4, 'completed',
-            now() - interval '1 hour', now() + interval '1 day', $5
-       FROM unnest($1::uuid[]) AS fixture_id`,
-    [
-      hedgeBudgetTurnIds,
-      randomUUID(),
-      'Synthetic hedge budget fixture',
-      'Synthetic completed answer',
-      'Synthetic hedge budget fixture',
-    ],
-  ));
-  try {
-    openAiProxy.delayNextPrimary(9_000);
-    const hedged = await submitChatValue(page, '#morse-message', '请介绍内容创作 Agent 的可验证工程证据。');
-    const hedgeObservations = openAiProxy.getObservations();
-    check(hedged.state === 'done', 'hedge:answer');
-    check(
-      hedgeObservations.some((entry) => entry.authorization === 'Bearer mock-primary-key')
-        && hedgeObservations.some((entry) => entry.authorization === 'Bearer mock-fallback-key'),
-      'hedge:backup-winner',
-    );
-  } finally {
-    await withPostgresClient(connectionString, (client) => client.query(
-      'DELETE FROM interaction_turns WHERE id = ANY($1::uuid[])',
-      [hedgeBudgetTurnIds],
-    ));
-  }
-  checks.add('provider-hedge');
-
   const switchingBaseline = await page.evaluate(`(() => ({
     users: document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="user"]`)}).length,
     assistants: document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)}).length
   }))()`);
-  const heldReplay = openAiProxy.interruptThenHoldReplay();
+  const heldFailover = openAiProxy.failNextThenHoldFailover();
   await setControlledValue(page, '#morse-message', '请说明数字摩斯如何保证回答证据可追溯。');
   await click(page, '[data-action="send"]');
   await Promise.all([
-    withTimeout(heldReplay, INTERACTION_TIMEOUT_MS, 'switching:replay-not-held'),
+    withTimeout(heldFailover, INTERACTION_TIMEOUT_MS, 'switching:failover-not-held'),
     waitFor(
       page,
       `document.querySelector(${JSON.stringify(SELECTORS.chatPhase)})?.getAttribute('data-phase') === 'switching'`,
@@ -1089,8 +1026,9 @@ async function runVisitorScenarios({
   ]);
   check(await page.evaluate(`(() => {
     const assistant = [...document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)})].at(-1);
-    return !assistant?.querySelector('[data-testid="morse-chat-message-content"]')?.textContent;
-  })()`), 'switching:provisional-cleared');
+    return Boolean(assistant?.querySelector(${JSON.stringify(SELECTORS.pendingState)}))
+      && !assistant?.querySelector('[data-testid="morse-chat-message-content"]')?.textContent;
+  })()`), 'switching:pending-in-place');
   await centerInViewport(page, SELECTORS.chatPanel);
   screenshots.push(await capture(
     page,
@@ -1112,6 +1050,14 @@ async function runVisitorScenarios({
       && switchingCounts.assistants === switchingBaseline.assistants + 1,
     'switching:same-assistant',
   );
+  const failoverObservations = openAiProxy.getObservations();
+  check(
+    failoverObservations.some((entry) => entry.authorization === 'Bearer mock-primary-key')
+      && failoverObservations.some((entry) => entry.authorization === 'Bearer mock-fallback-key')
+      && failoverObservations.some((entry) => entry.path === 'internal:plan-fail'),
+    'failover:primary-then-backup',
+  );
+  checks.add('serial-provider-failover');
   checks.add('switching-recovery');
 
   openAiProxy.rejectNextEmbeddings(3);
@@ -1155,14 +1101,19 @@ async function runVisitorScenarios({
   checks.add('refresh-history');
   await installPhaseProbe(page);
 
-  openAiProxy.rejectNextAnswers(4);
-  const safeResult = await submitChatValue(page, '#morse-message', '你是谁？介绍一下自己。');
-  check(safeResult.state === 'done' && safeResult.degraded, 'degraded:done');
-  check(await page.evaluate(`document.querySelector(${JSON.stringify(SELECTORS.degradedMessage)})?.textContent?.includes('简要结果')`), 'degraded:label');
-  checks.add('degraded-result');
+  openAiProxy.setFailAnswers(true);
+  let providerFailure;
+  try {
+    providerFailure = await submitChatValue(page, '#morse-message', '你是谁？介绍一下自己。');
+  } finally {
+    openAiProxy.setFailAnswers(false);
+  }
+  check(providerFailure.state === 'error', 'provider-failure:error');
+  check(!await page.evaluate("Boolean(document.querySelector('[data-degraded]'))"), 'provider-failure:no-degraded-result');
+  checks.add('explicit-provider-failure');
 
-  const degraded = await submitChatValue(page, '#morse-message', '请核验 OpenAI API 当前最新官方文档。');
-  check(degraded.state === 'done' && degraded.webSources === 0, 'search:degradation-ui');
+  const searchDegraded = await submitChatValue(page, '#morse-message', '请核验 OpenAI API 当前最新官方文档。');
+  check(searchDegraded.state === 'done' && searchDegraded.webSources === 0, 'search:degradation-ui');
   await waitForDatabase(connectionString, async (client) => {
     const result = await client.query("SELECT 1 FROM interaction_searches WHERE status = 'failed' LIMIT 1");
     return result.rowCount === 1;
@@ -1367,11 +1318,11 @@ async function runMobileVisitor({
   await waitFor(page, "Boolean(document.querySelector('#morse-message'))", 'mobile:return-chat');
 
   await installPhaseProbe(page);
-  const heldReplay = openAiProxy.interruptThenHoldReplay();
+  const heldFailover = openAiProxy.failNextThenHoldFailover();
   await setControlledValue(page, '#morse-message', STATIC_EVIDENCE_QUERY);
   await click(page, '[data-action="send"]');
   await Promise.all([
-    withTimeout(heldReplay, INTERACTION_TIMEOUT_MS, 'mobile:switching-replay-not-held'),
+    withTimeout(heldFailover, INTERACTION_TIMEOUT_MS, 'mobile:switching-failover-not-held'),
     waitFor(
       page,
       `window.__s10PhaseLog.includes('switching')`,
@@ -1407,15 +1358,26 @@ async function runMobileVisitor({
   check(recoveredCounts.assistants === retryCounts.assistants, 'mobile:retry-same-assistant');
   check(recoveredCounts.users === retryCounts.users, 'mobile:retry-same-user');
 
-  openAiProxy.rejectNextAnswers(4);
-  const degraded = await submitChatValue(page, '#morse-message', '你是谁？介绍一下自己。');
-  check(degraded.state === 'done' && degraded.degraded, 'mobile:degraded-result');
-  check(await page.evaluate(`document.querySelector(${JSON.stringify(SELECTORS.degradedMessage)})?.textContent?.includes('简要结果')`), 'mobile:degraded-label');
+  const heldPending = openAiProxy.holdNextResponse();
+  await setControlledValue(page, '#morse-message', '请说明数字摩斯如何处理这个问题。');
+  await click(page, '[data-action="send"]');
+  await withTimeout(heldPending, INTERACTION_TIMEOUT_MS, 'mobile:pending-not-held');
+  await waitFor(
+    page,
+    `Boolean(document.querySelector(${JSON.stringify(SELECTORS.pendingState)}))`,
+    'mobile:pending-visible',
+  );
+  check(await selectorExists(page, `${SELECTORS.pendingState} [role="progressbar"]`), 'mobile:pending-progress');
+  check(await selectorExists(page, `${SELECTORS.pendingState} [data-action="stop"]`), 'mobile:pending-stop');
+  await assertNoOverflow(page, 'visitor-mobile-pending');
   screenshots.push(await capture(
     page,
     chatV2EvidenceDirectory,
-    'chat-v2-degraded-mobile-390x844.png',
+    'chat-v2-pending-mobile-390x844.png',
   ));
+  await click(page, `${SELECTORS.pendingState} [data-action="stop"]`);
+  await waitFor(page, `Boolean(document.querySelector(${JSON.stringify(SELECTORS.stoppedMessage)}))`, 'mobile:pending-stopped');
+  openAiProxy.releaseHeldResponse();
   check(!await page.evaluate(`document.body.textContent?.includes(${JSON.stringify(inviteId)})`), 'visitor:no-rollout-id');
 
   const screenshot = await capture(page, outputDirectory, 's10-chat-mobile-390x844.png');
@@ -1813,7 +1775,7 @@ export async function runS10MockE2E() {
       MORSE_CHAT_ENABLED: 'true',
       MORSE_CHAT_V2_ENABLED: 'true',
       MORSE_CHAT_V2_CANARY_PERCENT: '100',
-      MORSE_CHAT_HEDGED_FAILOVER_ENABLED: 'true',
+      MORSE_CHAT_HEDGED_FAILOVER_ENABLED: 'false',
       MORSE_SEARCH_ENABLED: 'true',
       MORSE_SEARCH_PROVIDER: 'bocha',
       BOCHA_API_KEY: 'mock-bocha-key',

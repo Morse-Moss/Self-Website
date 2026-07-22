@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
-  isAutoReplayChatError,
   isRecoverableChatError,
   normalizeChatErrorCode,
   publicErrorMessage,
@@ -53,7 +52,8 @@ export interface ChatMessage {
   complete?: boolean;
   stopped?: boolean;
   diagnosisStatus?: DiagnosisStatus;
-  degraded?: boolean;
+  startedAtMs?: number;
+  phase?: ChatPhase | null;
 }
 
 type StreamPayload = ChatSsePayload;
@@ -68,28 +68,9 @@ const emptyDiagnosis: DiagnosisFields = {
 };
 
 const validPhases = new Set<ChatPhase>(CHAT_PHASES);
-const AUTO_REPLAY_MAX_ATTEMPTS = 3;
-const AUTO_REPLAY_DELAYS_MS = [250, 1_000] as const;
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError';
-}
-
-function waitForReplayDelay(milliseconds: number, signal: AbortSignal): Promise<void> {
-  if (signal.aborted) return Promise.reject(signal.reason);
-  return new Promise((resolve, reject) => {
-    const cleanup = () => signal.removeEventListener('abort', onAbort);
-    const timeout = window.setTimeout(() => {
-      cleanup();
-      resolve();
-    }, milliseconds);
-    const onAbort = () => {
-      window.clearTimeout(timeout);
-      cleanup();
-      reject(signal.reason);
-    };
-    signal.addEventListener('abort', onAbort, { once: true });
-  });
 }
 
 function diagnosisSummary(fields: DiagnosisFields): string {
@@ -288,6 +269,7 @@ export function useMorseChat() {
   ) {
     if (streaming || abortControllerRef.current) return;
     const assistantId = retryAssistantId ?? crypto.randomUUID();
+    const startedAtMs = Date.now();
     if (retryAssistantId) {
       updateAssistant(assistantId, (assistant) => ({
         ...assistant,
@@ -297,7 +279,8 @@ export function useMorseChat() {
         retry: undefined,
         complete: false,
         stopped: false,
-        degraded: false,
+        startedAtMs,
+        phase: 'routing',
         diagnosisStatus: requestSnapshot.workflow === 'diagnosis' ? 'collecting' : undefined,
       }));
     } else {
@@ -314,6 +297,8 @@ export function useMorseChat() {
           role: 'assistant',
           text: '',
           sources: [],
+          startedAtMs,
+          phase: 'routing',
           diagnosisStatus: requestSnapshot.workflow === 'diagnosis' ? 'collecting' : undefined,
         },
       ]);
@@ -331,84 +316,54 @@ export function useMorseChat() {
     const { displayText: _displayText, ...requestBody } = requestSnapshot;
 
     try {
-      for (let attempt = 0; attempt < AUTO_REPLAY_MAX_ATTEMPTS; attempt += 1) {
-        try {
-          const response = await fetch('/api/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...requestBody, conversationId }),
-            signal: abortController.signal,
-          });
-          if (!response.ok) {
-            const failure = await response.json().catch(() => ({})) as { error?: string };
-            throw new Error(
-              failure.error || (response.status === 401 ? 'ACCESS_REQUIRED' : 'CHAT_UNAVAILABLE'),
-            );
-          }
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...requestBody, conversationId }),
+        signal: abortController.signal,
+      });
+      if (!response.ok) {
+        const failure = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(
+          failure.error || (response.status === 401 ? 'ACCESS_REQUIRED' : 'CHAT_UNAVAILABLE'),
+        );
+      }
 
-          await readChatSse<StreamPayload>(response, (event, payload) => {
-            if (event === 'status' && payload.stage && validPhases.has(payload.stage)) {
-              setPhase(payload.stage);
-              if (payload.stage === 'switching') {
-                updateAssistant(assistantId, (assistant) => ({
-                  ...assistant,
-                  text: '',
-                  sources: assistant.sources,
-                }));
-              } else if (payload.stage === 'handoff') {
-                setDiagnosisStatus('handoff_pending');
-                updateAssistant(assistantId, (assistant) => ({
-                  ...assistant,
-                  diagnosisStatus: 'handoff_pending',
-                }));
-              }
-            } else if (event === 'meta') {
-              setConversationId(payload.conversationId ?? null);
-              updateAssistant(assistantId, (assistant) => ({
-                ...assistant,
-                sources: payload.sources ?? [],
-              }));
-            } else if (event === 'delta') {
-              updateAssistant(assistantId, (assistant) => ({
-                ...assistant,
-                text: assistant.text + (payload.text ?? ''),
-              }));
-            } else if (event === 'done') {
-              if (typeof payload.remainingMessages === 'number') {
-                setRemainingMessages(payload.remainingMessages);
-              }
-              updateAssistant(assistantId, (assistant) => ({
-                ...assistant,
-                retry: undefined,
-                complete: true,
-                degraded: payload.degraded === true,
-              }));
-            }
-          });
-          return;
-        } catch (error) {
-          if (
-            isAbortError(error)
-            || attempt + 1 >= AUTO_REPLAY_MAX_ATTEMPTS
-            || !isAutoReplayChatError(normalizeChatErrorCode(error))
-          ) {
-            throw error;
-          }
-          setPhase('switching');
+      await readChatSse<StreamPayload>(response, (event, payload) => {
+        if (event === 'status' && payload.stage && validPhases.has(payload.stage)) {
+          setPhase(payload.stage);
           updateAssistant(assistantId, (assistant) => ({
             ...assistant,
-            text: '',
-            sources: [],
-            error: false,
-            retry: undefined,
-            complete: false,
-            degraded: false,
+            phase: payload.stage,
+            diagnosisStatus: payload.stage === 'handoff'
+              ? 'handoff_pending'
+              : assistant.diagnosisStatus,
           }));
-          const delayMs = AUTO_REPLAY_DELAYS_MS[attempt];
-          await waitForReplayDelay(delayMs, abortController.signal);
-          setPhase('routing');
+          if (payload.stage === 'handoff') setDiagnosisStatus('handoff_pending');
+        } else if (event === 'meta') {
+          setConversationId(payload.conversationId ?? null);
+          updateAssistant(assistantId, (assistant) => ({
+            ...assistant,
+            sources: payload.sources ?? [],
+          }));
+        } else if (event === 'delta') {
+          updateAssistant(assistantId, (assistant) => ({
+            ...assistant,
+            text: assistant.text + (payload.text ?? ''),
+          }));
+        } else if (event === 'done') {
+          if (typeof payload.remainingMessages === 'number') {
+            setRemainingMessages(payload.remainingMessages);
+          }
+          updateAssistant(assistantId, (assistant) => ({
+            ...assistant,
+            retry: undefined,
+            complete: true,
+            phase: null,
+          }));
         }
-      }
+      });
+      return;
     } catch (error) {
       if (isAbortError(error)) {
         updateAssistant(assistantId, (assistant) => ({
@@ -417,6 +372,7 @@ export function useMorseChat() {
           complete: false,
           error: false,
           retry: requestSnapshot,
+          phase: null,
         }));
         return;
       }
@@ -438,7 +394,7 @@ export function useMorseChat() {
         retry: isRecoverableChatError(code) ? requestSnapshot : undefined,
         complete: false,
         stopped: false,
-        degraded: false,
+        phase: null,
       }));
     } finally {
       if (abortControllerRef.current === abortController) {
