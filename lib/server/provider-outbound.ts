@@ -189,7 +189,11 @@ const nodeRequestTransport: ProviderRequestTransport = (input) => new Promise((r
     path: `${input.url.pathname}${input.url.search}`,
     headers: Object.fromEntries(input.headers.entries()),
     servername: input.url.protocol === 'https:' ? input.servername : undefined,
-    lookup: (_name, _options, callback) => {
+    lookup: (_name, options, callback) => {
+      if (options.all) {
+        callback(null, [input.address]);
+        return;
+      }
       callback(null, input.address.address, input.address.family);
     },
   }, (response) => {

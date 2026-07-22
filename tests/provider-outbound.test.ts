@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import { test } from 'node:test';
 
 import {
@@ -104,6 +105,38 @@ test('pinned provider fetch re-resolves, pins the validated address, and preserv
     { address: '8.8.8.8', hostname: 'api.example.com', servername: 'api.example.com' },
     { address: '1.1.1.1', hostname: 'api.example.com', servername: 'api.example.com' },
   ]);
+});
+
+test('pinned provider transport supports Node lookup calls that request all addresses', async () => {
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end('{"ok":true}');
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+
+  try {
+    const address = server.address();
+    assert.ok(address && typeof address === 'object');
+    const origin = `http://localhost:${address.port}`;
+    const pinnedFetch = createPinnedProviderFetch({
+      policy: { allowedLoopbackHttpOrigin: origin },
+    });
+
+    const response = await pinnedFetch(`${origin}/responses`, {
+      method: 'POST',
+      body: '{}',
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(await response.text(), '{"ok":true}');
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+  }
 });
 
 test('pinned provider fetch rejects redirects and aborts transport without leaking request data', async () => {
