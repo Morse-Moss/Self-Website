@@ -22,7 +22,7 @@
 
 ### 推荐主图
 
-数字摩斯对话主界面，三类工作流入口与提问区同屏。以 `public/works/digital-morse/digital-morse-main-local-2026-07-19.png` 为基线，裁去底部会话有效期信息后使用。
+数字摩斯个人独立站首页，作品入口与数字分身邀请入口同屏。当前公开封面使用 `public/works/digital-morse/digital-morse-home-2026-07-22.png`。
 
 ## 展开详情
 

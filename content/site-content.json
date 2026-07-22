@@ -678,17 +678,17 @@
         }
       ],
       "media": {
-        "src": "/works/digital-morse/digital-morse-main-local-2026-07-19.png",
-        "width": 576,
-        "height": 648,
-        "alt": "数字摩斯当前对话主界面",
-        "label": "产品界面 · 示例会话",
-        "caption": "数字摩斯产品主界面，展示自由对话、JD 匹配和需求初诊入口。",
+        "src": "/works/digital-morse/digital-morse-home-2026-07-22.png",
+        "width": 1381,
+        "height": 770,
+        "alt": "数字摩斯个人独立站首页与数字分身邀请入口",
+        "label": "线上站点首页 · 当前界面",
+        "caption": "数字摩斯个人独立站首页，展示作品入口、数字分身邀请入口和当前公开定位。",
         "evidence": {
-          "capturedAt": "2026-07-19",
-          "commit": "b15be68（本轮截图基线）",
-          "runMode": "本地 production build + 受控 fixture",
-          "sanitization": "无真实访客、生产会话、邀请码、密钥、内部地址或 Provider payload"
+          "capturedAt": "2026-07-22",
+          "commit": "用户提供的当前线上截图",
+          "runMode": "线上站点截图",
+          "sanitization": "画面不含邀请码、真实访客、生产会话、密钥、内部地址或 Provider payload"
         }
       },
       "actions": [

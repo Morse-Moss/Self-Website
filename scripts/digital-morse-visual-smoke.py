@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import struct
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -16,7 +17,7 @@ PUBLIC_ASSET = (
     / "public"
     / "works"
     / "digital-morse"
-    / "digital-morse-main-local-2026-07-19.png"
+    / "digital-morse-home-2026-07-22.png"
 )
 PROMPT = (
     "请介绍数字摩斯的三种对话流程、RAG 与可靠性设计，"
@@ -102,35 +103,18 @@ def track_errors(page: Page) -> tuple[list[str], list[str], list[dict]]:
     return console_errors, page_errors, http_errors
 
 
-def capture_public_asset(playwright: Playwright, base_url: str) -> dict:
-    browser = launch_browser(playwright)
-    page = browser.new_page(viewport={"width": 1440, "height": 900})
-    console_errors, page_errors, http_errors = track_errors(page)
-    authorize_chat(page)
+def inspect_public_asset() -> dict:
+    with PUBLIC_ASSET.open("rb") as image:
+        header = image.read(24)
+    if header[:8] != b"\x89PNG\r\n\x1a\n":
+        raise AssertionError("Digital Morse public asset is not a PNG")
 
-    page.goto(base_url.rstrip("/"), wait_until="networkidle")
-    panel = page.get_by_test_id("morse-chat-panel")
-    expect(panel).to_be_visible()
-    expect(panel.get_by_role("button", name="自由对话")).to_be_visible()
-    expect(panel.locator("#morse-message")).to_be_visible()
-
-    box = panel.bounding_box()
-    if box is None:
-        raise AssertionError("Digital Morse panel has no screenshot bounds")
-    size = [round(box["width"]), round(box["height"])]
-    if size != [576, 648]:
-        raise AssertionError(f"Digital Morse public asset is {size}, expected [576, 648]")
-
-    PUBLIC_ASSET.parent.mkdir(parents=True, exist_ok=True)
-    panel.screenshot(path=PUBLIC_ASSET)
-    result = {
-        "size": size,
-        "consoleErrors": console_errors,
-        "pageErrors": page_errors,
-        "httpErrors": http_errors,
-    }
-    browser.close()
-    return result
+    size = list(struct.unpack(">II", header[16:24]))
+    if size != [1381, 770]:
+        raise AssertionError(
+            f"Digital Morse public asset is {size}, expected [1381, 770]"
+        )
+    return {"size": size}
 
 
 def inspect_viewport(
@@ -156,7 +140,7 @@ def inspect_viewport(
         "嵌入个人作品集的 AI 数字分身系统，通过自由对话、JD 匹配和需求初诊"
     )
     expect(card).to_contain_text("项目负责人 · 已上线 · 持续完善中")
-    badge = card.get_by_text("产品界面 · 示例会话")
+    badge = card.get_by_text("线上站点首页 · 当前界面")
     expect(badge).to_be_visible()
     media = badge.locator("..")
     badge_box = badge.bounding_box()
@@ -214,7 +198,7 @@ def inspect_viewport(
 
     image = card.locator("img").first
     expect(image).to_have_attribute(
-        "src", re.compile(r"digital-morse-main-local-2026-07-19\.png")
+        "src", re.compile(r"digital-morse-home-2026-07-22\.png")
     )
     image_loaded = image.evaluate(
         "element => element.complete && element.naturalWidth > 0 && element.naturalHeight > 0"
@@ -270,8 +254,8 @@ def inspect_viewport(
 def main() -> None:
     args = parse_args()
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    public_asset = inspect_public_asset()
     with sync_playwright() as playwright:
-        public_asset = capture_public_asset(playwright, args.base_url)
         results = [
             inspect_viewport(playwright, args.base_url, "desktop", 1440, 900),
             inspect_viewport(playwright, args.base_url, "mobile", 390, 844),
@@ -288,13 +272,6 @@ def main() -> None:
         or not result["promptFits"]
         or result["horizontalOverflow"] > 0
     ]
-    if (
-        public_asset["consoleErrors"]
-        or public_asset["pageErrors"]
-        or public_asset["httpErrors"]
-    ):
-        failures.append({"publicAsset": public_asset})
-
     print(
         json.dumps(
             {"publicAsset": public_asset, "results": results, "failures": failures},
