@@ -7,7 +7,15 @@
 **PRIVATE_RESUME_ACTIVATED_PRODUCTION_OBSERVED / LIMITED_LAUNCH**
 
 ## next_allowed_pointer
-当前生产实例运行 `292a24b`。私密简历已设置为 `MORSE_RESUME_ENABLED=true`，经确认的定向版最终 PDF 已通过认证后台上传；未授权状态为 `enabled=true`、`authorized=false`、`documentAvailable=true`，文件接口保持 401。上线验收码已兑换后停用，关联会话已立即失效；后续对外访问仍需管理员在 `/admin` 为具体访客创建并交付新码。OpenAI-compatible API 管理状态未变，数据库中仍无管理员创建的中转或模型，本轮未调用真实 Provider。生产硬化余项关闭前不得宣称完整 `ONLINE_READY`。
+当前生产实例运行 `d23b5df`。私密简历已设置为 `MORSE_RESUME_ENABLED=true`，经确认的定向版最终 PDF 已通过认证后台上传；未授权状态为 `enabled=true`、`authorized=false`、`documentAvailable=true`，文件接口保持 401。上线验收码已兑换后停用，关联会话已立即失效；后续对外访问仍需管理员在 `/admin` 为具体访客创建并交付新码。OpenAI-compatible API 管理状态未变，数据库中仍无管理员创建的中转或模型，本轮未调用真实 Provider。生产硬化余项关闭前不得宣称完整 `ONLINE_READY`。
+
+## Digital Morse cover refresh production release (2026-07-22)
+
+- Mode: `DIRECT / CRITICAL / DEPLOYED`; status: `PRODUCTION_OBSERVED / LIMITED_LAUNCH`。
+- Release: `d23b5df` 已进入 `origin/master`；冻结归档 SHA-256 为 `a2b4f2cfe7c0aab4647b09d151d0abd174abde772bf586af61e3aabb4f2c5e78`。`/opt/revolution/current` 及 Web、Worker、Edge working directory 均指向 `/opt/revolution/releases/d23b5df/revolution`，旧 release `292a24b` 保留。
+- Scope: README 首页图与作品集图使用用户确认的两张截图；`/works#digital-morse` 封面使用同一张首页图，公开资源为 `digital-morse-home-2026-07-22.png`。验收脚本改为只校验封面尺寸，不再自动覆盖公开素材。
+- Verification: 定向内容与资源测试 `21/21`；本地及生产构建均生成 30 个路由。公网 root、works、live、ready 均为 HTTP 200，release smoke PASS；线上封面为 1381x770、229100 bytes，SHA-256 为 `67241A27EC93DE7BAB5E87AFEF9BE5A4CFC89AC0E4462DC53694932F8C73F3B3`，与用户原图一致。1440x900 与 390x844 作品页均无横向溢出、console/page/HTTP error。
+- Data/Boundary: migration `004` 幂等通过，grants 复验通过，知识摄取为 0 更新、40 documents 跳过。未读取或改写简历密文、邀请码、管理员密码、Provider 配置或密钥，未调用 Chat、Search、Bocha、Feishu 或其他真实 Provider。
 
 ## Private resume activation and final PDF rollout (2026-07-22)
 
