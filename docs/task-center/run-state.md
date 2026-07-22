@@ -4,10 +4,19 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**S11-ADMIN_API_MANAGEMENT_PRODUCTION_OBSERVED / LIMITED_LAUNCH**
+**PRIVATE_RESUME_ACTIVATED_PRODUCTION_OBSERVED / LIMITED_LAUNCH**
 
 ## next_allowed_pointer
-当前生产实例运行 `292a24b`。OpenAI-compatible API 管理代码、migration `004`、最小 grants 和 Web-only Provider 主密钥已部署；管理页当前主线路和每条备用线路会显示脱敏后的中转主机名。数据库中尚无管理员创建的中转或模型，运行继续使用三个只读环境目标，本轮未登录管理员、未调用真实 Provider。私密简历继续保持 `MORSE_RESUME_ENABLED=false`。后续 Provider 发现、测试、激活或删除必须由管理员在 `/admin/api` 显式执行；生产硬化余项关闭前不得宣称完整 `ONLINE_READY`。
+当前生产实例运行 `292a24b`。私密简历已设置为 `MORSE_RESUME_ENABLED=true`，经确认的定向版最终 PDF 已通过认证后台上传；未授权状态为 `enabled=true`、`authorized=false`、`documentAvailable=true`，文件接口保持 401。上线验收码已兑换后停用，关联会话已立即失效；后续对外访问仍需管理员在 `/admin` 为具体访客创建并交付新码。OpenAI-compatible API 管理状态未变，数据库中仍无管理员创建的中转或模型，本轮未调用真实 Provider。生产硬化余项关闭前不得宣称完整 `ONLINE_READY`。
+
+## Private resume activation and final PDF rollout (2026-07-22)
+
+- Mode: `STAGED / CRITICAL / DEPLOYED`; status: `OBSERVED / FEATURE_ENABLED / LIMITED_LAUNCH`。
+- Release: 当前应用 release 保持 `292a24b`，本轮未发布新代码或镜像。仅将受限生产环境文件中的 `MORSE_RESUME_ENABLED` 从 `false` 原子切换为 `true`，随后强制重建 Web/Worker 以加载配置；DB、Embedding 与 Edge 未重建。
+- Data/Security: 经确认的定向版最终 PDF 仅通过认证 `/admin` 上传并进入私有密文卷；通用版简历未触碰，PDF 未进入 Git、`public/`、RAG、日志、截图或验收文档。一次性上线验收码在独立 HTTP 会话中兑换，验收完成后立即停用，关联 Session 再次访问状态与文件均为 401。
+- Verification: 公网 live/ready 均为 HTTP 200，`release:smoke` 返回 `{"ok":true}`；公开“简历模式”显示邀请码表单。未授权 `/api/resume/access` 返回 401 与 `enabled=true`、`authorized=false`、`documentAvailable=true`，未授权 `/api/resume/file` 返回 401。授权文件返回 HTTP 200、299,762 bytes，SHA-256 与本地最终 PDF 一致，且保持 `application/pdf`、`private, no-store`、`nosniff` 与内联 disposition。Web、Worker、Edge 最近 10 分钟错误关键词计数均为 0。
+- Recovery: 启用前环境备份为 `/opt/revolution/shared/.env.production.bak-resume-20260722T065827Z`。异常时将 `MORSE_RESUME_ENABLED=false` 写回受限环境文件并强制重建 Web/Worker；保留 migration `003`、私有卷、Secret、密文和审计记录。
+- Boundary: 未轮换密钥、未删除私密数据或旧 release、未调用 Chat/Search/Embedding/Bocha/Feishu Provider，未保留可继续访问的验收邀请码。后续真实访客邀请码由管理员按人创建、传递和停用。
 
 ## Admin API management production release (2026-07-22)
 

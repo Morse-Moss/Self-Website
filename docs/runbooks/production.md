@@ -136,7 +136,7 @@ npm run production:worker
 
 ## 8. 当前生产状态与硬化余项
 
-首个生产实例在 `39849e1` 完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实对话 smoke 和公网 live/ready/release smoke。2026-07-22 当前应用 release 为 `292a24b`，沿用同一生产拓扑，并已发布密码登录、邀请码管理、私有导出密码复验、五个项目的简洁页面、展开详情和正式主图、首页 Warp Tunnel、三节点 Chat 容灾、disabled-first 私密简历代码及仅管理员可用的 OpenAI-compatible API 管理。管理页运行摘要显示安全的中转主机名；服务端只返回 `URL.host`，不返回 Key、协议、路径、查询参数或片段。生产 migration 001/002/003/004、私有卷、文件型 Secret 和 runtime grants 已部署并复验；Provider 配置主密钥只挂载给 Web，配置表尚无管理员创建的中转或模型，运行继续使用只读环境目标。`MORSE_RESUME_ENABLED=false`，四张私密表为 0 行，真实 PDF 和简历邀请码均不存在。生产公开知识为 40 documents / 47 chunks；最近两次摄取均为 0 更新、40 documents 跳过。生产 BGE + pgvector 的 46 条 gold 为 top-1 36/46、top-3 46/46，正负阈值均通过。生产 Lighthouse 13.4.0 的移动端与桌面端历史 Performance 均为 99；实例细节和历史发布证据以实例手册及 S11 closeout 为准。
+首个生产实例在 `39849e1` 完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实对话 smoke 和公网 live/ready/release smoke。2026-07-22 当前应用 release 为 `292a24b`，沿用同一生产拓扑，并已发布密码登录、邀请码管理、私有导出密码复验、五个项目的简洁页面、展开详情和正式主图、首页 Warp Tunnel、三节点 Chat 容灾、私密简历及仅管理员可用的 OpenAI-compatible API 管理。管理页运行摘要显示安全的中转主机名；服务端只返回 `URL.host`，不返回 Key、协议、路径、查询参数或片段。生产 migration 001/002/003/004、私有卷、文件型 Secret 和 runtime grants 已部署并复验；Provider 配置主密钥只挂载给 Web，配置表尚无管理员创建的中转或模型，运行继续使用只读环境目标。`MORSE_RESUME_ENABLED=true`，经确认的定向版最终 PDF 已通过认证后台进入私有密文卷；未授权状态可确认文档可用，但文件接口保持 401。一次性上线验收码已兑换并立即停用，关联 Session 已失效。生产公开知识为 40 documents / 47 chunks；最近两次摄取均为 0 更新、40 documents 跳过。生产 BGE + pgvector 的 46 条 gold 为 top-1 36/46、top-3 46/46，正负阈值均通过。生产 Lighthouse 13.4.0 的移动端与桌面端历史 Performance 均为 99；实例细节和历史发布证据以实例手册及 S11 closeout 为准。
 
 以下事项完成前保持 `LIMITED_LAUNCH`，不标记完整 `ONLINE_READY`：
 
@@ -147,7 +147,7 @@ npm run production:worker
 - 获得当次授权后分别执行真实 Bocha 和 Feishu smoke。
 - 复核并处置当前生产依赖 advisory；2026-07-22 生产 `npm ci` 报告 1 个 moderate、2 个 high，不执行无评估的 `audit fix`。
 - 将经人工确认的最终内容与素材冻结成新提交后再发布；不得从当前脏工作区直接覆盖生产。
-- 私密简历启用、真实 PDF 上传、真实邀请码创建/兑换、密钥轮换和恢复演练仍需分别授权；不得因 disabled-first 基础设施已部署而自动执行。
+- 私密简历已启用且最终 PDF 已上传；后续真实访客邀请码的创建与传递、密钥轮换和恢复演练仍需分别授权。
 
 ## 9. 故障定位顺序
 
