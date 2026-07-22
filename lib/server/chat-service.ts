@@ -12,7 +12,14 @@ import type {
   ChatWorkflow,
   TokenUsage,
 } from '../contracts/chat.ts';
-import type { AiMessage, AiProvider, AnswerEvent } from './ai-provider.ts';
+import {
+  ProviderRunError,
+  type AiMessage,
+  type AiProvider,
+  type AnswerEvent,
+  type ProviderAttempt,
+  type ProviderWinner,
+} from './ai-provider.ts';
 import { enqueueAlert } from './alert-service.ts';
 import {
   estimateCostUsd,
@@ -28,7 +35,9 @@ import {
   loadCompletedInteraction,
   loadInteraction,
   loadInteractionForUpdate,
+  providerAttemptsMatch,
   restartInteraction,
+  replaceProviderAttempts,
   terminateInteraction,
   type InteractionTurn,
 } from './interaction-log.ts';
@@ -803,6 +812,11 @@ async function completeTurn(input: {
   answer: string;
   sources: PublicChatSource[];
   usage: TokenUsage | null;
+  attempts: ProviderAttempt[];
+  winner: ProviderWinner | null;
+  usageComplete: boolean;
+  costComplete: boolean;
+  knownCostUsd: number | null;
   config: ChatServiceConfig;
   startedAt: Date;
   completedAt: Date;
@@ -810,9 +824,13 @@ async function completeTurn(input: {
 }): Promise<void> {
   const provider = input.config.providerName ?? 'openai';
   const model = input.config.model ?? 'configured-model';
-  const estimatedCostUsd = input.usage && input.config.tokenRates
+  const routed = input.attempts.length > 0;
+  const legacyCost = input.usage && input.config.tokenRates
     ? estimateCostUsd(input.usage, input.config.tokenRates)
     : null;
+  const estimatedCostUsd = routed
+    ? (input.costComplete ? input.knownCostUsd : null)
+    : legacyCost;
   let commitAttempted = false;
 
   try {
@@ -827,7 +845,32 @@ async function completeTurn(input: {
         input.completedAt,
       ],
     );
-    if (input.usage && input.config.tokenRates) {
+    if (routed) {
+      await replaceProviderAttempts(input.client, input.turn.turnId, input.attempts);
+      for (const attempt of input.attempts) {
+        if (!attempt.usage) continue;
+        await input.client.query(
+          `INSERT INTO usage_events
+            (access_session_id, conversation_id, provider, model,
+             input_tokens, output_tokens, estimated_cost_usd, created_at,
+             interaction_turn_id, provider_attempt_index, cost_complete)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          [
+            input.accessSessionId,
+            input.turn.conversationId,
+            attempt.connectionDisplayName,
+            attempt.modelId,
+            attempt.usage.inputTokens,
+            attempt.usage.outputTokens,
+            attempt.knownCostUsd,
+            attempt.completedAt,
+            input.turn.turnId,
+            attempt.attemptIndex,
+            attempt.costComplete,
+          ],
+        );
+      }
+    } else if (input.usage && input.config.tokenRates) {
       await input.client.query(
         `INSERT INTO usage_events
           (access_session_id, conversation_id, provider, model,
@@ -852,6 +895,10 @@ async function completeTurn(input: {
       sources: input.sources,
       usage: input.usage,
       estimatedCostUsd,
+      knownCostUsd: routed ? input.knownCostUsd : estimatedCostUsd,
+      usageComplete: routed ? input.usageComplete : input.usage !== null,
+      costComplete: routed ? input.costComplete : estimatedCostUsd !== null,
+      winner: input.winner,
       provider,
       model,
       latencyMs: elapsedMilliseconds(input.startedAt, input.completedAt),
@@ -875,7 +922,11 @@ async function completeTurn(input: {
     if (commitAttempted) {
       const completed = await loadCompletedInteraction(input.pool, input.turn.turnId)
         .catch(() => null);
-      if (completed?.answer === input.answer) return;
+      const attemptsMatch = completed?.answer === input.answer
+        ? await providerAttemptsMatch(input.pool, input.turn.turnId, input.attempts)
+            .catch(() => false)
+        : false;
+      if (attemptsMatch) return;
     }
     await input.client.query('ROLLBACK').catch(() => undefined);
     throw error;
@@ -891,6 +942,8 @@ interface CompensationInput {
   errorCode: string;
   answer: string | null;
   sources: PublicChatSource[];
+  attempts: ProviderAttempt[];
+  winner: ProviderWinner | null;
   config: ChatServiceConfig;
   startedAt: Date;
   completedAt: Date;
@@ -942,6 +995,33 @@ async function compensateTurnOnce(input: CompensationInput): Promise<Compensatio
       }
     }
 
+    const aggregate = aggregateProviderAttempts(input.attempts);
+    if (input.attempts.length > 0) {
+      await replaceProviderAttempts(input.client, input.turn.turnId, input.attempts);
+      for (const attempt of input.attempts) {
+        if (!attempt.usage) continue;
+        await input.client.query(
+          `INSERT INTO usage_events
+            (access_session_id, conversation_id, provider, model,
+             input_tokens, output_tokens, estimated_cost_usd, created_at,
+             interaction_turn_id, provider_attempt_index, cost_complete)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          [
+            input.accessSessionId,
+            input.turn.conversationId,
+            attempt.connectionDisplayName,
+            attempt.modelId,
+            attempt.usage.inputTokens,
+            attempt.usage.outputTokens,
+            attempt.knownCostUsd,
+            attempt.completedAt,
+            input.turn.turnId,
+            attempt.attemptIndex,
+            attempt.costComplete,
+          ],
+        );
+      }
+    }
     await terminateInteraction({
       client: input.client,
       turnId: input.turn.turnId,
@@ -949,8 +1029,12 @@ async function compensateTurnOnce(input: CompensationInput): Promise<Compensatio
       answer: input.answer,
       errorCode: input.errorCode,
       sources: input.sources,
-      provider: input.config.providerName ?? 'openai',
-      model: input.config.model ?? 'configured-model',
+      usage: aggregate.usage,
+      estimatedCostUsd: aggregate.costComplete ? aggregate.knownCostUsd : null,
+      knownCostUsd: aggregate.knownCostUsd,
+      usageComplete: aggregate.usageComplete,
+      costComplete: aggregate.costComplete,
+      winner: input.winner,
       latencyMs: elapsedMilliseconds(input.startedAt, input.completedAt),
       completedAt: input.completedAt,
     });
@@ -972,6 +1056,34 @@ async function compensateTurnOnce(input: CompensationInput): Promise<Compensatio
     await input.client.query('ROLLBACK').catch(() => undefined);
     throw error;
   }
+}
+
+function aggregateProviderAttempts(attempts: ProviderAttempt[]): {
+  usage: TokenUsage | null;
+  knownCostUsd: number | null;
+  usageComplete: boolean;
+  costComplete: boolean;
+} {
+  let hasUsage = false;
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let knownCostUsd: number | null = null;
+  for (const attempt of attempts) {
+    if (attempt.usage) {
+      hasUsage = true;
+      inputTokens += attempt.usage.inputTokens;
+      outputTokens += attempt.usage.outputTokens;
+    }
+    if (attempt.knownCostUsd !== null) {
+      knownCostUsd = (knownCostUsd ?? 0) + attempt.knownCostUsd;
+    }
+  }
+  return {
+    usage: hasUsage ? { inputTokens, outputTokens } : null,
+    knownCostUsd,
+    usageComplete: attempts.length > 0 && attempts.every((attempt) => attempt.usageComplete),
+    costComplete: attempts.length > 0 && attempts.every((attempt) => attempt.costComplete),
+  };
 }
 
 async function compensateTurn(input: CompensationInput): Promise<boolean> {
@@ -996,8 +1108,11 @@ async function compensateTurn(input: CompensationInput): Promise<boolean> {
 
 function providerPhaseError(error: unknown): RuntimePhaseError {
   const code = dependencyErrorCode(error);
-  if (code?.includes('INCOMPLETE')) {
-    return new RuntimePhaseError('PROVIDER_INCOMPLETE', 'PROVIDER_INCOMPLETE', error);
+  if (code && /^PROVIDER_[A-Z_]+$/u.test(code)) {
+    const publicCode = code.includes('INCOMPLETE')
+      ? 'PROVIDER_INCOMPLETE'
+      : 'PROVIDER_UNAVAILABLE';
+    return new RuntimePhaseError(publicCode, code, error);
   }
   return new RuntimePhaseError('PROVIDER_UNAVAILABLE', 'PROVIDER_UNAVAILABLE', error);
 }
@@ -1212,6 +1327,8 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
   let answer = '';
   let sources: PublicChatSource[] = [];
   let answerIterator: AsyncIterator<AnswerEvent> | null = null;
+  let providerAttempts: ProviderAttempt[] = [];
+  let providerWinner: ProviderWinner | null = null;
   let failure: TerminalFailure | null = null;
 
   try {
@@ -1352,20 +1469,23 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
       try {
         next = await answerIterator.next();
       } catch (error) {
+        if (error instanceof ProviderRunError) {
+          providerAttempts = [...error.attempts];
+        }
         if (input.signal?.aborted) throw error;
         await recordDependencyFailure({
           client: lockClient,
           dependency: 'provider',
           errorCode: error instanceof OperationTimeoutError
             ? error.code
-            : 'PROVIDER_UNAVAILABLE',
+            : dependencyErrorCode(error) ?? 'PROVIDER_UNAVAILABLE',
           now: clock(),
         });
         if (error instanceof OperationTimeoutError) throw error;
         throw providerPhaseError(error);
       }
-      throwIfAborted(input.signal);
       if (next.done) {
+        throwIfAborted(input.signal);
         await recordDependencyFailure({
           client: lockClient,
           dependency: 'provider',
@@ -1376,12 +1496,22 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
       }
 
       const event = next.value;
+      if (event.type === 'attempt') {
+        providerAttempts = [
+          ...providerAttempts.filter(
+            (attempt) => attempt.attemptIndex !== event.attempt.attemptIndex,
+          ),
+          event.attempt,
+        ].sort((left, right) => left.attemptIndex - right.attemptIndex);
+        throwIfAborted(input.signal);
+        continue;
+      }
+      throwIfAborted(input.signal);
       if (event.type === 'delta') {
         answer += event.text;
         yield event;
         continue;
       }
-
       if (!answer.trim()) {
         await recordDependencyFailure({
           client: lockClient,
@@ -1391,6 +1521,16 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
         });
         throw new RuntimePhaseError('PROVIDER_INCOMPLETE', 'PROVIDER_INCOMPLETE');
       }
+      providerAttempts = event.attempts ? [...event.attempts] : providerAttempts;
+      providerWinner = event.winner ?? null;
+      const providerAggregate = providerAttempts.length > 0
+        ? aggregateProviderAttempts(providerAttempts)
+        : {
+            usage: event.usage,
+            knownCostUsd: event.knownCostUsd ?? null,
+            usageComplete: event.usageComplete ?? event.usage !== null,
+            costComplete: event.costComplete ?? false,
+          };
       const completedAt = clock();
       await recordDependencySuccess({
         client: lockClient,
@@ -1407,6 +1547,11 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
           answer,
           sources,
           usage: event.usage,
+          attempts: providerAttempts,
+          winner: providerWinner,
+          usageComplete: event.usageComplete ?? providerAggregate.usageComplete,
+          costComplete: event.costComplete ?? providerAggregate.costComplete,
+          knownCostUsd: event.knownCostUsd ?? providerAggregate.knownCostUsd,
           config: input.config,
           startedAt,
           completedAt,
@@ -1477,6 +1622,8 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
           errorCode: failure.errorCode,
           answer: answer.length > 0 ? answer : null,
           sources,
+          attempts: providerAttempts,
+          winner: providerWinner,
           config: input.config,
           startedAt,
           completedAt: clock(),

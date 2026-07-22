@@ -16,7 +16,8 @@ export type ReadinessErrorCode =
   | 'READINESS_RUNTIME_INVALID'
   | 'READINESS_DATABASE_UNAVAILABLE'
   | 'READINESS_MIGRATIONS_INCOMPLETE'
-  | 'READINESS_KNOWLEDGE_EMPTY';
+  | 'READINESS_KNOWLEDGE_EMPTY'
+  | 'READINESS_AI_CONFIG_UNAVAILABLE';
 
 export class ReadinessError extends Error {
   readonly code: ReadinessErrorCode;
@@ -97,6 +98,33 @@ export async function assertApplicationReady(input: ReadinessInput = {}): Promis
     );
     if ((knowledge.rows[0] as { present?: unknown } | undefined)?.present !== true) {
       throw new ReadinessError('READINESS_KNOWLEDGE_EMPTY');
+    }
+    const runtimeState = await pool.query(
+      `SELECT id, active_route_revision_id
+         FROM ai_runtime_state
+        WHERE id = true`,
+    );
+    if (
+      runtimeState.rows.length !== 1
+      || (runtimeState.rows[0] as { id?: unknown }).id !== true
+    ) {
+      throw new ReadinessError('READINESS_AI_CONFIG_UNAVAILABLE');
+    }
+    try {
+      const configuration = await pool.query(
+        `SELECT
+           (SELECT count(*) FROM ai_connections) >= 0 AS connections_readable,
+           (SELECT count(*) FROM ai_model_presets) >= 0 AS models_readable,
+           (SELECT count(*) FROM ai_route_revisions) >= 0 AS routes_readable,
+           (SELECT count(*) FROM ai_route_targets) >= 0 AS targets_readable`,
+      );
+      const row = configuration.rows[0] as Record<string, unknown> | undefined;
+      if (!row || Object.values(row).some((value) => value !== true)) {
+        throw new ReadinessError('READINESS_AI_CONFIG_UNAVAILABLE');
+      }
+    } catch (error) {
+      if (error instanceof ReadinessError) throw error;
+      throw new ReadinessError('READINESS_AI_CONFIG_UNAVAILABLE');
     }
   } catch (error) {
     if (error instanceof ReadinessError) throw error;

@@ -13,6 +13,7 @@ const clientPath = path.join(adminDirectory, 'admin-client.ts');
 const stylePath = path.join(adminDirectory, 'AdminConsole.module.css');
 const layoutPath = path.resolve('app/admin/layout.tsx');
 const pagePath = path.resolve('app/admin/page.tsx');
+const shellPath = path.join(adminDirectory, 'AdminShell.tsx');
 const publicHeaderPath = path.resolve('components/site/SiteHeader.tsx');
 
 interface AdminClientModule {
@@ -57,12 +58,14 @@ function adminSource(): string {
 test('admin uses a private route shell and is absent from public navigation', () => {
   const layout = read(layoutPath);
   const page = read(pagePath);
+  const shell = read(shellPath);
   const publicHeader = read(publicHeaderPath);
 
   assert.match(page, /import AdminConsole from ['"]@\/components\/admin\/AdminConsole['"]/);
   assert.match(page, /<AdminConsole\s*\/>/);
   assert.match(layout, /children:\s*React\.ReactNode/);
-  assert.match(layout, /data-admin-shell/);
+  assert.match(layout, /<AdminShell>\{children\}<\/AdminShell>/);
+  assert.match(shell, /data-admin-shell/);
   assert.doesNotMatch(layout, /SiteHeader|SiteFooter|ResumeSheet|MorseSignalCanvas|MorseChat/);
   assert.doesNotMatch(publicHeader, /href=[{'"]+\/admin|>\s*管理后台\s*</u);
 });

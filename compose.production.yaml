@@ -124,6 +124,8 @@ services:
       MORSE_DATABASE_POOL_MAX: ${MORSE_WEB_POOL_MAX:-6}
       MORSE_RESUME_STORAGE_DIR: /opt/revolution/shared/private/resume
       MORSE_RESUME_ENCRYPTION_KEY_FILE: /run/secrets/resume_encryption_key
+      MORSE_PROVIDER_CONFIG_KEY_FILE: /run/secrets/provider_config_key
+      MORSE_PROVIDER_CONFIG_KEY_VERSION: ${MORSE_PROVIDER_CONFIG_KEY_VERSION:-1}
       OPENAI_EMBEDDING_BASE_URL: http://embedding:18091/v1
       OPENAI_EMBEDDING_API_KEY: ${EMBEDDING_API_KEY}
       MORSE_EMBEDDING_ALLOW_PRIVATE_HTTP: "true"
@@ -136,6 +138,7 @@ services:
         condition: service_completed_successfully
     secrets:
       - resume_encryption_key
+      - provider_config_key
     volumes:
       - revolution_private_resume:/opt/revolution/shared/private/resume
     expose:
@@ -228,6 +231,8 @@ secrets:
     file: ./deploy/secrets/db_backup_password
   resume_encryption_key:
     file: ./deploy/secrets/resume_encryption_key
+  provider_config_key:
+    file: ./deploy/secrets/provider_config_key
 
 networks:
   internal:

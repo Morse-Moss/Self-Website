@@ -113,31 +113,10 @@ export interface OpenAIProviderConfig {
   totalTimeoutMs: number;
   providerConcurrency: number;
   reasoningEffort?: OpenAIReasoningEffort;
-  outputlessMaxAttempts?: number;
 }
 
 const generationSemaphores = new Map<number, Semaphore>();
 const PROVIDER_STREAM_CLEANUP_GRACE_MS = 100;
-const OUTPUTLESS_MAX_ATTEMPTS = 3;
-
-function isRetryableBeforeOutputError(error: unknown): boolean {
-  if (error instanceof OpenAIProviderError) {
-    return error.code === 'PROVIDER_RESPONSE_INCOMPLETE';
-  }
-  if (!error || typeof error !== 'object' || !('status' in error)) return false;
-  const status = (error as { status?: unknown }).status;
-  return typeof status === 'number'
-    && (status === 408 || status === 409 || status === 429 || (status >= 500 && status < 600));
-}
-
-function addTokenUsage(current: TokenUsage | null, next: TokenUsage | null): TokenUsage | null {
-  if (!next) return current;
-  if (!current) return next;
-  return {
-    inputTokens: current.inputTokens + next.inputTokens,
-    outputTokens: current.outputTokens + next.outputTokens,
-  };
-}
 
 function responseTextPartKey(event: {
   item_id?: string;
@@ -284,42 +263,29 @@ export class OpenAIProvider implements AiProvider {
 
     try {
       release = await this.generationSemaphore.acquire(totalTimeout.signal);
-      const maxAttempts = this.config.outputlessMaxAttempts ?? OUTPUTLESS_MAX_ATTEMPTS;
-      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-        const stream = this.config.protocol === 'responses'
-          ? this.streamResponses(request, totalTimeout.signal)
-          : this.streamChatCompletions(request, totalTimeout.signal);
-        const iterator = stream[Symbol.asyncIterator]();
-        let emittedOutput = false;
-        let completed = false;
+      const stream = this.config.protocol === 'responses'
+        ? this.streamResponses(request, totalTimeout.signal)
+        : this.streamChatCompletions(request, totalTimeout.signal);
+      const iterator = stream[Symbol.asyncIterator]();
+      let emittedOutput = false;
+      let completed = false;
 
-        try {
-          while (true) {
-            const next = await iterator.next();
-            if (next.done) {
-              usage = addTokenUsage(usage, next.value);
-              if (!emittedOutput) {
-                throw new OpenAIProviderError('PROVIDER_RESPONSE_INCOMPLETE');
-              }
-              completed = true;
-              break;
+      try {
+        while (true) {
+          const next = await iterator.next();
+          if (next.done) {
+            usage = next.value;
+            if (!emittedOutput) {
+              throw new OpenAIProviderError('PROVIDER_RESPONSE_INCOMPLETE', usage);
             }
-            emittedOutput = true;
-            yield next.value;
+            completed = true;
+            break;
           }
-          break;
-        } catch (error) {
-          if (error instanceof OpenAIProviderError) {
-            usage = addTokenUsage(usage, error.usage);
-          }
-          const canRetry = attempt + 1 < maxAttempts
-            && !emittedOutput
-            && !totalTimeout.signal.aborted
-            && isRetryableBeforeOutputError(error);
-          if (!canRetry) throw error;
-        } finally {
-          if (!completed) await closeIterator(iterator);
+          emittedOutput = true;
+          yield next.value;
         }
+      } finally {
+        if (!completed) await closeIterator(iterator);
       }
     } catch (error) {
       if (totalTimeout.signal.aborted) throw totalTimeout.signal.reason;

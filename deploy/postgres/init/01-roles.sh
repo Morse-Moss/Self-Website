@@ -59,8 +59,4 @@ GRANT USAGE, CREATE ON SCHEMA public TO migration;
 GRANT USAGE ON SCHEMA public TO runtime, ingest, backup;
 GRANT CONNECT ON DATABASE revolution TO runtime, migration, ingest, backup;
 
-ALTER DEFAULT PRIVILEGES FOR ROLE migration IN SCHEMA public
-  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO runtime;
-ALTER DEFAULT PRIVILEGES FOR ROLE migration IN SCHEMA public
-  GRANT USAGE, SELECT ON SEQUENCES TO runtime;
 SQL

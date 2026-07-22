@@ -51,8 +51,11 @@ openssl rand -hex 32 > /opt/revolution/deploy/secrets/db_runtime_password
 openssl rand -hex 32 > /opt/revolution/deploy/secrets/db_migration_password
 openssl rand -hex 32 > /opt/revolution/deploy/secrets/db_ingest_password
 openssl rand -hex 32 > /opt/revolution/deploy/secrets/db_backup_password
+openssl rand -base64 32 > /opt/revolution/deploy/secrets/provider_config_key
 chown 999:999 /opt/revolution/deploy/secrets/db_*_password
 chmod 600 /opt/revolution/deploy/secrets/db_*_password
+chown 1001:1001 /opt/revolution/deploy/secrets/provider_config_key
+chmod 600 /opt/revolution/deploy/secrets/provider_config_key
 openssl req -x509 -newkey rsa:2048 -nodes -days 825 \
   -subj /CN=revolution-db \
   -keyout /opt/revolution/deploy/postgres/tls/server.key \
@@ -82,6 +85,7 @@ OPENAI_EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5
 EMBEDDING_API_KEY=<random-internal-key>
 MORSE_ADMIN_PASSWORD_HASH=<scrypt-hash>
 MORSE_INVITE_FINGERPRINT_SECRET=<random-secret>
+MORSE_PROVIDER_CONFIG_KEY_VERSION=1
 MORSE_ALERTS_ENABLED=false
 MORSE_SEARCH_ENABLED=false
 MORSE_RESUME_ENABLED=false
@@ -91,7 +95,7 @@ MORSE_RESUME_FINGERPRINT_SECRET=<random-secret>
 MORSE_RESUME_TRUSTED_PROXY_HOPS=1
 ```
 
-`compose.production.yaml` 固定把 `revolution_private_resume` 挂载到 Web/Worker，并只把 `resume_encryption_key` Secret 挂载给 Web。`MORSE_RESUME_STORAGE_DIR` 和 `MORSE_RESUME_ENCRYPTION_KEY_FILE` 由 Compose 注入，禁止在 `.env.production` 改成宿主机任意路径。首次准备这些资源仍属于私密简历部署授权，不能因为命令已写入手册就提前执行。
+`compose.production.yaml` 固定把 `provider_config_key` 只挂载给 Web；Worker、Migration、Ingest 和 edge 不得获得该文件。它还把 `revolution_private_resume` 挂载到 Web/Worker，并只把 `resume_encryption_key` Secret 挂载给 Web。`MORSE_PROVIDER_CONFIG_KEY_FILE`、`MORSE_RESUME_STORAGE_DIR` 和 `MORSE_RESUME_ENCRYPTION_KEY_FILE` 由 Compose 注入，禁止在 `.env.production` 改成宿主机任意路径。首次准备这些资源仍属于对应部署授权，不能因为命令已写入手册就提前执行。
 
 ## 发布顺序
 
@@ -105,7 +109,7 @@ docker compose --env-file .env.production -f compose.production.yaml run --rm in
 docker compose --env-file .env.production -f compose.production.yaml up -d web worker edge
 ```
 
-迁移完成后 `grants` 会撤销 migration 角色的临时超级用户权限。重复执行 migration 和 ingest 应分别保持幂等，第二次入库应跳过未变化内容。私密简历首次部署必须先保持 `MORSE_RESUME_ENABLED=false` 完成上述序列，核对 migration `003` checksum 为 `6acd5ca32728e6c7ee962d7e8a91beaca52dba36efaa0ad4e96fb9cb3aad3ee7`、runtime grants、live/ready 和公开 release smoke，再在单独授权下切换开关并只重启 Web/Worker。
+迁移完成后 `grants` 会撤销 migration 角色的临时超级用户权限；随后必须在受控 psql 会话执行 `deploy/postgres/verify-ai-config-runtime.sql`。重复执行 migration 和 ingest 应分别保持幂等，第二次入库应跳过未变化内容。migration `004` 应用后只允许回退到识别 004 的 Stage 1 兼容镜像，禁止切回只认识 001-003 的版本。私密简历首次部署必须先保持 `MORSE_RESUME_ENABLED=false` 完成上述序列，核对 migration `003` checksum、runtime grants、live/ready 和公开 release smoke，再在单独授权下切换开关并只重启 Web/Worker。
 
 ## 私密简历首次启用与密钥轮换
 
@@ -141,6 +145,6 @@ docker compose --env-file .env.production -f compose.production.yaml ps
 
 ## 回滚和数据策略
 
-应用镜像按 Git 提交保留 digest。无 schema 变化的发布可以停止 `edge/web/worker` 并切回上一 digest；迁移是前向追加，不执行猜测性的 down migration。若新 schema 与旧镜像不兼容，停止发布并按对应 migration 设计修复或重建数据库。
+应用镜像按 Git 提交保留 digest。无 schema 变化的发布可以停止 `edge/web/worker` 并切回上一 digest；迁移是前向追加，不执行猜测性的 down migration。若已应用 migration `004`，旧镜像必须至少具备 Stage 1 兼容性并识别 004 manifest；否则停止发布并按前向修复恢复，不能删除配置表、回填假 checksum 或切回只认识 003 的镜像。
 
 公开知识继续从仓库重新 ingest，短期会话和交互分析按既定保留期处理，不把原始对话复制到临时备份。私密简历启用后不属于“可重建数据”：数据库、加密密文卷和对应密钥版本必须分离备份并共同恢复验证；任何备份都不得包含明文 PDF、邀请码明文或 Session token。是否启用腾讯云快照或独立加密备份，需要在首轮真实恢复演练后单独决定。

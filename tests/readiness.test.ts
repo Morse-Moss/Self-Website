@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import os from 'node:os';
-import { test } from 'node:test';
+import path from 'node:path';
+import { after, test } from 'node:test';
 
 import {
   ReadinessError,
@@ -17,6 +19,11 @@ const validAdminPasswordHash = [
   Buffer.alloc(64).toString('base64url'),
 ].join('$');
 
+const providerKeyDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'readiness-provider-key-'));
+const providerKeyFile = path.join(providerKeyDirectory, 'provider.key');
+fs.writeFileSync(providerKeyFile, `${Buffer.alloc(32, 14).toString('base64')}\n`, 'utf8');
+after(() => fs.rmSync(providerKeyDirectory, { force: true, recursive: true }));
+
 const runtimeEnv = {
   NODE_ENV: 'production',
   DATABASE_URL: 'postgresql://runtime:password@db.internal/revolution',
@@ -25,6 +32,8 @@ const runtimeEnv = {
   MORSE_ADMIN_ALLOWED_ORIGIN: 'https://morse.example',
   MORSE_ADMIN_PASSWORD_HASH: validAdminPasswordHash,
   MORSE_INVITE_FINGERPRINT_SECRET: 'invite-fingerprint-secret-32-bytes',
+  MORSE_PROVIDER_CONFIG_KEY_FILE: providerKeyFile,
+  MORSE_PROVIDER_CONFIG_KEY_VERSION: '1',
   OPENAI_API_KEY: 'test-production-chat-key',
   OPENAI_BASE_URL: 'https://gateway.example/v1',
   OPENAI_CHAT_MODEL: 'gpt-production',
@@ -40,7 +49,13 @@ const manifest = [
   { version: '002', checksum: 'b'.repeat(64) },
 ];
 
-function poolWith(options: { chunks?: number; migrations?: typeof manifest; throws?: boolean } = {}) {
+function poolWith(options: {
+  chunks?: number;
+  configThrows?: boolean;
+  migrations?: typeof manifest;
+  runtimeRows?: unknown[];
+  throws?: boolean;
+} = {}) {
   return {
     async query(sql: string) {
       if (options.throws) throw new Error('private database failure');
@@ -49,6 +64,18 @@ function poolWith(options: { chunks?: number; migrations?: typeof manifest; thro
       }
       if (sql.includes('knowledge_chunks')) {
         return { rows: [{ present: (options.chunks ?? 1) > 0 }] };
+      }
+      if (sql.includes('ai_runtime_state')) {
+        return { rows: options.runtimeRows ?? [{ id: true, active_route_revision_id: null }] };
+      }
+      if (sql.includes('ai_connections')) {
+        if (options.configThrows) throw new Error('private configuration permission failure');
+        return { rows: [{
+          connections_readable: true,
+          models_readable: true,
+          routes_readable: true,
+          targets_readable: true,
+        }] };
       }
       throw new Error(`unexpected query: ${sql}`);
     },
@@ -132,6 +159,16 @@ test('readiness distinguishes internal failure causes without exposing their val
       env: runtimeEnv,
       expectedMigrations: manifest,
       pool: poolWith({ chunks: 0 }),
+    }],
+    ['READINESS_AI_CONFIG_UNAVAILABLE', {
+      env: runtimeEnv,
+      expectedMigrations: manifest,
+      pool: poolWith({ runtimeRows: [] }),
+    }],
+    ['READINESS_AI_CONFIG_UNAVAILABLE', {
+      env: runtimeEnv,
+      expectedMigrations: manifest,
+      pool: poolWith({ configThrows: true }),
     }],
     ['READINESS_DATABASE_UNAVAILABLE', {
       env: runtimeEnv,
