@@ -6,12 +6,12 @@
 - 模式：`STAGED / CRITICAL / DEPLOYED`
 - 状态：`PRODUCTION_OBSERVED / LIMITED_LAUNCH`
 - 公网入口：`https://aimorse.tech`
-- 当前应用 release：`68c114c`
+- 当前应用 release：`292a24b`
 - 实例：腾讯云 Lighthouse 首尔 `lhins-0oly57x8`，公网 `43.133.68.202`
 
 ## Release And Runtime
 
-- `/opt/revolution/current` 指向 `/opt/revolution/releases/68c114c/revolution`；Web、Worker 与 Edge 的 Compose working directory 均指向该冻结 release。
+- `/opt/revolution/current` 指向 `/opt/revolution/releases/292a24b/revolution`；Web、Worker 与 Edge 的 Compose working directory 均指向该冻结 release。
 - `db`、`embedding`、`web` 为 healthy；`worker` 与 `edge` 为 running。
 - PostgreSQL 16 + pgvector 使用 TLS 和独立 admin/runtime/migration/ingest/backup 凭据。
 - migration 001/002/003/004 与 checksum 复验通过；AI 配置 grants 和专用 SQL 权限门禁通过，migration 角色不再拥有超级用户权限。
@@ -73,6 +73,7 @@
 - 本轮发布前全量测试 601/601、生产构建 21 routes；完整生产 S9 连续两轮无 failures、console/page errors、外部请求或横向溢出；公网 live/ready、作品页、正式主图与 release smoke 均通过。
 - `741ddad`：加入一个主节点和两个有序备用节点、Responses high reasoning、正文前切换、部分输出/主动停止保护、usage 累加与跨节点共享总超时。focused 59/59、全量 609/609、Chat eval 54/54、生产构建 21 routes；生产 migration/grants、40/40 摄取跳过、公网 live/ready/release smoke 与 Web/Worker/Edge 零重启、零错误关键词均通过。
 - `299289c` / `d8d1fa2` / `68c114c`：实现、吸收并发布仅管理员可用的 OpenAI-compatible API 管理。生产应用 migration `004`、Web-only Provider 主密钥、最小 grants 和运行权限门禁；公网 `/admin/api`、未登录 401、live/ready、release smoke、零重启与零错误关键词通过。配置表尚无管理员创建的中转或模型，本轮没有读取管理员密码或调用真实 Provider。
+- `292a24b`：修复运行摘要丢失中转来源的问题；当前主线路、环境备用和数据库动态活动线路显示脱敏后的中转主机名，数据库线路保持不可变版本关联。生产 migration/grants/权限门禁与两次 40/40 ingest 跳过通过，公网 live/ready、`/admin/api`、未登录 401、release smoke、零重启与零错误关键词通过；未使用管理员 Session 或调用真实 Provider。
 
 ## Residual Boundaries
 
