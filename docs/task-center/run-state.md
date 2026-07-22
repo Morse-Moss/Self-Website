@@ -4,7 +4,7 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**PRIVATE_RESUME_DISABLED_FIRST_PRODUCTION_OBSERVED / LIMITED_LAUNCH**
+**S11-PRIVATE_RESUME_DISABLED_FIRST_PRODUCTION_OBSERVED / LIMITED_LAUNCH**
 
 ## next_allowed_pointer
 当前生产实例运行 `233a3a5`，私密简历代码、migration `003`、私有卷和 Secret 已按 disabled-first 合同部署；开关保持 `false`，真实 PDF 与真实邀请码均不存在。后续只允许在新授权下依次启用、上传最终 PDF、创建受控邀请码和观察；生产硬化余项关闭前不得宣称完整 `ONLINE_READY`。
