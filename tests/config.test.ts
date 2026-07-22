@@ -71,6 +71,44 @@ test('loadServerConfig parses access, provider, lifecycle, and optional pricing 
   });
 });
 
+test('v2 timing defaults are bounded and ordered', () => {
+  const env = { ...completeEnv };
+  delete env.MORSE_PROVIDER_FIRST_BYTE_TIMEOUT_MS;
+  delete env.MORSE_PROVIDER_TOTAL_TIMEOUT_MS;
+
+  const config = loadServerConfig(env);
+
+  assert.equal(config.providerProtocolEventTimeoutMs, 25_000);
+  assert.equal(config.providerModelTextTimeoutMs, 40_000);
+  assert.equal(config.providerStageTimeoutMs, 80_000);
+  assert.equal(config.chatTurnTimeoutMs, 90_000);
+  assert.equal(config.providerMaxAttempts, 3);
+});
+
+test('v2 timing rejects unordered deadlines and an attempt limit other than three', () => {
+  for (const [name, overrides] of [
+    ['protocol before model text', {
+      MORSE_PROVIDER_PROTOCOL_EVENT_TIMEOUT_MS: '40000',
+      MORSE_PROVIDER_MODEL_TEXT_TIMEOUT_MS: '40000',
+    }],
+    ['model text within provider stage', {
+      MORSE_PROVIDER_MODEL_TEXT_TIMEOUT_MS: '81000',
+      MORSE_PROVIDER_STAGE_TIMEOUT_MS: '80000',
+    }],
+    ['provider stage before turn', {
+      MORSE_PROVIDER_STAGE_TIMEOUT_MS: '90000',
+      MORSE_CHAT_TURN_TIMEOUT_MS: '90000',
+    }],
+    ['exactly three attempts', { MORSE_PROVIDER_MAX_ATTEMPTS: '4' }],
+  ] as const) {
+    assert.throws(
+      () => loadServerConfig({ ...completeEnv, ...overrides }),
+      /MORSE_PROVIDER|MORSE_CHAT_TURN_TIMEOUT_MS/,
+      name,
+    );
+  }
+});
+
 test('loadServerConfig falls back to chat credentials for embeddings', () => {
   const env = { ...completeEnv };
   delete env.OPENAI_EMBEDDING_API_KEY;

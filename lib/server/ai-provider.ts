@@ -71,7 +71,12 @@ export interface ProviderAttempt extends ProviderTargetSnapshot {
   costComplete: boolean;
   errorCode: string | null;
   firstByteLatencyMs: number | null;
+  firstModelTextMs: number | null;
+  firstProtocolEventMs: number | null;
+  firstUserVisibleMs: number | null;
+  generationMode: 'normal' | 'strict';
   knownCostUsd: number | null;
+  launchKind: 'primary' | 'hedge' | 'failover';
   startedAt: Date;
   status: 'completed' | 'failed' | 'stopped';
   totalLatencyMs: number;

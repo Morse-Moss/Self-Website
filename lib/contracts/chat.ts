@@ -25,6 +25,38 @@ export const CHAT_PHASES = [
 ] as const;
 export type ChatPhase = typeof CHAT_PHASES[number];
 
+export const CHAT_ROUTE_KINDS = [
+  'conversation',
+  'external_current',
+  'identity',
+  'personal_fact',
+  'grounded',
+  'jd_intake',
+  'jd',
+  'clarify',
+] as const;
+export type ChatRouteKind = typeof CHAT_ROUTE_KINDS[number];
+
+export const CHAT_TOPIC_KINDS = [
+  'none',
+  'external',
+  'project',
+  'capability',
+  'jd',
+] as const;
+export type ChatTopicKind = typeof CHAT_TOPIC_KINDS[number];
+
+export const CHAT_EVIDENCE_CLASSES = [
+  'none',
+  'identity',
+  'web',
+  'direct',
+  'transferable',
+  'mixed',
+  'unavailable',
+] as const;
+export type ChatEvidenceClass = typeof CHAT_EVIDENCE_CLASSES[number];
+
 export const CHAT_SOURCE_KINDS = ['local', 'official', 'github', 'web'] as const;
 export type ChatSourceKind = typeof CHAT_SOURCE_KINDS[number];
 

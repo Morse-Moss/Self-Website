@@ -346,6 +346,36 @@ export function loadServerConfig(env: Env = process.env) {
     100,
   );
   const chatV2CanaryInviteIds = uuidList(env, 'MORSE_CHAT_V2_CANARY_INVITE_IDS');
+  const providerProtocolEventTimeoutMs = positiveNumber(
+    env,
+    'MORSE_PROVIDER_PROTOCOL_EVENT_TIMEOUT_MS',
+    25_000,
+  );
+  const providerModelTextTimeoutMs = positiveNumber(
+    env,
+    'MORSE_PROVIDER_MODEL_TEXT_TIMEOUT_MS',
+    40_000,
+  );
+  const providerStageTimeoutMs = positiveNumber(
+    env,
+    'MORSE_PROVIDER_STAGE_TIMEOUT_MS',
+    80_000,
+  );
+  const chatTurnTimeoutMs = positiveNumber(env, 'MORSE_CHAT_TURN_TIMEOUT_MS', 90_000);
+  const providerMaxAttempts = positiveInteger(env, 'MORSE_PROVIDER_MAX_ATTEMPTS', 3);
+
+  if (
+    providerProtocolEventTimeoutMs >= providerModelTextTimeoutMs
+    || providerModelTextTimeoutMs > providerStageTimeoutMs
+    || providerStageTimeoutMs >= chatTurnTimeoutMs
+  ) {
+    throw new Error(
+      'MORSE_PROVIDER timing must satisfy protocol event < model text <= provider stage < chat turn.',
+    );
+  }
+  if (providerMaxAttempts !== 3) {
+    throw new Error('MORSE_PROVIDER_MAX_ATTEMPTS must be exactly 3.');
+  }
 
   return {
     ...access,
@@ -368,6 +398,11 @@ export function loadServerConfig(env: Env = process.env) {
       20_000,
     ),
     providerTotalTimeoutMs: positiveNumber(env, 'MORSE_PROVIDER_TOTAL_TIMEOUT_MS', 90_000),
+    providerProtocolEventTimeoutMs,
+    providerModelTextTimeoutMs,
+    providerStageTimeoutMs,
+    chatTurnTimeoutMs,
+    providerMaxAttempts,
     providerConcurrency: positiveInteger(env, 'MORSE_PROVIDER_CONCURRENCY', 4),
     maxOutputTokens: positiveNumber(env, 'MORSE_MAX_OUTPUT_TOKENS', 600),
     historyMessageLimit: positiveNumber(env, 'MORSE_HISTORY_MESSAGE_LIMIT', 12),

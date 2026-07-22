@@ -13,6 +13,9 @@ const privateResumeMigrationPath = path.resolve(
 const adminApiMigrationPath = path.resolve(
   'db/migrations/004_admin_api_management.sql',
 );
+const chatResponseReliabilityMigrationPath = path.resolve(
+  'db/migrations/007_chat_response_reliability.sql',
+);
 
 test('M3 schema provides pgvector retrieval and short-lived access storage', () => {
   const sql = fs.readFileSync(schemaPath, 'utf8');
@@ -140,4 +143,25 @@ test('admin API management migration declares the versioned encrypted routing do
   assert.match(sql, /ON DELETE CASCADE/i);
   assert.match(sql, /ALTER TABLE usage_events[\s\S]*estimated_cost_usd DROP NOT NULL/i);
   assert.doesNotMatch(sql, /DROP TABLE|DROP COLUMN/i);
+});
+
+test('migration 007 adds auditable chat routes and provider timing without destructive DDL', () => {
+  const sql = fs.readFileSync(chatResponseReliabilityMigrationPath, 'utf8');
+
+  for (const column of [
+    'route_kind',
+    'route_reason_code',
+    'topic_kind',
+    'topic_ref',
+    'evidence_class',
+    'inherited_from_turn_id',
+    'launch_kind',
+    'generation_mode',
+    'first_protocol_event_ms',
+    'first_model_text_ms',
+    'first_user_visible_ms',
+  ]) {
+    assert.match(sql, new RegExp(column, 'i'));
+  }
+  assert.doesNotMatch(sql, /DROP\s+(?:TABLE|COLUMN)/i);
 });
