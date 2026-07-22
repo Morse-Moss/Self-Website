@@ -37,6 +37,7 @@ let providersRoute: typeof import('../app/api/admin/providers/route.ts');
 let eventsRoute: typeof import('../app/api/admin/providers/events/route.ts');
 let activateRoute: typeof import('../app/api/admin/providers/routes/activate/route.ts');
 let modelTestRoute: typeof import('../app/api/admin/providers/models/[modelId]/test/route.ts');
+let modelRoute: typeof import('../app/api/admin/providers/models/[modelId]/route.ts');
 
 async function migrate(connectionString: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
@@ -90,19 +91,22 @@ before(async () => {
     MORSE_ADMIN_LOCK_MINUTES: '15',
     MORSE_PROVIDER_CONFIG_KEY: Buffer.alloc(32, 53).toString('base64'),
     MORSE_PROVIDER_CONFIG_KEY_VERSION: '1',
+    MORSE_LOCAL_RELEASE_SMOKE: 'true',
+    MORSE_PROVIDER_MOCK_ORIGIN: 'http://127.0.0.1:18092',
     OPENAI_API_KEY: 'environment-key',
     OPENAI_BASE_URL: 'https://environment.example/v1',
     OPENAI_CHAT_MODEL: 'gpt-environment',
     OPENAI_CHAT_PROTOCOL: 'responses',
     OPENAI_EMBEDDING_MODEL: 'embedding-model',
   });
-  [sessionRoute, runtimeRoute, providersRoute, eventsRoute, activateRoute, modelTestRoute] = await Promise.all([
+  [sessionRoute, runtimeRoute, providersRoute, eventsRoute, activateRoute, modelTestRoute, modelRoute] = await Promise.all([
     import('../app/api/admin/session/route.ts'),
     import('../app/api/admin/providers/runtime/route.ts'),
     import('../app/api/admin/providers/route.ts'),
     import('../app/api/admin/providers/events/route.ts'),
     import('../app/api/admin/providers/routes/activate/route.ts'),
     import('../app/api/admin/providers/models/[modelId]/test/route.ts'),
+    import('../app/api/admin/providers/models/[modelId]/route.ts'),
   ]);
 });
 
@@ -116,7 +120,8 @@ after(async () => {
     'DATABASE_URL', 'MORSE_ADMIN_PASSWORD_HASH', 'MORSE_ADMIN_ALLOWED_ORIGIN',
     'MORSE_ADMIN_SESSION_MINUTES', 'MORSE_ADMIN_MAX_FAILED_ATTEMPTS',
     'MORSE_ADMIN_LOCK_MINUTES', 'MORSE_PROVIDER_CONFIG_KEY',
-    'MORSE_PROVIDER_CONFIG_KEY_VERSION', 'OPENAI_API_KEY', 'OPENAI_BASE_URL',
+    'MORSE_PROVIDER_CONFIG_KEY_VERSION', 'MORSE_LOCAL_RELEASE_SMOKE',
+    'MORSE_PROVIDER_MOCK_ORIGIN', 'OPENAI_API_KEY', 'OPENAI_BASE_URL',
     'OPENAI_CHAT_MODEL', 'OPENAI_CHAT_PROTOCOL', 'OPENAI_EMBEDDING_MODEL',
   ]) delete process.env[key];
 });
@@ -211,4 +216,129 @@ test('an unavailable provider master key is a redacted 503', async () => {
   } finally {
     process.env.MORSE_PROVIDER_CONFIG_KEY = configuredKey;
   }
+});
+
+test('runtime identity supports exact old-snapshot reorder and explicit v2-to-v1 rollback through HTTP', async () => {
+  const login = await sessionRoute.POST(request('/api/admin/session', {
+    body: { password }, method: 'POST', origin: allowedOrigin,
+  }));
+  const cookie = cookieFrom(login);
+  const create = await providersRoute.POST(request('/api/admin/providers', {
+    body: {
+      name: 'Versioned gateway',
+      baseUrl: 'http://127.0.0.1:18092/v1',
+      apiKey: 'versioned-secret',
+      firstModel: {
+        displayName: 'Version one', modelId: 'gpt-version-one', protocol: 'responses',
+        reasoningEffort: null, maxOutputTokens: 64,
+        inputUsdPerMillion: null, outputUsdPerMillion: null,
+      },
+      password,
+    },
+    cookie, method: 'POST', origin: allowedOrigin,
+  }));
+  assert.equal(create.status, 201);
+  const created = await create.json() as { modelSeriesId: string };
+
+  async function latestVersion() {
+    return (await pool.query<{
+      config_digest: string;
+      id: string;
+      version: number;
+    }>(
+      `SELECT id::text, version, config_digest FROM ai_model_presets
+        WHERE series_id = $1 ORDER BY version DESC LIMIT 1`,
+      [created.modelSeriesId],
+    )).rows[0];
+  }
+
+  async function recordTest(version: Awaited<ReturnType<typeof latestVersion>>) {
+    await pool.query(
+      `INSERT INTO ai_config_events
+        (event_type, model_series_id, model_version, config_digest, result_code, status, created_at, delete_after)
+       VALUES ('provider_test',$1,$2,$3,'AI_CONFIG_TEST_SUCCEEDED','succeeded',now(),now() + interval '180 days')`,
+      [created.modelSeriesId, version.version, version.config_digest],
+    );
+  }
+
+  const v1 = await latestVersion();
+  await recordTest(v1);
+  const boot = await activateRoute.POST(request('/api/admin/providers/routes/activate', {
+    body: {
+      expectedActiveRevision: 0,
+      targets: [
+        { source: 'database', modelId: created.modelSeriesId, modelVersionId: v1.id },
+        { source: 'environment', environmentTargetKey: 'primary' },
+      ],
+      password,
+    },
+    cookie, method: 'POST', origin: allowedOrigin,
+  }));
+  assert.equal(boot.status, 200);
+
+  const updated = await modelRoute.PATCH(request(`/api/admin/providers/models/${created.modelSeriesId}`, {
+    body: {
+      displayName: 'Version two', modelId: 'gpt-version-two', protocol: 'responses',
+      reasoningEffort: null, maxOutputTokens: 96,
+      inputUsdPerMillion: null, outputUsdPerMillion: null,
+      password,
+    },
+    cookie, method: 'PATCH', origin: allowedOrigin,
+  }), { params: Promise.resolve({ modelId: created.modelSeriesId }) });
+  assert.equal(updated.status, 200);
+  const v2 = await latestVersion();
+  await recordTest(v2);
+
+  const runtimeResponse = await runtimeRoute.GET(request('/api/admin/providers/runtime', { cookie }));
+  const runtime = await runtimeResponse.json() as {
+    activeRevision: number;
+    targets: Array<{ databaseModelSeriesId: string | null; databaseModelVersionId: string | null }>;
+  };
+  assert.equal(runtime.targets[0].databaseModelSeriesId, created.modelSeriesId);
+  const reordered = await activateRoute.POST(request('/api/admin/providers/routes/activate', {
+    body: {
+      expectedActiveRevision: runtime.activeRevision,
+      targets: [
+        { source: 'environment', environmentTargetKey: 'primary' },
+        {
+          source: 'database',
+          modelId: runtime.targets[0].databaseModelSeriesId,
+          modelVersionId: runtime.targets[0].databaseModelVersionId,
+        },
+      ],
+      password,
+    },
+    cookie, method: 'POST', origin: allowedOrigin,
+  }));
+  assert.equal(reordered.status, 200);
+  const reorderedBody = await reordered.json() as { targets: Array<{ databaseModelVersionId: string | null }> };
+  assert.equal(reorderedBody.targets[1].databaseModelVersionId, v1.id);
+
+  const activateV2 = await activateRoute.POST(request('/api/admin/providers/routes/activate', {
+    body: {
+      expectedActiveRevision: 2,
+      targets: [{ source: 'database', modelId: created.modelSeriesId, modelVersionId: v2.id }],
+      password,
+    },
+    cookie, method: 'POST', origin: allowedOrigin,
+  }));
+  assert.equal(activateV2.status, 200);
+  const rollback = await activateRoute.POST(request('/api/admin/providers/routes/activate', {
+    body: { expectedActiveRevision: 3, rollbackToPrevious: true, password },
+    cookie, method: 'POST', origin: allowedOrigin,
+  }));
+  assert.equal(rollback.status, 200);
+  const rollbackBody = await rollback.json() as {
+    routeRevisionId: string;
+    targets: Array<{ databaseModelVersionId: string | null }>;
+  };
+  assert.equal(
+    rollbackBody.targets.find((target) => target.databaseModelVersionId)?.databaseModelVersionId,
+    v1.id,
+  );
+  const stored = await pool.query<{ activation_kind: string }>(
+    'SELECT activation_kind FROM ai_route_revisions WHERE id = $1',
+    [rollbackBody.routeRevisionId],
+  );
+  assert.equal(stored.rows[0].activation_kind, 'rollback');
 });

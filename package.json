@@ -28,6 +28,7 @@
     "visual:s6-restore": "node scripts/s6-restoration-smoke.mjs http://127.0.0.1:3010",
     "visual:s8-chat": "node scripts/s8-chat-smoke.mjs http://127.0.0.1:3011",
     "visual:s9": "node scripts/s9-visual-smoke.mjs http://127.0.0.1:3010",
+    "visual:admin-api": "node scripts/admin-api-visual-smoke.mjs",
     "visual:auto-operations": "py -X utf8 scripts/auto-operations-visual-smoke.py",
     "visual:ai-leadgen": "py -X utf8 scripts/ai-leadgen-visual-smoke.py",
     "visual:s10": "node scripts/s10-chat-smoke.mjs"

@@ -664,6 +664,7 @@ export async function readActiveRouteRaw(
   const targets = await client.query<{
     config_digest: string;
     connection_display_name: string;
+    database_model_series_id: string | null;
     database_model_version_id: string | null;
     environment_target_key: 'primary' | 'fallback-1' | 'fallback-2' | null;
     input_usd_per_million: string | null;
@@ -674,10 +675,14 @@ export async function readActiveRouteRaw(
     output_usd_per_million: string | null;
     source_type: 'database' | 'environment';
   }>(
-    `SELECT position, source_type, database_model_version_id, environment_target_key,
-            connection_display_name, model_display_name, model_id, protocol, config_digest,
-            input_usd_per_million::text, output_usd_per_million::text
-       FROM ai_route_targets WHERE route_revision_id = $1 ORDER BY position`,
+    `SELECT target.position, target.source_type, target.database_model_version_id,
+            model.series_id::text AS database_model_series_id, target.environment_target_key,
+            target.connection_display_name, target.model_display_name, target.model_id,
+            target.protocol, target.config_digest, target.input_usd_per_million::text,
+            target.output_usd_per_million::text
+       FROM ai_route_targets target
+       LEFT JOIN ai_model_presets model ON model.id = target.database_model_version_id
+      WHERE target.route_revision_id = $1 ORDER BY target.position`,
     [row.id],
   );
   if (targets.rows.length < 1 || targets.rows.length > 6) {
@@ -690,6 +695,7 @@ export async function readActiveRouteRaw(
     targets: targets.rows.map((target) => ({
       configDigest: target.config_digest,
       connectionDisplayName: target.connection_display_name,
+      databaseModelSeriesId: target.database_model_series_id,
       databaseModelVersionId: target.database_model_version_id,
       environmentTargetKey: target.environment_target_key,
       inputUsdPerMillion: target.input_usd_per_million,

@@ -2,7 +2,7 @@
 
 日期：2026-07-21
 
-状态：设计已确认，Stage 1-3 已在隔离分支本地实现
+状态：设计已确认，Stage 1-4 已在隔离分支本地实现并验证
 
 预期实施合同：`STAGED / CRITICAL / LOCAL`
 
@@ -12,7 +12,7 @@
 
 本设计只管理 Chat Provider。Embedding、BGE、pgvector 维度、知识摄取和 RAG 数据继续由部署环境控制，不能从该页面修改。
 
-设计已确认，Stage 1 数据库、加密、存储兼容基线，Stage 2 请求级运行路由、受控出站、failover 与终态遥测，以及 Stage 3 安全管理 API 已在隔离分支本地实现并验证；Stage 4 `/admin/api` UI 尚未实现。当前未读取真实 API Key，只使用 fake transport 与受控 loopback Mock，未执行真实 Provider 调用、生产迁移或部署。
+设计已确认，Stage 1 数据库、加密、存储兼容基线，Stage 2 请求级运行路由、受控出站、failover 与终态遥测，Stage 3 安全管理 API，以及 Stage 4 `/admin/api` 工作台均已在隔离分支本地实现并验证。当前未读取真实 API Key，只使用 fake transport、离线确定性向量和受控 loopback Mock；未执行真实 Provider 调用、生产迁移、push、merge 或部署，Lighthouse 仍待部署授权后的上线验收。
 
 ## 2. 当前基线与剩余问题
 
@@ -24,12 +24,12 @@
 - 每个目标只发起一次 OpenAI-compatible 网络尝试，整条路由共享总截止时间，任何正文输出后不再 failover；
 - completed、failed 与 stopped 终态在同一事务中保存每次 attempt、winner、usage 和成本完整性，重放不重复归因；
 - Embedding 与 RAG 继续只读取部署环境，不进入数据库 Chat route；
-- `/admin` 仍只提供对话复盘、邀请码和导出，尚无 Provider 配置 UI；
+- `/admin` 保留对话复盘、邀请码和导出，`/admin/api` 已通过共享管理员 Shell 提供 Provider 配置工作台；
 - `/api/admin/providers/**` 已提供严格 Session、Origin、密码复验和 no-store 合同，支持版本化配置、显式发现/测试、原子激活/回退、安全删除和审计分页；
 - Provider 操作使用管理员级全局单飞和共享每分钟三次额度，限流与激活失败以独立事务记录稳定 denied 审计；
 - 激活数据库目标会在事务内解密具体模型版本、校验主密钥并重新计算摘要，未知提交结果不会被伪记为 denied。
 
-因此，Stage 3 已具备完整服务端管理能力，但管理员仍不能通过产品页面操作；Stage 4 将完成 `/admin/api` 工作台、集成回归和视觉验收。
+因此，Stage 1-4 已形成仅管理员可操作的本地完整链路：服务端管理、动态运行路由、桌面列表加 inspector、移动端全屏编辑层、集成回归与双宽视觉验收均有本地证据；真实中转、生产迁移和部署仍不在该证据范围内。
 
 ## 3. 已确认的产品规则
 
@@ -302,7 +302,7 @@
 - 当前活动路由中未变化的目标，在只排序或移除其他目标时无需重新测试；
 - 任何 Key、Base URL、模型、协议、reasoning effort、User-Agent 或输出限制变化都会使旧测试失效；
 - 环境主节点和现有 fallback 节点在首次迁移时可继承当前活动状态，但之后重新加入其他路由时也需要显式测试；
-- 前一活动版本在切换后 30 分钟内允许直接回退，超过窗口则按新增目标规则重新测试。
+- 前一活动版本从被当前活动 revision 切离的时刻起 30 分钟内允许直接回退，超过窗口则按新增目标规则重新测试。
 
 ## 12. 激活、并发与回退
 
@@ -319,7 +319,10 @@
 
 并发版本不匹配时返回 `409 AI_CONFIG_CONFLICT`，不做部分写入。前端刷新当前活动版本并重新展示差异，不能自动覆盖。
 
-回退不是修改旧版本，而是创建一个引用可运行旧目标的新活动版本。已销毁 Key 的历史线路不可回退。
+回退不是修改旧版本，而是创建一个引用可运行旧目标的新活动版本。管理 API 使用互斥的
+`rollbackToPrevious: true` 意图直接读取前一 revision 的冻结 snapshots，客户端不以最新模型 ID
+猜测旧版本；runtime target 同时返回稳定的 model series ID 和精确 version ID，保证活动旧快照在
+显示名或真实模型 ID 改名后仍可重排。已销毁 Key 的历史线路不可回退。
 
 ## 13. Provider 路由与超时
 

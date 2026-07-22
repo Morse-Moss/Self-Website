@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 
-import styles from '@/components/admin/AdminConsole.module.css';
+import AdminShell from '@/components/admin/AdminShell';
 
 export const metadata: Metadata = {
   title: '对话复盘台 | Morse',
@@ -12,5 +12,5 @@ export const metadata: Metadata = {
 };
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  return <div className={styles.adminShell} data-admin-shell>{children}</div>;
+  return <AdminShell>{children}</AdminShell>;
 }

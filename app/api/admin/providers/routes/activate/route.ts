@@ -28,6 +28,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       await activateProviderRoute(auth.pool, {
         expectedActiveRevision: input.expectedActiveRevision,
+        rollbackToPrevious: input.rollbackToPrevious,
         targets: input.targets,
       }, adminProviderServiceOptions(auth)),
       { headers: { 'Cache-Control': 'no-store' } },

@@ -5,8 +5,8 @@ import { useEffect, useState } from 'react';
 import AdminExportDialog from './AdminExportDialog';
 import AdminFilters from './AdminFilters';
 import AdminInviteDialog from './AdminInviteDialog';
-import AdminLogin from './AdminLogin';
 import AdminResumePanel from './AdminResumePanel';
+import { useAdminSession } from './AdminShell';
 import AdminTurnDetailPanel from './AdminTurnDetail';
 import AdminTurnList from './AdminTurnList';
 import {
@@ -20,8 +20,6 @@ import {
 } from './admin-client';
 import styles from './AdminConsole.module.css';
 
-type AuthState = 'checking' | 'signed_out' | 'authorized' | 'unavailable';
-
 const emptyList: AdminTurnListPayload = {
   items: [],
   total: 0,
@@ -30,12 +28,7 @@ const emptyList: AdminTurnListPayload = {
 };
 
 export default function AdminConsole() {
-  const [authState, setAuthState] = useState<AuthState>('checking');
-  const [sessionRevision, setSessionRevision] = useState(0);
-  const [expiresAt, setExpiresAt] = useState<string | null>(null);
-  const [loginBusy, setLoginBusy] = useState(false);
-  const [loginError, setLoginError] = useState('');
-  const [bootError, setBootError] = useState('');
+  const { requireLogin } = useAdminSession();
   const [draftFilters, setDraftFilters] = useState<AdminFilterValues>(defaultAdminFilters);
   const [filters, setFilters] = useState<AdminFilterValues>(defaultAdminFilters);
   const [filtersOpen, setFiltersOpen] = useState(true);
@@ -52,60 +45,11 @@ export default function AdminConsole() {
   const [resumeOpen, setResumeOpen] = useState(false);
   const [notice, setNotice] = useState('');
 
-  function resetPrivateState() {
-    setExpiresAt(null);
-    setList(null);
-    setListError('');
-    setSelectedId(null);
-    setDetail(null);
-    setDetailError('');
-    setMobileDetailOpen(false);
-    setExportOpen(false);
-    setInviteOpen(false);
-    setResumeOpen(false);
-    setNotice('');
-  }
-
-  function requireLogin(message: string) {
-    resetPrivateState();
-    setLoginError(message || '管理会话已过期，请重新登录。');
-    setAuthState('signed_out');
-  }
-
-  useEffect(() => {
-    let active = true;
-    setBootError('');
-    fetch('/api/admin/session', { cache: 'no-store', credentials: 'same-origin' })
-      .then(async (response) => {
-        if (!active) return;
-        if (response.status === 401) {
-          setAuthState('signed_out');
-          return;
-        }
-        if (!response.ok) {
-          setBootError(await responseError(response));
-          setAuthState('unavailable');
-          return;
-        }
-        const session = await response.json() as { authorized: boolean; expiresAt: string };
-        if (!active) return;
-        setExpiresAt(session.expiresAt);
-        setAuthState(session.authorized ? 'authorized' : 'signed_out');
-      })
-      .catch(() => {
-        if (!active) return;
-        setBootError('无法连接管理服务，请确认本地服务与数据库已启动。');
-        setAuthState('unavailable');
-      });
-    return () => { active = false; };
-  }, [sessionRevision]);
-
   useEffect(() => {
     if (window.matchMedia('(max-width: 640px)').matches) setFiltersOpen(false);
   }, []);
 
   useEffect(() => {
-    if (authState !== 'authorized') return;
     const controller = new AbortController();
     setListLoading(true);
     setListError('');
@@ -140,10 +84,10 @@ export default function AdminConsole() {
     });
 
     return () => controller.abort();
-  }, [authState, filters]);
+  }, [filters, requireLogin]);
 
   useEffect(() => {
-    if (authState !== 'authorized' || !selectedId) {
+    if (!selectedId) {
       setDetail(null);
       setDetailLoading(false);
       return;
@@ -173,44 +117,7 @@ export default function AdminConsole() {
     });
 
     return () => controller.abort();
-  }, [authState, selectedId]);
-
-  async function login(password: string) {
-    setLoginBusy(true);
-    setLoginError('');
-    try {
-      const response = await fetch('/api/admin/session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
-        body: JSON.stringify({ password }),
-      });
-      if (!response.ok) {
-        setLoginError(await responseError(response));
-        return;
-      }
-      const session = await response.json() as { ok: true; expiresAt: string };
-      setExpiresAt(session.expiresAt);
-      setAuthState('authorized');
-    } catch {
-      setLoginError('无法连接管理服务，请检查连接后重试。');
-    } finally {
-      setLoginBusy(false);
-    }
-  }
-
-  async function logout() {
-    try {
-      await fetch('/api/admin/session', {
-        method: 'DELETE',
-        credentials: 'same-origin',
-      });
-    } finally {
-      resetPrivateState();
-      setLoginError('');
-      setAuthState('signed_out');
-    }
-  }
+  }, [requireLogin, selectedId]);
 
   function applyFilters(next: AdminFilterValues) {
     setListLoading(true);
@@ -243,46 +150,16 @@ export default function AdminConsole() {
     } : current);
   }
 
-  if (authState === 'checking') {
-    return <main className={styles.bootState} role="status">正在确认管理权限...</main>;
-  }
-
-  if (authState === 'unavailable') {
-    return (
-      <main className={styles.bootState}>
-        <p role="alert">{bootError || '管理服务暂时不可用。'}</p>
-        <button
-          className={styles.secondaryButton}
-          type="button"
-          onClick={() => {
-            setAuthState('checking');
-            setSessionRevision((revision) => revision + 1);
-          }}
-        >
-          重新加载
-        </button>
-      </main>
-    );
-  }
-
-  if (authState === 'signed_out') {
-    return <AdminLogin busy={loginBusy} error={loginError} onSubmit={login} />;
-  }
-
   return (
     <main className={styles.console} data-testid="admin-console">
       <header className={styles.topbar}>
         <div className={styles.consoleTitle}>
-          <span className={styles.signal} aria-hidden="true" />
           <div>
-            <p className={styles.kicker}>MORSE / PRIVATE</p>
+            <p className={styles.kicker}>CONVERSATION REVIEW</p>
             <h1>对话复盘台</h1>
           </div>
         </div>
         <div className={styles.sessionActions}>
-          <span className={styles.sessionExpiry}>
-            {expiresAt ? `会话有效至 ${new Date(expiresAt).toLocaleTimeString('zh-CN')}` : '管理会话'}
-          </span>
           <button
             className={styles.secondaryButton}
             data-testid="admin-resume-open"
@@ -306,14 +183,6 @@ export default function AdminConsole() {
             onClick={() => setExportOpen(true)}
           >
             导出
-          </button>
-          <button
-            className={styles.quietButton}
-            data-testid="admin-logout"
-            type="button"
-            onClick={() => void logout()}
-          >
-            退出
           </button>
         </div>
       </header>

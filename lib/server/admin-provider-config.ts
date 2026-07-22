@@ -31,6 +31,7 @@ import {
   createProviderOutboundPolicy,
   resolvePublicProviderAddresses,
   validateProviderBaseUrl,
+  validateProviderRuntimeBaseUrl,
   type ProviderAddressResolver,
   type ProviderOutboundPolicy,
 } from './provider-outbound.ts';
@@ -64,6 +65,7 @@ export interface AdminProviderServiceOptions {
   actorAdminSessionId: string;
   configKey: AiConfigKey;
   now?: () => Date;
+  outboundPolicy?: ProviderOutboundPolicy;
   resolver?: ProviderAddressResolver;
   runtimeConfig: ProviderRuntimeConfig;
   transport: AdminProviderTransport;
@@ -127,11 +129,14 @@ async function recordDeniedEvent(
 async function validateOutboundBaseUrl(
   value: string,
   resolver?: ProviderAddressResolver,
+  policy?: ProviderOutboundPolicy,
 ): Promise<string> {
   let url: URL;
   try {
-    url = validateProviderBaseUrl(value);
-    await resolvePublicProviderAddresses(url.hostname, resolver);
+    url = policy
+      ? validateProviderRuntimeBaseUrl(value, policy)
+      : validateProviderBaseUrl(value);
+    if (url.protocol === 'https:') await resolvePublicProviderAddresses(url.hostname, resolver);
   } catch {
     throw new AiConfigError('AI_CONFIG_INVALID');
   }
@@ -174,7 +179,7 @@ export async function createProviderConnection(
   input: ConnectionCreationInput,
   options: AdminProviderServiceOptions,
 ) {
-  const baseUrl = await validateOutboundBaseUrl(input.baseUrl, options.resolver);
+  const baseUrl = await validateOutboundBaseUrl(input.baseUrl, options.resolver, options.outboundPolicy);
   return transaction(pool, async (client) => {
     const created = await createConnectionWithModel(client, {
       connection: {
@@ -206,7 +211,7 @@ export async function updateProviderConnection(
   options: AdminProviderServiceOptions,
 ) {
   const current = await connectionIdentity(pool, seriesId);
-  const baseUrl = await validateOutboundBaseUrl(input.baseUrl, options.resolver);
+  const baseUrl = await validateOutboundBaseUrl(input.baseUrl, options.resolver, options.outboundPolicy);
   const originChanged = new URL(current.baseUrl).origin !== new URL(baseUrl).origin;
   if (!input.apiKey && originChanged && !input.reuseKeyAcrossOrigin) {
     throw new AiConfigError('AI_CONFIG_INVALID');
@@ -406,6 +411,7 @@ function environmentTargets(options: AdminProviderServiceOptions): Array<{
       snapshot: {
         configDigest: digest,
         connectionDisplayName: target.name,
+        databaseModelSeriesId: null,
         databaseModelVersionId: null,
         environmentTargetKey: target.key,
         inputUsdPerMillion: config.tokenRates?.inputUsdPerMillion.toString() ?? null,
@@ -599,6 +605,7 @@ async function testedRecently(
   digest: string,
   activationNow: Date,
   rollbackRevisionId: string | null,
+  rollbackDepartureRevisionId: string | null,
 ): Promise<boolean> {
   const result = await client.query<{ valid: boolean }>(
     `SELECT EXISTS (
@@ -608,11 +615,11 @@ async function testedRecently(
           AND created_at >= $2::timestamptz - interval '30 minutes'
        UNION ALL
        SELECT 1 FROM ai_route_targets target
-       JOIN ai_route_revisions revision ON revision.id = target.route_revision_id
+       JOIN ai_route_revisions departure ON departure.id = $4::uuid
         WHERE target.config_digest = $1 AND target.route_revision_id = $3::uuid
-          AND revision.activated_at >= $2::timestamptz - interval '30 minutes'
-      ) AS valid`,
-    [digest, activationNow, rollbackRevisionId],
+          AND departure.activated_at >= $2::timestamptz - interval '30 minutes'
+       ) AS valid`,
+    [digest, activationNow, rollbackRevisionId, rollbackDepartureRevisionId],
   );
   return result.rows[0]?.valid === true;
 }
@@ -621,6 +628,7 @@ async function databaseRouteTarget(
   client: Client,
   modelSeriesId: string,
   configKey: AiConfigKey,
+  modelVersionId?: string,
 ): Promise<AiRouteTargetSnapshot> {
   const result = await client.query<{
     config_digest: string;
@@ -641,8 +649,9 @@ async function databaseRouteTarget(
             c.display_name AS connection_display_name, c.deleted_at AS connection_deleted_at,
             c.secret_destroyed_at
        FROM ai_model_presets m JOIN ai_connections c ON c.id = m.connection_version_id
-      WHERE m.series_id = $1 ORDER BY m.version DESC LIMIT 1 FOR UPDATE`,
-    [modelSeriesId],
+      WHERE m.series_id = $1 AND ($2::uuid IS NULL OR m.id = $2::uuid)
+      ORDER BY m.version DESC LIMIT 1 FOR UPDATE`,
+    [modelSeriesId, modelVersionId ?? null],
   );
   const row = result.rows[0];
   if (!row) throw new AiConfigError('AI_CONFIG_NOT_FOUND');
@@ -656,6 +665,7 @@ async function databaseRouteTarget(
   return {
     configDigest: row.config_digest,
     connectionDisplayName: row.connection_display_name,
+    databaseModelSeriesId: modelSeriesId,
     databaseModelVersionId: row.database_model_version_id,
     environmentTargetKey: null,
     inputUsdPerMillion: row.input_usd_per_million,
@@ -670,7 +680,7 @@ async function databaseRouteTarget(
 
 export async function activateProviderRoute(
   pool: Pool,
-  input: { expectedActiveRevision: number; targets: ParsedRouteTarget[] },
+  input: { expectedActiveRevision: number; rollbackToPrevious?: true; targets: ParsedRouteTarget[] },
   options: AdminProviderServiceOptions,
 ) {
   try {
@@ -732,17 +742,28 @@ export async function activateProviderRoute(
           [previousActiveId],
         )
       : { rows: [] };
-    const previousIdentities = previousTargets.rows.map((target) => target.source_type === 'database'
-      ? `database:${target.model_series_id ?? ''}`
-      : `environment:${target.environment_target_key ?? ''}`);
-    const requestedIdentities = input.targets.map((target) => target.source === 'database'
-      ? `database:${target.modelId}`
-      : `environment:${target.environmentTargetKey}`);
-    const rollbackRequested = previousTargets.rows.length === input.targets.length
-      && previousIdentities.every((identity, index) => identity === requestedIdentities[index])
+    const previousRouteMatches = previousTargets.rows.length === input.targets.length
+      && previousTargets.rows.every((previous, index) => {
+        const requested = input.targets[index];
+        if (previous.source_type !== requested.source) return false;
+        if (requested.source === 'environment') {
+          return previous.environment_target_key === requested.environmentTargetKey;
+        }
+        return previous.model_series_id === requested.modelId
+          && (!requested.modelVersionId
+            || previous.database_model_version_id === requested.modelVersionId);
+      })
       && previousTargets.rows.some(
         (target, index) => target.config_digest !== currentTargets.rows[index]?.config_digest,
       );
+    const previousRouteDiffers = previousTargets.rows.some(
+      (target, index) => target.config_digest !== currentTargets.rows[index]?.config_digest,
+    );
+    if (input.rollbackToPrevious && (input.targets.length > 0
+      || previousTargets.rows.length === 0 || !previousRouteDiffers)) {
+      throw new AiConfigError('AI_CONFIG_INVALID');
+    }
+    const rollbackRequested = input.rollbackToPrevious === true || previousRouteMatches;
     const rollbackSnapshots = rollbackRequested
       ? previousTargets.rows.map((target): AiRouteTargetSnapshot => {
           if (target.source_type === 'database') {
@@ -761,6 +782,7 @@ export async function activateProviderRoute(
           return {
             configDigest: target.config_digest,
             connectionDisplayName: target.connection_display_name,
+            databaseModelSeriesId: target.model_series_id,
             databaseModelVersionId: target.database_model_version_id,
             environmentTargetKey: target.environment_target_key,
             inputUsdPerMillion: target.input_usd_per_million,
@@ -773,10 +795,22 @@ export async function activateProviderRoute(
           };
         })
       : null;
+    const activationTargets = rollbackSnapshots
+      ? previousTargets.rows.map((target): ParsedRouteTarget => target.source_type === 'database'
+        ? {
+            source: 'database',
+            modelId: target.model_series_id!,
+            modelVersionId: target.database_model_version_id!,
+          }
+        : {
+            source: 'environment',
+            environmentTargetKey: target.environment_target_key!,
+          })
+      : input.targets;
     const snapshots: AiRouteTargetSnapshot[] = [];
-    for (const [position, target] of input.targets.entries()) {
+    for (const [position, target] of activationTargets.entries()) {
       const snapshot = rollbackSnapshots?.[position] ?? (target.source === 'database'
-        ? await databaseRouteTarget(client, target.modelId, options.configKey)
+        ? await databaseRouteTarget(client, target.modelId, options.configKey, target.modelVersionId)
         : environment.get(target.environmentTargetKey)?.snapshot);
       if (!snapshot) throw new AiConfigError('AI_CONFIG_INVALID');
       const positioned = { ...snapshot, position };
@@ -798,6 +832,7 @@ export async function activateProviderRoute(
           positioned.configDigest,
           now(options),
           rollbackRequested ? previousActiveId : null,
+          rollbackRequested ? activeId : null,
         )) {
         throw new AiConfigError('AI_CONFIG_TEST_REQUIRED');
       }
@@ -996,8 +1031,14 @@ export async function getProviderRuntimeSummary(
   options: AdminProviderServiceOptions,
 ) {
   const route = await readActiveRouteRaw(pool);
+  const canRollback = route ? (await pool.query<{ can_rollback: boolean }>(
+    `SELECT previous_active_revision_id IS NOT NULL AS can_rollback
+       FROM ai_route_revisions WHERE id = $1`,
+    [route.id],
+  )).rows[0]?.can_rollback === true : false;
   return {
     activeRevision: route?.revisionNumber ?? 0,
+    canRollback,
     routeRevisionId: route?.id ?? null,
     targets: route?.targets ?? [],
     environmentTargets: environmentTargets(options).map((target) => ({

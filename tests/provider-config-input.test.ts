@@ -14,6 +14,35 @@ import {
   ProviderConfigInputError,
 } from '../lib/server/provider-config-input.ts';
 
+test('connection input accepts the exact loopback Mock only in local release smoke mode', () => {
+  const previous = {
+    NODE_ENV: process.env.NODE_ENV,
+    MORSE_LOCAL_RELEASE_SMOKE: process.env.MORSE_LOCAL_RELEASE_SMOKE,
+    MORSE_PROVIDER_MOCK_ORIGIN: process.env.MORSE_PROVIDER_MOCK_ORIGIN,
+  };
+  Object.assign(process.env, {
+    NODE_ENV: 'test',
+    MORSE_LOCAL_RELEASE_SMOKE: 'true',
+    MORSE_PROVIDER_MOCK_ORIGIN: 'http://127.0.0.1:18092',
+  });
+  try {
+    const parsed = parseConnectionCreateInput({
+      apiKey: 'synthetic',
+      baseUrl: 'http://127.0.0.1:18092/v1',
+      firstModel: model,
+      name: 'Loopback',
+      password: 'password',
+      userAgent: null,
+    });
+    assert.equal(parsed.baseUrl, 'http://127.0.0.1:18092/v1');
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 const model = {
   displayName: 'Primary model',
   modelId: 'gpt-compatible',
@@ -101,18 +130,19 @@ test('model input enforces protocol, reasoning, token, decimal, and unknown-fiel
 
 test('activation input accepts one to six typed unique targets and rejects ambiguous shapes', () => {
   const databaseModelId = '11111111-1111-4111-8111-111111111111';
+  const databaseModelVersionId = '22222222-2222-4222-8222-222222222222';
   assert.deepEqual(parseActivateRouteInput({
     expectedActiveRevision: 7,
     password: 'admin-password',
     targets: [
-      { source: 'database', modelId: databaseModelId },
+      { source: 'database', modelId: databaseModelId, modelVersionId: databaseModelVersionId },
       { source: 'environment', environmentTargetKey: 'fallback-1' },
     ],
   }), {
     expectedActiveRevision: 7,
     password: 'admin-password',
     targets: [
-      { source: 'database', modelId: databaseModelId },
+      { source: 'database', modelId: databaseModelId, modelVersionId: databaseModelVersionId },
       { source: 'environment', environmentTargetKey: 'fallback-1' },
     ],
   });
@@ -134,6 +164,27 @@ test('activation input accepts one to six typed unique targets and rejects ambig
     expectedActiveRevision: 1,
     password: 'admin-password',
     targets: [{ source: 'database', modelId: databaseModelId, environmentTargetKey: 'primary' }],
+  }));
+  invalid(() => parseActivateRouteInput({
+    expectedActiveRevision: 1,
+    password: 'admin-password',
+    targets: [{ source: 'database', modelId: databaseModelId }],
+  }));
+  assert.deepEqual(parseActivateRouteInput({
+    expectedActiveRevision: 7,
+    password: 'admin-password',
+    rollbackToPrevious: true,
+  }), {
+    expectedActiveRevision: 7,
+    password: 'admin-password',
+    rollbackToPrevious: true,
+    targets: [],
+  });
+  invalid(() => parseActivateRouteInput({
+    expectedActiveRevision: 7,
+    password: 'admin-password',
+    rollbackToPrevious: true,
+    targets: [{ source: 'environment', environmentTargetKey: 'primary' }],
   }));
 });
 

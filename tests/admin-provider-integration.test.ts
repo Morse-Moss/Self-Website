@@ -177,6 +177,23 @@ function loopbackPolicy(origin: string) {
   });
 }
 
+test('local release smoke policy permits only its exact loopback origin during connection validation', async () => {
+  await withDatabase(async (pool) => {
+    const origin = 'http://127.0.0.1:18090';
+    const created = await createProviderConnection(pool, {
+      apiKey: 'synthetic-key',
+      baseUrl: `${origin}/v1`,
+      firstModel: model,
+      name: 'Loopback smoke',
+      userAgent: null,
+    }, options({ outboundPolicy: loopbackPolicy(origin) }));
+
+    assert.ok(created.connectionSeriesId);
+    const catalog = await getProviderCatalog(pool, { includeDeleted: false, limit: 25, page: 1 });
+    assert.equal(catalog.items[0]?.baseUrl, `${origin}/v1`);
+  });
+});
+
 test('default admin transport discovers models and runs a fixed probe through pinned loopback HTTP', async () => {
   const requests: Array<{ body: string; method: string | undefined; url: string | undefined }> = [];
   const server = createServer((request, response) => {
@@ -428,6 +445,47 @@ test('activation requires fresh matching tests, is atomic on conflict, and prese
     const runtime = await getProviderRuntimeSummary(pool, serviceOptions);
     assert.equal(runtime.activeRevision, 3);
     assert.equal(runtime.targets[0].environmentTargetKey, 'primary');
+  });
+});
+
+test('reordering an active database snapshot never upgrades it to the latest model version', async () => {
+  await withDatabase(async (pool) => {
+    const serviceOptions = options();
+    const created = await createProviderConnection(pool, {
+      name: 'Gateway',
+      baseUrl: 'https://gateway.example/v1',
+      userAgent: null,
+      apiKey: 'top-secret-key',
+      firstModel: model,
+    }, serviceOptions);
+    await testProviderModel(pool, created.modelSeriesId, serviceOptions);
+    await testEnvironmentProviderTarget(pool, 'primary', serviceOptions);
+    const first = await activateProviderRoute(pool, {
+      expectedActiveRevision: 0,
+      targets: [
+        { source: 'database', modelId: created.modelSeriesId },
+        { source: 'environment', environmentTargetKey: 'primary' },
+      ],
+    }, serviceOptions);
+    const activeVersionId = first.targets[0].databaseModelVersionId!;
+    const activeDigest = first.targets[0].configDigest;
+
+    await updateProviderModel(pool, created.modelSeriesId, {
+      ...model,
+      displayName: 'Primary model v2',
+      modelId: 'gpt-compatible-v2',
+    }, serviceOptions);
+    await testProviderModel(pool, created.modelSeriesId, serviceOptions);
+
+    const reordered = await activateProviderRoute(pool, {
+      expectedActiveRevision: 1,
+      targets: [
+        { source: 'environment', environmentTargetKey: 'primary' },
+        { source: 'database', modelId: created.modelSeriesId, modelVersionId: activeVersionId },
+      ],
+    }, serviceOptions);
+    assert.equal(reordered.targets[1].databaseModelVersionId, activeVersionId);
+    assert.equal(reordered.targets[1].configDigest, activeDigest);
   });
 });
 
@@ -756,6 +814,60 @@ test('only the immediately previous route receives the rollback test-window exem
       activateProviderRoute(pool, {
         expectedActiveRevision: 3,
         targets: [{ source: 'database', modelId: created.modelSeriesId }],
+      }, serviceOptions),
+      (error: unknown) => error instanceof AiConfigError && error.code === 'AI_CONFIG_TEST_REQUIRED',
+    );
+  });
+});
+
+test('rollback grace starts when the previous route was switched away from', async () => {
+  await withDatabase(async (pool) => {
+    const base = new Date();
+    let operationNow = base;
+    const serviceOptions = options({ now: () => operationNow });
+    const created = await createProviderConnection(pool, {
+      name: 'Gateway', baseUrl: 'https://gateway.example/v1', userAgent: null,
+      apiKey: 'top-secret-key', firstModel: model,
+    }, serviceOptions);
+    const second = await createProviderModel(pool, created.connectionSeriesId, {
+      ...model, displayName: 'Second model', modelId: 'second-model',
+    }, serviceOptions);
+
+    await insertSuccessfulModelTest(pool, created.modelSeriesId, base);
+    operationNow = new Date(base.getTime() + 29 * 60_000);
+    await activateProviderRoute(pool, {
+      expectedActiveRevision: 0,
+      targets: [{ source: 'database', modelId: created.modelSeriesId }],
+    }, serviceOptions);
+
+    operationNow = new Date(base.getTime() + 5 * 60 * 60_000);
+    await insertSuccessfulModelTest(pool, second.modelSeriesId, operationNow);
+    await activateProviderRoute(pool, {
+      expectedActiveRevision: 1,
+      targets: [{ source: 'database', modelId: second.modelSeriesId }],
+    }, serviceOptions);
+
+    operationNow = new Date(operationNow.getTime() + 29 * 60_000);
+    const rollback = await activateProviderRoute(pool, {
+      expectedActiveRevision: 2,
+      rollbackToPrevious: true,
+      targets: [],
+    }, serviceOptions);
+    assert.equal(rollback.targets[0].databaseModelSeriesId, created.modelSeriesId);
+
+    operationNow = new Date(operationNow.getTime() + 1_000);
+    await activateProviderRoute(pool, {
+      expectedActiveRevision: 3,
+      rollbackToPrevious: true,
+      targets: [],
+    }, serviceOptions);
+
+    operationNow = new Date(operationNow.getTime() + 31 * 60_000);
+    await assert.rejects(
+      activateProviderRoute(pool, {
+        expectedActiveRevision: 4,
+        rollbackToPrevious: true,
+        targets: [],
       }, serviceOptions),
       (error: unknown) => error instanceof AiConfigError && error.code === 'AI_CONFIG_TEST_REQUIRED',
     );

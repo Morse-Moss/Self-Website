@@ -1,5 +1,8 @@
 import type { AiChatProtocol } from './ai-config.ts';
-import { validateProviderBaseUrl } from './provider-outbound.ts';
+import {
+  createProviderOutboundPolicy,
+  validateProviderRuntimeBaseUrl,
+} from './provider-outbound.ts';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const DECIMAL = /^(?:0|[1-9][0-9]{0,5})(?:\.[0-9]{1,6})?$/u;
@@ -67,7 +70,10 @@ function decimal(input: unknown): string | null {
 function baseUrl(input: unknown): string {
   const raw = stringValue(input, 9, 2048);
   try {
-    return validateProviderBaseUrl(raw).toString().replace(/\/$/u, '');
+    return validateProviderRuntimeBaseUrl(
+      raw,
+      createProviderOutboundPolicy(),
+    ).toString().replace(/\/$/u, '');
   } catch {
     invalid();
   }
@@ -192,24 +198,40 @@ export function parseDeleteInput(input: unknown): { confirmationName: string; pa
 }
 
 export type ParsedRouteTarget =
-  | { source: 'database'; modelId: string }
+  | { source: 'database'; modelId: string; modelVersionId?: string }
   | { source: 'environment'; environmentTargetKey: 'primary' | 'fallback-1' | 'fallback-2' };
 
 export function parseActivateRouteInput(input: unknown): {
   expectedActiveRevision: number;
   password: string;
+  rollbackToPrevious?: true;
   targets: ParsedRouteTarget[];
 } {
-  const body = record(input, ['expectedActiveRevision', 'password', 'targets']);
+  const body = record(input, ['expectedActiveRevision', 'password', 'rollbackToPrevious', 'targets']);
+  if (body.rollbackToPrevious === true) {
+    if (body.targets !== undefined) invalid();
+    return {
+      expectedActiveRevision: integer(body.expectedActiveRevision, 0, Number.MAX_SAFE_INTEGER),
+      password: password(body.password),
+      rollbackToPrevious: true,
+      targets: [],
+    };
+  }
+  if (body.rollbackToPrevious !== undefined) invalid();
   if (!Array.isArray(body.targets) || body.targets.length < 1 || body.targets.length > 6) invalid();
   const targets = body.targets.map((target): ParsedRouteTarget => {
-    const value = record(target, ['source', 'modelId', 'environmentTargetKey']);
+    const value = record(target, ['source', 'modelId', 'modelVersionId', 'environmentTargetKey']);
     if (value.source === 'database') {
       if (value.environmentTargetKey !== undefined) invalid();
-      return { source: 'database', modelId: uuid(value.modelId) };
+      return {
+        source: 'database',
+        modelId: uuid(value.modelId),
+        modelVersionId: uuid(value.modelVersionId),
+      };
     }
     if (value.source === 'environment') {
-      if (value.modelId !== undefined || typeof value.environmentTargetKey !== 'string'
+      if (value.modelId !== undefined || value.modelVersionId !== undefined
+        || typeof value.environmentTargetKey !== 'string'
         || !ENVIRONMENT_TARGETS.has(value.environmentTargetKey)) invalid();
       return {
         source: 'environment',

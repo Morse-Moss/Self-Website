@@ -44,6 +44,7 @@ export type AiRouteSourceType = 'database' | 'environment';
 export interface AiRouteTargetSnapshot {
   configDigest: string;
   connectionDisplayName: string;
+  databaseModelSeriesId: string | null;
   databaseModelVersionId: string | null;
   environmentTargetKey: 'primary' | 'fallback-1' | 'fallback-2' | null;
   inputUsdPerMillion: string | null;

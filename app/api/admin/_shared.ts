@@ -9,6 +9,7 @@ import {
 } from '../../../lib/server/admin-provider-config.ts';
 import { loadAdminConfig, loadServerConfig } from '../../../lib/server/config.ts';
 import { getPool } from '../../../lib/server/db.ts';
+import { createProviderOutboundPolicy } from '../../../lib/server/provider-outbound.ts';
 
 export function adminUnauthorized() {
   return NextResponse.json(
@@ -96,11 +97,13 @@ export function adminProviderServiceOptions(
   auth: Extract<Awaited<ReturnType<typeof requireAdmin>>, { ok: true }>,
 ): AdminProviderServiceOptions {
   const runtimeConfig = loadServerConfig();
+  const outboundPolicy = createProviderOutboundPolicy();
   return {
     actorAdminSessionId: auth.session.id,
     configKey: loadAiConfigKey(),
+    outboundPolicy,
     runtimeConfig,
-    transport: createAdminProviderTransport(runtimeConfig),
+    transport: createAdminProviderTransport(runtimeConfig, { policy: outboundPolicy }),
   };
 }
 
