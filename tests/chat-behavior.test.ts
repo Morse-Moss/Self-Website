@@ -35,6 +35,12 @@ test('routeChatTurn gives the current message priority over the starter hint', (
   assert.equal(routeChatTurn(jdRequest('Agent 工程师')).profile, 'jd');
 });
 
+test('routeChatTurn keeps lightweight introductions social without hiding a real request', () => {
+  assert.equal(routeChatTurn(request('你好，很高兴认识你。')).intent, 'social');
+  assert.equal(routeChatTurn(request('你好，我们先简单认识一下。')).evidence, 'none');
+  assert.equal(routeChatTurn(request('你好，请介绍你的项目。')).intent, 'project');
+});
+
 test('routeChatTurn detects a structured full JD submitted through normal chat', () => {
   const fullJd = [
     'Agent 工程师',

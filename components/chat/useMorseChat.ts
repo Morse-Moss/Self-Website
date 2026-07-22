@@ -53,6 +53,7 @@ export interface ChatMessage {
   complete?: boolean;
   stopped?: boolean;
   diagnosisStatus?: DiagnosisStatus;
+  degraded?: boolean;
 }
 
 type StreamPayload = ChatSsePayload;
@@ -296,6 +297,7 @@ export function useMorseChat() {
         retry: undefined,
         complete: false,
         stopped: false,
+        degraded: false,
         diagnosisStatus: requestSnapshot.workflow === 'diagnosis' ? 'collecting' : undefined,
       }));
     } else {
@@ -379,6 +381,7 @@ export function useMorseChat() {
                 ...assistant,
                 retry: undefined,
                 complete: true,
+                degraded: payload.degraded === true,
               }));
             }
           });
@@ -399,6 +402,7 @@ export function useMorseChat() {
             error: false,
             retry: undefined,
             complete: false,
+            degraded: false,
           }));
           const delayMs = AUTO_REPLAY_DELAYS_MS[attempt];
           await waitForReplayDelay(delayMs, abortController.signal);
@@ -434,6 +438,7 @@ export function useMorseChat() {
         retry: isRecoverableChatError(code) ? requestSnapshot : undefined,
         complete: false,
         stopped: false,
+        degraded: false,
       }));
     } finally {
       if (abortControllerRef.current === abortController) {

@@ -321,6 +321,37 @@
   overflow-wrap: anywhere;
 }
 
+.inviteIdLine {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.inviteIdLine > span,
+.copyError {
+  color: var(--faint);
+  font-size: var(--fs-3xs);
+}
+
+.inviteIdLine code {
+  min-width: 0;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-3xs);
+  overflow-wrap: anywhere;
+}
+
+.idCopyButton {
+  padding-inline: var(--space-3);
+}
+
+.copyError {
+  color: var(--status-amber);
+  overflow-wrap: anywhere;
+}
+
 .statusBadge {
   flex: 0 0 auto;
   padding: var(--space-1) var(--space-2);

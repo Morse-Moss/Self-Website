@@ -241,6 +241,17 @@ test('admin invite plaintext is one-time, memory-only, and has explicit copy fai
   assert.doesNotMatch(inviteSource, /inviteTotpCode|freshTotp|one-time-code|动态验证码/u);
 });
 
+test('admin invite rows expose a separately copyable non-sensitive rollout id', () => {
+  const inviteSource = read(invitePath);
+
+  assert.match(inviteSource, /灰度 ID/u);
+  assert.match(inviteSource, /\{invite\.id\}/u);
+  assert.match(inviteSource, /navigator\.clipboard\.writeText\(invite\.id\)/u);
+  assert.match(inviteSource, /data-testid=['"]admin-invite-id-copy['"]/u);
+  assert.match(inviteSource, /aria-label=\{`复制\$\{invite\.label\}的灰度 ID`\}/u);
+  assert.doesNotMatch(inviteSource, /value=\{invite\.id\}/u);
+});
+
 test('admin invite dialog is tokenized, accessible, and becomes a full-screen mobile tool', () => {
   const source = read(invitePath);
   const styles = read(inviteStylePath);
@@ -373,6 +384,7 @@ test('admin exposes stable selectors for the Mock browser acceptance path', () =
     'admin-invite-form',
     'admin-invite-list',
     'admin-invite-copy',
+    'admin-invite-id-copy',
     'admin-invite-deactivate',
     'admin-invite-deactivate-confirm',
     'admin-logout',

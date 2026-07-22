@@ -14,7 +14,7 @@ const starterIntents = [
     label: '招聘',
     mode: 'interviewer' as const,
     audienceIntent: 'recruiter' as const,
-    prompt: '请从招聘方视角介绍最匹配的项目、能力证据和仍需补充的信息。',
+    prompt: '请介绍与岗位最相关的项目和能力证据。',
   },
   {
     label: '合作',

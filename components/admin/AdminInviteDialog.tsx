@@ -62,6 +62,7 @@ export default function AdminInviteDialog({
   const [formError, setFormError] = useState('');
   const [createdCode, setCreatedCode] = useState<string | null>(null);
   const [copyState, setCopyState] = useState<CopyState>('idle');
+  const [idCopyState, setIdCopyState] = useState<{ id: string; state: CopyState } | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [deactivatingId, setDeactivatingId] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -78,6 +79,7 @@ export default function AdminInviteDialog({
     if (!open) {
       setCreatedCode(null);
       setCopyState('idle');
+      setIdCopyState(null);
       setFormError('');
       setConfirmingId(null);
       return;
@@ -120,6 +122,7 @@ export default function AdminInviteDialog({
     if (creating) return;
     setCreatedCode(null);
     setCopyState('idle');
+    setIdCopyState(null);
     setConfirmingId(null);
     onClose();
   }
@@ -203,6 +206,15 @@ export default function AdminInviteDialog({
       setCopyState('failed');
       codeInputRef.current?.focus();
       codeInputRef.current?.select();
+    }
+  }
+
+  async function copyInviteId(invite: AdminInvite) {
+    try {
+      await navigator.clipboard.writeText(invite.id);
+      setIdCopyState({ id: invite.id, state: 'copied' });
+    } catch {
+      setIdCopyState({ id: invite.id, state: 'failed' });
     }
   }
 
@@ -400,6 +412,24 @@ export default function AdminInviteDialog({
                           {statusLabel[invite.status]}
                         </span>
                       </div>
+                      <div className={styles.inviteIdLine}>
+                        <span>灰度 ID</span>
+                        <code>{invite.id}</code>
+                        <button
+                          className={`${styles.quietButton} ${styles.idCopyButton}`}
+                          data-testid="admin-invite-id-copy"
+                          type="button"
+                          aria-label={`复制${invite.label}的灰度 ID`}
+                          onClick={() => void copyInviteId(invite)}
+                        >
+                          {idCopyState?.id === invite.id && idCopyState.state === 'copied'
+                            ? '已复制'
+                            : '复制'}
+                        </button>
+                      </div>
+                      {idCopyState?.id === invite.id && idCopyState.state === 'failed' ? (
+                        <span className={styles.copyError} role="status">复制失败，请手动选择灰度 ID。</span>
+                      ) : null}
                       <dl className={styles.inviteMeta}>
                         <div>
                           <dt>使用</dt>

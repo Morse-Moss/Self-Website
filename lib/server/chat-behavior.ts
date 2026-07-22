@@ -48,7 +48,7 @@ export function routeChatTurn(request: NormalizedChatRequest): TurnRoute {
   }
 
   const message = request.message.trim();
-  if (/^(你好|嗨|hello|hi|谢谢|多谢|再见)[!！。,.，\s]*$/iu.test(message)) {
+  if (/^(?:(?:你好|嗨|hello|hi)(?:[!！。,.，\s]*(?:很高兴认识你|我们先(?:简单)?认识一下))?|谢谢|多谢|再见)[!！。,.，\s]*$/iu.test(message)) {
     return {
       intent: 'social',
       profile: 'social',

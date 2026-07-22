@@ -253,7 +253,7 @@ export class FailoverAiProvider implements AiProvider {
 
     try {
       await launchEligible();
-      while (active.size > 0 || nextNode < this.nodes.length) {
+      while (active.size > 0 || (!winner && nextNode < this.nodes.length)) {
         if (timeout.signal.aborted) throw timeout.signal.reason;
         await launchEligible();
         if (active.size === 0) {
@@ -297,6 +297,7 @@ export class FailoverAiProvider implements AiProvider {
           if (aborted) this.health.abort(attempt.node.alias);
           else this.health.failure(attempt.node.alias, new Date());
           if (!aborted) lastError = outcome.error;
+          if (winner === attempt) throw outcome.error;
           continue;
         }
 

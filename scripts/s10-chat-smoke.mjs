@@ -22,6 +22,10 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { hashAdminPassword } from '../lib/server/admin-auth.ts';
+import {
+  createDeterministicTestEmbedding,
+  serializeVector,
+} from '../lib/server/embedding.ts';
 import { hashSecret } from '../lib/server/security.ts';
 import {
   createDisposablePostgresDatabase,
@@ -46,10 +50,15 @@ export const S10_SCENARIOS = Object.freeze([
   'visitor-unlock',
   'starter-direct-send',
   'assistant-formatting',
-  'chat',
+  'social-chat',
+  'recruitment-chat',
   'jd-match',
   'diagnosis',
   'phase-status',
+  'provider-hedge',
+  'switching-recovery',
+  'degraded-result',
+  'original-retry',
   'stop-compensation',
   'refresh-history',
   'source-navigation',
@@ -59,6 +68,7 @@ export const S10_SCENARIOS = Object.freeze([
   'admin-list-detail',
   'admin-badcase',
   'admin-invite-management',
+  'admin-invite-id-copy',
   'admin-export',
   'admin-session-expiry',
   'dual-width-overflow',
@@ -72,7 +82,10 @@ const CONNECTION_TIMEOUT_MS = 8_000;
 const INTERACTION_TIMEOUT_MS = 30_000;
 const BUILD_TIMEOUT_MS = 120_000;
 const APP_START_TIMEOUT_MS = 90_000;
+const S10_INTERRUPT_SETTLE_MS = 250;
 const CHILD_OUTPUT_LIMIT = 16 * 1024;
+const STATIC_EVIDENCE_QUERY = '深度研究系统如何确保报告可信？';
+const SEARCH_EVIDENCE_QUERY = '请查证 Next.js 当前版本的官方文档与 GitHub 资料。';
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
 const RUNTIME_COPY_ENTRIES = [
   'app',
@@ -99,6 +112,7 @@ const SELECTORS = Object.freeze({
   stoppedMessage: 'article[data-message-role="assistant"][data-stream-state="stopped"]',
   localSources: '[data-source-group="local"]',
   webSources: '[data-source-group="web"]',
+  degradedMessage: 'article[data-message-role="assistant"][data-degraded="true"]',
   adminLogin: '[data-testid="admin-login-form"]',
   adminConsole: '[data-testid="admin-console"]',
   adminList: '[data-testid="admin-turn-list"]',
@@ -113,6 +127,7 @@ const SELECTORS = Object.freeze({
   adminInviteCode: '[data-testid="admin-invite-code"]',
   adminInviteList: '[data-testid="admin-invite-list"]',
   adminInviteCopy: '[data-testid="admin-invite-copy"]',
+  adminInviteIdCopy: '[data-testid="admin-invite-id-copy"]',
   adminInviteDeactivate: '[data-testid="admin-invite-deactivate"]',
   adminInviteDeactivateConfirm: '[data-testid="admin-invite-deactivate-confirm"]',
   adminExportOpen: '[data-testid="admin-export-open"]',
@@ -330,6 +345,35 @@ async function seedInvite(connectionString, inviteCode, inviteId) {
   ));
 }
 
+async function seedS10EvidenceFixtures(connectionString) {
+  const fixtures = [
+    ['s10-static-evidence', STATIC_EVIDENCE_QUERY],
+    ['s10-search-evidence', SEARCH_EVIDENCE_QUERY],
+  ];
+  for (const [id, query] of fixtures) {
+    await withPostgresClient(connectionString, (client) => client.query(
+      `INSERT INTO knowledge_chunks
+        (id, document_id, ordinal, content, embedding, metadata)
+       SELECT $1, document.id,
+              COALESCE((SELECT max(ordinal) + 1 FROM knowledge_chunks WHERE document_id = document.id), 0),
+              $3, $4::vector, $5::jsonb
+         FROM knowledge_documents AS document
+        WHERE document.id = $2`,
+      [
+        id,
+        'project-deep-research',
+        query,
+        serializeVector(createDeterministicTestEmbedding(query)),
+        JSON.stringify({
+          title: 'Deep Research',
+          sourcePath: 'content/site-content.json#projects.deep-research',
+          href: '/works#deep-research',
+        }),
+      ],
+    ));
+  }
+}
+
 async function waitForDatabase(connectionString, predicate, code) {
   const deadline = Date.now() + INTERACTION_TIMEOUT_MS;
   while (Date.now() < deadline) {
@@ -340,51 +384,232 @@ async function waitForDatabase(connectionString, predicate, code) {
 }
 
 function createControllableOpenAiProxy(upstreamPort) {
-  let holdNext = false;
   let heldResolve = null;
   let heldRelease = null;
   let heldPromise = null;
+  let failAnswers = false;
+  let remainingEmbeddingFailures = 0;
+  let primaryDelayMs = 0;
+  const answerPlans = [];
+  const observations = [];
 
-  const server = http.createServer((request, response) => {
+  function emitGuardRejectedAnswer(response) {
+    response.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    });
+    response.write(`data: ${JSON.stringify({
+      type: 'response.output_text.delta',
+      delta: '仍需补充的信息：缺口清单。',
+      item_id: 'guard_rejected',
+      output_index: 0,
+      sequence_number: 1,
+      logprobs: [],
+    })}\n\n`);
+    response.end('data: [DONE]\n\n');
+  }
+
+  function emitValidAnswer(response, body) {
+    let payload = {};
+    try {
+      payload = JSON.parse(body.toString('utf8'));
+    } catch {
+      payload = {};
+    }
+    const instructions = typeof payload.instructions === 'string' ? payload.instructions : '';
+    const inputMessages = Array.isArray(payload.input) ? payload.input : [];
+    const currentUserMessage = [...inputMessages]
+      .reverse()
+      .find((message) => message && typeof message === 'object' && message.role === 'user');
+    const currentUserContent = typeof currentUserMessage?.content === 'string'
+      ? currentUserMessage.content
+      : '';
+    const social = /你好|认识一下/u.test(currentUserContent);
+    const noApprovedEvidence = instructions.includes(
+      '<approved_evidence>本轮没有可用的审核公开证据。</approved_evidence>',
+    );
+    const webCitationIndex = /<web_search_result index="(\d+)">/u.exec(instructions)?.[1];
+    const citations = webCitationIndex ? `[来源1][来源${webCitationIndex}]` : '[来源1]';
+    const answer = social
+      ? '你好，我是数字 Morse，很高兴认识你。'
+      : noApprovedEvidence
+        ? '本轮联网搜索未返回可用来源，暂时无法核验最新信息。'
+        : `**事实依据：**\n\n- 数字摩斯以公开项目资料回答，并保留可核验来源。${citations}`;
+    observations.push({ path: 'internal:valid-answer-emitted', authorization: '' });
+    response.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    });
+    response.write(`data: ${JSON.stringify({
+      type: 'response.output_text.delta',
+      delta: answer,
+      item_id: 'valid_answer',
+      output_index: 0,
+      sequence_number: 1,
+      logprobs: [],
+    })}\n\n`);
+    response.write(`data: ${JSON.stringify({
+      type: 'response.completed',
+      sequence_number: 2,
+      response: { usage: { input_tokens: 100, output_tokens: 20, total_tokens: 120 } },
+    })}\n\n`);
+    response.end('data: [DONE]\n\n');
+  }
+
+  function interruptAfterVisibleDelta(response) {
+    response.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    });
+    response.write(`data: ${JSON.stringify({
+      type: 'response.output_text.delta',
+      delta: '**事实依据：**\n\n- 数字摩斯以公开项目资料回答，并保留可核验来源。[来源1]\n',
+      item_id: 'interrupted',
+      output_index: 0,
+      sequence_number: 1,
+      logprobs: [],
+    })}\n\n`);
+    setTimeout(() => response.destroy(), S10_INTERRUPT_SETTLE_MS);
+  }
+
+  function forward(body, request, response) {
     const upstream = http.request({
       hostname: '127.0.0.1',
       port: upstreamPort,
       path: request.url,
       method: request.method,
-      headers: request.headers,
+      headers: { ...request.headers, 'content-length': Buffer.byteLength(body) },
     }, (upstreamResponse) => {
       response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
-      if (holdNext && request.url === '/v1/responses') {
-        holdNext = false;
-        upstreamResponse.pause();
-        let released = false;
-        heldRelease = () => {
-          if (released) return;
-          released = true;
-          if (!response.destroyed) upstreamResponse.pipe(response);
-          else upstreamResponse.destroy();
-        };
-        response.once('close', () => upstreamResponse.destroy());
-        heldResolve?.();
-        heldResolve = null;
-        return;
-      }
       upstreamResponse.pipe(response);
     });
     upstream.on('error', () => {
       if (!response.headersSent) response.writeHead(502, { 'content-type': 'application/json' });
       if (!response.destroyed) response.end('{"error":"mock_proxy_unavailable"}');
     });
-    request.pipe(upstream);
+    upstream.end(body);
+  }
+
+  const server = http.createServer((request, response) => {
+    const chunks = [];
+    request.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+    request.on('end', () => {
+      const body = Buffer.concat(chunks);
+      const pathName = request.url ?? '';
+      const authorization = String(request.headers.authorization ?? '');
+      observations.push({ path: pathName, authorization });
+
+      if (pathName === '/v1/embeddings' && remainingEmbeddingFailures > 0) {
+        remainingEmbeddingFailures -= 1;
+        response.writeHead(503, { 'content-type': 'application/json' });
+        response.end('{"error":{"message":"temporary_embedding_unavailable"}}');
+        return;
+      }
+      if (pathName !== '/v1/responses') {
+        forward(body, request, response);
+        return;
+      }
+      if (failAnswers) {
+        response.writeHead(503, { 'content-type': 'application/json' });
+        response.end('{"error":{"message":"temporary_unavailable"}}');
+        return;
+      }
+      if (primaryDelayMs > 0 && authorization === 'Bearer mock-primary-key') {
+        const delayMs = primaryDelayMs;
+        primaryDelayMs = 0;
+        setTimeout(() => {
+          if (!response.destroyed) emitValidAnswer(response, body);
+        }, delayMs);
+        return;
+      }
+
+      const plan = answerPlans.shift();
+      if (typeof plan === 'object' && plan?.type === 'delay') {
+        observations.push({ path: 'internal:delay-scheduled', authorization: '' });
+        setTimeout(() => {
+          observations.push({
+            path: response.destroyed
+              ? 'internal:delay-response-destroyed'
+              : 'internal:delay-response-open',
+            authorization: '',
+          });
+          if (!response.destroyed) emitValidAnswer(response, body);
+        }, plan.milliseconds);
+        return;
+      }
+      if (plan === 'guard') {
+        observations.push({ path: 'internal:plan-guard', authorization: '' });
+        emitGuardRejectedAnswer(response);
+        return;
+      }
+      if (plan === 'interrupt') {
+        interruptAfterVisibleDelta(response);
+        return;
+      }
+      if (plan === 'hold') {
+        let released = false;
+        heldRelease = () => {
+          if (released) return;
+          released = true;
+          if (!response.destroyed) emitValidAnswer(response, body);
+        };
+        heldResolve?.();
+        heldResolve = null;
+        return;
+      }
+      emitValidAnswer(response, body);
+    });
   });
 
   return {
     server,
     holdNextResponse() {
-      if (holdNext || heldResolve) throw new HarnessError('mock:hold-already-pending');
-      holdNext = true;
+      if (heldResolve) throw new HarnessError('mock:hold-already-pending');
+      answerPlans.push('hold');
       heldPromise = new Promise((resolve) => { heldResolve = resolve; });
       return heldPromise;
+    },
+    delayNextAnswer(milliseconds) {
+      answerPlans.push({ type: 'delay', milliseconds });
+    },
+    interruptThenHoldReplay() {
+      if (heldResolve) throw new HarnessError('mock:hold-already-pending');
+      answerPlans.push('interrupt', 'hold');
+      heldPromise = new Promise((resolve) => { heldResolve = resolve; });
+      return heldPromise;
+    },
+    rejectNextAnswers(count = 2) {
+      for (let index = 0; index < count; index += 1) answerPlans.push('guard');
+    },
+    rejectNextEmbeddings(count = 3) {
+      remainingEmbeddingFailures += count;
+    },
+    setFailAnswers(value) {
+      failAnswers = Boolean(value);
+    },
+    delayNextPrimary(milliseconds) {
+      primaryDelayMs = milliseconds;
+    },
+    resetObservations() {
+      observations.length = 0;
+    },
+    getObservations() {
+      return observations.map((entry) => ({ ...entry }));
+    },
+    diagnostics() {
+      return {
+        paths: observations.reduce((counts, entry) => ({
+          ...counts,
+          [entry.path]: (counts[entry.path] ?? 0) + 1,
+        }), {}),
+        pendingPlans: answerPlans.map((plan) => typeof plan === 'string' ? plan : plan.type),
+        failAnswers,
+        remainingEmbeddingFailures,
+        primaryDelayMs,
+      };
     },
     releaseHeldResponse() {
       heldRelease?.();
@@ -647,6 +872,7 @@ async function submitChatValue(page, inputSelector, value) {
     const last = messages.at(-1);
     return {
       state: last?.getAttribute('data-stream-state') ?? null,
+      degraded: last?.getAttribute('data-degraded') === 'true',
       text: last?.querySelector('[data-testid="morse-chat-message-content"]')?.textContent ?? '',
       localSources: last?.querySelectorAll(${JSON.stringify(SELECTORS.localSources)}).length ?? 0,
       webSources: last?.querySelectorAll(${JSON.stringify(SELECTORS.webSources)}).length ?? 0,
@@ -704,6 +930,17 @@ async function capture(page, outputDirectory, fileName) {
   return filePath;
 }
 
+async function centerInViewport(page, selector) {
+  const centered = await page.evaluate(`(() => {
+    const element = document.querySelector(${JSON.stringify(selector)});
+    if (!(element instanceof HTMLElement)) return false;
+    element.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' });
+    return true;
+  })()`);
+  check(centered, 'evidence:target-missing');
+  await delay(100);
+}
+
 async function runVisitorScenarios({
   page,
   targetUrl,
@@ -712,6 +949,8 @@ async function runVisitorScenarios({
   connectionString,
   openAiProxy,
   checks,
+  chatV2EvidenceDirectory,
+  screenshots,
 }) {
   await navigate(page, targetUrl, '/');
   await unlockChat(page, inviteCode);
@@ -724,7 +963,7 @@ async function runVisitorScenarios({
   const starterUrl = await page.evaluate('location.href');
   const heldStarter = openAiProxy.holdNextResponse();
   await click(page, '[data-starter-intent="recruiter"]');
-  await withTimeout(heldStarter, INTERACTION_TIMEOUT_MS, 'starter:provider-not-held');
+  await withTimeout(heldStarter, INTERACTION_TIMEOUT_MS, 'starter:request-not-held');
   await waitFor(page, `(() => {
     const transcript = document.querySelector(${JSON.stringify(SELECTORS.chatTranscript)});
     const assistants = transcript?.querySelectorAll('article[data-message-role="assistant"]') ?? [];
@@ -741,8 +980,17 @@ async function runVisitorScenarios({
   await waitFor(page, `(() => {
     const assistants = document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)});
     return assistants.length > ${starterBaseline}
-      && assistants[assistants.length - 1].getAttribute('data-stream-state') === 'done';
-  })()`, 'starter:answer');
+      && ['done', 'error', 'stopped'].includes(assistants[assistants.length - 1].getAttribute('data-stream-state'));
+  })()`, 'starter:terminal');
+  const starterTerminal = await page.evaluate(`(() => {
+    const assistants = document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)});
+    const assistant = assistants[assistants.length - 1];
+    return {
+      state: assistant?.getAttribute('data-stream-state') ?? 'missing',
+      text: assistant?.textContent?.trim().slice(0, 80) ?? 'empty'
+    };
+  })()`);
+  check(starterTerminal.state === 'done', `starter:${starterTerminal.state}:${starterTerminal.text}`);
   const starterFormat = await page.evaluate(`(() => {
     const assistants = document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)});
     const answer = assistants[assistants.length - 1];
@@ -766,10 +1014,128 @@ async function runVisitorScenarios({
   );
   checks.add('starter-direct-send');
   checks.add('assistant-formatting');
+  checks.add('recruitment-chat');
+  screenshots.push(await capture(
+    page,
+    chatV2EvidenceDirectory,
+    'chat-v2-recruitment-desktop-1440x900.png',
+  ));
 
-  const chatResult = await submitChatValue(page, '#morse-message', '请介绍 Morse 的 Deep Research 项目与可核验证据。');
+  openAiProxy.resetObservations();
+  const social = await submitChatValue(page, '#morse-message', '你好，很高兴认识你。');
+  const socialObservations = openAiProxy.getObservations();
+  check(social.state === 'done', 'social:answer');
+  check(
+    socialObservations.some((entry) => entry.path === '/v1/responses')
+      && !socialObservations.some((entry) => entry.path === '/v1/embeddings'),
+    'social:no-embedding',
+  );
+  checks.add('social-chat');
+
+  openAiProxy.resetObservations();
+  const hedgeBudgetTurnIds = Array.from({ length: 4 }, () => randomUUID());
+  await withPostgresClient(connectionString, (client) => client.query(
+    `INSERT INTO interaction_turns
+       (id, access_session_id, workflow, audience_intent, question, answer, status,
+        completed_at, delete_after, invite_label)
+     SELECT fixture_id, $2, 'chat', 'general', $3, $4, 'completed',
+            now() - interval '1 hour', now() + interval '1 day', $5
+       FROM unnest($1::uuid[]) AS fixture_id`,
+    [
+      hedgeBudgetTurnIds,
+      randomUUID(),
+      'Synthetic hedge budget fixture',
+      'Synthetic completed answer',
+      'Synthetic hedge budget fixture',
+    ],
+  ));
+  try {
+    openAiProxy.delayNextPrimary(9_000);
+    const hedged = await submitChatValue(page, '#morse-message', '请介绍内容创作 Agent 的可验证工程证据。');
+    const hedgeObservations = openAiProxy.getObservations();
+    check(hedged.state === 'done', 'hedge:answer');
+    check(
+      hedgeObservations.some((entry) => entry.authorization === 'Bearer mock-primary-key')
+        && hedgeObservations.some((entry) => entry.authorization === 'Bearer mock-fallback-key'),
+      'hedge:backup-winner',
+    );
+  } finally {
+    await withPostgresClient(connectionString, (client) => client.query(
+      'DELETE FROM interaction_turns WHERE id = ANY($1::uuid[])',
+      [hedgeBudgetTurnIds],
+    ));
+  }
+  checks.add('provider-hedge');
+
+  const switchingBaseline = await page.evaluate(`(() => ({
+    users: document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="user"]`)}).length,
+    assistants: document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)}).length
+  }))()`);
+  const heldReplay = openAiProxy.interruptThenHoldReplay();
+  await setControlledValue(page, '#morse-message', '请说明数字摩斯如何保证回答证据可追溯。');
+  await click(page, '[data-action="send"]');
+  await Promise.all([
+    withTimeout(heldReplay, INTERACTION_TIMEOUT_MS, 'switching:replay-not-held'),
+    waitFor(
+      page,
+      `document.querySelector(${JSON.stringify(SELECTORS.chatPhase)})?.getAttribute('data-phase') === 'switching'`,
+      'switching:visible',
+    ),
+  ]);
+  check(await page.evaluate(`(() => {
+    const assistant = [...document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)})].at(-1);
+    return !assistant?.querySelector('[data-testid="morse-chat-message-content"]')?.textContent;
+  })()`), 'switching:provisional-cleared');
+  await centerInViewport(page, SELECTORS.chatPanel);
+  screenshots.push(await capture(
+    page,
+    chatV2EvidenceDirectory,
+    'chat-v2-switching-desktop-1440x900.png',
+  ));
+  openAiProxy.releaseHeldResponse();
+  await waitFor(page, `(() => {
+    const assistants = document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)});
+    return assistants.length === ${switchingBaseline.assistants + 1}
+      && assistants[assistants.length - 1]?.getAttribute('data-stream-state') === 'done';
+  })()`, 'switching:recovered');
+  const switchingCounts = await page.evaluate(`(() => ({
+    users: document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="user"]`)}).length,
+    assistants: document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)}).length
+  }))()`);
+  check(
+    switchingCounts.users === switchingBaseline.users + 1
+      && switchingCounts.assistants === switchingBaseline.assistants + 1,
+    'switching:same-assistant',
+  );
+  checks.add('switching-recovery');
+
+  openAiProxy.rejectNextEmbeddings(3);
+  await setControlledValue(page, '#morse-message', '请回答一次用于原位重试验收的问题。');
+  await click(page, '[data-action="send"]');
+  await waitFor(page, `(() => {
+    const assistants = [...document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)})];
+    return assistants.at(-1)?.getAttribute('data-stream-state') === 'error'
+      && Boolean(assistants.at(-1)?.querySelector('button'));
+  })()`, 'retry:recoverable-error');
+  const retryCounts = await page.evaluate(`(() => ({
+    users: document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="user"]`)}).length,
+    assistants: document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)}).length
+  }))()`);
+  await click(page, `${SELECTORS.chatTranscript} article[data-message-role="assistant"]:last-of-type button`);
+  await waitFor(page, `(() => {
+    const assistants = [...document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)})];
+    return assistants.at(-1)?.getAttribute('data-stream-state') === 'done';
+  })()`, 'retry:recovered');
+  const recoveredCounts = await page.evaluate(`(() => ({
+    users: document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="user"]`)}).length,
+    assistants: document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)}).length
+  }))()`);
+  check(recoveredCounts.assistants === retryCounts.assistants, 'retry:same-assistant');
+  check(recoveredCounts.users === retryCounts.users, 'retry:same-user');
+  checks.add('original-retry');
+
+  const chatResult = await submitChatValue(page, '#morse-message', '数字 Morse 是谁？');
   check(chatResult.state === 'done' && chatResult.localSources > 0, 'chat:local-answer');
-  checks.add('chat');
 
   const beforeRefresh = await page.evaluate(`(() => ({
     messages: document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article`)}).length,
@@ -784,6 +1150,12 @@ async function runVisitorScenarios({
   checks.add('refresh-history');
   await installPhaseProbe(page);
 
+  openAiProxy.rejectNextAnswers(4);
+  const safeResult = await submitChatValue(page, '#morse-message', '你是谁？介绍一下自己。');
+  check(safeResult.state === 'done' && safeResult.degraded, 'degraded:done');
+  check(await page.evaluate(`document.querySelector(${JSON.stringify(SELECTORS.degradedMessage)})?.textContent?.includes('简要结果')`), 'degraded:label');
+  checks.add('degraded-result');
+
   const degraded = await submitChatValue(page, '#morse-message', '请核验 OpenAI API 当前最新官方文档。');
   check(degraded.state === 'done' && degraded.webSources === 0, 'search:degradation-ui');
   await waitForDatabase(connectionString, async (client) => {
@@ -792,13 +1164,13 @@ async function runVisitorScenarios({
   }, 'search:degradation-not-persisted');
   checks.add('search-degradation');
 
-  const staticEvidence = await submitChatValue(page, '#morse-message', '请根据站内公开资料简要介绍 Morse。');
+  const staticEvidence = await submitChatValue(page, '#morse-message', STATIC_EVIDENCE_QUERY);
   check(
     staticEvidence.state === 'done' && staticEvidence.localSources > 0,
     'source:static-answer',
   );
 
-  const searched = await submitChatValue(page, '#morse-message', '请查证 Next.js 当前版本的官方文档与 GitHub 资料。');
+  const searched = await submitChatValue(page, '#morse-message', SEARCH_EVIDENCE_QUERY);
   check(searched.state === 'done' && searched.localSources > 0 && searched.webSources > 0, 'search:sources-missing');
   const sourceContract = await page.evaluate(`(() => {
     const assistant = [...document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)})].at(-1);
@@ -830,13 +1202,13 @@ async function runVisitorScenarios({
   check(sourceContract.localStaticCount > 0, 'source:static-evidence');
   check(sourceContract.webHref.startsWith('https://'), 'source:web-https');
   check(sourceContract.webTarget === '_blank' && sourceContract.webRel.includes('noopener'), 'source:web-isolation');
-  const inlineSourceSelector = `${SELECTORS.chatTranscript} article[data-message-role="assistant"]:last-of-type [data-testid="morse-chat-message-content"] a[data-citation-index][href^="/works#"]`;
+  const sourceNavigationSelector = `${SELECTORS.chatTranscript} article[data-message-role="assistant"]:last-of-type ${SELECTORS.localSources} a[href^="/works#"]`;
   check(await page.evaluate(`(() => {
-    const source = document.querySelector(${JSON.stringify(inlineSourceSelector)});
+    const source = document.querySelector(${JSON.stringify(sourceNavigationSelector)});
     if (!source) return false;
     source.scrollIntoView({ block: 'center', behavior: 'auto' });
     return true;
-  })()`), 'source:inline-scroll-target');
+  })()`), 'source:navigation-scroll-target');
   const beforeSourceClick = await page.evaluate(`(() => {
     const transcript = document.querySelector(${JSON.stringify(SELECTORS.chatTranscript)});
     return {
@@ -850,7 +1222,7 @@ async function runVisitorScenarios({
     (targetsBeforeSourceClick.targetInfos ?? []).map((target) => target.targetId),
   );
   const expectedSourceUrl = new URL(sourceContract.inlineLocalHref, targetUrl).href;
-  await click(page, inlineSourceSelector);
+  await click(page, sourceNavigationSelector);
   const openedSourceTarget = await withTimeout((async () => {
     while (true) {
       const { targetInfos = [] } = await browserTransport.send('Target.getTargets');
@@ -880,6 +1252,10 @@ async function runVisitorScenarios({
   check(closedSourceTarget.success !== false, 'source:new-tab-close');
   checks.add('source-navigation');
 
+  const responsePhases = await page.evaluate('window.__s10PhaseLog ?? []');
+  for (const phase of ['routing', 'knowledge', 'web', 'answering']) {
+    check(responsePhases.includes(phase), `phase:missing:${phase}`);
+  }
   await navigate(page, targetUrl, '/');
   await openChat(page);
   await waitFor(page, `Boolean(document.querySelector(${JSON.stringify(SELECTORS.chatWorkspace)}))`, 'chat:reopen');
@@ -927,10 +1303,6 @@ async function runVisitorScenarios({
   openAiProxy.releaseHeldResponse();
   checks.add('stop-compensation');
 
-  const phases = await page.evaluate('window.__s10PhaseLog ?? []');
-  for (const phase of ['routing', 'knowledge', 'web', 'answering', 'handoff']) {
-    check(phases.includes(phase) || phase === 'handoff', `phase:missing:${phase}`);
-  }
   check(await withPostgresClient(connectionString, async (client) => {
     const result = await client.query("SELECT 1 FROM diagnoses WHERE status = 'handoff_pending' LIMIT 1");
     return result.rowCount === 1;
@@ -946,6 +1318,9 @@ async function runMobileVisitor({
   inviteId,
   outputDirectory,
   checks,
+  openAiProxy,
+  chatV2EvidenceDirectory,
+  screenshots,
 }) {
   await navigate(page, targetUrl, '/');
   await openChat(page);
@@ -956,6 +1331,88 @@ async function runMobileVisitor({
     return { width: rect?.width ?? 0, height: rect?.height ?? 0 };
   })()`);
   check(panel.width > 300 && panel.width <= 390 && panel.height > 500 && panel.height <= 844, 'mobile:chat-panel');
+
+  await click(page, SELECTORS.jdWorkflow);
+  await waitFor(page, "Boolean(document.querySelector('#morse-jd'))", 'mobile:jd-reset');
+  await click(page, SELECTORS.chatWorkflow);
+  await waitFor(page, "Boolean(document.querySelector('#morse-message'))", 'mobile:chat-reset');
+  await click(page, '[data-starter-intent="recruiter"]');
+  await waitFor(page, `(() => {
+    const assistants = [...document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)})];
+    return assistants.at(-1)?.getAttribute('data-stream-state') === 'done';
+  })()`, 'mobile:recruitment-answer');
+  check(await page.evaluate(`document.querySelector(${JSON.stringify(SELECTORS.chatTranscript)})?.textContent?.includes('请介绍与岗位最相关的项目和能力证据。')`), 'recruitment:answer');
+  screenshots.push(await capture(
+    page,
+    chatV2EvidenceDirectory,
+    'chat-v2-recruitment-mobile-390x844.png',
+  ));
+
+  openAiProxy.resetObservations();
+  const social = await submitChatValue(page, '#morse-message', '你好，我们先简单认识一下。');
+  const socialObservations = openAiProxy.getObservations();
+  check(social.state === 'done', 'mobile:social-answer');
+  check(!socialObservations.some((entry) => entry.path === '/v1/embeddings'), 'social:no-embedding-mobile');
+
+  await click(page, SELECTORS.jdWorkflow);
+  await waitFor(page, "Boolean(document.querySelector('#morse-jd'))", 'mobile:jd-workflow');
+  const jdResult = await submitChatValue(page, '#morse-jd', '招聘 Agent 工程师，要求 RAG、PostgreSQL 和可靠性交付经验。');
+  check(jdResult.state === 'done', 'mobile:jd-answer');
+  await click(page, SELECTORS.chatWorkflow);
+  await waitFor(page, "Boolean(document.querySelector('#morse-message'))", 'mobile:return-chat');
+
+  await installPhaseProbe(page);
+  const heldReplay = openAiProxy.interruptThenHoldReplay();
+  await setControlledValue(page, '#morse-message', STATIC_EVIDENCE_QUERY);
+  await click(page, '[data-action="send"]');
+  await Promise.all([
+    withTimeout(heldReplay, INTERACTION_TIMEOUT_MS, 'mobile:switching-replay-not-held'),
+    waitFor(
+      page,
+      `window.__s10PhaseLog.includes('switching')`,
+      'mobile:switching-visible',
+    ),
+  ]);
+  openAiProxy.releaseHeldResponse();
+  await waitFor(page, `(() => {
+    const assistants = [...document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)})];
+    return assistants.at(-1)?.getAttribute('data-stream-state') === 'done';
+  })()`, 'mobile:switching-recovered');
+
+  openAiProxy.rejectNextEmbeddings(3);
+  await setControlledValue(page, '#morse-message', '请回答移动端原位重试验收问题。');
+  await click(page, '[data-action="send"]');
+  await waitFor(page, `(() => {
+    const assistants = [...document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)})];
+    return assistants.at(-1)?.getAttribute('data-stream-state') === 'error';
+  })()`, 'mobile:retry-error');
+  const retryCounts = await page.evaluate(`(() => ({
+    users: document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="user"]`)}).length,
+    assistants: document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)}).length
+  }))()`);
+  await click(page, `${SELECTORS.chatTranscript} article[data-message-role="assistant"]:last-of-type button`);
+  await waitFor(page, `(() => {
+    const assistants = [...document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)})];
+    return assistants.at(-1)?.getAttribute('data-stream-state') === 'done';
+  })()`, 'mobile:retry-recovered');
+  const recoveredCounts = await page.evaluate(`(() => ({
+    users: document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="user"]`)}).length,
+    assistants: document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)}).length
+  }))()`);
+  check(recoveredCounts.assistants === retryCounts.assistants, 'mobile:retry-same-assistant');
+  check(recoveredCounts.users === retryCounts.users, 'mobile:retry-same-user');
+
+  openAiProxy.rejectNextAnswers(4);
+  const degraded = await submitChatValue(page, '#morse-message', '你是谁？介绍一下自己。');
+  check(degraded.state === 'done' && degraded.degraded, 'mobile:degraded-result');
+  check(await page.evaluate(`document.querySelector(${JSON.stringify(SELECTORS.degradedMessage)})?.textContent?.includes('简要结果')`), 'mobile:degraded-label');
+  screenshots.push(await capture(
+    page,
+    chatV2EvidenceDirectory,
+    'chat-v2-degraded-mobile-390x844.png',
+  ));
+  check(!await page.evaluate(`document.body.textContent?.includes(${JSON.stringify(inviteId)})`), 'visitor:no-rollout-id');
+
   const screenshot = await capture(page, outputDirectory, 's10-chat-mobile-390x844.png');
   await withPostgresClient(connectionString, (client) => client.query(
     "UPDATE access_sessions SET expires_at = now() - interval '1 second' WHERE invite_code_id = $1",
@@ -1074,6 +1531,16 @@ async function runAdminScenarios({
   );
 
   const inviteRowSelector = `${SELECTORS.adminInviteList} [data-invite-id="${createdInvite.id}"]`;
+  const inviteIdCopySelector = `${inviteRowSelector} ${SELECTORS.adminInviteIdCopy}`;
+  await click(desktopPage, inviteIdCopySelector);
+  await waitFor(
+    desktopPage,
+    `document.querySelector(${JSON.stringify(inviteIdCopySelector)})?.textContent?.includes('已复制')`,
+    'admin:invite-id-copy',
+  );
+  const copiedInviteId = await desktopPage.evaluate('navigator.clipboard.readText()');
+  check(copiedInviteId === createdInvite.id, 'admin:invite-id-clipboard');
+  checks.add('admin-invite-id-copy');
   await click(desktopPage, `${inviteRowSelector} ${SELECTORS.adminInviteDeactivate}`);
   await click(desktopPage, `${inviteRowSelector} ${SELECTORS.adminInviteDeactivateConfirm}`);
   await waitFor(
@@ -1260,6 +1727,7 @@ export async function runS10MockE2E() {
   let browserTransport;
   let openAiProxy;
   let outputDirectory;
+  let chatV2EvidenceDirectory;
   let downloadDirectory;
 
   try {
@@ -1271,6 +1739,10 @@ export async function runS10MockE2E() {
       ? path.resolve(process.env.S10_EVIDENCE_DIR)
       : mkdtempSync(path.join(os.tmpdir(), 'revolution-s10-evidence-'));
     mkdirSync(outputDirectory, { recursive: true });
+    chatV2EvidenceDirectory = process.env.S10_CHAT_V2_EVIDENCE_DIR
+      ? path.resolve(process.env.S10_CHAT_V2_EVIDENCE_DIR)
+      : path.join(repoRoot, 'docs', 'verify', 'chat-v2');
+    mkdirSync(chatV2EvidenceDirectory, { recursive: true });
     downloadDirectory = mkdtempSync(path.join(os.tmpdir(), 'revolution-s10-download-'));
 
     try {
@@ -1285,6 +1757,7 @@ export async function runS10MockE2E() {
     };
     await runNodeScript('scripts/migrate-db.mjs', setupEnv);
     await runNodeScript('scripts/ingest-knowledge.mjs', setupEnv);
+    await seedS10EvidenceFixtures(database.connectionString);
 
     const inviteCode = `s10-${randomBytes(12).toString('hex')}`;
     const inviteId = randomUUID();
@@ -1321,15 +1794,20 @@ export async function runS10MockE2E() {
       MORSE_PUBLIC_ORIGIN: targetUrl.origin,
       MORSE_LOCAL_RELEASE_SMOKE: 'true',
       MORSE_DATABASE_SSL_MODE: 'disable',
-      OPENAI_API_KEY: 'mock-openai-key',
+      OPENAI_API_KEY: 'mock-primary-key',
       OPENAI_BASE_URL: `http://127.0.0.1:${proxyPort}/v1`,
+      OPENAI_FALLBACK_1_API_KEY: 'mock-fallback-key',
+      OPENAI_FALLBACK_1_BASE_URL: `http://127.0.0.1:${proxyPort}/v1`,
       OPENAI_CHAT_MODEL: 'mock-gpt',
       OPENAI_CHAT_PROTOCOL: 'responses',
-      OPENAI_EMBEDDING_API_KEY: 'mock-openai-key',
+      OPENAI_EMBEDDING_API_KEY: 'mock-embedding-key',
       OPENAI_EMBEDDING_BASE_URL: `http://127.0.0.1:${proxyPort}/v1`,
       OPENAI_EMBEDDING_MODEL: 'mock-embedding',
       MORSE_ALLOW_TEST_EMBEDDINGS: 'true',
       MORSE_CHAT_ENABLED: 'true',
+      MORSE_CHAT_V2_ENABLED: 'true',
+      MORSE_CHAT_V2_CANARY_PERCENT: '100',
+      MORSE_CHAT_HEDGED_FAILOVER_ENABLED: 'true',
       MORSE_SEARCH_ENABLED: 'true',
       MORSE_SEARCH_PROVIDER: 'bocha',
       BOCHA_API_KEY: 'mock-bocha-key',
@@ -1380,6 +1858,8 @@ export async function runS10MockE2E() {
       connectionString: database.connectionString,
       openAiProxy,
       checks,
+      chatV2EvidenceDirectory,
+      screenshots,
     });
     screenshots.push(await capture(visitorDesktop, outputDirectory, 's10-chat-desktop-1440x900.png'));
 
@@ -1392,6 +1872,9 @@ export async function runS10MockE2E() {
       inviteId,
       outputDirectory,
       checks,
+      openAiProxy,
+      chatV2EvidenceDirectory,
+      screenshots,
     }));
 
     const adminDesktop = await openTab(browser, targetUrl, S10_VIEWPORTS[0]);
@@ -1432,6 +1915,34 @@ export async function runS10MockE2E() {
       consoleErrors: browserErrors.consoleErrors,
       pageErrors: browserErrors.pageErrors,
     });
+  } catch (error) {
+    const pageStates = await Promise.all(pages.map(async (page) => {
+      try {
+        return await page.evaluate(`(() => {
+          const assistants = [...document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)})];
+          const assistant = assistants.at(-1);
+          return {
+            path: location.pathname,
+            phase: document.querySelector(${JSON.stringify(SELECTORS.chatPhase)})?.getAttribute('data-phase') ?? null,
+            assistantCount: assistants.length,
+            assistantState: assistant?.getAttribute('data-stream-state') ?? null,
+            assistantHasText: Boolean(assistant?.querySelector('[data-testid="morse-chat-message-content"]')?.textContent),
+          };
+        })()`);
+      } catch {
+        return { unavailable: true };
+      }
+    }));
+    console.error(JSON.stringify({
+      kind: 'S10_SAFE_DIAGNOSTICS',
+      error: {
+        name: error instanceof Error ? error.name : typeof error,
+        message: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
+      },
+      proxy: openAiProxy?.diagnostics?.() ?? null,
+      pageStates,
+    }));
+    throw error;
   } finally {
     let browserCleanupError = null;
     openAiProxy?.releaseHeldResponse();

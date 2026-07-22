@@ -190,6 +190,23 @@ test('starter questions send immediately and pending assistants replace the empt
   assert.match(transcript, /!message\.text[\s\S]*!message\.error[\s\S]*!message\.stopped/);
 });
 
+test('recruitment entry stays evidence-led and degraded completion is labeled in place', () => {
+  const workspace = readChatSource('ChatWorkspace.tsx');
+  const hook = readChatSource('useMorseChat.ts');
+  const transcript = readChatSource('ChatTranscript.tsx');
+
+  assert.match(workspace, /prompt:\s*['"]请介绍与岗位最相关的项目和能力证据。['"]/u);
+  assert.doesNotMatch(workspace, /仍需补充的信息/u);
+  assert.match(hook, /degraded\?:\s*boolean/u);
+  assert.match(
+    hook,
+    /event === ['"]done['"][\s\S]*degraded:\s*payload\.degraded === true/u,
+  );
+  assert.match(transcript, /message\.complete\s*&&\s*message\.degraded/u);
+  assert.match(transcript, /简要结果/u);
+  assert.match(transcript, /data-degraded=\{message\.degraded \|\| undefined\}/u);
+});
+
 test('project CTA opens Digital Morse with the approved content-agent question prefilled', () => {
   const component = readIfPresent(componentPath);
   const projectCard = readIfPresent(projectCardPath);

@@ -34,10 +34,15 @@ test('S10 scenario registry covers the complete visitor and admin contract', () 
     'visitor-unlock',
     'starter-direct-send',
     'assistant-formatting',
-    'chat',
+    'social-chat',
+    'recruitment-chat',
     'jd-match',
     'diagnosis',
     'phase-status',
+    'provider-hedge',
+    'switching-recovery',
+    'degraded-result',
+    'original-retry',
     'stop-compensation',
     'refresh-history',
     'source-navigation',
@@ -47,6 +52,7 @@ test('S10 scenario registry covers the complete visitor and admin contract', () 
     'admin-list-detail',
     'admin-badcase',
     'admin-invite-management',
+    'admin-invite-id-copy',
     'admin-export',
     'admin-session-expiry',
     'dual-width-overflow',
@@ -151,6 +157,7 @@ test('S10 harness uses stable UI observability for every required workflow', () 
     'admin-invite-code',
     'admin-invite-list',
     'admin-invite-copy',
+    'admin-invite-id-copy',
     'admin-invite-deactivate',
     'admin-invite-deactivate-confirm',
     'admin-export-form',
@@ -189,6 +196,79 @@ test('S10 proves the one-time invite lifecycle and mobile dialog geometry', () =
   );
 });
 
+test('S10 lets an interrupted mock delta become visible before breaking the stream', () => {
+  const source = readFileSync(harnessUrl, 'utf8');
+  const match = /const S10_INTERRUPT_SETTLE_MS = (\d+);/u.exec(source);
+
+  assert.ok(match, 'the interrupted stream needs an explicit settle window');
+  assert.ok(Number(match[1]) >= 100);
+  assert.match(source, /setTimeout\(\(\) => response\.destroy\(\), S10_INTERRUPT_SETTLE_MS\)/u);
+});
+
+test('S10 captures the four approved chat-v2 evidence states', () => {
+  const source = readFileSync(harnessUrl, 'utf8');
+
+  for (const fileName of [
+    'chat-v2-recruitment-desktop-1440x900.png',
+    'chat-v2-recruitment-mobile-390x844.png',
+    'chat-v2-switching-desktop-1440x900.png',
+    'chat-v2-degraded-mobile-390x844.png',
+  ]) {
+    assert.match(source, new RegExp(fileName.replaceAll('.', '\\.')));
+  }
+  assert.match(source, /path\.join\(repoRoot, 'docs', 'verify', 'chat-v2'\)/u);
+  const switchingState = source.indexOf("'switching:provisional-cleared'");
+  const switchingCentered = source.indexOf('await centerInViewport(page, SELECTORS.chatPanel)', switchingState);
+  const switchingCapture = source.indexOf("'chat-v2-switching-desktop-1440x900.png'", switchingState);
+  assert.ok(
+    switchingState >= 0
+      && switchingCentered > switchingState
+      && switchingCapture > switchingCentered,
+    'the switching evidence must center the full chat panel before capture',
+  );
+});
+
+test('S10 proves social isolation, in-place recovery, degraded labeling, and rollout id copy', () => {
+  const source = readFileSync(harnessUrl, 'utf8');
+
+  for (const marker of [
+    'social:no-embedding',
+    'recruitment:answer',
+    'switching:visible',
+    'switching:same-assistant',
+    'degraded:label',
+    'retry:same-assistant',
+    'retry:same-user',
+    'admin:invite-id-copy',
+    'admin:invite-id-clipboard',
+    'visitor:no-rollout-id',
+  ]) {
+    assert.ok(source.includes(marker), `missing Task 10 browser marker: ${marker}`);
+  }
+});
+
+test('S10 records the transient mobile switching phase instead of polling only the current phase', () => {
+  const source = readFileSync(harnessUrl, 'utf8');
+  const mobileStart = source.indexOf('async function runMobileVisitor');
+  const adminStart = source.indexOf('async function runAdminScenarios');
+  const mobileSource = source.slice(mobileStart, adminStart);
+
+  assert.ok(mobileStart >= 0 && adminStart > mobileStart);
+  assert.ok(
+    mobileSource.indexOf('await installPhaseProbe(page)')
+      < mobileSource.indexOf('openAiProxy.interruptThenHoldReplay()'),
+    'the phase probe must be active before mobile recovery starts',
+  );
+  assert.match(
+    mobileSource,
+    /setControlledValue\(page, '#morse-message', STATIC_EVIDENCE_QUERY\)/u,
+  );
+  assert.match(
+    mobileSource,
+    /window\.__s10PhaseLog\.includes\('switching'\)/u,
+  );
+});
+
 test('S10 proves invite attribution and independent detail scrolling at both widths', () => {
   const source = readFileSync(harnessUrl, 'utf8');
   const adminStart = source.indexOf('async function runAdminScenarios');
@@ -214,7 +294,11 @@ test('source navigation keeps the active chat while project evidence opens separ
   const visitorSource = source.slice(visitorStart, mobileStart);
 
   assert.ok(visitorStart >= 0 && mobileStart > visitorStart);
-  assert.match(visitorSource, /请根据站内公开资料简要介绍 Morse/u);
+  assert.match(source, /const STATIC_EVIDENCE_QUERY = '深度研究系统如何确保报告可信？'/u);
+  assert.match(source, /const SEARCH_EVIDENCE_QUERY = '请查证 Next\.js 当前版本的官方文档与 GitHub 资料。'/u);
+  assert.match(source, /seedS10EvidenceFixtures\(database\.connectionString\)/u);
+  assert.match(visitorSource, /submitChatValue\(page, '#morse-message', STATIC_EVIDENCE_QUERY\)/u);
+  assert.match(visitorSource, /submitChatValue\(page, '#morse-message', SEARCH_EVIDENCE_QUERY\)/u);
   assert.match(visitorSource, /localStaticCount/u);
   assert.match(visitorSource, /inlineLocalHref/u);
   assert.match(visitorSource, /inlineStaticCount/u);
@@ -234,7 +318,7 @@ test('source navigation keeps the active chat while project evidence opens separ
 
   const scrollTarget = visitorSource.indexOf("source.scrollIntoView({ block: 'center', behavior: 'auto' })");
   const beforeClick = visitorSource.indexOf('const beforeSourceClick');
-  const click = visitorSource.indexOf('await click(page, inlineSourceSelector)');
+  const click = visitorSource.indexOf('await click(page, sourceNavigationSelector)');
   assert.ok(scrollTarget >= 0 && scrollTarget < beforeClick && beforeClick < click);
 });
 

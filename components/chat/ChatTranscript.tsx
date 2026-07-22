@@ -36,6 +36,7 @@ export default function ChatTranscript({
           data-message-role={message.role}
           className={message.role === 'user' ? styles.userMessage : styles.assistantMessage}
           data-error={message.error || undefined}
+          data-degraded={message.degraded || undefined}
           data-stream-state={message.role === 'assistant'
             ? (message.complete ? 'done' : message.error ? 'error' : message.stopped ? 'stopped' : 'pending')
             : undefined}
@@ -57,6 +58,9 @@ export default function ChatTranscript({
           {message.stopped ? <span className={styles.messageState}>已停止</span> : null}
           {message.diagnosisStatus === 'handoff_pending' ? (
             <span className={styles.messageState}>已进入转交队列</span>
+          ) : null}
+          {message.complete && message.degraded ? (
+            <span className={styles.messageState}>简要结果</span>
           ) : null}
           {message.complete ? (
             <ChatSources

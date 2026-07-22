@@ -328,6 +328,75 @@ function v2Request(overrides: Partial<NonNullable<AnswerRequest['execution']>> =
   };
 }
 
+test('a completed primary returns done without waiting for an unstarted hedge', async () => {
+  let fallbackStarted = false;
+  const primary = delayedProvider({
+    delayMs: 0,
+    events: [
+      { type: 'delta', text: 'Primary.' },
+      { type: 'done', usage: { inputTokens: 7, outputTokens: 2 } },
+    ],
+  });
+  const fallback = delayedProvider({
+    delayMs: 0,
+    events: [{ type: 'done', usage: null }],
+    onStart: () => { fallbackStarted = true; },
+  });
+  const provider = new FailoverAiProvider(primary, [
+    { alias: 'primary', provider: primary },
+    { alias: 'fallback-1', provider: fallback },
+  ], 1_000);
+
+  const events = await guard((async () => {
+    const collected: AnswerEvent[] = [];
+    for await (const event of provider.streamAnswer(v2Request({
+      totalTimeoutMs: 250,
+      delaysMs: [0, 1_000],
+    }))) collected.push(event);
+    return collected;
+  })(), 50);
+
+  assert.equal(fallbackStarted, false);
+  assert.deepEqual(events, [
+    { type: 'delta', text: 'Primary.' },
+    {
+      type: 'done',
+      usage: { inputTokens: 7, outputTokens: 2 },
+      providerAlias: 'primary',
+    },
+  ]);
+});
+
+test('a segment winner propagates a later stream failure instead of emitting done', async () => {
+  const streamFailure = new OpenAIProviderError('PROVIDER_STREAM_FAILED');
+  let fallbackStarted = false;
+  const primary = delayedProvider({
+    delayMs: 0,
+    events: [{ type: 'delta', text: 'Visible segment.' }],
+    error: streamFailure,
+  });
+  const fallback = delayedProvider({
+    delayMs: 0,
+    events: [{ type: 'done', usage: null }],
+    onStart: () => { fallbackStarted = true; },
+  });
+  const provider = new FailoverAiProvider(primary, [
+    { alias: 'primary', provider: primary },
+    { alias: 'fallback-1', provider: fallback },
+  ], 1_000);
+  const events: AnswerEvent[] = [];
+
+  await assert.rejects(async () => {
+    for await (const event of provider.streamAnswer(v2Request({
+      totalTimeoutMs: 250,
+      delaysMs: [0, 1_000],
+    }))) events.push(event);
+  }, streamFailure);
+
+  assert.equal(fallbackStarted, false);
+  assert.deepEqual(events, [{ type: 'delta', text: 'Visible segment.' }]);
+});
+
 test('hedging never has more than two nodes in flight and starts node three after one exits', async () => {
   let inFlight = 0;
   let maxInFlight = 0;
