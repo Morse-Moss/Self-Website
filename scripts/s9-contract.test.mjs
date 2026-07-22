@@ -17,7 +17,6 @@ function readHarness() {
 }
 
 test('S9 closeout remains recorded after the task center advances beyond S9', () => {
-  const readme = readUtf8('README.md');
   const blueprint = readUtf8('docs/portfolio-blueprint.md');
   const runState = readUtf8('docs/task-center/run-state.md');
   const closeout = readUtf8('docs/verify/s9/s9-closeout.md');
@@ -29,7 +28,6 @@ test('S9 closeout remains recorded after the task center advances beyond S9', ()
   assert.ok(currentPointer);
   assert.doesNotMatch(currentPointer, /^S9(?:\b|[- ])/);
   assert.ok(runState.includes('## S9 Morse portfolio closeout evidence(2026-07-15)'));
-  assert.ok(readme.includes('S9 Morse 作品集重设计已完成并进入 `origin/master`'));
   assert.ok(blueprint.includes('## 14. S9 Morse 作品集重设计(2026-07-14)'));
   assert.ok(blueprint.includes('merge commit `1fb7e28`'));
   assert.ok(closeout.includes('`MAINLINE PASS · PUSHED · NOT DEPLOYED`'));

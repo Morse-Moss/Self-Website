@@ -188,6 +188,67 @@ class StoppedTelemetryProvider extends TelemetryProvider {
   }
 }
 
+class PartiallyObservedStoppedProvider extends TelemetryProvider {
+  readonly completedAttempt = providerAttempt({
+    attemptIndex: 0,
+    position: 0,
+    status: 'completed',
+    inputTokens: 5,
+    outputTokens: 1,
+    inputRate: '1',
+    outputRate: '2',
+  });
+
+  override async *streamAnswer(
+    request: AnswerRequest,
+    signal?: AbortSignal,
+  ): AsyncIterable<AnswerEvent> {
+    const execution = request.execution;
+    if (!execution) throw new Error('v2 execution hooks are required');
+    await execution.onAttempt({
+      type: 'started',
+      attemptNo: 1,
+      providerAlias: 'primary',
+      launchKind: 'primary',
+      startedAt: runtimeNow,
+      startDelayMs: 0,
+    });
+    await execution.onAttempt({
+      type: 'completed',
+      attemptNo: 1,
+      providerAlias: 'primary',
+      durationMs: 50,
+      winner: false,
+      errorCode: null,
+      usage: { inputTokens: 5, outputTokens: 1 },
+    });
+    yield { type: 'attempt', attempt: this.completedAttempt };
+    await execution.onAttempt({
+      type: 'started',
+      attemptNo: 2,
+      providerAlias: 'fallback-1',
+      launchKind: 'failover',
+      startedAt: new Date(runtimeNow.getTime() + 100),
+      startDelayMs: 100,
+    });
+    yield { type: 'delta', text: 'Partial routed answer' };
+    await new Promise<void>((resolve) => {
+      if (signal?.aborted) resolve();
+      else signal?.addEventListener('abort', () => resolve(), { once: true });
+    });
+    await execution.onAttempt({
+      type: 'aborted',
+      attemptNo: 2,
+      providerAlias: 'fallback-1',
+      durationMs: 25,
+      winner: false,
+      errorCode: null,
+      usage: null,
+    });
+    throw signal?.reason;
+  }
+}
+
 test('runtime resolver preserves environment routing when no database route is active', async () => {
   const database = await createDisposablePostgresDatabase();
   await migrate(database.connectionString);
@@ -683,6 +744,131 @@ test('runChat persists failed and stopped provider attempts before terminal comp
       terminal.rows.map((row) => row.known_cost_usd).sort(),
       ['0.000007', '0.000014'],
     );
+  } finally {
+    await pool.end();
+    await database.dispose();
+  }
+});
+
+test('v2 stopped compensation keeps completeness false when an active attempt has no usage', async () => {
+  const database = await createDisposablePostgresDatabase();
+  await migrate(database.connectionString);
+  const pool = new Pool({ connectionString: database.connectionString });
+  const turnId = randomUUID();
+  try {
+    const vector = `[${[1, ...Array.from({ length: 1_535 }, () => 0)].join(',')}]`;
+    await pool.query(
+      `INSERT INTO knowledge_documents (id, title, source_path, checksum)
+       VALUES ('partial-stop-doc', 'Partial stop document', 'partial-stop.md', $1)`,
+      ['e'.repeat(64)],
+    );
+    await pool.query(
+      `INSERT INTO knowledge_chunks (id, document_id, ordinal, content, embedding, metadata)
+       VALUES ('partial-stop-chunk', 'partial-stop-doc', 0, 'Partial stop evidence.', $1::vector,
+               '{"title":"Partial stop document","sourcePath":"partial-stop.md","href":"/works/content-agent"}'::jsonb)`,
+      [vector],
+    );
+    const inviteId = randomUUID();
+    const sessionId = randomUUID();
+    await pool.query(
+      `INSERT INTO invite_codes
+        (id, code_hash, label, active, expires_at, max_sessions, session_count)
+       VALUES ($1, $2, 'partial-stop', true, $3, 1, 1)`,
+      [inviteId, 'a'.repeat(64), new Date('2026-07-22T08:00:00.000Z')],
+    );
+    await pool.query(
+      `INSERT INTO access_sessions
+        (id, invite_code_id, token_hash, expires_at, message_count, created_at, last_seen_at,
+         chat_behavior_version)
+       VALUES ($1, $2, $3, $4, 0, $5, $5, 'v2')`,
+      [
+        sessionId,
+        inviteId,
+        'b'.repeat(64),
+        new Date('2026-07-22T08:00:00.000Z'),
+        runtimeNow,
+      ],
+    );
+
+    const controller = new AbortController();
+    const iterator = runChat({
+      pool,
+      provider: new PartiallyObservedStoppedProvider(),
+      accessSessionId: sessionId,
+      request: {
+        message: 'Stop after partial provider output.',
+        mode: 'general',
+        audienceIntent: 'general',
+        conversationId: null,
+        turnId,
+      },
+      config: {
+        maxMessagesPerSession: 2,
+        historyMessageLimit: 12,
+        retrievalLimit: 3,
+        interactionRetentionDays: 10,
+        tokenRates: { inputUsdPerMillion: 1, outputUsdPerMillion: 2 },
+        chatV2Enabled: true,
+        chatV2CanaryPercent: 100,
+        chatV2CanaryInviteIds: new Set<string>(),
+        hedgedFailoverEnabled: false,
+        chatSafeMode: false,
+        providerTotalTimeoutMs: 90_000,
+      },
+      now: runtimeNow,
+      signal: controller.signal,
+    })[Symbol.asyncIterator]();
+    while (true) {
+      const next = await iterator.next();
+      if (next.done) throw new Error('expected partial output');
+      if (next.value.type === 'delta') break;
+    }
+    controller.abort(new DOMException('Stopped', 'AbortError'));
+    await assert.rejects(async () => {
+      while (!(await iterator.next()).done) {
+        // Drain through terminal compensation.
+      }
+    }, (error: unknown) => (error as { name?: string }).name === 'AbortError');
+
+    const attempts = await pool.query<{
+      status: string;
+      input_tokens: number | null;
+      output_tokens: number | null;
+    }>(
+      `SELECT status, input_tokens, output_tokens
+         FROM chat_provider_attempts
+        WHERE interaction_turn_id = $1
+        ORDER BY attempt_no`,
+      [turnId],
+    );
+    assert.deepEqual(attempts.rows, [
+      { status: 'completed', input_tokens: 5, output_tokens: 1 },
+      { status: 'aborted', input_tokens: null, output_tokens: null },
+    ]);
+    const interaction = await pool.query<{
+      status: string;
+      input_tokens: number;
+      output_tokens: number;
+      known_cost_usd: string;
+      estimated_cost_usd: string | null;
+      usage_complete: boolean;
+      cost_complete: boolean;
+    }>(
+      `SELECT status, input_tokens, output_tokens, known_cost_usd::text,
+              estimated_cost_usd::text, usage_complete, cost_complete
+         FROM interaction_turns
+        WHERE id = $1`,
+      [turnId],
+    );
+    assert.deepEqual(interaction.rows, [{
+      status: 'stopped',
+      input_tokens: 5,
+      output_tokens: 1,
+      known_cost_usd: '0.000007',
+      estimated_cost_usd: null,
+      usage_complete: false,
+      cost_complete: false,
+    }]);
   } finally {
     await pool.end();
     await database.dispose();

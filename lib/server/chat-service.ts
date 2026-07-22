@@ -1307,6 +1307,20 @@ async function compensateTurnOnce(input: CompensationInput): Promise<Compensatio
         );
       }
     }
+    const attemptSummary = input.turn.behavior === 'v2'
+      ? await summarizeProviderAttempts(input.client, input.turn.turnId)
+      : null;
+    const summarizedV2 = attemptSummary !== null && attemptSummary.attemptCount > 0;
+    const usage = summarizedV2 ? attemptSummary.usage : aggregate.usage;
+    const knownCostUsd = summarizedV2
+      ? attemptSummary.estimatedCostUsd ?? usageCost(usage, input.config.tokenRates)
+      : aggregate.knownCostUsd;
+    const usageComplete = summarizedV2
+      ? attemptSummary.usageComplete
+      : aggregate.usageComplete;
+    const costComplete = summarizedV2
+      ? attemptSummary.costComplete
+      : aggregate.costComplete;
     await terminateInteraction({
       client: input.client,
       turnId: input.turn.turnId,
@@ -1314,11 +1328,11 @@ async function compensateTurnOnce(input: CompensationInput): Promise<Compensatio
       answer: input.answer,
       errorCode: input.errorCode,
       sources: input.sources,
-      usage: aggregate.usage,
-      estimatedCostUsd: aggregate.costComplete ? aggregate.knownCostUsd : null,
-      knownCostUsd: aggregate.knownCostUsd,
-      usageComplete: aggregate.usageComplete,
-      costComplete: aggregate.costComplete,
+      usage,
+      estimatedCostUsd: costComplete ? knownCostUsd : null,
+      knownCostUsd,
+      usageComplete,
+      costComplete,
       winner: input.winner,
       latencyMs: elapsedMilliseconds(input.startedAt, input.completedAt),
       completedAt: input.completedAt,
