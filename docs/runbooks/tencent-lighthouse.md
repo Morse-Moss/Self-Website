@@ -31,6 +31,20 @@
 
 如管理页面不可用，按平台无关生产手册使用 `npm run invite:create` 应急；不要为此开放数据库端口、打印生产环境变量或直接写 `invite_codes`。
 
+## Chat v2 disabled-first 灰度
+
+本节只定义下一次获批发布的操作合同，不改变上方 2026-07-21 的历史生产状态。真实 Provider 评审、故障注入、扩大流量和发布仍需分别授权：
+
+1. 首次发布设置 `MORSE_CHAT_V2_ENABLED=true`、`MORSE_CHAT_V2_CANARY_PERCENT=0`、`MORSE_CHAT_V2_CANARY_INVITE_IDS` 留空、`MORSE_CHAT_HEDGED_FAILOVER_ENABLED=false`、`MORSE_CHAT_SAFE_MODE=false`，发布后先证明没有 Session 进入 v2。
+2. 新管理 UI 可用后，在 `/admin` 创建专用聊天邀请码。一次性明文只保留在当前浏览器内；当场复制后台显示的非敏感灰度 UUID，白名单不使用邀请码明文。
+3. 把该实际 UUID 直接写入 `/opt/revolution/shared/.env.production` 的 `MORSE_CHAT_V2_CANARY_INVITE_IDS`，使用不回显值的 UUID 格式检查后只重启 Web；不得使用环境变量占位符、`$` 引用或尖括号占位值代替实际值，不得在终端输出、日志或截图中记录该值。
+4. 保持 hedging 关闭，完成已授权的 20 轮真实输出评审；通过后再单独启用 hedging 做故障注入，并分别记录调用数、延迟和失败原因。
+5. 白名单观察通过后，依次设置 `MORSE_CHAT_V2_CANARY_PERCENT=25` 和 `MORSE_CHAT_V2_CANARY_PERCENT=100`；每次只重启 Web，复验 live、ready、公开页面、v1 会话和目标 canary 行为后再继续。
+6. 人格或证据异常时设置 `MORSE_CHAT_SAFE_MODE=true`，运行时 safe mode 优先于已开启的 hedging；成本异常时只设置 `MORSE_CHAT_HEDGED_FAILOVER_ENABLED=false`；隐私问题时设置 `MORSE_CHAT_ENABLED=false`。每次切换后只重启 Web 并复验，不改数据库。
+7. `004` / `005` 均为 additive migration，不执行 down migration；`005` 只增加并回填非敏感邀请备注快照。旧镜像会忽略 `004` / `005` 的新增列和表，确认开关已降级且 live/ready 正常后可切回上一冻结镜像，不删除迁移或数据。
+
+所有 Chat v2 变量都是服务端配置，禁止增加 `NEXT_PUBLIC_` 前缀。生产预检必须拒绝 canary 超界、非 UUID、备用节点缺 key 或缺 URL、未解析引用和尖括号占位值；预检不调用 Provider，也不回显灰度 UUID、Provider URL 或 key。
+
 ## 发布边界
 
 - 只发布已冻结的 Git 提交，不从脏工作区复制文件。

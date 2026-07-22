@@ -50,6 +50,7 @@ npm run production:worker
 - Chat 主节点使用 `OPENAI_API_KEY` / `OPENAI_BASE_URL`；最多两个备用节点分别使用完整的 `OPENAI_FALLBACK_1_*` 和 `OPENAI_FALLBACK_2_*` 成对配置。生产备用 URL 必须是无凭据 HTTPS URL，缺 key 或缺 URL 均 fail closed。
 - 三个 Chat 节点共享 `OPENAI_CHAT_MODEL`、`OPENAI_CHAT_PROTOCOL`、`OPENAI_REASONING_EFFORT` 和兼容 User-Agent。切换顺序固定为主节点、备用 1、备用 2，只在尚未输出正文时发生；已有部分回答或访客停止后不再切换。每个节点仍受单节点总超时约束，整次切换共享“单节点总超时 × 节点数”的上限。Embedding 继续使用独立配置。
 - 数据库 Provider 配置使用独立 32-byte 随机主密钥执行 AES-256-GCM 加密。生产只接受 `MORSE_PROVIDER_CONFIG_KEY_FILE` 和正整数 `MORSE_PROVIDER_CONFIG_KEY_VERSION`；直接值 `MORSE_PROVIDER_CONFIG_KEY`、mock origin 和私网 HTTP Provider override 均 fail closed。该 Secret 只挂载给 Web，Worker、Migration、Ingest 与 edge 不得读取。
+- Chat v2 灰度变量均为服务端配置，不得增加 `NEXT_PUBLIC_` 前缀。生产预检按运行时解析规则验证布尔值、0-100 整数 canary 和规范 UUID 列表；备用节点缺 key 或缺 URL、未解析引用和尖括号占位值均 fail closed，预检不调用 Provider，也不回显 UUID、Provider URL 或 key。
 - 私密简历默认使用 `MORSE_RESUME_ENABLED=false`。生产首次发布必须保持关闭，完成 migration `003`、私有卷初始化、最小 grants、健康检查和回滚检查后，才可在单独授权下启用。
 - 启用私密简历时，Web 还必须获得 `MORSE_RESUME_STORAGE_DIR`、`MORSE_RESUME_ENCRYPTION_KEY_FILE`、`MORSE_RESUME_KEY_VERSION`、`MORSE_RESUME_FINGERPRINT_SECRET`、`MORSE_RESUME_TRUSTED_PROXY_HOPS` 和独立 `MORSE_RESUME_COOKIE`。生产禁止使用直接值 `MORSE_RESUME_ENCRYPTION_KEY`；加密密钥只通过名为 `resume_encryption_key` 的部署 Secret 文件挂载给 Web。
 - Worker 只挂载简历密文卷用于保留期清理，不读取加密密钥。聊天、Embedding、Search、Ingest、Migration 和 edge 均不得获得简历文件或密钥。
@@ -86,7 +87,21 @@ npm run production:worker
 | `POST /api/admin/invites` | 管理员 Session + 精确 Origin | 生成邀请码；只在本次响应返回明文 |
 | `PATCH /api/admin/invites/[inviteId]` | 管理员 Session + 精确 Origin | 仅允许将邀请码停用 |
 
-### 4.2 私密简历运维
+### 4.2 Chat v2 disabled-first 灰度
+
+以下步骤每次都先保留当前已观察镜像，记录变更后只重启 Web，并复验 live、ready、公开页面和 v1 会话。真实 Provider 评审、故障注入和扩大流量分别需要明确授权，不能因配置已写入手册而自动执行：
+
+1. 首次发布设置 `MORSE_CHAT_V2_ENABLED=true`、`MORSE_CHAT_V2_CANARY_PERCENT=0`、`MORSE_CHAT_V2_CANARY_INVITE_IDS` 留空、`MORSE_CHAT_HEDGED_FAILOVER_ENABLED=false`、`MORSE_CHAT_SAFE_MODE=false`，先证明没有 Session 进入 v2。
+2. 部署新管理 UI 后创建专用聊天邀请码。一次性明文只保留在当前浏览器内；当场复制后台显示的非敏感灰度 UUID，不能用邀请码明文做白名单。
+3. 把该实际 UUID 直接写入服务器 `.env.production` 的 `MORSE_CHAT_V2_CANARY_INVITE_IDS`，执行不回显值的 UUID 格式检查后只重启 Web；不得使用环境变量占位符、`$` 引用或尖括号占位值代替实际值。
+4. 保持 hedging 关闭，完成已授权的 20 轮真实输出评审；评审通过后再单独启用 hedging 做故障注入，不能把两类成本混在同一批调用中。
+5. 白名单验证稳定后，依次设置 `MORSE_CHAT_V2_CANARY_PERCENT=25` 和 `MORSE_CHAT_V2_CANARY_PERCENT=100`，每次只重启 Web 并独立观察错误率、延迟、Provider 尝试数和回答质量。
+6. 人格或证据异常时设置 `MORSE_CHAT_SAFE_MODE=true`，运行时 safe mode 优先于已开启的 hedging；成本异常时只设置 `MORSE_CHAT_HEDGED_FAILOVER_ENABLED=false`；隐私问题时设置 `MORSE_CHAT_ENABLED=false`。每次降级后只重启 Web 并复验，不改数据库。
+7. `004` / `005` 均为 additive migration，不执行 down migration；`005` 只增加并回填非敏感邀请备注快照。旧镜像会忽略 `004` / `005` 的新增列和表，因此上述开关已降级且 live/ready 通过后可切回上一冻结镜像，不删除迁移或数据。
+
+本节是未来发布合同，不改变“当前生产状态与硬化余项”中的历史事实；在部署 revision、运行配置和真实观察完成前，不得描述为 Chat v2 已上线。
+
+### 4.3 私密简历运维
 
 - 公开入口只显示授权状态；真实 PDF 只通过 `GET /api/resume/file` 在有效简历 Session 下解密返回。响应必须保持 `Content-Type: application/pdf`、`Cache-Control: private, no-store`、`X-Content-Type-Options: nosniff` 和内联 disposition。
 - 管理员在 `/admin` 上传最终 PDF、创建一人一码的简历邀请或停用邀请。明文邀请码只在创建响应中出现一次；停用后关联简历 Session 下一次请求立即失效。聊天邀请码与简历邀请码互不升级权限。

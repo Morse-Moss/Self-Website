@@ -55,6 +55,8 @@ const webEnv = {
   MORSE_ALLOW_TEST_EMBEDDINGS: 'false',
 };
 
+const chatV2CanaryInviteId = '1d4b7060-f9d1-4e2d-9b2d-503a3f96454d';
+
 test('web production config does not require a TOTP secret for password-only admin login', () => {
   assert.deepEqual(validateProductionRole('web', webEnv), {
     alertsEnabled: null,
@@ -224,6 +226,69 @@ test('production preflight permits only explicitly opted-in private HTTP embeddi
       && error.code === 'PRODUCTION_EMBEDDING_CONFIG_INVALID'
     ),
   );
+});
+
+test('production preflight accepts disabled-first and safe-mode-first Chat v2 rollout settings', () => {
+  for (const chatV2Env of [
+    {
+      MORSE_CHAT_V2_ENABLED: 'true',
+      MORSE_CHAT_V2_CANARY_PERCENT: '0',
+      MORSE_CHAT_V2_CANARY_INVITE_IDS: '',
+      MORSE_CHAT_HEDGED_FAILOVER_ENABLED: 'false',
+      MORSE_CHAT_SAFE_MODE: 'false',
+    },
+    {
+      MORSE_CHAT_V2_ENABLED: 'true',
+      MORSE_CHAT_V2_CANARY_PERCENT: '0',
+      MORSE_CHAT_V2_CANARY_INVITE_IDS: chatV2CanaryInviteId,
+      MORSE_CHAT_HEDGED_FAILOVER_ENABLED: 'true',
+      MORSE_CHAT_SAFE_MODE: 'true',
+    },
+  ]) {
+    assert.deepEqual(validateProductionRole('web', {
+      ...webEnv,
+      ...chatV2Env,
+    }), {
+      alertsEnabled: null,
+      role: 'web',
+    });
+  }
+});
+
+test('production preflight rejects unresolved or invalid Chat v2 rollout settings without echoing values', () => {
+  const invalidCases = [
+    { MORSE_CHAT_V2_CANARY_PERCENT: '-1' },
+    { MORSE_CHAT_V2_CANARY_PERCENT: '101' },
+    { MORSE_CHAT_V2_CANARY_PERCENT: '1.5' },
+    { MORSE_CHAT_V2_CANARY_PERCENT: '$CHAT_V2_CANARY_PERCENT' },
+    { MORSE_CHAT_V2_CANARY_INVITE_IDS: 'not-a-uuid' },
+    { MORSE_CHAT_V2_CANARY_INVITE_IDS: '$CHAT_V2_CANARY_INVITE_IDS' },
+    { MORSE_CHAT_V2_CANARY_INVITE_IDS: '<actual-invite-uuid>' },
+    { MORSE_CHAT_V2_ENABLED: '$CHAT_V2_ENABLED' },
+    { MORSE_CHAT_HEDGED_FAILOVER_ENABLED: '<true-or-false>' },
+    { MORSE_CHAT_SAFE_MODE: '${CHAT_SAFE_MODE}' },
+  ];
+
+  for (const chatV2Env of invalidCases) {
+    assert.throws(
+      () => validateProductionRole('web', {
+        ...webEnv,
+        MORSE_CHAT_V2_ENABLED: 'true',
+        MORSE_CHAT_V2_CANARY_PERCENT: '0',
+        MORSE_CHAT_V2_CANARY_INVITE_IDS: chatV2CanaryInviteId,
+        MORSE_CHAT_HEDGED_FAILOVER_ENABLED: 'false',
+        MORSE_CHAT_SAFE_MODE: 'false',
+        ...chatV2Env,
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof ProductionConfigError);
+        assert.equal(error.code, 'PRODUCTION_RUNTIME_CONFIG_INVALID');
+        assert.equal(error.message, 'PRODUCTION_RUNTIME_CONFIG_INVALID');
+        assert.doesNotMatch(String(error), /CHAT_V2|actual-invite|true-or-false/);
+        return true;
+      },
+    );
+  }
 });
 
 test('production preflight fails closed with stable codes and never echoes values', () => {
