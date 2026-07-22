@@ -3,9 +3,9 @@ import { test } from 'node:test';
 
 import {
   buildSystemInstructions,
-  buildV2SystemInstructions,
   normalizeChatRequest,
 } from '../lib/server/chat-core.ts';
+import { buildV2SystemInstructions } from '../lib/server/chat-prompt.ts';
 import type { KnowledgeSource } from '../lib/server/rag.ts';
 import type { SearchResponse } from '../lib/server/search-provider.ts';
 

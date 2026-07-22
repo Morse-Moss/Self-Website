@@ -208,11 +208,15 @@ test('S8 chat evaluation covers answer safety, runtime errors, and source naviga
   assert.match(runner, /deterministic adversarial prompt\/provider/);
   assert.match(runner, /normalizeChatRequest/);
   assert.match(runner, /AdversarialDeterministicProvider/);
-  assert.match(runner, /buildSystemInstructions/);
+  assert.match(runner, /buildV2SystemInstructions/);
   assert.match(runner, /publicKnowledgeHref/);
   assert.match(runner, /projectSlugs\.includes\(projectSlug\)/);
   assert.match(runner, /href === item\.expectedHref/);
-  assert.match(runner, /raw prompts and answers are intentionally omitted/);
+  assert.match(
+    runner,
+    /results\.push\(\{\s*id: item\.id,\s*category: item\.category,\s*pass: passed,\s*\}\)/,
+  );
+  assert.doesNotMatch(runner, /results\.push\(\{[^}]*\b(?:answer|query)\b/s);
   const productionBoundary = data.cases.find(
     (item) => item.id === 'ai-leadgen-production-boundary',
   ) as (typeof data.cases)[number] & {

@@ -26,7 +26,14 @@ test('chat contract exposes the exact shipped workflow and public value sets', (
   ]);
   assert.deepEqual(CHAT_BEHAVIOR_VERSIONS, ['v1', 'v2']);
   assert.deepEqual(CHAT_WORKFLOWS, ['chat', 'jd_match', 'diagnosis']);
-  assert.deepEqual(CHAT_PHASES, ['routing', 'knowledge', 'web', 'answering', 'handoff']);
+  assert.deepEqual(CHAT_PHASES, [
+    'routing',
+    'knowledge',
+    'web',
+    'answering',
+    'switching',
+    'handoff',
+  ]);
   assert.deepEqual(CHAT_SOURCE_KINDS, ['local', 'official', 'github', 'web']);
   assert.deepEqual(DIAGNOSIS_FIELD_NAMES, [
     'problem',

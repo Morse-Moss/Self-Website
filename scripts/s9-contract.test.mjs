@@ -23,10 +23,11 @@ test('S9 closeout remains recorded after the task center advances beyond S9', ()
   const closeout = readUtf8('docs/verify/s9/s9-closeout.md');
 
   assert.equal(runState.match(/^## current_pointer$/gm)?.length, 1);
-  assert.match(
-    runState,
-    /^\*\*(?:S10-CS-[0-8][^*]+|S10 (?:LOCAL_READY|REAL_PROVIDER_VERIFIED \/ MAINLINE_ABSORPTION|MAINLINE_LOCAL_READY|MAINLINE_PROVIDER_READY)|S11-[^*]+)\*\*$/m,
-  );
+  const currentPointer = runState.match(
+    /^## current_pointer\n\*\*([^*\n]+)\*\*$/m,
+  )?.[1];
+  assert.ok(currentPointer);
+  assert.doesNotMatch(currentPointer, /^S9(?:\b|[- ])/);
   assert.ok(runState.includes('## S9 Morse portfolio closeout evidence(2026-07-15)'));
   assert.ok(readme.includes('S9 Morse 作品集重设计已完成并进入 `origin/master`'));
   assert.ok(blueprint.includes('## 14. S9 Morse 作品集重设计(2026-07-14)'));
