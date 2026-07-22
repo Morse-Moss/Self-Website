@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -9,12 +9,20 @@ interface EvalCase {
   category: string;
   query: string;
   expectedBehavior: string;
+  feedbackRegression?: string;
   workflow?: 'chat' | 'jd_match' | 'diagnosis';
   intent?: 'general' | 'recruiter' | 'collaboration' | 'peer';
-  expectedHref?: string;
+}
+
+interface ReviewCase {
+  id: string;
+  prompt: string;
+  primaryDimension: string;
+  expectedSignals: string[];
 }
 
 const dataPath = path.join(process.cwd(), 'content', 'chat-eval.json');
+const reviewCasesPath = path.join(process.cwd(), 'content', 'chat-review-cases.json');
 const runnerPath = path.join(process.cwd(), 'scripts', 'chat-eval.mjs');
 
 function readDataset(): { version: number; cases: EvalCase[] } {
@@ -24,12 +32,20 @@ function readDataset(): { version: number; cases: EvalCase[] } {
   };
 }
 
-test('S10 deterministic chat evaluation covers the frozen product and safety matrix', () => {
+test('S10 deterministic evaluation freezes 72 cases and the three user regressions', () => {
   const dataset = readDataset();
-  assert.ok(dataset.version >= 3, 'S10 evaluation schema must be version 3 or newer');
-  assert.ok(dataset.cases.length >= 36, 'S10 evaluation must contain at least 36 cases');
-  assert.equal(new Set(dataset.cases.map((item) => item.id)).size, dataset.cases.length);
+  assert.ok(dataset.version >= 4, 'conversation v2 evaluation schema must be version 4 or newer');
+  assert.equal(dataset.cases.length, 72);
+  assert.equal(new Set(dataset.cases.map((item) => item.id)).size, 72);
   assert.ok(dataset.cases.every((item) => item.query.trim() && item.expectedBehavior.trim()));
+
+  assert.deepEqual(
+    dataset.cases
+      .filter((item) => item.feedbackRegression)
+      .map((item) => item.feedbackRegression)
+      .sort(),
+    ['Provider回答失败', '数字Morse像开发助手', '招聘措辞过直'].sort(),
+  );
 
   const categories = new Set(dataset.cases.map((item) => item.category));
   for (const category of [
@@ -47,19 +63,21 @@ test('S10 deterministic chat evaluation covers the frozen product and safety mat
     'stable-error',
     'diagnosis-notification',
     'source-navigation',
+    'social',
+    'identity',
+    'recruitment-positive',
+    'explicit-unknown',
+    'no-rag',
+    'recovery',
   ]) {
-    assert.ok(categories.has(category), `S10 evaluation category is missing: ${category}`);
+    assert.ok(categories.has(category), `conversation v2 category is missing: ${category}`);
   }
 
   const workflows = new Set(dataset.cases.map((item) => item.workflow).filter(Boolean));
   assert.deepEqual([...workflows].sort(), ['chat', 'diagnosis', 'jd_match']);
 
-  const audiences = new Set(dataset.cases.map((item) => item.intent).filter(Boolean));
-  for (const audience of ['recruiter', 'collaboration', 'peer']) {
-    assert.ok(audiences.has(audience as EvalCase['intent']), `audience is missing: ${audience}`);
-  }
-
-  const requiredBehaviors = [
+  const behaviors = new Set(dataset.cases.map((item) => item.expectedBehavior));
+  for (const behavior of [
     'grounded',
     'refuse',
     'error',
@@ -70,14 +88,71 @@ test('S10 deterministic chat evaluation covers the frozen product and safety mat
     'reject-request',
     'dedupe-notification',
     'source-contract',
-  ];
-  const behaviors = new Set(dataset.cases.map((item) => item.expectedBehavior));
-  for (const behavior of requiredBehaviors) {
-    assert.ok(behaviors.has(behavior), `S10 evaluation behavior is missing: ${behavior}`);
+    'social',
+    'identity',
+    'recruitment',
+    'explicit-unknown',
+    'no-rag',
+    'recovery',
+  ]) {
+    assert.ok(behaviors.has(behavior), `evaluation behavior is missing: ${behavior}`);
   }
 });
 
-test('S10 evaluation runner is deterministic, offline, and passes every declared case', () => {
+test('S10 validators are scenario-specific instead of forcing gaps and next steps globally', () => {
+  const source = fs.readFileSync(runnerPath, 'utf8');
+  assert.equal(source.includes("answer.includes('下一步')"), false);
+  assert.equal(source.includes('/不足|无法|不会|边界/'), false);
+  for (const validator of [
+    'validateSocial',
+    'validateIdentity',
+    'validateGrounded',
+    'validateRecruitment',
+    'validateExplicitUnknown',
+    'validateSafetyRefusal',
+    'validateRecovery',
+  ]) {
+    assert.match(source, new RegExp(`function ${validator}\\b`));
+  }
+});
+
+test('deterministic provider derives behavior only from real instructions and messages', () => {
+  const source = fs.readFileSync(runnerPath, 'utf8');
+  const providerSource = source.slice(
+    source.indexOf('class AdversarialDeterministicProvider'),
+    source.indexOf('function sourcesFor'),
+  );
+  assert.doesNotMatch(providerSource, /evalItem|expectedBehavior/u);
+  assert.match(providerSource, /request\.instructions/u);
+  assert.match(providerSource, /request\.messages/u);
+});
+
+test('removing identity or recruitment instructions makes the matching cases fail', () => {
+  for (const [mutation, category] of [
+    ['drop-identity-instructions', 'identity'],
+    ['drop-recruitment-instructions', 'recruitment-positive'],
+  ]) {
+    const run = spawnSync(process.execPath, [runnerPath], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      env: {
+        PATH: process.env.PATH,
+        SYSTEMROOT: process.env.SYSTEMROOT,
+        MORSE_CHAT_EVAL_MUTATION: mutation,
+      },
+      timeout: 20_000,
+    });
+    assert.equal(run.status, 1, `${mutation} must make the evaluation fail`);
+    const result = JSON.parse(run.stdout) as {
+      cases: Array<{ category: string; pass: boolean }>;
+    };
+    const categoryCases = result.cases.filter((item) => item.category === category);
+    assert.ok(categoryCases.length > 0);
+    assert.ok(categoryCases.some((item) => !item.pass), `${category} cases must detect ${mutation}`);
+  }
+});
+
+test('S10 evaluation is offline, passes 72/72, and emits no prompt or answer text', () => {
   const output = execFileSync(process.execPath, [runnerPath], {
     cwd: process.cwd(),
     encoding: 'utf8',
@@ -89,18 +164,49 @@ test('S10 evaluation runner is deterministic, offline, and passes every declared
   });
   const result = JSON.parse(output) as {
     evidence: string;
-    cases: number;
-    passed: boolean;
-    byWorkflow: Record<string, { cases: number; passed: number }>;
+    externalCalls: number;
+    total: number;
+    passed: number;
+    pass: boolean;
+    cases: Array<Record<string, unknown>>;
   };
 
   assert.equal(result.evidence, 'deterministic adversarial prompt/provider');
-  assert.ok(result.cases >= 36);
-  assert.equal(result.passed, true);
-  assert.deepEqual(Object.keys(result.byWorkflow).sort(), ['chat', 'diagnosis', 'jd_match', 'non-chat']);
-  for (const summary of Object.values(result.byWorkflow)) {
-    assert.ok(summary.cases > 0);
-    assert.equal(summary.passed, summary.cases);
+  assert.equal(result.externalCalls, 0);
+  assert.equal(result.total, 72);
+  assert.equal(result.passed, 72);
+  assert.equal(result.pass, true);
+  assert.equal(result.cases.length, 72);
+  for (const item of result.cases) {
+    assert.deepEqual(Object.keys(item).sort(), ['category', 'id', 'pass']);
+    assert.equal(item.pass, true);
+  }
+  assert.equal(/"(?:query|prompt|answer|instructions|messages)"\s*:/iu.test(output), false);
+});
+
+test('manual review input contains 20 synthetic cases balanced across five dimensions', () => {
+  const dataset = JSON.parse(fs.readFileSync(reviewCasesPath, 'utf8')) as {
+    version: number;
+    dimensions: string[];
+    cases: ReviewCase[];
+  };
+  assert.equal(dataset.version, 1);
+  assert.deepEqual(dataset.dimensions, [
+    'naturalCommunication',
+    'identityConsistency',
+    'evidenceRelevance',
+    'recruitmentHelpfulness',
+    'honestyPrivacy',
+  ]);
+  assert.equal(dataset.cases.length, 20);
+  assert.equal(new Set(dataset.cases.map((item) => item.id)).size, 20);
+  assert.ok(dataset.cases.every((item) => item.prompt.trim() && item.expectedSignals.length > 0));
+  for (const dimension of dataset.dimensions) {
+    assert.equal(
+      dataset.cases.filter((item) => item.primaryDimension === dimension).length,
+      4,
+      `${dimension} must own four review cases`,
+    );
   }
 });
 

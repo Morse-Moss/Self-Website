@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "cases": [
     { "id": "recruiter-project-fit", "category": "recruiter", "query": "从招聘方视角，哪些项目最能证明 Agent 系统开发能力？", "expectedBehavior": "grounded", "workflow": "chat", "intent": "recruiter", "mode": "interviewer", "sourceScenario": "approved" },
     { "id": "recruiter-evidence-gap", "category": "recruiter", "query": "招聘判断里还有哪些能力信息缺少公开证据？", "expectedBehavior": "grounded", "workflow": "chat", "intent": "recruiter", "mode": "interviewer", "sourceScenario": "approved" },
@@ -65,6 +65,30 @@
     { "id": "oversized-jd", "category": "workflow-boundary", "query": "拒绝超过 12,000 字的 JD。", "expectedBehavior": "reject-request", "workflow": "jd_match", "requestScenario": "oversized-jd", "expectedErrorFragment": "12,000" },
     { "id": "chat-rejects-jd-field", "category": "workflow-boundary", "query": "普通聊天不得混入 JD 字段。", "expectedBehavior": "reject-request", "workflow": "chat", "requestScenario": "chat-with-jd", "expectedErrorFragment": "only valid for jd_match" },
     { "id": "diagnosis-rejects-message-field", "category": "workflow-boundary", "query": "初诊不得混入普通 message 字段。", "expectedBehavior": "reject-request", "workflow": "diagnosis", "requestScenario": "diagnosis-with-message", "expectedErrorFragment": "only valid for chat workflow" },
-    { "id": "diagnosis-notification-dedupe", "category": "diagnosis-notification", "query": "同一初诊完成事件只能写入一个稳定 Outbox key。", "expectedBehavior": "dedupe-notification", "workflow": "diagnosis", "diagnosisId": "00000000-0000-4000-8000-000000000053", "expectedDedupeKey": "diagnosis-complete:00000000-0000-4000-8000-000000000053" }
+    { "id": "diagnosis-notification-dedupe", "category": "diagnosis-notification", "query": "同一初诊完成事件只能写入一个稳定 Outbox key。", "expectedBehavior": "dedupe-notification", "workflow": "diagnosis", "diagnosisId": "00000000-0000-4000-8000-000000000053", "expectedDedupeKey": "diagnosis-complete:00000000-0000-4000-8000-000000000053" },
+
+    { "id": "social-hello", "category": "social", "query": "你好", "expectedBehavior": "social", "workflow": "chat", "intent": "general", "mode": "general", "sourceScenario": "none" },
+    { "id": "social-thanks", "category": "social", "query": "谢谢！", "expectedBehavior": "social", "workflow": "chat", "intent": "general", "mode": "general", "sourceScenario": "none" },
+    { "id": "social-goodbye", "category": "social", "query": "再见", "expectedBehavior": "social", "workflow": "chat", "intent": "general", "mode": "general", "sourceScenario": "none" },
+
+    { "id": "identity-digital-morse", "category": "identity", "query": "你是谁？", "expectedBehavior": "identity", "workflow": "chat", "intent": "general", "mode": "general", "sourceScenario": "approved", "feedbackRegression": "数字Morse像开发助手" },
+    { "id": "identity-origin", "category": "identity", "query": "介绍一下自己。", "expectedBehavior": "identity", "workflow": "chat", "intent": "general", "mode": "general", "sourceScenario": "approved" },
+    { "id": "identity-positioning", "category": "identity", "query": "数字 Morse 的定位是什么？", "expectedBehavior": "identity", "workflow": "chat", "intent": "general", "mode": "general", "sourceScenario": "approved" },
+
+    { "id": "recruitment-positive-evidence", "category": "recruitment-positive", "query": "从招聘角度介绍最匹配的项目和能力证据。", "expectedBehavior": "recruitment", "workflow": "chat", "intent": "recruiter", "mode": "interviewer", "sourceScenario": "cross-project", "feedbackRegression": "招聘措辞过直" },
+    { "id": "recruitment-positive-transferable", "category": "recruitment-positive", "query": "这个岗位需要 Agent 编排，请说明直接证据和可迁移能力。", "expectedBehavior": "recruitment", "workflow": "chat", "intent": "recruiter", "mode": "interviewer", "sourceScenario": "approved" },
+    { "id": "recruitment-positive-no-score", "category": "recruitment-positive", "query": "请判断候选人与岗位的匹配情况，但不要给百分比。", "expectedBehavior": "recruitment", "workflow": "chat", "intent": "recruiter", "mode": "interviewer", "sourceScenario": "approved" },
+
+    { "id": "explicit-unknown-kubernetes", "category": "explicit-unknown", "query": "招聘判断中，公开资料能确认候选人是否做过 Kubernetes 生产集群吗？", "expectedBehavior": "explicit-unknown", "workflow": "chat", "intent": "recruiter", "mode": "interviewer", "sourceScenario": "none" },
+    { "id": "explicit-unknown-certification", "category": "explicit-unknown", "query": "招聘判断中，候选人是否持有云厂商认证？", "expectedBehavior": "explicit-unknown", "workflow": "chat", "intent": "recruiter", "mode": "interviewer", "sourceScenario": "none" },
+    { "id": "explicit-unknown-scale", "category": "explicit-unknown", "query": "招聘判断中，有没有公开证据证明候选人运维过千万级日请求系统？", "expectedBehavior": "explicit-unknown", "workflow": "chat", "intent": "recruiter", "mode": "interviewer", "sourceScenario": "none" },
+
+    { "id": "no-rag-social-hello", "category": "no-rag", "query": "嗨", "expectedBehavior": "no-rag", "workflow": "chat", "intent": "general", "mode": "general", "expectedIntent": "social", "expectedEvidence": "none" },
+    { "id": "no-rag-social-thanks", "category": "no-rag", "query": "多谢", "expectedBehavior": "no-rag", "workflow": "chat", "intent": "general", "mode": "general", "expectedIntent": "social", "expectedEvidence": "none" },
+    { "id": "no-rag-identity-card", "category": "no-rag", "query": "请介绍自己", "expectedBehavior": "no-rag", "workflow": "chat", "intent": "general", "mode": "general", "expectedIntent": "identity", "expectedEvidence": "identity" },
+
+    { "id": "recovery-provider-failure", "category": "recovery", "query": "Provider 回答失败时如何继续？", "expectedBehavior": "recovery", "workflow": "chat", "intent": "general", "mode": "general", "sourceScenario": "approved", "recoveryScenario": "provider-failed", "feedbackRegression": "Provider回答失败" },
+    { "id": "recovery-guard-rejection", "category": "recovery", "query": "回答被安全守卫拒绝后返回什么？", "expectedBehavior": "recovery", "workflow": "chat", "intent": "general", "mode": "general", "sourceScenario": "approved", "recoveryScenario": "guard-rejected" },
+    { "id": "recovery-identity-summary", "category": "recovery", "query": "你是谁？", "expectedBehavior": "recovery", "workflow": "chat", "intent": "general", "mode": "general", "sourceScenario": "approved", "recoveryScenario": "identity" }
   ]
 }
