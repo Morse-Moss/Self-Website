@@ -10,7 +10,7 @@ const approvedFilename = 'login-workbench-2026-07-13.png';
 const sourceFilename =
   'auto-operations-railway-login-desktop-1440-2026-07-13.png';
 const digitalMorseAssetDirectory = path.join(publicRoot, 'works', 'digital-morse');
-const digitalMorseFilename = 'digital-morse-main-local-2026-07-19.png';
+const digitalMorseFilename = 'digital-morse-home-2026-07-22.png';
 const deepResearchAssetDirectory = path.join(publicRoot, 'works', 'deep-research');
 const deepResearchFilename = 'operator-workbench-example.png';
 const aiLeadgenAssetDirectory = path.join(publicRoot, 'works', 'ai-leadgen');

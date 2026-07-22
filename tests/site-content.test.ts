@@ -420,10 +420,10 @@ test("publishes only the five separately approved project media assets", () => {
   assert.equal(mediaProjects[3]?.media?.width, 1440);
   assert.equal(mediaProjects[3]?.media?.height, 1080);
   assert.equal(mediaProjects[3]?.media?.label, "运行界面 · 示例数据");
-  assert.equal(mediaProjects[4]?.media?.width, 576);
-  assert.equal(mediaProjects[4]?.media?.height, 648);
-  assert.match(mediaProjects[4]?.media?.evidence.runMode ?? "", /本地 production build/);
-  assert.equal(mediaProjects[4]?.media?.label, "产品界面 · 示例会话");
+  assert.equal(mediaProjects[4]?.media?.width, 1381);
+  assert.equal(mediaProjects[4]?.media?.height, 770);
+  assert.match(mediaProjects[4]?.media?.evidence.runMode ?? "", /线上站点截图/);
+  assert.equal(mediaProjects[4]?.media?.label, "线上站点首页 · 当前界面");
 });
 
 test("keeps the approved global copy and four FAQ topics", () => {
@@ -518,11 +518,11 @@ test("digital Morse leads with visitor value, solo delivery, and honest future s
   assert.ok(project.media);
   assert.equal(
     project.media.src,
-    "/works/digital-morse/digital-morse-main-local-2026-07-19.png",
+    "/works/digital-morse/digital-morse-home-2026-07-22.png",
   );
   assert.equal(
     project.media.label,
-    "产品界面 · 示例会话",
+    "线上站点首页 · 当前界面",
   );
   assert.deepEqual(project.askMorse, {
     label: "问数字摩斯",
