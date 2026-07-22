@@ -4,10 +4,19 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**S11-PRIVATE_RESUME_DISABLED_FIRST_PRODUCTION_OBSERVED / LIMITED_LAUNCH**
+**S11-ADMIN_API_MANAGEMENT_PRODUCTION_OBSERVED / LIMITED_LAUNCH**
 
 ## next_allowed_pointer
-当前生产实例运行 `233a3a5`，私密简历代码、migration `003`、私有卷和 Secret 已按 disabled-first 合同部署；开关保持 `false`，真实 PDF 与真实邀请码均不存在。后续只允许在新授权下依次启用、上传最终 PDF、创建受控邀请码和观察；生产硬化余项关闭前不得宣称完整 `ONLINE_READY`。
+当前生产实例运行 `68c114c`。OpenAI-compatible API 管理代码、migration `004`、最小 grants 和 Web-only Provider 主密钥已部署；数据库中尚无管理员创建的中转或模型，运行继续使用三个只读环境目标，本轮未登录管理员、未调用真实 Provider。私密简历继续保持 `MORSE_RESUME_ENABLED=false`。后续 Provider 发现、测试、激活或删除必须由管理员在 `/admin/api` 显式执行；生产硬化余项关闭前不得宣称完整 `ONLINE_READY`。
+
+## Admin API management production release (2026-07-22)
+
+- Mode: `STAGED / CRITICAL / DEPLOYED`; status: `OBSERVED / LIMITED_LAUNCH`。
+- Release: 功能提交 `299289c` 由 merge commit `d8d1fa2` 吸收到 `master`，治理修正 `68c114c` 同步到 `origin/master` 与 `origin/codex/admin-api-management`；冻结归档 SHA-256 为 `cda39da3370cb697e570f32a4e8d35b51fa67ac8da0fa1a34d5e5fb6e3fd4746`。`/opt/revolution/current` 及 Web、Worker、Edge working directory 均指向 `/opt/revolution/releases/68c114c/revolution`。
+- Data/Security: migration `001`-`004` checksum 通过，`004` 为 `4003b42c5b240fc0d56cb05ae7a6b32dcb83cdcd62316644072fc319dfe2f17a`；runtime AI 配置权限门禁 PASS，migration 角色保持非超级用户。Provider 主密钥为 `0600 / 1001:1001`，只挂载给 Web；Worker、Migration、Ingest 与 Edge 均不可见。配置行数为 connections `0`、models `0`、route revisions `0`、runtime state `1`、events `0`。
+- Verification: 本地全量 `768/768`、生产构建 30 个静态/动态页面与 API 路由；生产 migration 幂等，连续两次 ingest 均为 0 更新、40 documents 跳过。公网 live/ready、root、works、admin、`/admin/api` 均为 HTTP 200，三个未登录 Provider 管理读 API 均为 401，release smoke PASS；Web、Worker、Edge、DB restart count 均为 0，发布后错误关键词计数均为 0。
+- Recovery: migration 前数据库备份为 `/opt/revolution/shared/backups/pre-68c114c-20260722T014946Z.dump`，SHA-256 `5069ee6c3c8c7888a16b455cb8c91ef0d274f6ba32fd258c805963d129597675`；生产环境文件另有受限备份。旧 releases、数据库备份和持久卷保留。
+- Boundary: 未读取生产管理员密码，未创建、测试、发现、激活或删除数据库 Provider 配置，未调用 Chat/Bocha/Feishu，未启用私密简历，未清理旧 release 或持久卷。认证后的管理流程保留为管理员显式验收。
 
 ## Private resume disabled-first production release (2026-07-21)
 

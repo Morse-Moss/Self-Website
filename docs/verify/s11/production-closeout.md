@@ -2,19 +2,19 @@
 
 ## Outcome
 
-- 日期：2026-07-18 首发；2026-07-20 首页 Warp Tunnel、五项目、公开知识与三节点 Chat 容灾更新
+- 日期：2026-07-18 首发；2026-07-22 OpenAI-compatible API 管理更新
 - 模式：`STAGED / CRITICAL / DEPLOYED`
 - 状态：`PRODUCTION_OBSERVED / LIMITED_LAUNCH`
 - 公网入口：`https://aimorse.tech`
-- 当前应用 release：`741ddad`
+- 当前应用 release：`68c114c`
 - 实例：腾讯云 Lighthouse 首尔 `lhins-0oly57x8`，公网 `43.133.68.202`
 
 ## Release And Runtime
 
-- `/opt/revolution/current` 指向 `/opt/revolution/releases/741ddad/revolution`；Web、Worker 与 Edge 的 Compose working directory 均指向该冻结 release。
+- `/opt/revolution/current` 指向 `/opt/revolution/releases/68c114c/revolution`；Web、Worker 与 Edge 的 Compose working directory 均指向该冻结 release。
 - `db`、`embedding`、`web` 为 healthy；`worker` 与 `edge` 为 running。
 - PostgreSQL 16 + pgvector 使用 TLS 和独立 admin/runtime/migration/ingest/backup 凭据。
-- migration 001/002 首次执行和幂等复验通过；grants 完成后 migration 角色不再拥有超级用户权限。
+- migration 001/002/003/004 与 checksum 复验通过；AI 配置 grants 和专用 SQL 权限门禁通过，migration 角色不再拥有超级用户权限。
 - 公开知识共 40 documents / 47 chunks；本轮生产摄取为 0 document 更新、0 chunk 更新、40 documents 跳过。
 - 首个生产邀请码已创建，但邀请码明文、管理员凭据、TOTP、Provider key、数据库密码和私钥不进入本证据或 Git。
 
@@ -30,6 +30,7 @@
 - `https://www.aimorse.tech/works` -> 301 到 `https://aimorse.tech/works`。
 - `MORSE_RELEASE_BASE_URL=https://aimorse.tech npm run release:smoke` -> `{"ok":true}`，同时验证 HSTS、frame、content-type、referrer、permissions policy 和无 `X-Powered-By`。
 - `GET https://aimorse.tech/admin` -> HTTP 200；未登录 `GET /api/admin/invites` -> HTTP 401。
+- `GET https://aimorse.tech/admin/api` -> HTTP 200；未登录 `GET /api/admin/providers`、`/runtime` 与 `/events` -> HTTP 401。
 - 生产管理员脚本包含管理密码与邀请码入口，不含动态验证码、`totpCode` 或 `inviteTotpCode`。
 - 受控真实 Provider smoke -> HTTP 200、4 个 delta、消息额度 30 -> 29；不保存原始 prompt、回答、header 或 key。
 - 三节点容灾发布使用 `gpt-5.6-terra`、Responses 和 high reasoning；切流前主节点、强制一级接管、强制二级接管均通过，切流后运行 Web 容器主节点复验通过。共 4 次真实调用，均有正文、完整终态和 usage；不保存正文、原始 payload、header 或 key。
@@ -71,10 +72,11 @@
 - `44ed094`：收紧 S9 网络监控，仅接受 Next.js 生成的 favicon 指纹查询，消除导航取消导致的误报，同时继续拒绝任意查询参数。
 - 本轮发布前全量测试 601/601、生产构建 21 routes；完整生产 S9 连续两轮无 failures、console/page errors、外部请求或横向溢出；公网 live/ready、作品页、正式主图与 release smoke 均通过。
 - `741ddad`：加入一个主节点和两个有序备用节点、Responses high reasoning、正文前切换、部分输出/主动停止保护、usage 累加与跨节点共享总超时。focused 59/59、全量 609/609、Chat eval 54/54、生产构建 21 routes；生产 migration/grants、40/40 摄取跳过、公网 live/ready/release smoke 与 Web/Worker/Edge 零重启、零错误关键词均通过。
+- `299289c` / `d8d1fa2` / `68c114c`：实现、吸收并发布仅管理员可用的 OpenAI-compatible API 管理。生产应用 migration `004`、Web-only Provider 主密钥、最小 grants 和运行权限门禁；公网 `/admin/api`、未登录 401、live/ready、release smoke、零重启与零错误关键词通过。配置表尚无管理员创建的中转或模型，本轮没有读取管理员密码或调用真实 Provider。
 
 ## Residual Boundaries
 
 - 当前为有限生产发布，不标记完整 `ONLINE_READY`。
 - 仍需监控、托管备份与恢复演练、入口层速率/连接限制、真实 Bocha/Feishu smoke、moderate dependency advisory 处置及更多国内网络可达性复核。
 - 线上 Web release 只来自冻结提交，没有复制本地脏工作区。五项目页面、正式主图和 40 documents / 47 chunks 公开知识已进入生产。
-- 本次三节点发布调用真实 Chat Provider 4 次；未调用 Bocha、Feishu、Alibaba Mail、SMTP/IMAP Provider，未创建生产邀请码明文，也未清理旧 release 或持久卷。认证后的邀请码到 SSE/DB 完整对话未在本轮重新创建，既有浏览器全链证据不由 adapter smoke 替代。
+- 历史三节点发布曾调用真实 Chat Provider 4 次；本次 API 管理发布未调用任何真实 Provider，未读取管理员密码，未创建或切换数据库 Provider 配置，也未清理旧 release 或持久卷。认证后的管理操作仍需管理员显式验收，公开 adapter smoke 不替代该证据。
