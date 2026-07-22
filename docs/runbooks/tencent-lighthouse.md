@@ -16,7 +16,7 @@
 - 管理入口：`https://aimorse.tech/admin` 不在公开导航中。release `68c114c` 增加 `/admin/api`，只管理全站 OpenAI-compatible Chat 中转、模型和一主五备活动路由；配置密钥使用 Web-only 文件型主密钥加密。当前配置表没有管理员创建的中转或模型，运行继续使用三个只读环境目标。发布验收没有读取生产管理员密码；认证后的发现、真实测试、激活、回退和删除由管理员显式执行。
 - 私密简历：代码、API、migration `003`、权限为 `0700` 的私有卷和权限为 `0600` 的文件型 Secret 已部署；Web 可读取 Secret，Worker 不挂载 Secret。`MORSE_RESUME_ENABLED=false`，四张私密表总行数为 0，真实 PDF 和真实简历邀请码均未创建；不得把 disabled-first 发布描述为已启用。
 
-仍需保持诚实边界：监控、托管备份与恢复演练、独立 edge 速率/连接限制、真实 Bocha/Feishu smoke、moderate dependency advisory 处置和更多国内网络可达性复核尚未完成。首页 Warp Tunnel、五项目页面与公开知识已进入生产，但剩余工作区改动和未跟踪证据没有进入生产。
+仍需保持诚实边界：监控、托管备份与恢复演练、独立 edge 速率/连接限制、真实 Bocha/Feishu smoke、依赖 advisory 处置和更多国内网络可达性复核尚未完成。本次生产 `npm ci` 报告 1 个 moderate、2 个 high，未执行未经评估的自动修复。首页 Warp Tunnel、五项目页面与公开知识已进入生产，但剩余工作区改动和未跟踪证据没有进入生产。
 
 ## 管理入口与邀请码发布验收
 

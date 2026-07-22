@@ -77,6 +77,6 @@
 ## Residual Boundaries
 
 - 当前为有限生产发布，不标记完整 `ONLINE_READY`。
-- 仍需监控、托管备份与恢复演练、入口层速率/连接限制、真实 Bocha/Feishu smoke、moderate dependency advisory 处置及更多国内网络可达性复核。
+- 仍需监控、托管备份与恢复演练、入口层速率/连接限制、真实 Bocha/Feishu smoke、依赖 advisory 处置及更多国内网络可达性复核。本次生产 `npm ci` 报告 1 个 moderate、2 个 high，未执行自动修复。
 - 线上 Web release 只来自冻结提交，没有复制本地脏工作区。五项目页面、正式主图和 40 documents / 47 chunks 公开知识已进入生产。
 - 历史三节点发布曾调用真实 Chat Provider 4 次；本次 API 管理发布未调用任何真实 Provider，未读取管理员密码，未创建或切换数据库 Provider 配置，也未清理旧 release 或持久卷。认证后的管理操作仍需管理员显式验收，公开 adapter smoke 不替代该证据。

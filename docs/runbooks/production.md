@@ -145,7 +145,7 @@ npm run production:worker
 - 接入监控与日志平台，覆盖 5xx、Provider/Embedding/Search、pool、Outbox、cleanup 和容量。
 - 冻结托管备份范围并完成一次独立恢复演练；当前只承诺公开知识可重建。
 - 获得当次授权后分别执行真实 Bocha 和 Feishu smoke。
-- 复核并处置当前生产依赖审计中的 moderate advisory，不执行无评估的 `audit fix`。
+- 复核并处置当前生产依赖 advisory；2026-07-22 生产 `npm ci` 报告 1 个 moderate、2 个 high，不执行无评估的 `audit fix`。
 - 将经人工确认的最终内容与素材冻结成新提交后再发布；不得从当前脏工作区直接覆盖生产。
 - 私密简历启用、真实 PDF 上传、真实邀请码创建/兑换、密钥轮换和恢复演练仍需分别授权；不得因 disabled-first 基础设施已部署而自动执行。
 

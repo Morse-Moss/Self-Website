@@ -24,6 +24,7 @@
 - 公网 live、ready、root、works、`/admin`、`/admin/api` 均为 HTTP 200；未登录 Provider 列表、runtime 与 events API 均为 HTTP 401。
 - `MORSE_RELEASE_BASE_URL=https://aimorse.tech npm run release:smoke` 返回 `{"ok":true}`。
 - DB、Embedding、Web 为 healthy，Worker 与 Edge 为 running；DB、Web、Worker、Edge restart count 均为 0，发布后 Web/Worker/Edge 错误关键词计数均为 0。
+- 生产 `npm ci` 报告 1 个 moderate、2 个 high dependency advisory；本轮未执行未经评估的自动修复，保留为有限发布余项。
 
 ## Boundary
 
