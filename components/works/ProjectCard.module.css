@@ -48,6 +48,16 @@
   object-position: top;
 }
 
+.card[data-project-slug='digital-morse'] .media {
+  aspect-ratio: 1381 / 770;
+  background: var(--surface);
+}
+
+.card[data-project-slug='digital-morse'] .image {
+  object-fit: contain;
+  object-position: center;
+}
+
 .mediaPlaceholder {
   display: grid;
   width: 100%;

@@ -366,6 +366,20 @@ test('project card layout keeps stable desktop and mobile gaps through detail ex
   assert.match(cardStyles, /\.details\s*\{[\s\S]*grid-column:\s*1\s*\/\s*-1/);
 });
 
+test('Digital Morse keeps its full widescreen cover without changing other project crops', () => {
+  const styles = readSource(files.projectCardStyles);
+
+  assert.match(styles, /\.image\s*\{[\s\S]*?object-fit:\s*cover;/);
+  assert.match(
+    styles,
+    /\.card\[data-project-slug=['"]digital-morse['"]\]\s+\.media\s*\{[\s\S]*?aspect-ratio:\s*1381\s*\/\s*770;[\s\S]*?background:\s*var\(--surface\);/,
+  );
+  assert.match(
+    styles,
+    /\.card\[data-project-slug=['"]digital-morse['"]\]\s+\.image\s*\{[\s\S]*?object-fit:\s*contain;/,
+  );
+});
+
 test('legacy case routes validate slugs and redirect without rendering independent details', () => {
   const source = readSource(files.caseRoute);
 
