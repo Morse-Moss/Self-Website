@@ -4,10 +4,18 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**PRIVATE_RESUME_ACTIVATED_PRODUCTION_OBSERVED / LIMITED_LAUNCH**
+**CHAT_V2_DISABLED_FIRST_PRODUCTION_OBSERVED / LIMITED_LAUNCH**
 
 ## next_allowed_pointer
-当前生产实例运行 `6ef4ace`。私密简历已设置为 `MORSE_RESUME_ENABLED=true`，经确认的定向版最终 PDF 已通过认证后台上传；未授权状态为 `enabled=true`、`authorized=false`、`documentAvailable=true`，文件接口保持 401。上线验收码已兑换后停用，关联会话已立即失效；后续对外访问仍需管理员在 `/admin` 为具体访客创建并交付新码。OpenAI-compatible API 管理状态未变，数据库中仍无管理员创建的中转或模型，本轮未调用真实 Provider。生产硬化余项关闭前不得宣称完整 `ONLINE_READY`。
+当前生产实例运行 `e56e457`。Chat v2 已按 disabled-first 发布：服务端总开关开启、canary 0%、白名单为空、hedging 与 safe mode 均关闭；生产 `v2_sessions=0`、`chat_provider_attempts=0`，本轮未调用真实 Provider。私密简历保持 `MORSE_RESUME_ENABLED=true`，当前加密文档仍在，未授权文件接口保持 401。下一步只有在单独授权调用数、成本、评审数据和邀请码后，才可创建专用 canary 并开始真实 Provider 20 轮评审；25%、100% 和 24/48 小时观察仍是后续独立门槛。生产硬化余项关闭前不得宣称完整 `ONLINE_READY`。
+
+## Chat v2 disabled-first production release (2026-07-22)
+
+- Mode: `DIRECT / CRITICAL / DEPLOYED`; status: `PRODUCTION_OBSERVED / DISABLED_FIRST / LIMITED_LAUNCH`。
+- Release: `e56e457` 已进入 `origin/master` 与 `origin/codex/chat-v2-release`；冻结归档 SHA-256 为 `6d7c3e2166cf364076c2347232056d9309a6c9e12a2231766501fd29502f5b16`。`/opt/revolution/current` 指向 `/opt/revolution/releases/e56e457/revolution`。
+- Data/Security: migration 005/006 已应用，registry 为 001–006；grants、AI 配置与私密简历权限门禁通过，migration 角色为非超级用户。迁移前数据库备份 SHA-256 为 `bace5c1b7e94df94542c0e686e885d9dcd50549a4162f7dff16fa784daf998b7`；旧 release、私有卷与 Secrets 保留。
+- Verification: 生产构建 30 routes；公网 live/ready/health/root/works/admin/admin-api 均为 200，未登录管理 API 与简历文件为 401，release smoke PASS。知识摄取为 0 更新、40 documents 跳过；Web/Worker/Edge 重启计数与发布后错误关键词计数均为 0。
+- Boundary: `v2_sessions=0`、`chat_provider_attempts=0`；未创建评审邀请码、未登录管理员、未启动真实 Provider 20 轮评审、未读取或回显密钥及私密简历内容。
 
 ## Digital Morse cover refresh production release (2026-07-22)
 

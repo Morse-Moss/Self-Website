@@ -1,12 +1,12 @@
 # Digital Morse Chat v2 release 集成账本
 
 > 日期：2026-07-22
-> 状态：`RELEASE_VERIFIED / DEPLOY_PENDING / REAL_PROVIDER_NOT_RUN`
+> 状态：`PRODUCTION_OBSERVED / DISABLED_FIRST / REAL_PROVIDER_NOT_RUN`
 > 模式：`CEO / STAGED / CRITICAL / DEPLOYED`
 > release 分支：`codex/chat-v2-release`
 > release 集成基线：`2ae3ccc docs: record chat v2 local closeout`
 > source 历史：`codex/private-resume-access` 的 Task 13 提交证据保留，不改写为 release 提交
-> 主线：release merge `c7de64a` 已吸收 `origin/master=6e7e0ef`；远端 `master` 尚未更新到 release HEAD
+> 主线：release merge `c7de64a` 已吸收此前 `origin/master=6e7e0ef`；功能 release `e56e457` 已推送到远端主线并完成 disabled-first 生产发布
 
 ## release 集成结果
 
@@ -52,11 +52,11 @@
 ## 开放门槛
 
 - 固定 20 轮真实 Provider 输出评审仍需单独授权调用数、成本和数据边界；当前没有用 Mock 冒充真实输出质量。
-- 发布前剩余：提交最终 correction delta、再次确认远端主线未移动后 push。
+- 发布与 push 已完成；生产 closeout 见 `docs/verify/chat-v2/chat-v2-production-closeout.md`。
 - 生产发布按 disabled-first 执行：`MORSE_CHAT_V2_ENABLED=true`、canary 0%、空白名单、hedging 关闭、safe mode 关闭；migration 005/006 只向前执行，不做 down migration。
 - disabled-first 部署只证明 v2 代码和 schema 已上线但流量为 0；真实 Provider 评审、邀请码白名单、25%、100% 以及 24/48 小时指标观察都是后续独立门槛。
 
 ## 交付边界
 
-- 本账本记录的是 release 集成的本地证据，不代表主线、远端或生产已经更新。
-- 当前未 push、未部署、未创建评审邀请码、未调用真实 Provider。
+- 本账本保留 release 集成的本地证据；远端与生产事实以 `chat-v2-production-closeout.md` 为准。
+- 当前已 push、已完成 0% canary 的 disabled-first 部署；未创建评审邀请码、未调用真实 Provider。
