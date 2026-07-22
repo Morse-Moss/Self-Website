@@ -5,6 +5,35 @@ import {
   buildApprovedIdentityCard,
   buildPersonaInstructions,
 } from '../lib/server/chat-persona.ts';
+import { buildV2SystemInstructions } from '../lib/server/chat-prompt.ts';
+import type { ChatRouteDecision } from '../lib/server/chat-route-policy.ts';
+
+function conversationRoute(): ChatRouteDecision {
+  return {
+    routeKind: 'conversation',
+    reasonCode: 'stable_general_conversation',
+    topicKind: 'none',
+    topicRef: null,
+    evidenceClass: 'none',
+    inheritedFromTurnId: null,
+    release: 'segment',
+    requiresEmbedding: false,
+    requiresSearch: false,
+    deterministicReply: null,
+  };
+}
+
+test('conversation prompt contains no project card or recruitment template', () => {
+  const prompt = buildV2SystemInstructions({
+    route: conversationRoute(),
+    question: '今天吃饭了吗？',
+    sources: [],
+  });
+
+  assert.match(prompt, /数字 Morse/);
+  assert.match(prompt, /今天吃饭了吗/);
+  assert.doesNotMatch(prompt, /approved_identity_card|公开项目摘要|建议面谈核实|\[来源/);
+});
 
 test('social persona is first-person and contains no developer-assistant contract', () => {
   const prompt = buildPersonaInstructions('social');
@@ -16,16 +45,24 @@ test('social persona is first-person and contains no developer-assistant contrac
 });
 
 test('approved identity card is built only from public profile and project summaries', () => {
-  const card = buildApprovedIdentityCard();
+  const card = buildApprovedIdentityCard(['content-agent', 'digital-morse', 'deep-research']);
 
   assert.match(card, /Agent 系统开发者 × AI Native 实践者/);
   assert.match(card, /我把研究、内容生产、运营协作和个人知识入口/);
   assert.match(card, /内容创作 Agent 系统/);
   assert.match(card, /数字摩斯/);
+  assert.doesNotMatch(card, /深度研究 Agent 系统/);
   assert.doesNotMatch(
     card,
     /morse_resume_access|resume_documents|private[\\/]resume|trustedPersonNote/i,
   );
+});
+
+test('bare identity card contains positioning without a project list', () => {
+  const card = buildApprovedIdentityCard();
+
+  assert.match(card, /公开定位/);
+  assert.doesNotMatch(card, /公开项目摘要/);
 });
 
 test('persona layer changes with the current turn intent without changing identity', () => {

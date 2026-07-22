@@ -1,7 +1,83 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { inspectChatAnswer } from '../lib/server/chat-output-guard.ts';
+import {
+  inspectChatAnswer,
+  inspectTemplateRepetition,
+} from '../lib/server/chat-output-guard.ts';
+import type { ChatRouteDecision } from '../lib/server/chat-route-policy.ts';
+
+function personalFactRoute(
+  topicRef: string,
+  evidenceClass: 'direct' | 'transferable' | 'unavailable',
+): ChatRouteDecision {
+  return {
+    routeKind: 'personal_fact',
+    reasonCode: 'personal_capability_query',
+    topicKind: 'capability',
+    topicRef,
+    evidenceClass,
+    inheritedFromTurnId: null,
+    release: 'complete',
+    requiresEmbedding: false,
+    requiresSearch: false,
+    deterministicReply: null,
+  };
+}
+
+test('personal fact answer must mention the requested capability', () => {
+  const result = inspectChatAnswer({
+    answer: '我做过很多容器项目。[来源1]',
+    route: personalFactRoute('kubernetes', 'transferable'),
+    workflow: 'chat',
+    question: '你有 Kubernetes 生产经验吗？',
+    sourceCount: 1,
+  });
+
+  assert.deepEqual(result.reasons, ['answer_not_direct']);
+});
+
+test('transferable evidence cannot be upgraded to direct experience', () => {
+  const result = inspectChatAnswer({
+    answer: '我有 Kubernetes 生产实战经验。[来源1]',
+    route: personalFactRoute('kubernetes', 'transferable'),
+    workflow: 'chat',
+    question: '你有 Kubernetes 生产经验吗？',
+    sourceCount: 1,
+  });
+
+  assert.ok(result.reasons.includes('unsupported_evidence_upgrade'));
+});
+
+test('conversation rejects grounded and recruitment formatting', () => {
+  const route: ChatRouteDecision = {
+    ...personalFactRoute('kubernetes', 'unavailable'),
+    routeKind: 'conversation',
+    topicKind: 'none',
+    topicRef: null,
+    evidenceClass: 'none',
+  };
+  const result = inspectChatAnswer({
+    answer: '根据资料，项目匹配如下：[来源1] 建议面谈核实。',
+    route,
+    workflow: 'chat',
+    question: '今天吃饭了吗？',
+    sourceCount: 1,
+  });
+
+  assert.ok(result.reasons.includes('wrong_route_format'));
+});
+
+test('different grounded questions reject the same long template answer', () => {
+  const current = [
+    '这个项目由我负责完整交付，先从目标和约束出发梳理架构，再通过自动化测试、失败恢复、发布冒烟和运行观测确认结果。',
+    '回答只引用本轮已审核的公开证据，并明确区分已经验证的行为、仍需核实的边界和后续可以继续讨论的技术取舍。',
+  ].join('');
+  const result = inspectTemplateRepetition({ current, previousAnswers: [current] });
+
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.reasons, ['template_repetition']);
+});
 
 test('guard rejects an unsolicited gap list and a fake percentage', () => {
   const result = inspectChatAnswer({
