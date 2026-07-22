@@ -357,14 +357,25 @@ test('a completed primary returns done without waiting for an unstarted hedge', 
   })(), 50);
 
   assert.equal(fallbackStarted, false);
-  assert.deepEqual(events, [
-    { type: 'delta', text: 'Primary.' },
-    {
-      type: 'done',
-      usage: { inputTokens: 7, outputTokens: 2 },
-      providerAlias: 'primary',
-    },
-  ]);
+  const attemptEvents = events.filter(
+    (event): event is Extract<AnswerEvent, { type: 'attempt' }> => event.type === 'attempt',
+  );
+  assert.equal(attemptEvents.length, 1);
+  assert.equal(attemptEvents[0].attempt.status, 'completed');
+  const publicEvents = events.filter((event) => event.type !== 'attempt');
+  assert.equal(publicEvents.length, 2);
+  assert.deepEqual(publicEvents[0], { type: 'delta', text: 'Primary.' });
+  assert.equal(publicEvents[1]?.type, 'done');
+  if (publicEvents[1]?.type !== 'done') throw new Error('done event is missing');
+  assert.deepEqual({
+    type: publicEvents[1].type,
+    usage: publicEvents[1].usage,
+    providerAlias: publicEvents[1].providerAlias,
+  }, {
+    type: 'done',
+    usage: { inputTokens: 7, outputTokens: 2 },
+    providerAlias: 'primary',
+  });
 });
 
 test('a segment winner propagates a later stream failure instead of emitting done', async () => {
@@ -394,7 +405,16 @@ test('a segment winner propagates a later stream failure instead of emitting don
   }, streamFailure);
 
   assert.equal(fallbackStarted, false);
-  assert.deepEqual(events, [{ type: 'delta', text: 'Visible segment.' }]);
+  assert.deepEqual(
+    events.filter((event) => event.type !== 'attempt'),
+    [{ type: 'delta', text: 'Visible segment.' }],
+  );
+  const attempts = events.filter(
+    (event): event is Extract<AnswerEvent, { type: 'attempt' }> => event.type === 'attempt',
+  );
+  assert.equal(attempts.length, 1);
+  assert.equal(attempts[0].attempt.status, 'failed');
+  assert.equal(attempts[0].attempt.errorCode, 'PROVIDER_STREAM_FAILED');
 });
 
 test('hedging never has more than two nodes in flight and starts node three after one exits', async () => {

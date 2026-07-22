@@ -115,6 +115,8 @@ test('S10 runtime snapshot builds and starts production without a junction file 
   assert.match(source, /mkdtempSync\(path\.join\(runtimeParent, 's10-runtime-'\)\)/u);
   assert.match(source, /\[nextCli, 'build', '--webpack'\]/u);
   assert.match(source, /\[nextCli, 'start', '--hostname'/u);
+  assert.match(source, /MORSE_PROVIDER_MOCK_ORIGIN:\s*`http:\/\/127\.0\.0\.1:\$\{proxyPort\}`/u);
+  assert.match(source, /env:\s*\{ \.\.\.appEnv, NODE_ENV: 'production' \}/u);
   assert.doesNotMatch(source, /\[nextCli, 'dev'/u);
 });
 
@@ -387,6 +389,22 @@ test('S10 browser cleanup exposes a stable failure after every owned fallback fa
   );
 
   assert.equal(unrefs, 1);
+});
+
+test('S10 browser cleanup bounds a stalled primary cleanup before using the owned profile', async () => {
+  const calls: string[] = [];
+
+  await cleanupS10Browser({
+    browserProcess: { unref: () => { calls.push('unref'); } },
+    profileDir: 'C:/Temp/revolution-s9-edge-owned',
+  }, {
+    cleanupBrowser: async () => new Promise(() => {}),
+    cleanupTimeoutMs: 5,
+    removeProfile: async () => { calls.push('remove'); },
+    terminateProfileProcesses: () => { calls.push('profile'); },
+  });
+
+  assert.deepEqual(calls, ['profile', 'unref', 'remove']);
 });
 
 test('S10 export acceptance clicks the visible format option instead of the hidden radio', () => {

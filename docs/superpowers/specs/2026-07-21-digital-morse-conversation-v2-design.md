@@ -199,7 +199,7 @@
 
 ## 10. 尝试审计与隐私
 
-使用下一号 additive migration `004_chat_v2.sql` 新增 `interaction_provider_attempts`，每次节点尝试保存：
+使用 additive migration `005_chat_v2.sql` 新增 `chat_provider_attempts`，每次节点尝试保存：
 
 - `turn_id`、`attempt_no`、稳定节点别名、启动类型（primary/hedge/failover）和是否赢家。
 - 启动延迟、首字节耗时、完成耗时、状态和稳定错误码。

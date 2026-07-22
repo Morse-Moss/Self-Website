@@ -97,7 +97,7 @@ npm run production:worker
 4. 保持 hedging 关闭，完成已授权的 20 轮真实输出评审；评审通过后再单独启用 hedging 做故障注入，不能把两类成本混在同一批调用中。
 5. 白名单验证稳定后，依次设置 `MORSE_CHAT_V2_CANARY_PERCENT=25` 和 `MORSE_CHAT_V2_CANARY_PERCENT=100`，每次只重启 Web 并独立观察错误率、延迟、Provider 尝试数和回答质量。
 6. 人格或证据异常时设置 `MORSE_CHAT_SAFE_MODE=true`，运行时 safe mode 优先于已开启的 hedging；成本异常时只设置 `MORSE_CHAT_HEDGED_FAILOVER_ENABLED=false`；隐私问题时设置 `MORSE_CHAT_ENABLED=false`。每次降级后只重启 Web 并复验，不改数据库。
-7. `004` / `005` 均为 additive migration，不执行 down migration；`005` 只增加并回填非敏感邀请备注快照。旧镜像会忽略 `004` / `005` 的新增列和表，因此上述开关已降级且 live/ready 通过后可切回上一冻结镜像，不删除迁移或数据。
+7. `005` / `006` 均为 additive migration，不执行 down migration；`006` 只增加并回填非敏感邀请备注快照。旧镜像会忽略 `005` / `006` 的新增列和表，因此上述开关已降级且 live/ready 通过后可切回上一冻结镜像，不删除迁移或数据。
 
 本节是未来发布合同，不改变“当前生产状态与硬化余项”中的历史事实；在部署 revision、运行配置和真实观察完成前，不得描述为 Chat v2 已上线。
 

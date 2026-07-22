@@ -660,7 +660,17 @@ test('runChat persists failed and stopped provider attempts before terminal comp
         ORDER BY turn.id`,
       [[failedTurnId, stoppedTurnId]],
     );
-    assert.equal(terminal.rowCount, 2);
+    const terminalDiagnostics = await pool.query(
+      `SELECT turn.id::text, turn.status, turn.error_code,
+              attempt.attempt_index, attempt.status AS attempt_status
+         FROM interaction_turns turn
+         LEFT JOIN interaction_provider_attempts attempt
+           ON attempt.interaction_turn_id = turn.id
+        WHERE turn.id = ANY($1::uuid[])
+        ORDER BY turn.id, attempt.attempt_index`,
+      [[failedTurnId, stoppedTurnId]],
+    );
+    assert.equal(terminal.rowCount, 2, JSON.stringify(terminalDiagnostics.rows));
     assert.deepEqual(new Set(terminal.rows.map((row) => row.status)), new Set(['failed', 'stopped']));
     assert.deepEqual(new Set(terminal.rows.map((row) => row.attempt_status)), new Set(['failed', 'stopped']));
     assert.deepEqual(

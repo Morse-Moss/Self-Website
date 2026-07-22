@@ -144,12 +144,17 @@ class HarnessError extends Error {
 
 export async function cleanupS10Browser(browser, {
   cleanupBrowser = cleanupOwnedBrowser,
+  cleanupTimeoutMs = 10_000,
   removeProfile = removeOwnedProfileWithRetry,
   terminateProfileProcesses = terminateOwnedProfileProcesses,
 } = {}) {
   if (!browser) return;
   try {
-    await cleanupBrowser(browser);
+    await withTimeout(
+      cleanupBrowser(browser),
+      cleanupTimeoutMs,
+      'browser:cleanup-timeout',
+    );
   } catch (error) {
     try {
       await terminateProfileProcesses(browser.profileDir);
@@ -1789,10 +1794,11 @@ export async function runS10MockE2E() {
     const appEnv = {
       ...process.env,
       NEXT_TELEMETRY_DISABLED: '1',
-      NODE_ENV: 'production',
+      NODE_ENV: 'test',
       DATABASE_URL: database.connectionString,
       MORSE_PUBLIC_ORIGIN: targetUrl.origin,
       MORSE_LOCAL_RELEASE_SMOKE: 'true',
+      MORSE_PROVIDER_MOCK_ORIGIN: `http://127.0.0.1:${proxyPort}`,
       MORSE_DATABASE_SSL_MODE: 'disable',
       OPENAI_API_KEY: 'mock-primary-key',
       OPENAI_BASE_URL: `http://127.0.0.1:${proxyPort}/v1`,
@@ -1824,7 +1830,7 @@ export async function runS10MockE2E() {
     };
     const build = spawnOwned(process.execPath, [nextCli, 'build', '--webpack'], {
       cwd: runtimeDir,
-      env: appEnv,
+      env: { ...appEnv, NODE_ENV: 'production' },
     });
     ownedChildren.push(build);
     const buildExitCode = await withTimeout(

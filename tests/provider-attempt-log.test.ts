@@ -9,6 +9,7 @@ import pg from 'pg';
 import {
   recordProviderAttemptEvent,
   reserveHedgedProviderAttempt,
+  summarizeProviderAttempts,
 } from '../lib/server/provider-attempt-log.ts';
 import { createDisposablePostgresDatabase } from './postgres-test-utils.ts';
 
@@ -153,6 +154,22 @@ test('provider attempt events upsert one metadata-only lifecycle and cascade wit
       completed_at: new Date(startedAt.getTime() + 600),
       delete_after: deleteAfter,
     });
+
+    const summaryClient = await pool.connect();
+    try {
+      assert.deepEqual(
+        await summarizeProviderAttempts(summaryClient, interactionTurnId),
+        {
+          attemptCount: 1,
+          costComplete: true,
+          estimatedCostUsd: 0.00014,
+          usage: { inputTokens: 100, outputTokens: 20 },
+          usageComplete: true,
+        },
+      );
+    } finally {
+      summaryClient.release();
+    }
 
     await pool.query('DELETE FROM interaction_turns WHERE id = $1', [interactionTurnId]);
     const afterDelete = await pool.query(

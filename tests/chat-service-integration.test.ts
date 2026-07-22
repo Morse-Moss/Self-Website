@@ -4784,7 +4784,7 @@ test('recruitment guard hides the rejected candidate and strictly regenerates on
       winner: boolean;
     }>(
       `SELECT input_tokens, output_tokens, status, winner
-         FROM interaction_provider_attempts
+         FROM chat_provider_attempts
         WHERE interaction_turn_id = $1
         ORDER BY started_at, execution_id`,
       [turnId],
@@ -4809,7 +4809,7 @@ test('recruitment guard hides the rejected candidate and strictly regenerates on
       now: new Date(now.getTime() + 1_000),
     });
     const afterReplay = await pool!.query(
-      'SELECT 1 FROM interaction_provider_attempts WHERE interaction_turn_id = $1',
+      'SELECT 1 FROM chat_provider_attempts WHERE interaction_turn_id = $1',
       [turnId],
     );
     assert.equal(afterReplay.rowCount, beforeReplay);
@@ -4873,7 +4873,7 @@ test('two guard failures persist only attempt metadata and return a non-consumin
 
     const attempts = await pool!.query<{ row: Record<string, unknown> }>(
       `SELECT to_jsonb(attempt) AS row
-         FROM interaction_provider_attempts AS attempt
+         FROM chat_provider_attempts AS attempt
         WHERE interaction_turn_id = $1
         ORDER BY started_at, execution_id`,
       [turnId],
@@ -4920,7 +4920,7 @@ test('two guard failures persist only attempt metadata and return a non-consumin
     }
     assert.deepEqual(await readSessionSnapshot(fixture.accessSessionId), beforeReplay);
     const replayAttempts = await pool!.query(
-      'SELECT 1 FROM interaction_provider_attempts WHERE interaction_turn_id = $1',
+      'SELECT 1 FROM chat_provider_attempts WHERE interaction_turn_id = $1',
       [turnId],
     );
     assert.equal(replayAttempts.rowCount, attempts.rowCount);
@@ -5091,7 +5091,7 @@ test('provider exhaustion returns SAFE_DEGRADED without consuming message quota'
     assert.equal(interaction.error_code, 'SAFE_DEGRADED');
     const attempts = await pool!.query<{ status: string }>(
       `SELECT status
-         FROM interaction_provider_attempts
+         FROM chat_provider_attempts
         WHERE interaction_turn_id = $1`,
       [turnId],
     );
@@ -5197,7 +5197,7 @@ test('v1 same-turn retry books historical v2 attempts plus current legacy usage 
       output_tokens: number;
     }>(
       `SELECT input_tokens, output_tokens
-         FROM interaction_provider_attempts
+         FROM chat_provider_attempts
         WHERE interaction_turn_id = $1
         ORDER BY started_at, execution_id`,
       [turnId],
@@ -5231,7 +5231,7 @@ test('v1 same-turn retry books historical v2 attempts plus current legacy usage 
       output_tokens: number;
     }>(
       `SELECT input_tokens, output_tokens
-         FROM interaction_provider_attempts
+         FROM chat_provider_attempts
         WHERE interaction_turn_id = $1
         ORDER BY started_at, execution_id`,
       [turnId],

@@ -12,8 +12,10 @@ export interface ProviderAttemptKey {
 
 export interface ProviderAttemptSummary {
   attemptCount: number;
+  costComplete: boolean;
   estimatedCostUsd: number | null;
   usage: TokenUsage | null;
+  usageComplete: boolean;
 }
 
 export type ProviderAttemptEvent =
@@ -214,12 +216,16 @@ export async function summarizeProviderAttempts(
   const costCount = Number(row?.cost_count ?? 0);
   return {
     attemptCount: Number(row?.attempt_count ?? 0),
+    usageComplete: usageCount > 0
+      && usageCount === Number(row?.attempt_count ?? 0),
     usage: usageCount > 0
       ? {
           inputTokens: Number(row.input_tokens),
           outputTokens: Number(row.output_tokens),
         }
       : null,
+    costComplete: costCount > 0
+      && costCount === Number(row?.attempt_count ?? 0),
     estimatedCostUsd: costCount > 0 ? Number(row.estimated_cost_usd) : null,
   };
 }

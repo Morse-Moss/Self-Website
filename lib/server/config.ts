@@ -2,6 +2,8 @@ import { EMBEDDING_DIMENSIONS } from './embedding.ts';
 import type { TokenRates } from './budget.ts';
 import type { AnswerReasoningEffort } from './ai-provider.ts';
 
+export type OpenAIReasoningEffort = AnswerReasoningEffort;
+
 type Env = Record<string, string | undefined>;
 
 function required(env: Env, name: string): string {

@@ -216,9 +216,9 @@ test('production runbooks govern disabled-first Chat v2 rollout and additive rol
     assert.match(runbook, /人格或证据异常.*MORSE_CHAT_SAFE_MODE=true/);
     assert.match(runbook, /成本异常.*MORSE_CHAT_HEDGED_FAILOVER_ENABLED=false/);
     assert.match(runbook, /隐私问题.*MORSE_CHAT_ENABLED=false/);
-    assert.match(runbook, /004.*005.*additive migration/);
-    assert.match(runbook, /旧镜像.*忽略.*004.*005/);
-    assert.match(runbook, /005.*非敏感.*邀请备注快照/);
+    assert.match(runbook, /005.*006.*additive migration/);
+    assert.match(runbook, /旧镜像.*忽略.*005.*006/);
+    assert.match(runbook, /006.*非敏感.*邀请备注快照/);
     assert.match(runbook, /不执行 down migration/);
   }
 });

@@ -963,14 +963,22 @@ async function completeTurn(input: {
     await input.client.query('BEGIN');
     const attemptSummary = await summarizeProviderAttempts(input.client, input.turn.turnId);
     let estimatedCostUsd: number | null;
-    if (routed) {
+    let knownCostUsd = input.knownCostUsd;
+    let usageComplete = input.usageComplete;
+    let costComplete = input.costComplete;
+    const summarizedV2 = input.turn.behavior === 'v2'
+      && attemptSummary.attemptCount > 0;
+    if (summarizedV2) {
+      usage = attemptSummary.usage;
+      usageComplete = attemptSummary.usageComplete;
+      costComplete = attemptSummary.costComplete;
+      knownCostUsd = attemptSummary.estimatedCostUsd
+        ?? usageCost(usage, input.config.tokenRates);
+      estimatedCostUsd = costComplete ? knownCostUsd : null;
+    } else if (routed) {
       const aggregate = aggregateProviderAttempts(input.attempts);
       usage = aggregate.usage;
       estimatedCostUsd = input.costComplete ? input.knownCostUsd : null;
-    } else if (input.turn.behavior === 'v2' && attemptSummary.attemptCount > 0) {
-      usage = attemptSummary.usage;
-      estimatedCostUsd = attemptSummary.estimatedCostUsd
-        ?? usageCost(usage, input.config.tokenRates);
     } else {
       const historicalUsage = attemptSummary.usage;
       const historicalCost = attemptSummary.estimatedCostUsd
@@ -995,6 +1003,8 @@ async function completeTurn(input: {
     );
     if (routed) {
       await replaceProviderAttempts(input.client, input.turn.turnId, input.attempts);
+    }
+    if (routed && !summarizedV2) {
       for (const attempt of input.attempts) {
         if (!attempt.usage) continue;
         await input.client.query(
@@ -1043,9 +1053,9 @@ async function completeTurn(input: {
       sources: input.sources,
       usage,
       estimatedCostUsd,
-      knownCostUsd: routed ? input.knownCostUsd : estimatedCostUsd,
-      usageComplete: routed ? input.usageComplete : input.usage !== null,
-      costComplete: routed ? input.costComplete : estimatedCostUsd !== null,
+      knownCostUsd: routed || summarizedV2 ? knownCostUsd : estimatedCostUsd,
+      usageComplete: routed || summarizedV2 ? usageComplete : input.usage !== null,
+      costComplete: routed || summarizedV2 ? costComplete : estimatedCostUsd !== null,
       winner: input.winner,
       provider,
       model,
@@ -1132,30 +1142,8 @@ async function completeDegradedTurn(input: {
 
     if (input.attempts.length > 0) {
       await replaceProviderAttempts(input.client, input.turn.turnId, input.attempts);
-      for (const attempt of input.attempts) {
-        if (!attempt.usage) continue;
-        await input.client.query(
-          `INSERT INTO usage_events
-            (access_session_id, conversation_id, provider, model,
-             input_tokens, output_tokens, estimated_cost_usd, created_at,
-             interaction_turn_id, provider_attempt_index, cost_complete)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-          [
-            input.accessSessionId,
-            input.turn.conversationId,
-            attempt.connectionDisplayName,
-            attempt.modelId,
-            attempt.usage.inputTokens,
-            attempt.usage.outputTokens,
-            attempt.knownCostUsd,
-            attempt.completedAt,
-            input.turn.turnId,
-            attempt.attemptIndex,
-            attempt.costComplete,
-          ],
-        );
-      }
-    } else if (usage && estimatedCostUsd !== null) {
+    }
+    if (usage && estimatedCostUsd !== null) {
       await input.client.query(
         `INSERT INTO usage_events
           (access_session_id, conversation_id, provider, model,
@@ -1293,6 +1281,8 @@ async function compensateTurnOnce(input: CompensationInput): Promise<Compensatio
     const aggregate = aggregateProviderAttempts(input.attempts);
     if (input.attempts.length > 0) {
       await replaceProviderAttempts(input.client, input.turn.turnId, input.attempts);
+    }
+    if (input.attempts.length > 0 && input.turn.behavior !== 'v2') {
       for (const attempt of input.attempts) {
         if (!attempt.usage) continue;
         await input.client.query(
@@ -1824,8 +1814,8 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
           if (error instanceof OperationTimeoutError) throw error;
           throw providerPhaseError(error);
         }
-        throwIfAborted(input.signal);
         if (next.done) {
+          throwIfAborted(input.signal);
           await recordDependencyFailure({
             client: lockClient,
             dependency: 'provider',
@@ -1843,8 +1833,10 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
             ),
             event.attempt,
           ].sort((left, right) => left.attemptIndex - right.attemptIndex);
+          throwIfAborted(input.signal);
           continue;
         }
+        throwIfAborted(input.signal);
         if (event.type === 'delta') {
           answer += event.text;
           yield event;
