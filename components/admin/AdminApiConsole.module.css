@@ -288,6 +288,12 @@
   font-size: var(--fs-3xs);
 }
 
+.runtimeRoute .endpointHost,
+.endpointHost {
+  color: var(--muted);
+  font-family: var(--font-mono);
+}
+
 .testButton {
   min-width: 110px;
   padding: 0 var(--space-2);

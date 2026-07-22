@@ -42,6 +42,8 @@ test('admin API visual smoke covers both breakpoints, errors, and cleanup', () =
   }
   assert.match(source, /admin-api-desktop-1440x900\.png/u);
   assert.match(source, /admin-api-mobile-390x844\.png/u);
+  assert.match(source, /admin-api-runtime-desktop-1440x900\.png/u);
+  assert.match(source, /admin-api-runtime-mobile-390x844\.png/u);
   assert.match(source, /consoleErrors/u);
   assert.match(source, /externalOrigins/u);
   assert.match(source, /finally/u);
@@ -53,8 +55,10 @@ test('admin API visual smoke renders six-target layers and fails closed on clean
   const source = fs.readFileSync(scriptPath, 'utf8');
 
   for (const scenario of [
+    'desktop:endpoint-host',
     'desktop:route-six',
     'desktop:layer-overflow',
+    'mobile:endpoint-host',
     'mobile:route-six',
     'mobile:layer-overflow',
     'mobile:form-overflow',

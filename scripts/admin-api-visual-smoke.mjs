@@ -46,8 +46,10 @@ const expectedChecks = [
   'route-activate',
   'conflict',
   'delete-result',
+  'desktop:endpoint-host',
   'desktop:route-six',
   'desktop:layer-overflow',
+  'mobile:endpoint-host',
   'mobile:route-six',
   'mobile:layer-overflow',
   'mobile:form-overflow',
@@ -571,12 +573,22 @@ async function assertLayout(page, viewport, checks) {
       .filter((item) => item instanceof HTMLElement && item.getClientRects().length > 0 && getComputedStyle(item).opacity !== '0')
       .map((item) => item.getBoundingClientRect().height);
     return {
+      activeEndpointHost: document.querySelector('[data-testid="active-endpoint-host"]')?.textContent?.trim() ?? '',
+      routeEndpointHosts: [...document.querySelectorAll('[data-testid="route-endpoint-host"]')]
+        .map((item) => item.textContent?.trim() ?? ''),
       overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
       minimumControlHeight: controls.length ? Math.min(...controls) : 0,
     };
   })()`);
+  check(
+    geometry.activeEndpointHost === mockUrl.host
+      && geometry.routeEndpointHosts.length >= 3
+      && geometry.routeEndpointHosts.every((host) => host === mockUrl.host),
+    `${viewport.key}:endpoint-host`,
+  );
   check(geometry.overflow <= 1, `${viewport.key}:overflow`);
   check(geometry.minimumControlHeight >= 43.5, `${viewport.key}:control-height`);
+  checks.add(`${viewport.key}:endpoint-host`);
   checks.add(`${viewport.key}:overflow`);
   checks.add(`${viewport.key}:control-height`);
 }
@@ -697,6 +709,7 @@ export async function runAdminApiVisualSmoke() {
     await testProviderThroughUi(page, adminPassword);
     checks.add('provider-test');
     await assertLayout(page, viewports[0], checks);
+    screenshots.push(await capture(page, 'admin-api-runtime-desktop-1440x900.png'));
     markStage('desktop:route-six');
     await composeSixTargetDraft(page, 'desktop', checks);
     screenshots.push(await capture(page, 'admin-api-desktop-1440x900.png'));
@@ -707,6 +720,7 @@ export async function runAdminApiVisualSmoke() {
     await navigate(page, '/admin/api');
     await waitFor(page, 'document.querySelector(\'[data-testid="admin-api-console"]\')', 'mobile:ready');
     await assertLayout(page, viewports[1], checks);
+    screenshots.push(await capture(page, 'admin-api-runtime-mobile-390x844.png'));
     await composeSixTargetDraft(page, 'mobile', checks);
     screenshots.push(await capture(page, 'admin-api-mobile-390x844.png'));
     await closeLayer(page);

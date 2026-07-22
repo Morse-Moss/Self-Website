@@ -426,6 +426,14 @@ function environmentTargets(options: AdminProviderServiceOptions): Array<{
   });
 }
 
+function safeEndpointHost(baseUrl: string): string | null {
+  try {
+    return new URL(baseUrl).host || null;
+  } catch {
+    return null;
+  }
+}
+
 async function withOperationGate<T>(
   pool: Pool,
   options: AdminProviderServiceOptions,
@@ -1031,6 +1039,27 @@ export async function getProviderRuntimeSummary(
   options: AdminProviderServiceOptions,
 ) {
   const route = await readActiveRouteRaw(pool);
+  const configuredEnvironmentTargets = environmentTargets(options);
+  const environmentHosts = new Map(configuredEnvironmentTargets.map((target) => [
+    target.key,
+    safeEndpointHost(target.baseUrl),
+  ]));
+  const databaseVersionIds = route?.targets.flatMap(
+    (target) => target.databaseModelVersionId ?? [],
+  ) ?? [];
+  const databaseHosts = databaseVersionIds.length > 0
+    ? await pool.query<{ base_url: string; model_version_id: string }>(
+        `SELECT model.id::text AS model_version_id, connection.base_url
+           FROM ai_model_presets model
+           JOIN ai_connections connection ON connection.id = model.connection_version_id
+          WHERE model.id = ANY($1::uuid[])`,
+        [databaseVersionIds],
+      )
+    : { rows: [] };
+  const databaseHostByVersion = new Map(databaseHosts.rows.map((row) => [
+    row.model_version_id,
+    safeEndpointHost(row.base_url),
+  ]));
   const canRollback = route ? (await pool.query<{ can_rollback: boolean }>(
     `SELECT previous_active_revision_id IS NOT NULL AS can_rollback
        FROM ai_route_revisions WHERE id = $1`,
@@ -1040,10 +1069,18 @@ export async function getProviderRuntimeSummary(
     activeRevision: route?.revisionNumber ?? 0,
     canRollback,
     routeRevisionId: route?.id ?? null,
-    targets: route?.targets ?? [],
-    environmentTargets: environmentTargets(options).map((target) => ({
+    targets: route?.targets.map((target) => ({
+      ...target,
+      endpointHost: target.environmentTargetKey
+        ? environmentHosts.get(target.environmentTargetKey) ?? null
+        : target.databaseModelVersionId
+          ? databaseHostByVersion.get(target.databaseModelVersionId) ?? null
+          : null,
+    })) ?? [],
+    environmentTargets: configuredEnvironmentTargets.map((target) => ({
       configDigest: target.snapshot.configDigest,
       connectionDisplayName: target.snapshot.connectionDisplayName,
+      endpointHost: safeEndpointHost(target.baseUrl),
       environmentTargetKey: target.key,
       modelId: target.snapshot.modelId,
       protocol: target.snapshot.protocol,

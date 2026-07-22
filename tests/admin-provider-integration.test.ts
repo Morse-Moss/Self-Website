@@ -333,6 +333,56 @@ test('provider administration versions configuration and returns only redacted c
   });
 });
 
+test('runtime summary identifies environment and database routes by safe endpoint host', async () => {
+  await withDatabase(async (pool) => {
+    const baseOptions = options();
+    const serviceOptions = options({
+      runtimeConfig: {
+        ...baseOptions.runtimeConfig,
+        openaiBaseUrl: 'https://environment.example:8443/v1/private?token=environment-query-secret',
+        openaiFallbacks: [{
+          apiKey: 'fallback-secret',
+          baseUrl: 'https://fallback.example/v1/private?token=fallback-query-secret',
+        }],
+      },
+    });
+    const created = await createProviderConnection(pool, {
+      name: 'Gateway',
+      baseUrl: 'https://gateway.example:9443/v1/private',
+      userAgent: null,
+      apiKey: 'top-secret-key',
+      firstModel: model,
+    }, serviceOptions);
+    await testProviderModel(pool, created.modelSeriesId, serviceOptions);
+    await activateProviderRoute(pool, {
+      expectedActiveRevision: 0,
+      targets: [
+        { source: 'database', modelId: created.modelSeriesId },
+        { source: 'environment', environmentTargetKey: 'primary' },
+      ],
+    }, serviceOptions);
+    await updateProviderConnection(pool, created.connectionSeriesId, {
+      name: 'Moved gateway',
+      baseUrl: 'https://moved.example/v1',
+      userAgent: null,
+      apiKey: null,
+      reuseKeyAcrossOrigin: true,
+    }, serviceOptions);
+
+    const runtime = await getProviderRuntimeSummary(pool, serviceOptions);
+    assert.equal(runtime.targets[0].endpointHost, 'gateway.example:9443');
+    assert.equal(runtime.targets[1].endpointHost, 'environment.example:8443');
+    assert.deepEqual(
+      runtime.environmentTargets.map((target) => target.endpointHost),
+      ['environment.example:8443', 'fallback.example'],
+    );
+    assert.doesNotMatch(
+      JSON.stringify(runtime),
+      /top-secret-key|environment-query-secret|fallback-query-secret|\/v1\/private|moved\.example/iu,
+    );
+  });
+});
+
 test('a connection remains usable after its last unused model is deleted', async () => {
   await withDatabase(async (pool) => {
     const serviceOptions = options();

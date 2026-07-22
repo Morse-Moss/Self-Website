@@ -49,6 +49,9 @@ test('API console exposes runtime truth before the catalog workbench', () => {
   for (const label of ['当前主线路', '活动版本', '备用线路', '最近激活', '编辑路由']) {
     assert.match(source, new RegExp(label, 'u'));
   }
+  assert.match(source, /endpointHost/u);
+  assert.match(source, /data-testid=["']active-endpoint-host["']/u);
+  assert.match(source, /data-testid=["']route-endpoint-host["']/u);
   assert.match(source, /loading/u);
   assert.match(source, /empty/u);
   assert.match(source, /error/u);

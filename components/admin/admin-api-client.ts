@@ -42,6 +42,7 @@ export interface RuntimeTarget {
   connectionDisplayName: string;
   databaseModelSeriesId: string | null;
   databaseModelVersionId: string | null;
+  endpointHost: string | null;
   environmentTargetKey: 'primary' | 'fallback-1' | 'fallback-2' | null;
   inputUsdPerMillion: string | null;
   modelDisplayName: string;
@@ -55,6 +56,7 @@ export interface RuntimeTarget {
 export interface EnvironmentTarget {
   configDigest: string;
   connectionDisplayName: string;
+  endpointHost: string | null;
   environmentTargetKey: 'primary' | 'fallback-1' | 'fallback-2';
   modelId: string;
   protocol: ProviderProtocol;
@@ -71,7 +73,7 @@ export interface ProviderRuntimeSummary {
 export interface ProviderActivationResult {
   activeRevision: number;
   routeRevisionId: string;
-  targets: RuntimeTarget[];
+  targets: Array<Omit<RuntimeTarget, 'endpointHost'>>;
 }
 
 export interface ProviderEvent {

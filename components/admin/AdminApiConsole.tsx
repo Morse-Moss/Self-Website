@@ -131,7 +131,7 @@ export default function AdminApiConsole() {
       identity: `environment:${target.environmentTargetKey}`,
       key: `environment:${target.environmentTargetKey}:${target.configDigest}`,
       label: target.connectionDisplayName,
-      meta: `${target.modelId} · ${target.protocol}`,
+      meta: `${target.endpointHost ?? '来源不可用'} · ${target.modelId} · ${target.protocol}`,
       target: { source: 'environment', environmentTargetKey: target.environmentTargetKey },
       testLabel: targetTestLabel(allEvents, target.configDigest),
     }));
@@ -295,6 +295,10 @@ export default function AdminApiConsole() {
   }
 
   const active = runtime?.targets[0] ?? null;
+  const activeEnvironment = runtime?.environmentTargets[0] ?? null;
+  const activeEndpointHost = active?.endpointHost ?? activeEnvironment?.endpointHost ?? null;
+  const activeModelId = active?.modelId ?? activeEnvironment?.modelId ?? '未配置';
+  const activeProtocol = active?.protocol ?? activeEnvironment?.protocol;
   const activation = newestActivation(allEvents);
 
   if (loading && !runtime) {
@@ -346,7 +350,10 @@ export default function AdminApiConsole() {
           <p className={styles.eyebrow}>CURRENT ROUTE</p>
           <h2 id="runtime-summary-title">当前主线路</h2>
           <strong>{active ? `${active.connectionDisplayName} / ${active.modelDisplayName}` : '环境默认路由'}</strong>
-          <span className={styles.longText}>{active?.modelId ?? runtime.environmentTargets[0]?.modelId ?? '未配置'}</span>
+          <span className={`${styles.endpointHost} ${styles.longText}`} data-testid="active-endpoint-host">
+            {activeEndpointHost ?? '来源不可用'}
+          </span>
+          <span className={styles.longText}>{activeModelId}{activeProtocol ? ` · ${activeProtocol}` : ''}</span>
         </div>
         <dl className={styles.runtimeFacts}>
           <div><dt>活动版本</dt><dd>v{runtime.activeRevision || 0}</dd></div>
@@ -360,7 +367,10 @@ export default function AdminApiConsole() {
               <span>{index === 0 ? '主' : index}</span>
               <span>
                 <strong>{target.connectionDisplayName}</strong>
-                <small className={styles.longText}>{target.modelId}</small>
+                <small className={`${styles.endpointHost} ${styles.longText}`} data-testid="route-endpoint-host">
+                  {target.endpointHost ?? '来源不可用'}
+                </small>
+                <small className={styles.longText}>{target.modelId} · {target.protocol}</small>
               </span>
               <button
                 type="button"
