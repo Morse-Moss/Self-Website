@@ -357,6 +357,12 @@ test('deactivation blocks new redemption but preserves an already authenticated 
         retrievalLimit: 3,
         interactionRetentionDays: 10,
         tokenRates: null,
+        chatV2Enabled: false,
+        chatV2CanaryPercent: 0,
+        chatV2CanaryInviteIds: new Set<string>(),
+        hedgedFailoverEnabled: false,
+        chatSafeMode: false,
+        providerTotalTimeoutMs: 90_000,
       },
     })) {
       // The probe provider fails after reservation; reaching it proves the session stayed usable.

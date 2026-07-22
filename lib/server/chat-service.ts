@@ -12,6 +12,7 @@ import type {
   ChatWorkflow,
   TokenUsage,
 } from '../contracts/chat.ts';
+import { siteContent } from '../site-content.ts';
 import {
   ProviderRunError,
   type AiMessage,
@@ -30,6 +31,14 @@ import {
   type NormalizedChatRequest,
 } from './chat-core.ts';
 import {
+  routeChatTurn,
+  selectChatBehavior,
+  type ChatBehavior,
+  type TurnIntent,
+  type TurnRoute,
+} from './chat-behavior.ts';
+import { buildV2SystemInstructions } from './chat-prompt.ts';
+import {
   completeInteraction,
   insertRunningInteraction,
   loadCompletedInteraction,
@@ -47,6 +56,7 @@ import {
   finalizeSearchFailed,
 } from './interaction-search.ts';
 import {
+  filterRelevantKnowledge,
   hasSufficientLocalEvidence,
   retrieveKnowledge,
   type KnowledgeSource,
@@ -98,6 +108,12 @@ export interface ChatServiceConfig {
   maxSearchesPerSession?: number;
   providerName?: string;
   model?: string;
+  chatV2Enabled: boolean;
+  chatV2CanaryPercent: number;
+  chatV2CanaryInviteIds: ReadonlySet<string>;
+  hedgedFailoverEnabled: boolean;
+  chatSafeMode: boolean;
+  providerTotalTimeoutMs: number;
 }
 
 export type PublicChatSource = ChatSource;
@@ -123,6 +139,7 @@ interface TurnContext {
   searchCount: number;
   searchAlreadyClaimed: boolean;
   diagnosis: TurnDiagnosis | null;
+  behavior: ChatBehavior;
 }
 
 interface TurnDiagnosis {
@@ -136,6 +153,8 @@ interface SessionLockRow {
   expires_at: Date;
   message_count: number;
   search_count: number;
+  invite_code_id: string;
+  chat_behavior_version: 'v1' | 'v2' | null;
 }
 
 interface ConversationRow {
@@ -261,7 +280,6 @@ function validateInteraction(
   if (
     interaction.accessSessionId !== accessSessionId
     || interaction.workflow !== requestWorkflow(request)
-    || interaction.audienceIntent !== request.audienceIntent
     || interaction.question !== request.message
     || (request.conversationId !== null
       && request.conversationId !== interaction.conversationId)
@@ -274,15 +292,34 @@ function validateConversation(
   conversation: ConversationRow,
   request: NormalizedChatRequest,
 ): void {
-  if (conversation.mode !== request.mode) {
-    throw new ChatServiceError('CONVERSATION_MODE_MISMATCH');
-  }
-  if (
-    conversation.workflow !== requestWorkflow(request)
-    || conversation.audience_intent !== request.audienceIntent
-  ) {
+  if (conversation.workflow !== requestWorkflow(request)) {
     throw new ChatServiceError('CONVERSATION_INVALID');
   }
+}
+
+function identityKnowledgeSource(): KnowledgeSource {
+  return {
+    chunkId: 'about:identity',
+    documentId: 'about',
+    title: siteContent.profile.title,
+    sourcePath: 'content/site-content.json#profile',
+    href: '/',
+    content: `${siteContent.profile.role}\n${siteContent.profile.summary}`,
+    score: 1,
+  };
+}
+
+function approvedSafeKnowledge(intent: TurnIntent): KnowledgeSource[] {
+  if (intent === 'social' || intent === 'identity') return [identityKnowledgeSource()];
+  return siteContent.projects.map((project) => ({
+    chunkId: `project:${project.slug}`,
+    documentId: `project-${project.slug}`,
+    title: project.name,
+    sourcePath: `content/site-content.json#projects.${project.slug}`,
+    href: `/works#${project.slug}`,
+    content: project.summary,
+    score: 1,
+  }));
 }
 
 function toHistoryMessages(messages: ConversationMessageRow[]): AiMessage[] {
@@ -433,6 +470,7 @@ async function recoverRunningTurn(input: {
   searchCount: number;
   searchAlreadyClaimed: boolean;
   diagnosis: TurnDiagnosis | null;
+  behavior: ChatBehavior;
 }): Promise<TurnContext> {
   const result = await input.client.query<ConversationMessageRow>(
     `SELECT id::text AS id, role, content
@@ -468,6 +506,7 @@ async function recoverRunningTurn(input: {
     searchCount: input.searchCount,
     searchAlreadyClaimed: input.searchAlreadyClaimed,
     diagnosis: input.diagnosis,
+    behavior: input.behavior,
   };
 }
 
@@ -480,7 +519,8 @@ async function reserveTurnInTransaction(input: {
   now: Date;
 }): Promise<TurnContext> {
   const sessionResult = await input.client.query<SessionLockRow>(
-    `SELECT session.expires_at, session.message_count, session.search_count
+    `SELECT session.expires_at, session.message_count, session.search_count,
+            session.invite_code_id::text, session.chat_behavior_version
        FROM access_sessions AS session
       WHERE session.id = $1
         AND session.expires_at > $2
@@ -489,6 +529,26 @@ async function reserveTurnInTransaction(input: {
   );
   const session = sessionResult.rows[0];
   if (!session) throw new ChatServiceError('SESSION_INVALID');
+
+  const selectedBehavior = session.chat_behavior_version ?? selectChatBehavior({
+    safeMode: false,
+    v2Enabled: input.config.chatV2Enabled,
+    canaryPercent: input.config.chatV2CanaryPercent,
+    accessSessionId: input.accessSessionId,
+    inviteCodeId: session.invite_code_id,
+    canaryInviteIds: input.config.chatV2CanaryInviteIds,
+  });
+  if (session.chat_behavior_version === null && !input.config.chatSafeMode) {
+    await input.client.query(
+      'UPDATE access_sessions SET chat_behavior_version = $2 WHERE id = $1',
+      [input.accessSessionId, selectedBehavior],
+    );
+  }
+  const behavior: ChatBehavior = input.config.chatSafeMode
+    ? 'safe'
+    : input.config.chatV2Enabled
+      ? selectedBehavior
+      : 'v1';
 
   const interaction = await loadInteractionForUpdate(input.client, input.turnId);
   if (interaction) {
@@ -544,6 +604,7 @@ async function reserveTurnInTransaction(input: {
       searchCount: session.search_count,
       searchAlreadyClaimed: interaction.usedSearch,
       diagnosis: null,
+      behavior,
     };
   }
 
@@ -566,6 +627,7 @@ async function reserveTurnInTransaction(input: {
       searchCount: session.search_count,
       searchAlreadyClaimed: interaction.usedSearch,
       diagnosis,
+      behavior,
     });
   }
 
@@ -661,6 +723,7 @@ async function reserveTurnInTransaction(input: {
     searchCount: session.search_count,
     searchAlreadyClaimed: interaction?.usedSearch ?? false,
     diagnosis,
+    behavior,
   };
 }
 
@@ -1377,59 +1440,76 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
     yield { type: 'status', stage: 'routing' };
     const effectiveQuery = workflowEffectiveQuery(input.request, turn.diagnosis);
     const routingQuestion = workflowRoutingQuestion(input.request, turn.diagnosis);
+    const legacyRoute: TurnRoute = {
+      intent: requestWorkflow(input.request) === 'jd_match' ? 'jd' : 'project',
+      profile: requestWorkflow(input.request) === 'jd_match' ? 'jd' : 'grounded',
+      evidence: 'rag',
+      release: requestWorkflow(input.request) === 'jd_match' ? 'complete' : 'segment',
+    };
+    const route = turn.behavior === 'v1' ? legacyRoute : routeChatTurn(input.request);
 
-    let queryEmbedding: number[];
-    try {
-      [queryEmbedding] = await input.provider.embed([effectiveQuery], input.signal);
-    } catch (error) {
-      if (input.signal?.aborted) throw error;
-      await recordDependencyFailure({
+    let knowledge: KnowledgeSource[] = [];
+    let search: SearchResponse | undefined;
+    if (turn.behavior === 'safe') {
+      knowledge = approvedSafeKnowledge(route.intent);
+    } else if (route.evidence === 'identity') {
+      knowledge = [identityKnowledgeSource()];
+    } else if (route.evidence === 'rag') {
+      let queryEmbedding: number[];
+      try {
+        [queryEmbedding] = await input.provider.embed([effectiveQuery], input.signal);
+      } catch (error) {
+        if (input.signal?.aborted) throw error;
+        await recordDependencyFailure({
+          client: lockClient,
+          dependency: 'provider',
+          errorCode: error instanceof OperationTimeoutError
+            ? error.code
+            : 'EMBEDDING_UNAVAILABLE',
+          now: clock(),
+        });
+        if (error instanceof OperationTimeoutError) throw error;
+        throw new RuntimePhaseError(
+          'RETRIEVAL_UNAVAILABLE',
+          'EMBEDDING_UNAVAILABLE',
+          error,
+        );
+      }
+
+      yield { type: 'status', stage: 'knowledge' };
+      try {
+        const retrieved = await retrieveKnowledge(
+          lockClient,
+          queryEmbedding,
+          input.config.retrievalLimit,
+        );
+        knowledge = turn.behavior === 'v2'
+          ? filterRelevantKnowledge(retrieved)
+          : retrieved;
+      } catch (error) {
+        throw new RuntimePhaseError(
+          'RETRIEVAL_UNAVAILABLE',
+          'RETRIEVAL_UNAVAILABLE',
+          error,
+        );
+      }
+
+      yield { type: 'status', stage: 'web' };
+      search = await resolveSearch({
+        pool: input.pool,
         client: lockClient,
-        dependency: 'provider',
-        errorCode: error instanceof OperationTimeoutError
-          ? error.code
-          : 'EMBEDDING_UNAVAILABLE',
+        provider: input.searchProvider,
+        accessSessionId: input.accessSessionId,
+        turn,
+        routingQuestion,
+        searchQuery: effectiveQuery,
+        localEvidenceSufficient: hasSufficientLocalEvidence(knowledge),
+        config: input.config,
         now: clock(),
+        signal: input.signal,
       });
-      if (error instanceof OperationTimeoutError) throw error;
-      throw new RuntimePhaseError(
-        'RETRIEVAL_UNAVAILABLE',
-        'EMBEDDING_UNAVAILABLE',
-        error,
-      );
-    }
-
-    yield { type: 'status', stage: 'knowledge' };
-    let knowledge;
-    try {
-      knowledge = await retrieveKnowledge(
-        lockClient,
-        queryEmbedding,
-        input.config.retrievalLimit,
-      );
-    } catch (error) {
-      throw new RuntimePhaseError(
-        'RETRIEVAL_UNAVAILABLE',
-        'RETRIEVAL_UNAVAILABLE',
-        error,
-      );
     }
     const localSources = toLocalPublicSources(knowledge);
-
-    yield { type: 'status', stage: 'web' };
-    const search = await resolveSearch({
-      pool: input.pool,
-      client: lockClient,
-      provider: input.searchProvider,
-      accessSessionId: input.accessSessionId,
-      turn,
-      routingQuestion,
-      searchQuery: effectiveQuery,
-      localEvidenceSufficient: hasSufficientLocalEvidence(knowledge),
-      config: input.config,
-      now: clock(),
-      signal: input.signal,
-    });
     sources = [
       ...localSources,
       ...(search?.status === 'completed'
@@ -1446,16 +1526,23 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
     yield { type: 'status', stage: 'answering' };
 
     const instructions = [
-      buildSystemInstructions(
-        input.request.mode,
-        input.request.audienceIntent,
-        knowledge,
-        search,
-      ),
+      turn.behavior === 'v1'
+        ? buildSystemInstructions(
+            input.request.mode,
+            input.request.audienceIntent,
+            knowledge,
+            search,
+          )
+        : buildV2SystemInstructions({
+            intent: route.intent,
+            sources: knowledge,
+            search,
+          }),
       workflowSystemBoundary(input.request, turn.diagnosis),
     ].filter(Boolean).join('\n\n');
     answerIterator = input.provider.streamAnswer({
       instructions,
+      reasoningEffort: route.reasoningEffort,
       messages: buildWorkflowMessages(
         input.request,
         turn.messages,
