@@ -14,11 +14,13 @@ import type {
 } from '../contracts/chat.ts';
 import { siteContent } from '../site-content.ts';
 import {
+  AnswerExecutionError,
   ProviderRunError,
   type AiMessage,
   type AiProvider,
   type AnswerEvent,
   type ProviderAttempt,
+  type ProviderAttemptEvent,
   type ProviderWinner,
 } from './ai-provider.ts';
 import { enqueueAlert } from './alert-service.ts';
@@ -31,6 +33,10 @@ import {
   type NormalizedChatRequest,
 } from './chat-core.ts';
 import {
+  runGuardedChatAnswer,
+  type ChatAnswerRunnerEvent,
+} from './chat-answer-runner.ts';
+import {
   routeChatTurn,
   selectChatBehavior,
   type ChatBehavior,
@@ -38,6 +44,9 @@ import {
   type TurnRoute,
 } from './chat-behavior.ts';
 import { buildV2SystemInstructions } from './chat-prompt.ts';
+import { inspectChatAnswer } from './chat-output-guard.ts';
+import { buildSafeChatAnswer } from './chat-safe-answer.ts';
+import { OpenAIProviderError } from './openai-provider.ts';
 import {
   completeInteraction,
   insertRunningInteraction,
@@ -61,6 +70,11 @@ import {
   retrieveKnowledge,
   type KnowledgeSource,
 } from './rag.ts';
+import {
+  recordProviderAttemptEvent,
+  reserveHedgedProviderAttempt,
+  summarizeProviderAttempts,
+} from './provider-attempt-log.ts';
 import { recordServiceFailure, recordServiceRecovery } from './service-incidents.ts';
 import {
   toPublicSearchSource,
@@ -222,6 +236,34 @@ function throwIfAborted(signal?: AbortSignal): void {
 
 function elapsedMilliseconds(startedAt: Date, completedAt: Date): number {
   return Math.max(0, Math.trunc(completedAt.getTime() - startedAt.getTime()));
+}
+
+function addTokenUsage(left: TokenUsage | null, right: TokenUsage | null): TokenUsage | null {
+  if (!left) return right;
+  if (!right) return left;
+  return {
+    inputTokens: left.inputTokens + right.inputTokens,
+    outputTokens: left.outputTokens + right.outputTokens,
+  };
+}
+
+function usageCost(
+  usage: TokenUsage | null,
+  rates: TokenRates | null,
+): number | null {
+  return usage && rates ? estimateCostUsd(usage, rates) : null;
+}
+
+function addUsageCosts(
+  leftUsage: TokenUsage | null,
+  leftCost: number | null,
+  rightUsage: TokenUsage | null,
+  rightCost: number | null,
+): number | null {
+  if (leftUsage && leftCost === null) return null;
+  if (rightUsage && rightCost === null) return null;
+  if (!leftUsage && !rightUsage) return null;
+  return (leftCost ?? 0) + (rightCost ?? 0);
 }
 
 function dependencyErrorCode(error: unknown): string | null {
@@ -554,6 +596,7 @@ async function reserveTurnInTransaction(input: {
       : 'v1';
 
   const interaction = await loadInteractionForUpdate(input.client, input.turnId);
+  let degradedReplay = false;
   if (interaction) {
     validateInteraction(interaction, input.accessSessionId, input.request);
     if (
@@ -564,9 +607,12 @@ async function reserveTurnInTransaction(input: {
     ) {
       throw new ChatServiceError('CONVERSATION_INVALID');
     }
+    degradedReplay = interaction.status === 'failed'
+      && interaction.errorCode === 'SAFE_DEGRADED'
+      && interaction.answer !== null;
   }
 
-  if (interaction?.status !== 'completed') {
+  if (interaction?.status !== 'completed' && !degradedReplay) {
     const running = await input.client.query<{ id: string }>(
       `SELECT id::text AS id
          FROM interaction_turns
@@ -596,6 +642,23 @@ async function reserveTurnInTransaction(input: {
     if (!conversation || interaction.answer === null) {
       throw new ChatServiceError('CONVERSATION_INVALID');
     }
+    validateConversation(conversation, input.request);
+    return {
+      conversationId,
+      userMessageId: null,
+      turnId: input.turnId,
+      messages: [],
+      replay: interaction,
+      createdConversation: false,
+      searchCount: session.search_count,
+      searchAlreadyClaimed: interaction.usedSearch,
+      diagnosis: null,
+      behavior,
+    };
+  }
+
+  if (interaction && degradedReplay) {
+    if (!conversation) throw new ChatServiceError('CONVERSATION_INVALID');
     validateConversation(conversation, input.request);
     return {
       conversationId,
@@ -751,7 +814,7 @@ async function reserveTurn(input: {
   } catch (error) {
     if (commitAttempted && turn) {
       const durable = await loadInteraction(input.pool, input.turnId).catch(() => null);
-      const expectedStatus = turn.replay ? 'completed' : 'running';
+      const expectedStatus = turn.replay?.status ?? 'running';
       if (durable?.status === expectedStatus) {
         validateInteraction(durable, input.accessSessionId, input.request);
         return turn;
@@ -888,21 +951,39 @@ async function completeTurn(input: {
   startedAt: Date;
   completedAt: Date;
   signal?: AbortSignal;
-}): Promise<void> {
+}): Promise<TokenUsage | null> {
   const provider = input.config.providerName ?? 'openai';
   const model = input.config.model ?? 'configured-model';
   const routed = input.attempts.length > 0;
-  const legacyCost = input.usage && input.config.tokenRates
-    ? estimateCostUsd(input.usage, input.config.tokenRates)
-    : null;
-  const estimatedCostUsd = routed
-    ? (input.costComplete ? input.knownCostUsd : null)
-    : legacyCost;
   let commitAttempted = false;
+  let usage = input.usage;
 
   try {
     throwIfAborted(input.signal);
     await input.client.query('BEGIN');
+    const attemptSummary = await summarizeProviderAttempts(input.client, input.turn.turnId);
+    let estimatedCostUsd: number | null;
+    if (routed) {
+      const aggregate = aggregateProviderAttempts(input.attempts);
+      usage = aggregate.usage;
+      estimatedCostUsd = input.costComplete ? input.knownCostUsd : null;
+    } else if (input.turn.behavior === 'v2' && attemptSummary.attemptCount > 0) {
+      usage = attemptSummary.usage;
+      estimatedCostUsd = attemptSummary.estimatedCostUsd
+        ?? usageCost(usage, input.config.tokenRates);
+    } else {
+      const historicalUsage = attemptSummary.usage;
+      const historicalCost = attemptSummary.estimatedCostUsd
+        ?? usageCost(historicalUsage, input.config.tokenRates);
+      const currentCost = usageCost(input.usage, input.config.tokenRates);
+      usage = addTokenUsage(historicalUsage, input.usage);
+      estimatedCostUsd = addUsageCosts(
+        historicalUsage,
+        historicalCost,
+        input.usage,
+        currentCost,
+      );
+    }
     await input.client.query(
       `INSERT INTO conversation_messages (conversation_id, role, content, created_at)
        VALUES ($1, 'assistant', $2, $3)`,
@@ -937,7 +1018,7 @@ async function completeTurn(input: {
           ],
         );
       }
-    } else if (input.usage && input.config.tokenRates) {
+    } else if (usage && estimatedCostUsd !== null) {
       await input.client.query(
         `INSERT INTO usage_events
           (access_session_id, conversation_id, provider, model,
@@ -948,8 +1029,8 @@ async function completeTurn(input: {
           input.turn.conversationId,
           provider,
           model,
-          input.usage.inputTokens,
-          input.usage.outputTokens,
+          usage.inputTokens,
+          usage.outputTokens,
           estimatedCostUsd,
           input.completedAt,
         ],
@@ -960,7 +1041,7 @@ async function completeTurn(input: {
       turnId: input.turn.turnId,
       answer: input.answer,
       sources: input.sources,
-      usage: input.usage,
+      usage,
       estimatedCostUsd,
       knownCostUsd: routed ? input.knownCostUsd : estimatedCostUsd,
       usageComplete: routed ? input.usageComplete : input.usage !== null,
@@ -985,6 +1066,7 @@ async function completeTurn(input: {
     throwIfAborted(input.signal);
     commitAttempted = true;
     await input.client.query('COMMIT');
+    return usage;
   } catch (error) {
     if (commitAttempted) {
       const completed = await loadCompletedInteraction(input.pool, input.turn.turnId)
@@ -993,7 +1075,153 @@ async function completeTurn(input: {
         ? await providerAttemptsMatch(input.pool, input.turn.turnId, input.attempts)
             .catch(() => false)
         : false;
-      if (attemptsMatch) return;
+      if (attemptsMatch) return usage;
+    }
+    await input.client.query('ROLLBACK').catch(() => undefined);
+    throw error;
+  }
+}
+
+async function completeDegradedTurn(input: {
+  pool: Pool;
+  client: PoolClient;
+  accessSessionId: string;
+  turn: TurnContext;
+  answer: string;
+  sources: PublicChatSource[];
+  attempts: ProviderAttempt[];
+  config: ChatServiceConfig;
+  startedAt: Date;
+  completedAt: Date;
+  signal?: AbortSignal;
+}): Promise<TokenUsage | null> {
+  const provider = input.config.providerName ?? 'openai';
+  const model = input.config.model ?? 'configured-model';
+  let commitAttempted = false;
+  let usage: TokenUsage | null = null;
+
+  try {
+    throwIfAborted(input.signal);
+    await input.client.query('BEGIN');
+    const summary = await summarizeProviderAttempts(input.client, input.turn.turnId);
+    const aggregate = aggregateProviderAttempts(input.attempts);
+    usage = summary.attemptCount > 0 ? summary.usage : aggregate.usage;
+    const estimatedCostUsd = summary.estimatedCostUsd
+      ?? (aggregate.costComplete ? aggregate.knownCostUsd : null)
+      ?? (usage && input.config.tokenRates
+        ? estimateCostUsd(usage, input.config.tokenRates)
+        : null);
+
+    if (input.turn.userMessageId !== null) {
+      const deleted = await input.client.query(
+        `DELETE FROM conversation_messages
+          WHERE id = $1
+            AND conversation_id = $2
+            AND role = 'user'`,
+        [input.turn.userMessageId, input.turn.conversationId],
+      );
+      if (deleted.rowCount === 1) {
+        await input.client.query(
+          `UPDATE access_sessions
+              SET message_count = GREATEST(message_count - 1, 0)
+            WHERE id = $1`,
+          [input.accessSessionId],
+        );
+      }
+    }
+
+    if (input.attempts.length > 0) {
+      await replaceProviderAttempts(input.client, input.turn.turnId, input.attempts);
+      for (const attempt of input.attempts) {
+        if (!attempt.usage) continue;
+        await input.client.query(
+          `INSERT INTO usage_events
+            (access_session_id, conversation_id, provider, model,
+             input_tokens, output_tokens, estimated_cost_usd, created_at,
+             interaction_turn_id, provider_attempt_index, cost_complete)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          [
+            input.accessSessionId,
+            input.turn.conversationId,
+            attempt.connectionDisplayName,
+            attempt.modelId,
+            attempt.usage.inputTokens,
+            attempt.usage.outputTokens,
+            attempt.knownCostUsd,
+            attempt.completedAt,
+            input.turn.turnId,
+            attempt.attemptIndex,
+            attempt.costComplete,
+          ],
+        );
+      }
+    } else if (usage && estimatedCostUsd !== null) {
+      await input.client.query(
+        `INSERT INTO usage_events
+          (access_session_id, conversation_id, provider, model,
+           input_tokens, output_tokens, estimated_cost_usd, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [
+          input.accessSessionId,
+          input.turn.conversationId,
+          provider,
+          model,
+          usage.inputTokens,
+          usage.outputTokens,
+          estimatedCostUsd,
+          input.completedAt,
+        ],
+      );
+    }
+
+    const terminated = await input.client.query(
+      `UPDATE interaction_turns
+          SET answer = $2,
+              status = 'failed',
+              error_code = 'SAFE_DEGRADED',
+              knowledge_sources = $3::jsonb,
+              input_tokens = $4,
+              output_tokens = $5,
+              estimated_cost_usd = $6,
+              provider = $7,
+              model = $8,
+              latency_ms = $9,
+              completed_at = $10
+        WHERE id = $1 AND status = 'running'`,
+      [
+        input.turn.turnId,
+        input.answer,
+        JSON.stringify(input.sources),
+        usage?.inputTokens ?? null,
+        usage?.outputTokens ?? null,
+        estimatedCostUsd,
+        provider,
+        model,
+        elapsedMilliseconds(input.startedAt, input.completedAt),
+        input.completedAt,
+      ],
+    );
+    if (terminated.rowCount !== 1) throw new Error('Interaction turn is not running.');
+
+    throwIfAborted(input.signal);
+    commitAttempted = true;
+    await input.client.query('COMMIT');
+    return usage;
+  } catch (error) {
+    if (commitAttempted) {
+      const durable = await loadInteraction(input.pool, input.turn.turnId).catch(() => null);
+      if (
+        durable?.status === 'failed'
+        && durable.errorCode === 'SAFE_DEGRADED'
+        && durable.answer === input.answer
+      ) {
+        const attemptsMatch = await providerAttemptsMatch(
+          input.pool,
+          input.turn.turnId,
+          input.attempts,
+        ).catch(() => false);
+        if (attemptsMatch) return usage;
+      }
     }
     await input.client.query('ROLLBACK').catch(() => undefined);
     throw error;
@@ -1182,6 +1410,22 @@ function providerPhaseError(error: unknown): RuntimePhaseError {
     return new RuntimePhaseError(publicCode, code, error);
   }
   return new RuntimePhaseError('PROVIDER_UNAVAILABLE', 'PROVIDER_UNAVAILABLE', error);
+}
+
+function canRegenerateAnswer(error: unknown, signal?: AbortSignal): boolean {
+  if (signal?.aborted) return false;
+  if (error instanceof ChatServiceError || error instanceof RuntimePhaseError) return false;
+  if (error instanceof AnswerExecutionError) return true;
+  if (error instanceof OpenAIProviderError) return true;
+  if (error instanceof OperationTimeoutError) return error.code !== 'EMBEDDING_TIMEOUT';
+  return false;
+}
+
+function strictRegenerationInstructions(instructions: string): string {
+  return [
+    instructions,
+    '严格重生成：上一候选未通过输出守卫。请从空白开始重写，只陈述可由当前公开证据支持的内容，并严格遵守引用、语气和流程边界。',
+  ].filter(Boolean).join('\n\n');
 }
 
 type MonitoredDependency = 'provider' | 'search';
@@ -1393,7 +1637,8 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
   let completed = false;
   let answer = '';
   let sources: PublicChatSource[] = [];
-  let answerIterator: AsyncIterator<AnswerEvent> | null = null;
+  let legacyAnswerIterator: AsyncIterator<AnswerEvent> | null = null;
+  let answerIterator: AsyncIterator<ChatAnswerRunnerEvent> | null = null;
   let providerAttempts: ProviderAttempt[] = [];
   let providerWinner: ProviderWinner | null = null;
   let failure: TerminalFailure | null = null;
@@ -1435,6 +1680,8 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
         usage: null,
         budgetLevel: NORMAL_BUDGET_LEVEL,
         consumed: false,
+        degraded: turn.replay.status === 'failed'
+          && turn.replay.errorCode === 'SAFE_DEGRADED',
         remainingMessages,
       };
       return;
@@ -1544,19 +1791,296 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
           }),
       workflowSystemBoundary(input.request, turn.diagnosis),
     ].filter(Boolean).join('\n\n');
-    answerIterator = input.provider.streamAnswer({
-      instructions,
-      reasoningEffort: route.reasoningEffort,
-      messages: buildWorkflowMessages(
-        input.request,
-        turn.messages,
-        knowledge,
-        turn.diagnosis,
-      ),
-    }, input.signal)[Symbol.asyncIterator]();
+
+    if (turn.behavior === 'v1') {
+      legacyAnswerIterator = input.provider.streamAnswer({
+        instructions,
+        reasoningEffort: route.reasoningEffort,
+        messages: buildWorkflowMessages(
+          input.request,
+          turn.messages,
+          knowledge,
+          turn.diagnosis,
+        ),
+      }, input.signal)[Symbol.asyncIterator]();
+
+      while (true) {
+        let next: IteratorResult<AnswerEvent>;
+        try {
+          next = await legacyAnswerIterator.next();
+        } catch (error) {
+          if (error instanceof ProviderRunError) {
+            providerAttempts = [...error.attempts];
+          }
+          if (input.signal?.aborted) throw error;
+          await recordDependencyFailure({
+            client: lockClient,
+            dependency: 'provider',
+            errorCode: error instanceof OperationTimeoutError
+              ? error.code
+              : 'PROVIDER_UNAVAILABLE',
+            now: clock(),
+          });
+          if (error instanceof OperationTimeoutError) throw error;
+          throw providerPhaseError(error);
+        }
+        throwIfAborted(input.signal);
+        if (next.done) {
+          await recordDependencyFailure({
+            client: lockClient,
+            dependency: 'provider',
+            errorCode: 'PROVIDER_INCOMPLETE',
+            now: clock(),
+          });
+          throw new RuntimePhaseError('PROVIDER_INCOMPLETE', 'PROVIDER_INCOMPLETE');
+        }
+
+        const event = next.value;
+        if (event.type === 'attempt') {
+          providerAttempts = [
+            ...providerAttempts.filter(
+              (attempt) => attempt.attemptIndex !== event.attempt.attemptIndex,
+            ),
+            event.attempt,
+          ].sort((left, right) => left.attemptIndex - right.attemptIndex);
+          continue;
+        }
+        if (event.type === 'delta') {
+          answer += event.text;
+          yield event;
+          continue;
+        }
+        if (!answer.trim()) {
+          await recordDependencyFailure({
+            client: lockClient,
+            dependency: 'provider',
+            errorCode: 'PROVIDER_INCOMPLETE',
+            now: clock(),
+          });
+          throw new RuntimePhaseError('PROVIDER_INCOMPLETE', 'PROVIDER_INCOMPLETE');
+        }
+        providerAttempts = event.attempts ? [...event.attempts] : providerAttempts;
+        providerWinner = event.winner ?? null;
+        const providerAggregate = providerAttempts.length > 0
+          ? aggregateProviderAttempts(providerAttempts)
+          : {
+              usage: event.usage,
+              knownCostUsd: event.knownCostUsd ?? null,
+              usageComplete: event.usageComplete ?? event.usage !== null,
+              costComplete: event.costComplete ?? false,
+            };
+
+        const completedAt = clock();
+        await recordDependencySuccess({
+          client: lockClient,
+          dependency: 'provider',
+          now: completedAt,
+        });
+        let actualUsage: TokenUsage | null;
+        try {
+          actualUsage = await completeTurn({
+            pool: input.pool,
+            client: lockClient,
+            accessSessionId: input.accessSessionId,
+            request: input.request,
+            turn,
+            answer,
+            sources,
+            usage: event.usage,
+            attempts: providerAttempts,
+            winner: providerWinner,
+            usageComplete: providerAggregate.usageComplete,
+            costComplete: providerAggregate.costComplete,
+            knownCostUsd: providerAggregate.knownCostUsd,
+            config: input.config,
+            startedAt,
+            completedAt,
+            signal: input.signal,
+          });
+        } catch (error) {
+          throw new RuntimePhaseError(
+            'PROVIDER_UNAVAILABLE',
+            'PERSISTENCE_FAILED',
+            error,
+            true,
+          );
+        }
+        completed = true;
+        if (
+          requestWorkflow(input.request) === 'diagnosis'
+          && turn.diagnosis?.status !== 'collecting'
+        ) {
+          yield { type: 'status', stage: 'handoff' };
+        }
+        try {
+          await legacyAnswerIterator.return?.();
+        } catch {
+          // A committed turn is terminal even if provider iterator cleanup reports an error.
+        }
+        legacyAnswerIterator = null;
+        const remainingMessages = await getRemainingMessages(
+          lockClient,
+          input.accessSessionId,
+          input.config.maxMessagesPerSession,
+        );
+        yield {
+          type: 'done',
+          usage: actualUsage,
+          budgetLevel: NORMAL_BUDGET_LEVEL,
+          consumed: true,
+          degraded: false,
+          remainingMessages,
+        };
+        return;
+      }
+    }
+
+    const safeFallback = buildSafeChatAnswer({ intent: route.intent, sources: knowledge });
+
+    if (turn.behavior === 'safe') {
+      if (!safeFallback) throw new AnswerExecutionError('OUTPUT_GUARD_REJECTED');
+      answer = safeFallback.text;
+      sources = toLocalPublicSources(safeFallback.sources);
+      yield { type: 'delta', text: answer };
+      const completedAt = clock();
+      const actualUsage = await completeTurn({
+        pool: input.pool,
+        client: lockClient,
+        accessSessionId: input.accessSessionId,
+        request: input.request,
+        turn,
+        answer,
+        sources,
+        usage: null,
+        attempts: [],
+        winner: null,
+        usageComplete: false,
+        costComplete: false,
+        knownCostUsd: null,
+        config: input.config,
+        startedAt,
+        completedAt,
+        signal: input.signal,
+      });
+      completed = true;
+      const remainingMessages = await getRemainingMessages(
+        lockClient,
+        input.accessSessionId,
+        input.config.maxMessagesPerSession,
+      );
+      yield {
+        type: 'done',
+        usage: actualUsage,
+        budgetLevel: NORMAL_BUDGET_LEVEL,
+        consumed: true,
+        degraded: false,
+        remainingMessages,
+      };
+      return;
+    }
+
+    const messages = buildWorkflowMessages(
+      input.request,
+      turn.messages,
+      knowledge,
+      turn.diagnosis,
+    );
+    const deleteAfter = new Date(
+      startedAt.getTime() + input.config.interactionRetentionDays * MILLISECONDS_PER_DAY,
+    );
+    const currentTurn = turn;
+    let answerSources = sources;
+    answerIterator = runGuardedChatAnswer({
+      generate(strict) {
+        const executionId = randomUUID();
+        const requestInstructions = strict
+          ? strictRegenerationInstructions(instructions)
+          : instructions;
+        return input.provider.streamAnswer({
+          instructions: requestInstructions,
+          reasoningEffort: route.reasoningEffort,
+          messages,
+          execution: currentTurn.behavior === 'v2'
+            ? {
+                executionId,
+                releasePolicy: route.release,
+                minimumBufferCharacters: 1,
+                totalTimeoutMs: input.config.providerTotalTimeoutMs,
+                hedgingEnabled: strict ? false : input.config.hedgedFailoverEnabled,
+                delaysMs: [0, 8_000, 14_000],
+                acceptCandidate(candidate) {
+                  return inspectChatAnswer({
+                    answer: candidate,
+                    intent: route.intent,
+                    workflow: requestWorkflow(input.request),
+                    question: input.request.message,
+                    sourceCount: sources.length,
+                  }).ok;
+                },
+                async reserveHedgedAttempt(event) {
+                  try {
+                    return await reserveHedgedProviderAttempt(
+                      lockClient,
+                      { interactionTurnId: currentTurn.turnId, executionId },
+                      event,
+                      deleteAfter,
+                      clock(),
+                    );
+                  } catch (error) {
+                    throw new RuntimePhaseError(
+                      'PROVIDER_UNAVAILABLE',
+                      'PERSISTENCE_FAILED',
+                      error,
+                      true,
+                    );
+                  }
+                },
+                async onAttempt(event: ProviderAttemptEvent) {
+                  const persistedEvent = event.type === 'completed'
+                    || event.type === 'failed'
+                    || event.type === 'aborted'
+                    ? {
+                        ...event,
+                        estimatedCostUsd: event.usage && input.config.tokenRates
+                          ? estimateCostUsd(event.usage, input.config.tokenRates)
+                          : null,
+                      }
+                    : event;
+                  try {
+                    await recordProviderAttemptEvent(
+                      lockClient,
+                      { interactionTurnId: currentTurn.turnId, executionId },
+                      persistedEvent,
+                      deleteAfter,
+                    );
+                  } catch (error) {
+                    throw new RuntimePhaseError(
+                      'PROVIDER_UNAVAILABLE',
+                      'PERSISTENCE_FAILED',
+                      error,
+                      true,
+                    );
+                  }
+                },
+              }
+            : undefined,
+        }, input.signal);
+      },
+      inspect(candidate) {
+        return inspectChatAnswer({
+          answer: candidate,
+          intent: route.intent,
+          workflow: requestWorkflow(input.request),
+          question: input.request.message,
+          sourceCount: sources.length,
+        });
+      },
+      safeAnswer: () => safeFallback,
+      canRegenerate: (error) => canRegenerateAnswer(error, input.signal),
+    })[Symbol.asyncIterator]();
 
     while (true) {
-      let next: IteratorResult<AnswerEvent>;
+      let next: IteratorResult<ChatAnswerRunnerEvent>;
       try {
         next = await answerIterator.next();
       } catch (error) {
@@ -1600,10 +2124,22 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
       throwIfAborted(input.signal);
       if (event.type === 'delta') {
         answer += event.text;
+        if (answerSources.length === 0) answerSources = sources;
         yield event;
         continue;
       }
-      if (!answer.trim()) {
+
+      if (event.type === 'reset') {
+        answer = '';
+        answerSources = [];
+        yield {
+          type: 'status',
+          stage: 'switching',
+        };
+        continue;
+      }
+
+      if (!event.answer.trim()) {
         await recordDependencyFailure({
           client: lockClient,
           dependency: 'provider',
@@ -1612,37 +2148,82 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
         });
         throw new RuntimePhaseError('PROVIDER_INCOMPLETE', 'PROVIDER_INCOMPLETE');
       }
-      providerAttempts = event.attempts ? [...event.attempts] : providerAttempts;
-      providerWinner = event.winner ?? null;
+      providerAttempts = [...event.attempts];
+      providerWinner = event.winner;
       const providerAggregate = providerAttempts.length > 0
         ? aggregateProviderAttempts(providerAttempts)
         : {
             usage: event.usage,
-            knownCostUsd: event.knownCostUsd ?? null,
-            usageComplete: event.usageComplete ?? event.usage !== null,
-            costComplete: event.costComplete ?? false,
+            knownCostUsd: event.knownCostUsd,
+            usageComplete: event.usageComplete,
+            costComplete: event.costComplete,
           };
       const completedAt = clock();
+      if (event.degraded) {
+        answer = event.answer;
+        answerSources = safeFallback
+          ? toLocalPublicSources(safeFallback.sources)
+          : [];
+        try {
+          await completeDegradedTurn({
+            pool: input.pool,
+            client: lockClient,
+            accessSessionId: input.accessSessionId,
+            turn,
+            answer,
+            sources: answerSources,
+            attempts: providerAttempts,
+            config: input.config,
+            startedAt,
+            completedAt,
+            signal: input.signal,
+          });
+        } catch (error) {
+          throw new RuntimePhaseError(
+            'PROVIDER_UNAVAILABLE',
+            'PERSISTENCE_FAILED',
+            error,
+            true,
+          );
+        }
+        completed = true;
+        const remainingMessages = await getRemainingMessages(
+          lockClient,
+          input.accessSessionId,
+          input.config.maxMessagesPerSession,
+        );
+        yield {
+          type: 'done',
+          usage: null,
+          budgetLevel: NORMAL_BUDGET_LEVEL,
+          consumed: false,
+          degraded: true,
+          remainingMessages,
+        };
+        return;
+      }
+
       await recordDependencySuccess({
         client: lockClient,
         dependency: 'provider',
         now: completedAt,
       });
+      let actualUsage = event.usage;
       try {
-        await completeTurn({
+        actualUsage = await completeTurn({
           pool: input.pool,
           client: lockClient,
           accessSessionId: input.accessSessionId,
           request: input.request,
           turn,
-          answer,
-          sources,
+          answer: event.answer,
+          sources: answerSources,
           usage: event.usage,
           attempts: providerAttempts,
           winner: providerWinner,
-          usageComplete: event.usageComplete ?? providerAggregate.usageComplete,
-          costComplete: event.costComplete ?? providerAggregate.costComplete,
-          knownCostUsd: event.knownCostUsd ?? providerAggregate.knownCostUsd,
+          usageComplete: providerAggregate.usageComplete,
+          costComplete: providerAggregate.costComplete,
+          knownCostUsd: providerAggregate.knownCostUsd,
           config: input.config,
           startedAt,
           completedAt,
@@ -1678,9 +2259,10 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
       );
       yield {
         type: 'done',
-        usage: event.usage,
+        usage: actualUsage,
         budgetLevel: NORMAL_BUDGET_LEVEL,
         consumed: true,
+        degraded: false,
         remainingMessages,
       };
       return;
@@ -1700,6 +2282,7 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
           };
         }
         try {
+          await legacyAnswerIterator?.return?.();
           await answerIterator?.return?.();
         } catch {
           // The compensation transaction remains authoritative.

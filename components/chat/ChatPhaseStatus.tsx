@@ -7,6 +7,7 @@ const phaseLabels: Record<ChatPhase, string> = {
   knowledge: '正在检索公开知识',
   web: '正在判断是否需要联网',
   answering: '正在组织回答',
+  switching: '线路有点慢，我正在切换',
   handoff: '已进入转交队列',
 };
 

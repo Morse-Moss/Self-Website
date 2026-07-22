@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
+  isAutoReplayChatError,
   isRecoverableChatError,
   normalizeChatErrorCode,
   publicErrorMessage,
@@ -66,9 +67,28 @@ const emptyDiagnosis: DiagnosisFields = {
 };
 
 const validPhases = new Set<ChatPhase>(CHAT_PHASES);
+const AUTO_REPLAY_MAX_ATTEMPTS = 3;
+const AUTO_REPLAY_DELAYS_MS = [250, 1_000] as const;
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError';
+}
+
+function waitForReplayDelay(milliseconds: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise((resolve, reject) => {
+    const cleanup = () => signal.removeEventListener('abort', onAbort);
+    const timeout = window.setTimeout(() => {
+      cleanup();
+      resolve();
+    }, milliseconds);
+    const onAbort = () => {
+      window.clearTimeout(timeout);
+      cleanup();
+      reject(signal.reason);
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 function diagnosisSummary(fields: DiagnosisFields): string {
@@ -309,49 +329,82 @@ export function useMorseChat() {
     const { displayText: _displayText, ...requestBody } = requestSnapshot;
 
     try {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...requestBody, conversationId }),
-        signal: abortController.signal,
-      });
-      if (!response.ok) {
-        const failure = await response.json().catch(() => ({})) as { error?: string };
-        throw new Error(failure.error || (response.status === 401 ? 'ACCESS_REQUIRED' : 'CHAT_UNAVAILABLE'));
-      }
+      for (let attempt = 0; attempt < AUTO_REPLAY_MAX_ATTEMPTS; attempt += 1) {
+        try {
+          const response = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...requestBody, conversationId }),
+            signal: abortController.signal,
+          });
+          if (!response.ok) {
+            const failure = await response.json().catch(() => ({})) as { error?: string };
+            throw new Error(
+              failure.error || (response.status === 401 ? 'ACCESS_REQUIRED' : 'CHAT_UNAVAILABLE'),
+            );
+          }
 
-      await readChatSse<StreamPayload>(response, (event, payload) => {
-        if (event === 'status' && payload.stage && validPhases.has(payload.stage)) {
-          setPhase(payload.stage);
-          if (payload.stage === 'handoff') {
-            setDiagnosisStatus('handoff_pending');
-            updateAssistant(assistantId, (assistant) => ({
-              ...assistant,
-              diagnosisStatus: 'handoff_pending',
-            }));
+          await readChatSse<StreamPayload>(response, (event, payload) => {
+            if (event === 'status' && payload.stage && validPhases.has(payload.stage)) {
+              setPhase(payload.stage);
+              if (payload.stage === 'switching') {
+                updateAssistant(assistantId, (assistant) => ({
+                  ...assistant,
+                  text: '',
+                  sources: assistant.sources,
+                }));
+              } else if (payload.stage === 'handoff') {
+                setDiagnosisStatus('handoff_pending');
+                updateAssistant(assistantId, (assistant) => ({
+                  ...assistant,
+                  diagnosisStatus: 'handoff_pending',
+                }));
+              }
+            } else if (event === 'meta') {
+              setConversationId(payload.conversationId ?? null);
+              updateAssistant(assistantId, (assistant) => ({
+                ...assistant,
+                sources: payload.sources ?? [],
+              }));
+            } else if (event === 'delta') {
+              updateAssistant(assistantId, (assistant) => ({
+                ...assistant,
+                text: assistant.text + (payload.text ?? ''),
+              }));
+            } else if (event === 'done') {
+              if (typeof payload.remainingMessages === 'number') {
+                setRemainingMessages(payload.remainingMessages);
+              }
+              updateAssistant(assistantId, (assistant) => ({
+                ...assistant,
+                retry: undefined,
+                complete: true,
+              }));
+            }
+          });
+          return;
+        } catch (error) {
+          if (
+            isAbortError(error)
+            || attempt + 1 >= AUTO_REPLAY_MAX_ATTEMPTS
+            || !isAutoReplayChatError(normalizeChatErrorCode(error))
+          ) {
+            throw error;
           }
-        } else if (event === 'meta') {
-          setConversationId(payload.conversationId ?? null);
+          setPhase('switching');
           updateAssistant(assistantId, (assistant) => ({
             ...assistant,
-            sources: payload.sources ?? [],
-          }));
-        } else if (event === 'delta') {
-          updateAssistant(assistantId, (assistant) => ({
-            ...assistant,
-            text: assistant.text + (payload.text ?? ''),
-          }));
-        } else if (event === 'done') {
-          if (typeof payload.remainingMessages === 'number') {
-            setRemainingMessages(payload.remainingMessages);
-          }
-          updateAssistant(assistantId, (assistant) => ({
-            ...assistant,
+            text: '',
+            sources: [],
+            error: false,
             retry: undefined,
-            complete: true,
+            complete: false,
           }));
+          const delayMs = AUTO_REPLAY_DELAYS_MS[attempt];
+          await waitForReplayDelay(delayMs, abortController.signal);
+          setPhase('routing');
         }
-      });
+      }
     } catch (error) {
       if (isAbortError(error)) {
         updateAssistant(assistantId, (assistant) => ({

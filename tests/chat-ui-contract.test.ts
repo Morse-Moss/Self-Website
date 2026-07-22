@@ -100,6 +100,7 @@ test('service-driven stages use one status region and include diagnosis handoff'
   assert.match(status, /role="status"/);
   assert.match(status, /aria-live="polite"/);
   assert.match(status, /正在判断是否需要联网/);
+  assert.match(status, /线路有点慢，我正在切换/);
   assert.match(status, /已进入转交队列/);
 });
 
@@ -241,6 +242,35 @@ test('recoverable retry reuses the assistant row without a second user bubble', 
   assert.match(hook, /retry:\s*requestSnapshot/);
   assert.match(transcript, /onRetry\(message\.id,\s*message\.retry!?\)/);
   assert.match(transcript, /已停止/);
+});
+
+test('switching clears provisional output and automatic replay is bounded to one visible turn', () => {
+  const hook = readChatSource('useMorseChat.ts');
+  const contract = readIfPresent(chatContractPath);
+
+  assert.match(contract, /CHAT_PHASES\s*=\s*\[[\s\S]*['"]switching['"]/);
+  assert.match(contract, /type:\s*['"]done['"][\s\S]*degraded:\s*boolean/);
+  assert.match(hook, /payload\.stage\s*===\s*['"]switching['"][\s\S]*text:\s*['"]['"]/);
+  assert.match(
+    hook,
+    /payload\.stage\s*===\s*['"]switching['"][\s\S]*sources:\s*assistant\.sources/,
+  );
+  assert.match(hook, /AUTO_REPLAY_MAX_ATTEMPTS\s*=\s*3/);
+  assert.match(hook, /AUTO_REPLAY_DELAYS_MS\s*=\s*\[250,\s*1_000\]/);
+  assert.match(hook, /isAutoReplayChatError/);
+  assert.match(hook, /attempt\s*<\s*AUTO_REPLAY_MAX_ATTEMPTS/);
+  assert.match(
+    hook,
+    /catch \(error\)[\s\S]*setPhase\(['"]switching['"]\)[\s\S]*text:\s*['"]['"][\s\S]*sources:\s*\[\][\s\S]*const delayMs/,
+  );
+  assert.match(hook, /removeEventListener\(['"]abort['"]/);
+  assert.match(
+    hook,
+    /function waitForReplayDelay[\s\S]*signal\.aborted[\s\S]*Promise\.reject\(signal\.reason\)/,
+  );
+  assert.match(hook, /body:\s*JSON\.stringify\(\{\s*\.\.\.requestBody,\s*conversationId\s*\}\)/);
+  assert.match(hook, /const assistantId = retryAssistantId \?\? crypto\.randomUUID\(\)/);
+  assert.doesNotMatch(hook, /requestSnapshot\.turnId\s*=/);
 });
 
 test('MorseChat retains the S9 embedded and overlay shell behavior', () => {

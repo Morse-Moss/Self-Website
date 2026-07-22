@@ -112,3 +112,25 @@ test('chat route emits status and maps unknown failures without exposing raw pay
   assert.doesNotMatch(output, /secret raw provider payload/);
   assert.equal(scheduler.clearCount, 1);
 });
+
+test('chat route serializes switching and degraded done from the public contract', async () => {
+  const output = await new Response(createChatRouteStream({
+    requestSignal: new AbortController().signal,
+    heartbeatMs: 15_000,
+    scheduler: new FakeScheduler(),
+    runChat: () => (async function* () {
+      yield { type: 'status' as const, stage: 'switching' as const };
+      yield {
+        type: 'done' as const,
+        usage: null,
+        budgetLevel: 'normal' as const,
+        consumed: false,
+        degraded: true,
+        remainingMessages: 3,
+      };
+    })(),
+  })).text();
+
+  assert.match(output, /event: status\ndata: {"type":"status","stage":"switching"}/);
+  assert.match(output, /event: done\ndata: .*"consumed":false,"degraded":true/);
+});

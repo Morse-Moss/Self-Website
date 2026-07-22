@@ -10,6 +10,12 @@ export interface ProviderAttemptKey {
   interactionTurnId: string;
 }
 
+export interface ProviderAttemptSummary {
+  attemptCount: number;
+  estimatedCostUsd: number | null;
+  usage: TokenUsage | null;
+}
+
 export type ProviderAttemptEvent =
   | {
       attemptNo: number;
@@ -179,6 +185,43 @@ export async function recordProviderAttemptEvent(
     return;
   }
   await recordTerminalEvent(client, key, event);
+}
+
+export async function summarizeProviderAttempts(
+  client: PoolClient,
+  interactionTurnId: string,
+): Promise<ProviderAttemptSummary> {
+  const result = await client.query<{
+    attempt_count: string;
+    cost_count: string;
+    estimated_cost_usd: string;
+    input_tokens: string;
+    output_tokens: string;
+    usage_count: string;
+  }>(
+    `SELECT count(*)::text AS attempt_count,
+            count(input_tokens)::text AS usage_count,
+            COALESCE(sum(input_tokens), 0)::text AS input_tokens,
+            COALESCE(sum(output_tokens), 0)::text AS output_tokens,
+            count(estimated_cost_usd)::text AS cost_count,
+            COALESCE(sum(estimated_cost_usd), 0)::text AS estimated_cost_usd
+       FROM chat_provider_attempts
+      WHERE interaction_turn_id = $1`,
+    [interactionTurnId],
+  );
+  const row = result.rows[0];
+  const usageCount = Number(row?.usage_count ?? 0);
+  const costCount = Number(row?.cost_count ?? 0);
+  return {
+    attemptCount: Number(row?.attempt_count ?? 0),
+    usage: usageCount > 0
+      ? {
+          inputTokens: Number(row.input_tokens),
+          outputTokens: Number(row.output_tokens),
+        }
+      : null,
+    estimatedCostUsd: costCount > 0 ? Number(row.estimated_cost_usd) : null,
+  };
 }
 
 async function inTransaction<T>(client: PoolClient, run: () => Promise<T>): Promise<T> {

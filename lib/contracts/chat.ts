@@ -15,7 +15,14 @@ export type ChatWorkflow = typeof CHAT_WORKFLOWS[number];
 export const CHAT_BEHAVIOR_VERSIONS = ['v1', 'v2'] as const;
 export type ChatBehaviorVersion = typeof CHAT_BEHAVIOR_VERSIONS[number];
 
-export const CHAT_PHASES = ['routing', 'knowledge', 'web', 'answering', 'handoff'] as const;
+export const CHAT_PHASES = [
+  'routing',
+  'knowledge',
+  'web',
+  'answering',
+  'switching',
+  'handoff',
+] as const;
 export type ChatPhase = typeof CHAT_PHASES[number];
 
 export const CHAT_SOURCE_KINDS = ['local', 'official', 'github', 'web'] as const;
@@ -109,6 +116,7 @@ export type ChatServiceEvent =
       usage: TokenUsage | null;
       budgetLevel: BudgetLevel;
       consumed: boolean;
+      degraded: boolean;
       remainingMessages: number;
     };
 
@@ -124,6 +132,7 @@ export interface ChatSsePayload {
   text?: string;
   usage?: TokenUsage | null;
   consumed?: boolean;
+  degraded?: boolean;
   remainingMessages?: number;
 }
 

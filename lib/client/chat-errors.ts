@@ -6,6 +6,13 @@ import {
 
 const stableChatErrorCodes = new Set<string>(CHAT_ERROR_CODES);
 const recoverableChatErrorCodes = new Set<string>(RECOVERABLE_CHAT_ERROR_CODES);
+const autoReplayChatErrorCodes = new Set<string>([
+  'RETRIEVAL_UNAVAILABLE',
+  'PROVIDER_UNAVAILABLE',
+  'PROVIDER_INCOMPLETE',
+  'CONVERSATION_BUSY',
+  'CHAT_UNAVAILABLE',
+]);
 
 export function publicErrorMessage(code?: string): string {
   if (code === 'MESSAGE_LIMIT') return '本次邀请码的对话额度已用完,请联系摩斯获取新码。';
@@ -30,6 +37,10 @@ export function publicErrorMessage(code?: string): string {
 
 export function isRecoverableChatError(code?: string): boolean {
   return typeof code === 'string' && recoverableChatErrorCodes.has(code);
+}
+
+export function isAutoReplayChatError(code?: string): boolean {
+  return typeof code === 'string' && autoReplayChatErrorCodes.has(code);
 }
 
 export function normalizeChatErrorCode(error: unknown): ChatErrorCode {

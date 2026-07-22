@@ -15,6 +15,8 @@ import {
 import { redeemInvite } from '../lib/server/access.ts';
 import { normalizeChatRequest } from '../lib/server/chat-core.ts';
 import { ChatServiceError, runChat, type ChatServiceEvent } from '../lib/server/chat-service.ts';
+import { FailoverAiProvider } from '../lib/server/failover-ai-provider.ts';
+import { OpenAIProviderError } from '../lib/server/openai-provider.ts';
 import { hashSecret } from '../lib/server/security.ts';
 import type { SearchProvider, SearchResponse } from '../lib/server/search-provider.ts';
 import { OperationTimeoutError } from '../lib/server/timeout.ts';
@@ -45,6 +47,12 @@ class FakeProvider implements AiProvider {
   async *streamAnswer(request: AnswerRequest, signal?: AbortSignal): AsyncIterable<AnswerEvent> {
     this.requests.push(request);
     this.answerSignal = signal;
+    if (request.execution) {
+      yield { type: 'delta', text: 'Public ' };
+      yield { type: 'delta', text: 'answer.' };
+      yield { type: 'done', usage: { inputTokens: 100, outputTokens: 20 } };
+      return;
+    }
     yield { type: 'delta', text: '深度研究系统把证据链作为出厂闸门' };
     yield { type: 'delta', text: '。[来源1]' };
     yield { type: 'done', usage: { inputTokens: 100, outputTokens: 20 } };
@@ -626,6 +634,89 @@ function injectCompletionCommitFault(mode: CompletionCommitMode): {
   return { faultPool, wasInjected: () => injected };
 }
 
+function injectDegradedCommitFault(mode: CompletionCommitMode): {
+  faultPool: PgPool;
+  wasInjected(): boolean;
+} {
+  let degradedDmlSeen = false;
+  let injected = false;
+  const faultPool = new Proxy(pool!, {
+    get(target, property) {
+      if (property === 'connect') {
+        return async () => {
+          const client = await target.connect();
+          return new Proxy(client, {
+            get(clientTarget, clientProperty) {
+              if (clientProperty === 'query') {
+                return async (query: string, values?: unknown[]) => {
+                  if (query === 'COMMIT' && degradedDmlSeen && !injected) {
+                    injected = true;
+                    if (mode === 'commit_without_ack') {
+                      await clientTarget.query(query, values);
+                    }
+                    throw new Error(`degraded commit fault: ${mode}`);
+                  }
+                  const result = await clientTarget.query(query, values);
+                  if (
+                    query.includes('UPDATE interaction_turns')
+                    && query.includes("error_code = 'SAFE_DEGRADED'")
+                  ) {
+                    degradedDmlSeen = true;
+                  }
+                  return result;
+                };
+              }
+              const value = Reflect.get(clientTarget, clientProperty);
+              return typeof value === 'function' ? value.bind(clientTarget) : value;
+            },
+          });
+        };
+      }
+      const value = Reflect.get(target, property);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  }) as PgPool;
+  return { faultPool, wasInjected: () => injected };
+}
+
+function abortAfterDegradedDml(controller: AbortController): PgPool {
+  let aborted = false;
+  return new Proxy(pool!, {
+    get(target, property) {
+      if (property === 'connect') {
+        return async () => {
+          const client = await target.connect();
+          return new Proxy(client, {
+            get(clientTarget, clientProperty) {
+              if (clientProperty === 'query') {
+                return async (query: string, values?: unknown[]) => {
+                  const result = await clientTarget.query(query, values);
+                  if (
+                    !aborted
+                    && query.includes('UPDATE interaction_turns')
+                    && query.includes("error_code = 'SAFE_DEGRADED'")
+                  ) {
+                    aborted = true;
+                    controller.abort(new DOMException(
+                      'Stopped before degraded COMMIT.',
+                      'AbortError',
+                    ));
+                  }
+                  return result;
+                };
+              }
+              const value = Reflect.get(clientTarget, clientProperty);
+              return typeof value === 'function' ? value.bind(clientTarget) : value;
+            },
+          });
+        };
+      }
+      const value = Reflect.get(target, property);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  }) as PgPool;
+}
+
 async function createFailureFixture(
   label: string,
   fixtureNow = now,
@@ -830,6 +921,73 @@ async function cleanupFailureFixture(fixture: FailureFixture): Promise<void> {
 async function consumeChat(input: Parameters<typeof runChat>[0]): Promise<void> {
   for await (const _event of runChat(input)) {
     // Consume the complete stream so failures surface in the test.
+  }
+}
+
+class ExplicitProviderFailure extends FakeProvider {
+  answerCalls = 0;
+
+  override async *streamAnswer(request: AnswerRequest): AsyncIterable<AnswerEvent> {
+    this.requests.push(request);
+    this.answerCalls += 1;
+    throw new OpenAIProviderError('PROVIDER_UNAVAILABLE');
+  }
+}
+
+class ProgrammingErrorProvider extends FakeProvider {
+  answerCalls = 0;
+  cleanupCalls = 0;
+
+  override async *streamAnswer(request: AnswerRequest): AsyncIterable<AnswerEvent> {
+    this.requests.push(request);
+    this.answerCalls += 1;
+    try {
+      throw new Error('program defect');
+    } finally {
+      this.cleanupCalls += 1;
+    }
+  }
+}
+
+class SequencedAnswerProvider extends FakeProvider {
+  readonly answers: string[];
+  readonly usages: Array<{ inputTokens: number; outputTokens: number }>;
+
+  constructor(
+    answers: string[],
+    usages = answers.map((_answer, index) => ({
+      inputTokens: 10 + index,
+      outputTokens: 2 + index,
+    })),
+  ) {
+    super();
+    this.answers = answers;
+    this.usages = usages;
+  }
+
+  override async *streamAnswer(request: AnswerRequest): AsyncIterable<AnswerEvent> {
+    const index = this.requests.length;
+    this.requests.push(request);
+    yield { type: 'delta', text: this.answers[index] ?? this.answers.at(-1)! };
+    yield { type: 'done', usage: this.usages[index] ?? this.usages.at(-1)! };
+  }
+}
+
+class SegmentedSequenceProvider extends FakeProvider {
+  readonly rounds: string[][];
+
+  constructor(rounds: string[][]) {
+    super();
+    this.rounds = rounds;
+  }
+
+  override async *streamAnswer(request: AnswerRequest): AsyncIterable<AnswerEvent> {
+    const index = this.requests.length;
+    this.requests.push(request);
+    for (const text of this.rounds[index] ?? this.rounds.at(-1)!) {
+      yield { type: 'delta', text };
+    }
+    yield { type: 'done', usage: { inputTokens: 10, outputTokens: 2 } };
   }
 }
 
@@ -2767,7 +2925,7 @@ test('runChat persists real usage and configured cost in the completed interacti
   const fixture = await createFailureFixture('s10-completed-interaction-usage');
   const turnId = randomUUID();
   try {
-    await consumeChat({
+    const events = await collectChat({
       pool: pool!,
       provider: new FakeProvider(),
       accessSessionId: fixture.accessSessionId,
@@ -2781,6 +2939,12 @@ test('runChat persists real usage and configured cost in the completed interacti
       config,
       now,
     });
+
+    const done = events.at(-1);
+    assert.equal(done?.type, 'done');
+    if (done?.type === 'done') {
+      assert.deepEqual(done.usage, { inputTokens: 100, outputTokens: 20 });
+    }
 
     const interaction = await readInteraction(turnId);
     assert.equal(interaction.status, 'completed');
@@ -4567,6 +4731,232 @@ test('v2 social skips embedding, RAG and search and uses low reasoning', {
   }
 });
 
+test('recruitment guard hides the rejected candidate and strictly regenerates once', {
+  skip: !pool,
+}, async () => {
+  const fixture = await createFailureFixture('chat-v2-guard-regeneration');
+  const node = new SequencedAnswerProvider([
+    '匹配度: 90%',
+    'Strict public evidence only.',
+  ]);
+  const coordinated = new FailoverAiProvider(
+    node,
+    [{ alias: 'primary', provider: node }],
+    1_000,
+  );
+  const turnId = randomUUID();
+
+  try {
+    const events = await collectChat({
+      pool: pool!,
+      provider: coordinated,
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        message: '招聘候选人的项目证据',
+        audienceIntent: 'recruiter',
+        turnId,
+      }),
+      config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
+      now,
+    });
+
+    assert.equal(node.requests.length, 2);
+    assert.doesNotMatch(node.requests[0].instructions, /严格重生成/u);
+    assert.match(node.requests[1].instructions, /严格重生成/u);
+    assert.equal(node.requests[1].execution?.hedgingEnabled, false);
+    assert.doesNotMatch(JSON.stringify(events), /匹配度: 90%/u);
+    assert.equal(
+      events.filter((event) => event.type === 'delta').map((event) => event.text).join(''),
+      'Strict public evidence only.',
+    );
+
+    const interaction = await readInteraction(turnId);
+    assert.equal(interaction.status, 'completed');
+    assert.equal(interaction.answer, 'Strict public evidence only.');
+    assert.equal(interaction.input_tokens, 21);
+    assert.equal(interaction.output_tokens, 5);
+    assert.equal(Number(interaction.estimated_cost_usd), 0.000031);
+
+    const attempts = await pool!.query<{
+      input_tokens: number;
+      output_tokens: number;
+      status: string;
+      winner: boolean;
+    }>(
+      `SELECT input_tokens, output_tokens, status, winner
+         FROM interaction_provider_attempts
+        WHERE interaction_turn_id = $1
+        ORDER BY started_at, execution_id`,
+      [turnId],
+    );
+    assert.deepEqual(attempts.rows, [
+      { input_tokens: 10, output_tokens: 2, status: 'failed', winner: false },
+      { input_tokens: 11, output_tokens: 3, status: 'completed', winner: true },
+    ]);
+
+    const beforeReplay = attempts.rowCount;
+    const replayEvents = await collectChat({
+      pool: pool!,
+      provider: new ForbiddenReplayProvider(),
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        message: '招聘候选人的项目证据',
+        audienceIntent: 'recruiter',
+        conversationId: interaction.conversation_id,
+        turnId,
+      }),
+      config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
+      now: new Date(now.getTime() + 1_000),
+    });
+    const afterReplay = await pool!.query(
+      'SELECT 1 FROM interaction_provider_attempts WHERE interaction_turn_id = $1',
+      [turnId],
+    );
+    assert.equal(afterReplay.rowCount, beforeReplay);
+    const replayDone = replayEvents.at(-1);
+    assert.equal(replayDone?.type, 'done');
+    if (replayDone?.type === 'done') {
+      assert.equal(replayDone.consumed, false);
+    }
+  } finally {
+    await cleanupFailureFixture(fixture);
+  }
+});
+
+test('two guard failures persist only attempt metadata and return a non-consuming safe result', {
+  skip: !pool,
+}, async () => {
+  const fixture = await createFailureFixture('chat-v2-safe-degraded');
+  const node = new SequencedAnswerProvider([
+    '匹配度: 90%',
+    '匹配度: 95%',
+  ]);
+  const coordinated = new FailoverAiProvider(
+    node,
+    [{ alias: 'primary', provider: node }],
+    1_000,
+  );
+  const turnId = randomUUID();
+
+  try {
+    const events = await collectChat({
+      pool: pool!,
+      provider: coordinated,
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        message: '招聘候选人的项目证据 SECRET_JD_MARKER',
+        audienceIntent: 'recruiter',
+        turnId,
+      }),
+      config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
+      now,
+    });
+    const done = events.at(-1) as (ChatServiceEvent & { degraded?: boolean }) | undefined;
+    assert.equal(done?.type, 'done');
+    if (done?.type !== 'done') throw new Error('degraded done event is missing');
+    assert.equal(done.consumed, false);
+    assert.equal(done.degraded, true);
+    assert.equal(node.requests.length, 2);
+
+    assert.deepEqual(await readSessionSnapshot(fixture.accessSessionId), {
+      messageCount: 0,
+      messageRows: 0,
+      usageRows: 1,
+    });
+    const interaction = await readInteraction(turnId);
+    assert.equal(interaction.status, 'failed');
+    assert.equal(interaction.error_code, 'SAFE_DEGRADED');
+    assert.ok(interaction.answer);
+    assert.equal(interaction.input_tokens, 21);
+    assert.equal(interaction.output_tokens, 5);
+    assert.equal(Number(interaction.estimated_cost_usd), 0.000031);
+
+    const attempts = await pool!.query<{ row: Record<string, unknown> }>(
+      `SELECT to_jsonb(attempt) AS row
+         FROM interaction_provider_attempts AS attempt
+        WHERE interaction_turn_id = $1
+        ORDER BY started_at, execution_id`,
+      [turnId],
+    );
+    assert.equal(attempts.rowCount, 2);
+    for (const { row } of attempts.rows) {
+      assert.deepEqual(
+        Object.keys(row).filter((key) => /question|job|answer|url|key|prompt|instruction/iu.test(key)),
+        [],
+      );
+      assert.doesNotMatch(
+        JSON.stringify(row),
+        /SECRET_JD_MARKER|匹配度: 9[05]%|https?:|api[_-]?key/iu,
+      );
+      assert.equal(typeof row.provider_alias, 'string');
+      assert.equal(typeof row.launch_kind, 'string');
+      assert.equal(typeof row.duration_ms, 'number');
+      assert.equal(row.status, 'failed');
+    }
+
+    const beforeReplay = await readSessionSnapshot(fixture.accessSessionId);
+    const replayEvents = await collectChat({
+      pool: pool!,
+      provider: new ForbiddenReplayProvider(),
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        message: interaction.question,
+        audienceIntent: 'recruiter',
+        conversationId: interaction.conversation_id,
+        turnId,
+      }),
+      config: { ...config, chatV2Enabled: false, chatV2CanaryPercent: 0 },
+      now: new Date(now.getTime() + 1_000),
+    });
+    assert.equal(
+      replayEvents.filter((event) => event.type === 'delta').map((event) => event.text).join(''),
+      interaction.answer,
+    );
+    const replayDone = replayEvents.at(-1);
+    assert.equal(replayDone?.type, 'done');
+    if (replayDone?.type === 'done') {
+      assert.equal(replayDone.consumed, false);
+      assert.equal(replayDone.degraded, true);
+    }
+    assert.deepEqual(await readSessionSnapshot(fixture.accessSessionId), beforeReplay);
+    const replayAttempts = await pool!.query(
+      'SELECT 1 FROM interaction_provider_attempts WHERE interaction_turn_id = $1',
+      [turnId],
+    );
+    assert.equal(replayAttempts.rowCount, attempts.rowCount);
+
+    const shell = await pool!.query(
+      'SELECT 1 FROM conversations WHERE id = $1 AND access_session_id = $2',
+      [interaction.conversation_id, fixture.accessSessionId],
+    );
+    assert.equal(shell.rowCount, 1);
+    const nextEvents = await collectChat({
+      pool: pool!,
+      provider: new FakeProvider(),
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        message: 'Continue in the same conversation after degraded replay.',
+        conversationId: interaction.conversation_id,
+        turnId: randomUUID(),
+      }),
+      config: { ...config, chatV2Enabled: false, chatV2CanaryPercent: 0 },
+      now: new Date(now.getTime() + 2_000),
+    });
+    const nextMeta = nextEvents.find((event) => event.type === 'meta');
+    assert.equal(nextMeta?.type, 'meta');
+    if (nextMeta?.type === 'meta') {
+      assert.equal(nextMeta.conversationId, interaction.conversation_id);
+    }
+    assert.deepEqual(await readSessionSnapshot(fixture.accessSessionId), {
+      messageCount: 1,
+      messageRows: 2,
+      usageRows: 2,
+    });
+  } finally {
+    await cleanupFailureFixture(fixture);
+  }
+});
+
 test('v2 identity skips embedding and search while using the approved identity card', {
   skip: !pool,
 }, async () => {
@@ -4613,6 +5003,398 @@ test('v2 identity skips embedding and search while using the approved identity c
   }
 });
 
+test('a rejected later segment switches and restarts strict output from blank', {
+  skip: !pool,
+}, async () => {
+  const fixture = await createFailureFixture('chat-v2-segment-reset');
+  const node = new SegmentedSequenceProvider([
+    ['Accepted public segment. ', 'AGENTS.md.'],
+    ['Strict segment answer.'],
+  ]);
+  const coordinated = new FailoverAiProvider(
+    node,
+    [{ alias: 'primary', provider: node }],
+    1_000,
+  );
+
+  try {
+    const events = await collectChat({
+      pool: pool!,
+      provider: coordinated,
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        message: 'agent architecture evidence',
+        turnId: randomUUID(),
+      }),
+      config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
+      now,
+    });
+    const answerEvents = events.filter((event) => (
+      event.type === 'delta'
+      || (event.type === 'status' && String(event.stage) === 'switching')
+    ));
+    assert.deepEqual(answerEvents, [
+      { type: 'delta', text: 'Accepted public segment. ' },
+      { type: 'status', stage: 'switching' },
+      { type: 'delta', text: 'Strict segment answer.' },
+    ]);
+
+    let visible = '';
+    for (const event of answerEvents) {
+      if (event.type === 'status') visible = '';
+      else visible += event.text;
+    }
+    assert.equal(visible, 'Strict segment answer.');
+    assert.match(node.requests[1].instructions, /严格重生成/u);
+  } finally {
+    await cleanupFailureFixture(fixture);
+  }
+});
+
+test('provider exhaustion returns SAFE_DEGRADED without consuming message quota', {
+  skip: !pool,
+}, async () => {
+  const fixture = await createFailureFixture('chat-v2-provider-degraded');
+  const node = new ExplicitProviderFailure();
+  const coordinated = new FailoverAiProvider(
+    node,
+    [{ alias: 'primary', provider: node }],
+    1_000,
+  );
+  const turnId = randomUUID();
+
+  try {
+    const events = await collectChat({
+      pool: pool!,
+      provider: coordinated,
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        message: 'agent architecture evidence',
+        turnId,
+      }),
+      config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
+      now,
+    });
+    const done = events.at(-1) as (ChatServiceEvent & { degraded?: boolean }) | undefined;
+    assert.equal(done?.type, 'done');
+    if (done?.type !== 'done') throw new Error('provider degraded done event is missing');
+    assert.equal(done.consumed, false);
+    assert.equal(done.degraded, true);
+    assert.ok(node.answerCalls >= 1);
+    assert.deepEqual(await readSessionSnapshot(fixture.accessSessionId), {
+      messageCount: 0,
+      messageRows: 0,
+      usageRows: 0,
+    });
+    const interaction = await readInteraction(turnId);
+    assert.equal(interaction.status, 'failed');
+    assert.equal(interaction.error_code, 'SAFE_DEGRADED');
+    const attempts = await pool!.query<{ status: string }>(
+      `SELECT status
+         FROM interaction_provider_attempts
+        WHERE interaction_turn_id = $1`,
+      [turnId],
+    );
+    assert.ok(attempts.rowCount >= 1);
+    assert.ok(attempts.rows.every((attempt) => attempt.status === 'failed'));
+  } finally {
+    await cleanupFailureFixture(fixture);
+  }
+});
+
+test('JD provider exhaustion has no invented fallback and can replay the same turn', {
+  skip: !pool,
+}, async () => {
+  const fixture = await createFailureFixture('chat-v2-jd-no-fallback');
+  const failing = new ExplicitProviderFailure();
+  const turnId = randomUUID();
+  const request = normalizeChatRequest({
+    workflow: 'jd_match',
+    jobDescription: 'Public role requirements for an agent systems engineer.',
+    turnId,
+  });
+  const v2Config = { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 };
+
+  try {
+    await assert.rejects(consumeChat({
+      pool: pool!,
+      provider: failing,
+      accessSessionId: fixture.accessSessionId,
+      request,
+      config: v2Config,
+      now,
+    }), (error: unknown) => (
+      error instanceof ChatServiceError && error.code === 'PROVIDER_UNAVAILABLE'
+    ));
+    assert.equal(failing.answerCalls, 2);
+    assert.deepEqual(await readSessionSnapshot(fixture.accessSessionId), {
+      messageCount: 0,
+      messageRows: 0,
+      usageRows: 0,
+    });
+    const failed = await readInteraction(turnId);
+    assert.equal(failed.status, 'failed');
+    assert.equal(failed.answer, null);
+    assert.notEqual(failed.error_code, 'SAFE_DEGRADED');
+
+    const replayEvents = await collectChat({
+      pool: pool!,
+      provider: new FakeProvider(),
+      accessSessionId: fixture.accessSessionId,
+      request,
+      config: v2Config,
+      now: new Date(now.getTime() + 1_000),
+    });
+    const done = replayEvents.at(-1);
+    assert.equal(done?.type, 'done');
+    if (done?.type === 'done') {
+      assert.equal(done.consumed, true);
+      assert.equal(done.degraded, false);
+    }
+    assert.deepEqual(await readSessionSnapshot(fixture.accessSessionId), {
+      messageCount: 1,
+      messageRows: 2,
+      usageRows: 1,
+    });
+  } finally {
+    await cleanupFailureFixture(fixture);
+  }
+});
+
+test('v1 same-turn retry books historical v2 attempts plus current legacy usage once', {
+  skip: !pool,
+}, async () => {
+  const fixture = await createFailureFixture('chat-v2-to-v1-usage-retry');
+  const node = new SequencedAnswerProvider([
+    '匹配度：90%',
+    '匹配度：95%',
+  ]);
+  const coordinated = new FailoverAiProvider(
+    node,
+    [{ alias: 'primary', provider: node }],
+    1_000,
+  );
+  const turnId = randomUUID();
+  const request = normalizeChatRequest({
+    workflow: 'jd_match',
+    jobDescription: 'Public role requirements for an agent systems engineer.',
+    turnId,
+  });
+
+  try {
+    await assert.rejects(consumeChat({
+      pool: pool!,
+      provider: coordinated,
+      accessSessionId: fixture.accessSessionId,
+      request,
+      config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
+      now,
+    }), (error: unknown) => (
+      error instanceof ChatServiceError && error.code === 'PROVIDER_UNAVAILABLE'
+    ));
+    const attemptsBefore = await pool!.query<{
+      input_tokens: number;
+      output_tokens: number;
+    }>(
+      `SELECT input_tokens, output_tokens
+         FROM interaction_provider_attempts
+        WHERE interaction_turn_id = $1
+        ORDER BY started_at, execution_id`,
+      [turnId],
+    );
+    assert.deepEqual(attemptsBefore.rows, [
+      { input_tokens: 10, output_tokens: 2 },
+      { input_tokens: 11, output_tokens: 3 },
+    ]);
+    assert.deepEqual(await readSessionSnapshot(fixture.accessSessionId), {
+      messageCount: 0,
+      messageRows: 0,
+      usageRows: 0,
+    });
+
+    const events = await collectChat({
+      pool: pool!,
+      provider: new FakeProvider(),
+      accessSessionId: fixture.accessSessionId,
+      request,
+      config: { ...config, chatV2Enabled: false, chatV2CanaryPercent: 0 },
+      now: new Date(now.getTime() + 1_000),
+    });
+    const done = events.at(-1);
+    assert.equal(done?.type, 'done');
+    if (done?.type === 'done') {
+      assert.deepEqual(done.usage, { inputTokens: 121, outputTokens: 25 });
+    }
+
+    const attemptsAfter = await pool!.query<{
+      input_tokens: number;
+      output_tokens: number;
+    }>(
+      `SELECT input_tokens, output_tokens
+         FROM interaction_provider_attempts
+        WHERE interaction_turn_id = $1
+        ORDER BY started_at, execution_id`,
+      [turnId],
+    );
+    assert.deepEqual(attemptsAfter.rows, attemptsBefore.rows);
+    const interaction = await readInteraction(turnId);
+    assert.equal(interaction.status, 'completed');
+    assert.equal(interaction.input_tokens, 121);
+    assert.equal(interaction.output_tokens, 25);
+    assert.equal(Number(interaction.estimated_cost_usd), 0.000171);
+    const usage = await pool!.query<{
+      input_tokens: number;
+      output_tokens: number;
+      estimated_cost_usd: string;
+    }>(
+      `SELECT input_tokens, output_tokens, estimated_cost_usd::text
+         FROM usage_events
+        WHERE access_session_id = $1`,
+      [fixture.accessSessionId],
+    );
+    assert.deepEqual(usage.rows, [{
+      input_tokens: 121,
+      output_tokens: 25,
+      estimated_cost_usd: '0.000171',
+    }]);
+    assert.deepEqual(await readSessionSnapshot(fixture.accessSessionId), {
+      messageCount: 1,
+      messageRows: 2,
+      usageRows: 1,
+    });
+  } finally {
+    await cleanupFailureFixture(fixture);
+  }
+});
+
+test('unknown provider defects are not regenerated or converted into a safe answer', {
+  skip: !pool,
+}, async () => {
+  const fixture = await createFailureFixture('chat-v2-program-defect');
+  const node = new ProgrammingErrorProvider();
+  const coordinated = new FailoverAiProvider(
+    node,
+    [{ alias: 'primary', provider: node }],
+    1_000,
+  );
+  const turnId = randomUUID();
+
+  try {
+    await assert.rejects(consumeChat({
+      pool: pool!,
+      provider: coordinated,
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({ message: 'agent architecture evidence', turnId }),
+      config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
+      now,
+    }), (error: unknown) => (
+      error instanceof ChatServiceError && error.code === 'PROVIDER_UNAVAILABLE'
+    ));
+    assert.equal(node.answerCalls, 1);
+    assert.equal(node.cleanupCalls, 1);
+    assert.deepEqual(await readSessionSnapshot(fixture.accessSessionId), {
+      messageCount: 0,
+      messageRows: 0,
+      usageRows: 0,
+    });
+    const interaction = await readInteraction(turnId);
+    assert.equal(interaction.answer, null);
+    assert.notEqual(interaction.error_code, 'SAFE_DEGRADED');
+  } finally {
+    await cleanupFailureFixture(fixture);
+  }
+});
+
+test('abort after degraded DML rolls back before COMMIT', { skip: !pool }, async () => {
+  const fixture = await createFailureFixture('chat-v2-degraded-abort');
+  const controller = new AbortController();
+  const faultPool = abortAfterDegradedDml(controller);
+  const turnId = randomUUID();
+
+  try {
+    await assert.rejects(consumeChat({
+      pool: faultPool,
+      provider: new ExplicitProviderFailure(),
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({ message: 'agent architecture evidence', turnId }),
+      config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
+      now,
+      signal: controller.signal,
+    }), (error: unknown) => error instanceof DOMException && error.name === 'AbortError');
+    assert.deepEqual(await readSessionSnapshot(fixture.accessSessionId), {
+      messageCount: 0,
+      messageRows: 0,
+      usageRows: 0,
+    });
+    const interaction = await readInteraction(turnId);
+    assert.equal(interaction.status, 'stopped');
+    assert.ok(interaction.answer);
+    assert.equal(interaction.error_code, 'CHAT_STOPPED');
+  } finally {
+    await cleanupFailureFixture(fixture);
+  }
+});
+
+test('degraded completion treats a lost COMMIT acknowledgement as durable success', {
+  skip: !pool,
+}, async () => {
+  const fixture = await createFailureFixture('chat-v2-degraded-commit-ack');
+  const { faultPool, wasInjected } = injectDegradedCommitFault('commit_without_ack');
+  const turnId = randomUUID();
+
+  try {
+    const events = await collectChat({
+      pool: faultPool,
+      provider: new ExplicitProviderFailure(),
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({ message: 'agent architecture evidence', turnId }),
+      config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
+      now,
+    });
+    assert.equal(wasInjected(), true);
+    const done = events.at(-1);
+    assert.equal(done?.type, 'done');
+    if (done?.type === 'done') assert.equal(done.degraded, true);
+    const interaction = await readInteraction(turnId);
+    assert.equal(interaction.status, 'failed');
+    assert.equal(interaction.error_code, 'SAFE_DEGRADED');
+    assert.ok(interaction.answer);
+  } finally {
+    await cleanupFailureFixture(fixture);
+  }
+});
+
+test('degraded completion compensates when COMMIT fails before durability', {
+  skip: !pool,
+}, async () => {
+  const fixture = await createFailureFixture('chat-v2-degraded-commit-rollback');
+  const { faultPool, wasInjected } = injectDegradedCommitFault('rollback_before_commit');
+  const turnId = randomUUID();
+
+  try {
+    await assert.rejects(consumeChat({
+      pool: faultPool,
+      provider: new ExplicitProviderFailure(),
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({ message: 'agent architecture evidence', turnId }),
+      config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
+      now,
+    }), /degraded commit fault: rollback_before_commit/);
+    assert.equal(wasInjected(), true);
+    assert.deepEqual(await readSessionSnapshot(fixture.accessSessionId), {
+      messageCount: 0,
+      messageRows: 0,
+      usageRows: 0,
+    });
+    const interaction = await readInteraction(turnId);
+    assert.equal(interaction.status, 'failed');
+    assert.ok(interaction.answer);
+    assert.equal(interaction.error_code, 'PERSISTENCE_FAILED');
+  } finally {
+    await cleanupFailureFixture(fixture);
+  }
+});
+
 test('safe mode skips embedding and search and uses only approved public knowledge', {
   skip: !pool,
 }, async () => {
@@ -4648,6 +5430,7 @@ test('safe mode skips embedding and search and uses only approved public knowled
     assert.equal(meta?.type, 'meta');
     if (meta?.type !== 'meta') return;
     assert.equal(aiProvider.embedCalls, 0);
+    assert.equal(aiProvider.requests.length, 0);
     assert.equal(searchProvider.calls.length, 0);
     assert.ok(meta.sources.length > 0);
     const assignment = await pool!.query<{ chat_behavior_version: string | null }>(

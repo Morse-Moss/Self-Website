@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { readChatSse } from '../lib/client/chat-sse.ts';
+import { isAutoReplayChatError } from '../lib/client/chat-errors.ts';
 
 const encoder = new TextEncoder();
 
@@ -120,4 +121,41 @@ test('readChatSse preserves an active AbortError instead of reporting provider i
     readChatSse(response, () => undefined),
     (error: unknown) => error instanceof DOMException && error.name === 'AbortError',
   );
+});
+
+test('readChatSse preserves switching and degraded completion payloads', async () => {
+  const payloads: Array<{ event: string; stage?: string; degraded?: boolean }> = [];
+  await readChatSse(
+    responseFrom([
+      'event: status\ndata: {"stage":"switching"}\n\n',
+      'event: delta\ndata: {"text":"strict answer"}\n\n',
+      'event: done\ndata: {"remainingMessages":2,"consumed":false,"degraded":true}\n\n',
+    ]),
+    (event, payload) => payloads.push({ event, stage: payload.stage, degraded: payload.degraded }),
+  );
+  assert.deepEqual(payloads, [
+    { event: 'status', stage: 'switching', degraded: undefined },
+    { event: 'delta', stage: undefined, degraded: undefined },
+    { event: 'done', stage: undefined, degraded: true },
+  ]);
+});
+
+test('automatic replay uses only the narrow transient error set', () => {
+  for (const code of [
+    'RETRIEVAL_UNAVAILABLE',
+    'PROVIDER_UNAVAILABLE',
+    'PROVIDER_INCOMPLETE',
+    'CONVERSATION_BUSY',
+    'CHAT_UNAVAILABLE',
+  ]) assert.equal(isAutoReplayChatError(code), true, code);
+
+  for (const code of [
+    'ACCESS_REQUIRED',
+    'SESSION_INVALID',
+    'MESSAGE_LIMIT',
+    'BUDGET_EXHAUSTED',
+    'CONVERSATION_INVALID',
+    'CONVERSATION_MODE_MISMATCH',
+    'CHAT_STOPPED',
+  ]) assert.equal(isAutoReplayChatError(code), false, code);
 });
