@@ -1,34 +1,41 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { test } from 'node:test';
 
 import {
   AnswerExecutionError,
+  ProviderRunError,
   type AnswerEvent,
   type ProviderAttempt,
 } from '../lib/server/ai-provider.ts';
 import {
   runGuardedChatAnswer,
   type ChatAnswerRunnerEvent,
+  type GenerateChatAnswerInput,
 } from '../lib/server/chat-answer-runner.ts';
+import { createChatExecutionBudget } from '../lib/server/chat-execution-budget.ts';
+import { OperationTimeoutError } from '../lib/server/timeout.ts';
 
-async function collect(
-  stream: AsyncIterable<ChatAnswerRunnerEvent>,
-): Promise<ChatAnswerRunnerEvent[]> {
+async function collect(stream: AsyncIterable<ChatAnswerRunnerEvent>): Promise<ChatAnswerRunnerEvent[]> {
   const events: ChatAnswerRunnerEvent[] = [];
   for await (const event of stream) events.push(event);
   return events;
 }
 
 function stream(...events: AnswerEvent[]): AsyncIterable<AnswerEvent> {
-  return (async function* answerStream() {
-    yield* events;
-  })();
+  return (async function* answerStream() { yield* events; })();
 }
 
-function attempt(
-  attemptIndex: number,
-  status: ProviderAttempt['status'],
-): ProviderAttempt {
+function budget() {
+  return createChatExecutionBudget({
+    turnStartedAtMs: 0,
+    providerStartedAtMs: 0,
+    turnTimeoutMs: 90_000,
+    providerTimeoutMs: 80_000,
+    maxAttempts: 3,
+  });
+}
+
+function attempt(attemptIndex: number, status: ProviderAttempt['status']): ProviderAttempt {
   const startedAt = new Date(`2026-07-22T00:00:0${attemptIndex}.000Z`);
   return {
     attemptIndex,
@@ -39,8 +46,13 @@ function attempt(
     costComplete: true,
     errorCode: status === 'completed' ? null : 'OUTPUT_GUARD_REJECTED',
     firstByteLatencyMs: 1,
+    firstModelTextMs: 1,
+    firstProtocolEventMs: 1,
+    firstUserVisibleMs: 1,
+    generationMode: status === 'completed' ? 'strict' : 'normal',
     inputUsdPerMillion: '1',
     knownCostUsd: 0.00001,
+    launchKind: 'primary',
     modelDisplayName: 'Test model',
     modelId: 'test-model',
     modelVersionId: null,
@@ -57,12 +69,14 @@ function attempt(
   };
 }
 
-test('a rejected complete candidate is never emitted before strict regeneration', async () => {
-  const strictCalls: boolean[] = [];
+test('only output guard rejection starts strict generation', async () => {
+  const calls: GenerateChatAnswerInput[] = [];
   const events = await collect(runGuardedChatAnswer({
-    generate(strict) {
-      strictCalls.push(strict);
-      return strict
+    budget: budget(),
+    now: () => 1_000,
+    generate(input) {
+      calls.push(input);
+      return input.strict
         ? stream(
             { type: 'delta', text: 'strict public answer' },
             { type: 'done', usage: { inputTokens: 7, outputTokens: 3 }, providerAlias: 'primary' },
@@ -72,158 +86,91 @@ test('a rejected complete candidate is never emitted before strict regeneration'
             { type: 'done', usage: { inputTokens: 5, outputTokens: 2 }, providerAlias: 'primary' },
           );
     },
-    inspect(answer) {
-      return { ok: !answer.includes('rejected'), reasons: [] };
-    },
-    safeAnswer: () => null,
-    canRegenerate: (error) => error instanceof AnswerExecutionError,
+    inspect: (answer) => ({ ok: !answer.includes('rejected'), reasons: [] }),
   }));
 
-  assert.deepEqual(strictCalls, [false, true]);
-  assert.deepEqual(events, [
+  assert.deepEqual(calls.map((call) => call.generationMode), ['normal', 'strict']);
+  assert.deepEqual(events.filter((event) => event.type === 'delta'), [
     { type: 'delta', text: 'strict public answer' },
-    {
-      type: 'complete',
-      answer: 'strict public answer',
-      attempts: [],
-      costComplete: false,
-      usage: { inputTokens: 7, outputTokens: 3 },
-      usageComplete: true,
-      knownCostUsd: null,
-      winner: null,
-      degraded: false,
-      providerAlias: 'primary',
-    },
   ]);
   assert.doesNotMatch(JSON.stringify(events), /rejected recruitment claim/);
 });
 
-test('a second guard rejection returns a non-consuming degraded safe answer', async () => {
-  let calls = 0;
-  const events = await collect(runGuardedChatAnswer({
-    generate() {
-      calls += 1;
-      return stream({ type: 'delta', text: 'rejected answer' });
-    },
-    inspect: () => ({ ok: false, reasons: ['system_metadata'] }),
-    safeAnswer: () => ({ text: 'approved safe summary', sources: [] }),
-    canRegenerate: (error) => error instanceof AnswerExecutionError,
-  }));
-
-  assert.equal(calls, 2);
-  assert.deepEqual(events, [
-    { type: 'delta', text: 'approved safe summary' },
-    {
-      type: 'complete',
-      answer: 'approved safe summary',
-      attempts: [],
-      costComplete: false,
-      usage: null,
-      usageComplete: false,
-      knownCostUsd: null,
-      winner: null,
-      degraded: true,
-      providerAlias: null,
-    },
-  ]);
+test('network and timeout errors do not start strict generation', async () => {
+  for (const error of [
+    new ProviderRunError('PROVIDER_UNAVAILABLE', []),
+    new OperationTimeoutError('PROVIDER_TOTAL_TIMEOUT'),
+  ]) {
+    const calls: boolean[] = [];
+    await assert.rejects(async () => {
+      await collect(runGuardedChatAnswer({
+        budget: budget(),
+        now: () => 1_000,
+        generate(input) {
+          calls.push(input.strict);
+          return (async function* failed(): AsyncGenerator<AnswerEvent> { throw error; })();
+        },
+        inspect: () => ({ ok: true, reasons: [] }),
+      }));
+    }, (candidate: unknown) => candidate === error);
+    assert.deepEqual(calls, [false]);
+  }
 });
 
-test('exhausted provider regeneration returns the safe degraded answer', async () => {
+test('a second guard rejection fails without a local safe answer', async () => {
   let calls = 0;
-  const events = await collect(runGuardedChatAnswer({
-    generate() {
-      calls += 1;
-      return (async function* failedProvider(): AsyncGenerator<AnswerEvent> {
-        throw new Error('provider unavailable');
-      })();
-    },
-    inspect: () => ({ ok: true, reasons: [] }),
-    safeAnswer: () => ({ text: 'safe provider fallback', sources: [] }),
-    canRegenerate: (error) => error instanceof Error && error.message === 'provider unavailable',
-  }));
-
+  await assert.rejects(async () => {
+    await collect(runGuardedChatAnswer({
+      budget: budget(),
+      now: () => 1_000,
+      generate() {
+        calls += 1;
+        return stream({ type: 'delta', text: 'rejected answer' });
+      },
+      inspect: () => ({ ok: false, reasons: ['system_metadata'] }),
+    }));
+  }, (error: unknown) => (
+    error instanceof AnswerExecutionError && error.code === 'OUTPUT_GUARD_REJECTED'
+  ));
   assert.equal(calls, 2);
-  assert.deepEqual(events, [
-    { type: 'delta', text: 'safe provider fallback' },
-    {
-      type: 'complete',
-      answer: 'safe provider fallback',
-      attempts: [],
-      costComplete: false,
-      usage: null,
-      usageComplete: false,
-      knownCostUsd: null,
-      winner: null,
-      degraded: true,
-      providerAlias: null,
-    },
-  ]);
 });
 
 test('a rejected later segment resets provisional text before strict regeneration', async () => {
   const events = await collect(runGuardedChatAnswer({
-    generate(strict) {
-      return strict
-        ? stream(
-            { type: 'delta', text: 'strict answer.' },
-            { type: 'done', usage: null, providerAlias: 'primary' },
-          )
+    budget: budget(),
+    now: () => 1_000,
+    generate(input) {
+      return input.strict
+        ? stream({ type: 'delta', text: 'strict answer.' }, { type: 'done', usage: null })
         : stream(
             { type: 'delta', text: 'accepted segment. ' },
             { type: 'delta', text: 'rejected segment.' },
           );
     },
-    inspect(answer) {
-      return { ok: !answer.includes('rejected'), reasons: [] };
-    },
-    safeAnswer: () => null,
-    canRegenerate: (error) => error instanceof AnswerExecutionError,
+    inspect: (answer) => ({ ok: !answer.includes('rejected'), reasons: [] }),
   }));
 
-  assert.deepEqual(events, [
+  assert.deepEqual(events.filter((event) => (
+    event.type === 'delta' || event.type === 'reset'
+  )), [
     { type: 'delta', text: 'accepted segment. ' },
     { type: 'reset' },
     { type: 'delta', text: 'strict answer.' },
-    {
-      type: 'complete',
-      answer: 'strict answer.',
-      attempts: [],
-      costComplete: false,
-      usage: null,
-      usageComplete: false,
-      knownCostUsd: null,
-      winner: null,
-      degraded: false,
-      providerAlias: 'primary',
-    },
   ]);
-
-  let visible = '';
-  for (const event of events) {
-    if (event.type === 'reset') visible = '';
-    if (event.type === 'delta') visible += event.text;
-  }
-  assert.equal(visible, 'strict answer.');
 });
 
-test('provider attempts are forwarded and reindexed across strict regeneration', async () => {
+test('provider attempts are forwarded and reindexed across strict generation', async () => {
   const first = attempt(0, 'failed');
   const second = attempt(0, 'completed');
   const events = await collect(runGuardedChatAnswer({
-    generate(strict) {
-      return strict
+    budget: budget(),
+    now: () => 1_000,
+    generate(input) {
+      return input.strict
         ? stream(
             { type: 'attempt', attempt: second },
             { type: 'delta', text: 'strict answer' },
-            {
-              type: 'done',
-              attempts: [second],
-              costComplete: true,
-              knownCostUsd: second.knownCostUsd,
-              usage: second.usage,
-              usageComplete: true,
-              winner: { ...second, attemptIndex: 0 },
-            },
+            { type: 'done', attempts: [second], usage: second.usage, winner: { ...second, attemptIndex: 0 } },
           )
         : (async function* rejected(): AsyncGenerator<AnswerEvent> {
             yield { type: 'attempt', attempt: first };
@@ -231,82 +178,48 @@ test('provider attempts are forwarded and reindexed across strict regeneration',
           })();
     },
     inspect: () => ({ ok: true, reasons: [] }),
-    safeAnswer: () => null,
-    canRegenerate: (error) => error instanceof AnswerExecutionError,
   }));
 
-  assert.deepEqual(
-    events
-      .filter((event): event is Extract<ChatAnswerRunnerEvent, { type: 'attempt' }> => (
-        event.type === 'attempt'
-      ))
-      .map((event) => event.attempt.attemptIndex),
-    [0, 1],
+  const attempts = events.filter(
+    (event): event is Extract<ChatAnswerRunnerEvent, { type: 'attempt' }> => event.type === 'attempt',
   );
+  assert.deepEqual(attempts.map((event) => event.attempt.attemptIndex), [0, 1]);
   const complete = events.at(-1);
   assert.equal(complete?.type, 'complete');
-  if (complete?.type !== 'complete') throw new Error('complete event is missing');
-  assert.deepEqual(complete.attempts.map((item) => item.attemptIndex), [0, 1]);
-  assert.equal(complete.winner?.attemptIndex, 1);
+  if (complete?.type === 'complete') assert.equal(complete.winner?.attemptIndex, 1);
 });
 
-test('abort after reset prevents strict generation and preserves the original error', async () => {
-  const original = new AnswerExecutionError('OUTPUT_GUARD_REJECTED');
-  let aborted = false;
-  let generateCalls = 0;
-  let cleanupCalls = 0;
-  const iterator = runGuardedChatAnswer({
-    generate() {
-      generateCalls += 1;
-      return (async function* provisional(): AsyncGenerator<AnswerEvent> {
-        try {
-          yield { type: 'delta', text: 'provisional answer.' };
-          throw original;
-        } finally {
-          cleanupCalls += 1;
-        }
-      })();
-    },
+test('serial provider switching is forwarded without resetting visible text', async () => {
+  const events = await collect(runGuardedChatAnswer({
+    budget: budget(),
+    now: () => 1_000,
+    generate: () => stream(
+      { type: 'switching' },
+      { type: 'delta', text: 'fallback answer' },
+      { type: 'done', usage: null },
+    ),
     inspect: () => ({ ok: true, reasons: [] }),
-    safeAnswer: () => ({ text: 'safe answer', sources: [] }),
-    canRegenerate: (error) => !aborted && error === original,
-  })[Symbol.asyncIterator]();
+  }));
 
-  assert.deepEqual(await iterator.next(), {
-    done: false,
-    value: { type: 'delta', text: 'provisional answer.' },
-  });
-  assert.deepEqual(await iterator.next(), {
-    done: false,
-    value: { type: 'reset' },
-  });
-  aborted = true;
-  await assert.rejects(iterator.next(), (error: unknown) => error === original);
-  assert.equal(generateCalls, 1);
-  assert.equal(cleanupCalls, 1);
+  assert.deepEqual(events.slice(0, 2), [
+    { type: 'switching' },
+    { type: 'delta', text: 'fallback answer' },
+  ]);
 });
 
-test('an unknown execution error is not regenerated and closes its iterator', async () => {
+test('unknown execution errors propagate without regeneration', async () => {
   const original = new Error('program defect');
-  let generateCalls = 0;
-  let cleanupCalls = 0;
-  const iterator = runGuardedChatAnswer({
-    generate() {
-      generateCalls += 1;
-      return (async function* broken(): AsyncGenerator<AnswerEvent> {
-        try {
-          throw original;
-        } finally {
-          cleanupCalls += 1;
-        }
-      })();
-    },
-    inspect: () => ({ ok: true, reasons: [] }),
-    safeAnswer: () => ({ text: 'must not be used', sources: [] }),
-    canRegenerate: () => false,
-  })[Symbol.asyncIterator]();
-
-  await assert.rejects(iterator.next(), (error: unknown) => error === original);
-  assert.equal(generateCalls, 1);
-  assert.equal(cleanupCalls, 1);
+  let calls = 0;
+  await assert.rejects(async () => {
+    await collect(runGuardedChatAnswer({
+      budget: budget(),
+      now: () => 1_000,
+      generate() {
+        calls += 1;
+        return (async function* broken(): AsyncGenerator<AnswerEvent> { throw original; })();
+      },
+      inspect: () => ({ ok: true, reasons: [] }),
+    }));
+  }, (error: unknown) => error === original);
+  assert.equal(calls, 1);
 });

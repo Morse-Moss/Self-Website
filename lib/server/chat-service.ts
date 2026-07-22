@@ -36,6 +36,7 @@ import {
   runGuardedChatAnswer,
   type ChatAnswerRunnerEvent,
 } from './chat-answer-runner.ts';
+import { createChatExecutionBudget } from './chat-execution-budget.ts';
 import {
   routeChatTurn as routeLegacyChatTurn,
   selectChatBehavior,
@@ -55,7 +56,6 @@ import { resolveChatEvidence } from './chat-evidence.ts';
 import { buildV2SystemInstructions } from './chat-prompt.ts';
 import { inspectChatAnswer } from './chat-output-guard.ts';
 import { buildSafeChatAnswer } from './chat-safe-answer.ts';
-import { OpenAIProviderError } from './openai-provider.ts';
 import {
   completeInteraction,
   insertRunningInteraction,
@@ -94,7 +94,7 @@ import {
 } from './search-provider.ts';
 import { routeSearch } from './search-router.ts';
 import { parseStoredSearchResults } from './search-safety.ts';
-import { OperationTimeoutError } from './timeout.ts';
+import { createTimeoutSignal, OperationTimeoutError } from './timeout.ts';
 import {
   decodeTurnMessage,
   encodeTurnMessage,
@@ -141,6 +141,9 @@ export interface ChatServiceConfig {
   hedgedFailoverEnabled: boolean;
   chatSafeMode: boolean;
   providerTotalTimeoutMs: number;
+  providerStageTimeoutMs: number;
+  chatTurnTimeoutMs: number;
+  providerMaxAttempts: number;
 }
 
 export type PublicChatSource = ChatSource;
@@ -1525,15 +1528,6 @@ function providerPhaseError(error: unknown): RuntimePhaseError {
   return new RuntimePhaseError('PROVIDER_UNAVAILABLE', 'PROVIDER_UNAVAILABLE', error);
 }
 
-function canRegenerateAnswer(error: unknown, signal?: AbortSignal): boolean {
-  if (signal?.aborted) return false;
-  if (error instanceof ChatServiceError || error instanceof RuntimePhaseError) return false;
-  if (error instanceof AnswerExecutionError) return true;
-  if (error instanceof OpenAIProviderError) return true;
-  if (error instanceof OperationTimeoutError) return error.code !== 'EMBEDDING_TIMEOUT';
-  return false;
-}
-
 function strictRegenerationInstructions(instructions: string): string {
   return [
     instructions,
@@ -1741,6 +1735,14 @@ async function resolveSearch(input: {
 }
 
 export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEvent> {
+  const requestSignal = input.signal;
+  const executionStartedAtMs = Date.now();
+  const turnTimeout = createTimeoutSignal({
+    timeoutMs: input.config.chatTurnTimeoutMs,
+    code: 'CHAT_TURN_TIMEOUT',
+    signal: requestSignal,
+  });
+  input = { ...input, signal: turnTimeout.signal };
   const clock = input.now ? () => input.now! : () => new Date();
   const startedAt = clock();
   const turnId = input.request.turnId ?? randomUUID();
@@ -2205,8 +2207,18 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
     );
     const currentTurn = turn;
     let answerSources = sources;
+    const providerStartedAtMs = Date.now();
+    const executionBudget = createChatExecutionBudget({
+      turnStartedAtMs: executionStartedAtMs,
+      providerStartedAtMs,
+      turnTimeoutMs: input.config.chatTurnTimeoutMs,
+      providerTimeoutMs: input.config.providerStageTimeoutMs,
+      maxAttempts: input.config.providerMaxAttempts,
+    });
     answerIterator = runGuardedChatAnswer({
-      generate(strict) {
+      budget: executionBudget,
+      now: () => Date.now(),
+      generate({ strict, generationMode, remainingProviderMs }) {
         const executionId = randomUUID();
         const requestInstructions = strict
           ? strictRegenerationInstructions(instructions)
@@ -2220,9 +2232,11 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
                 executionId,
                 releasePolicy: route.release,
                 minimumBufferCharacters: 1,
-                totalTimeoutMs: input.config.providerTotalTimeoutMs,
-                hedgingEnabled: strict ? false : input.config.hedgedFailoverEnabled,
-                delaysMs: [0, 8_000, 14_000],
+                totalTimeoutMs: remainingProviderMs,
+                budget: executionBudget,
+                generationMode,
+                hedgingEnabled: false,
+                delaysMs: [0],
                 acceptCandidate(candidate) {
                   return inspectChatAnswer({
                     answer: candidate,
@@ -2292,8 +2306,6 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
           sourceCount: sources.length,
         });
       },
-      safeAnswer: () => safeFallback,
-      canRegenerate: (error) => canRegenerateAnswer(error, input.signal),
     })[Symbol.asyncIterator]();
 
     while (true) {
@@ -2338,6 +2350,10 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
         throwIfAborted(input.signal);
         continue;
       }
+      if (event.type === 'switching') {
+        yield { type: 'status', stage: 'switching' };
+        continue;
+      }
       throwIfAborted(input.signal);
       if (event.type === 'delta') {
         answer += event.text;
@@ -2376,50 +2392,6 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
             costComplete: event.costComplete,
           };
       const completedAt = clock();
-      if (event.degraded) {
-        answer = event.answer;
-        answerSources = safeFallback
-          ? toLocalPublicSources(safeFallback.sources)
-          : [];
-        try {
-          await completeDegradedTurn({
-            pool: input.pool,
-            client: lockClient,
-            accessSessionId: input.accessSessionId,
-            turn,
-            answer,
-            sources: answerSources,
-            attempts: providerAttempts,
-            config: input.config,
-            startedAt,
-            completedAt,
-            signal: input.signal,
-          });
-        } catch (error) {
-          throw new RuntimePhaseError(
-            'PROVIDER_UNAVAILABLE',
-            'PERSISTENCE_FAILED',
-            error,
-            true,
-          );
-        }
-        completed = true;
-        const remainingMessages = await getRemainingMessages(
-          lockClient,
-          input.accessSessionId,
-          input.config.maxMessagesPerSession,
-        );
-        yield {
-          type: 'done',
-          usage: null,
-          budgetLevel: NORMAL_BUDGET_LEVEL,
-          consumed: false,
-          degraded: true,
-          remainingMessages,
-        };
-        return;
-      }
-
       await recordDependencySuccess({
         client: lockClient,
         dependency: 'provider',
@@ -2486,7 +2458,7 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
     }
   } catch (error) {
     if (!turn || turn.replay) throw error;
-    failure = terminalFailure(error, input.signal);
+    failure = terminalFailure(error, requestSignal);
     throw failure.throwable;
   } finally {
     try {
@@ -2533,6 +2505,7 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
         destroyLockConnection = true;
       }
       lockClient.release(destroyLockConnection);
+      turnTimeout.dispose();
     }
   }
 }

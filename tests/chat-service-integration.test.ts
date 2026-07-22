@@ -430,6 +430,9 @@ const config = {
   hedgedFailoverEnabled: false,
   chatSafeMode: false,
   providerTotalTimeoutMs: 90_000,
+  providerStageTimeoutMs: 80_000,
+  chatTurnTimeoutMs: 90_000,
+  providerMaxAttempts: 3,
 };
 
 const searchConfig = {

@@ -1,4 +1,5 @@
 export type OperationTimeoutCode =
+  | 'CHAT_TURN_TIMEOUT'
   | 'EMBEDDING_TIMEOUT'
   | 'PROVIDER_FIRST_BYTE_TIMEOUT'
   | 'PROVIDER_TOTAL_TIMEOUT';

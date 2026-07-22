@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type {
-  AiProvider,
-  AnswerEvent,
-  AnswerRequest,
-  ProviderAnswerTarget,
+import {
+  AnswerExecutionError,
+  type AiProvider,
+  type AnswerEvent,
+  type AnswerRequest,
+  type ProviderAnswerTarget,
 } from '../lib/server/ai-provider.ts';
+import { createChatExecutionBudget } from '../lib/server/chat-execution-budget.ts';
 import { FailoverAiProvider } from '../lib/server/failover-ai-provider.ts';
 import { OpenAIProviderError } from '../lib/server/openai-provider.ts';
 import { ProviderHealthRegistry } from '../lib/server/provider-health.ts';
@@ -308,6 +310,7 @@ function guard<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
 
 function v2Request(overrides: Partial<NonNullable<AnswerRequest['execution']>> = {}): AnswerRequest {
   let executionEvents: unknown[] = [];
+  const now = Date.now();
   return {
     ...request,
     execution: {
@@ -315,6 +318,14 @@ function v2Request(overrides: Partial<NonNullable<AnswerRequest['execution']>> =
       releasePolicy: 'segment',
       minimumBufferCharacters: 1,
       totalTimeoutMs: 500,
+      budget: createChatExecutionBudget({
+        turnStartedAtMs: now,
+        providerStartedAtMs: now,
+        turnTimeoutMs: 90_000,
+        providerTimeoutMs: 80_000,
+        maxAttempts: 3,
+      }),
+      generationMode: 'normal',
       hedgingEnabled: true,
       delaysMs: [0, 8, 14],
       acceptCandidate: () => true,
@@ -417,7 +428,7 @@ test('a segment winner propagates a later stream failure instead of emitting don
   assert.equal(attempts[0].attempt.errorCode, 'PROVIDER_STREAM_FAILED');
 });
 
-test('hedging never has more than two nodes in flight and starts node three after one exits', async () => {
+test('coordinated v2 execution stays serial and switches only after failure', async () => {
   let inFlight = 0;
   let maxInFlight = 0;
   const started: string[] = [];
@@ -430,8 +441,8 @@ test('hedging never has more than two nodes in flight and starts node three afte
     onFinish: () => { inFlight -= 1; },
   });
   const primary = delayedProvider({
-    delayMs: 150,
-    events: [{ type: 'delta', text: 'Primary.' }, { type: 'done', usage: null }],
+    delayMs: 15,
+    error: new OpenAIProviderError('PROVIDER_UNAVAILABLE'),
     ...track('primary'),
   });
   const fallbackOne = delayedProvider({
@@ -457,8 +468,9 @@ test('hedging never has more than two nodes in flight and starts node three afte
   for await (const event of provider.streamAnswer(v2Request())) events.push(event);
 
   assert.deepEqual(started, ['primary', 'fallback-1', 'fallback-2']);
-  assert.equal(maxInFlight, 2);
+  assert.equal(maxInFlight, 1);
   assert.equal(events.filter((event) => event.type === 'delta').map((event) => event.text).join(''), 'Recovered.');
+  assert.equal(events.filter((event) => event.type === 'switching').length, 2);
   const done = events.at(-1);
   assert.equal(done?.type, 'done');
   if (done?.type !== 'done') throw new Error('missing done event');
@@ -467,11 +479,12 @@ test('hedging never has more than two nodes in flight and starts node three afte
   assert.equal(done.winner?.attemptIndex, 2);
   assert.deepEqual(
     done.attempts?.map((attempt) => [attempt.attemptIndex, attempt.status]),
-    [[1, 'failed'], [0, 'stopped'], [2, 'completed']],
+    [[0, 'failed'], [1, 'failed'], [2, 'completed']],
   );
 });
 
-test('complete release never exposes a rejected recruitment candidate', async () => {
+test('complete release sends a rejected candidate to strict regeneration without failover', async () => {
+  let fallbackStarted = false;
   const primary = delayedProvider({
     delayMs: 1,
     events: [
@@ -485,6 +498,7 @@ test('complete release never exposes a rejected recruitment candidate', async ()
       { type: 'delta', text: '证据型回答。' },
       { type: 'done', usage: { inputTokens: 8, outputTokens: 3 } },
     ],
+    onStart: () => { fallbackStarted = true; },
   });
   const provider = new FailoverAiProvider(primary, [
     { alias: 'primary', provider: primary },
@@ -492,18 +506,23 @@ test('complete release never exposes a rejected recruitment candidate', async ()
   ], 1_000);
   const events: AnswerEvent[] = [];
 
-  for await (const event of provider.streamAnswer(v2Request({
-    delaysMs: [0, 0],
-    releasePolicy: 'complete',
-    acceptCandidate: (text) => !text.includes('缺口清单'),
-  }))) events.push(event);
+  await assert.rejects(async () => {
+    for await (const event of provider.streamAnswer(v2Request({
+      delaysMs: [0, 0],
+      releasePolicy: 'complete',
+      acceptCandidate: (text) => !text.includes('缺口清单'),
+    }))) events.push(event);
+  }, (error: unknown) => (
+    error instanceof AnswerExecutionError && error.code === 'OUTPUT_GUARD_REJECTED'
+  ));
 
   const text = events.filter((event) => event.type === 'delta').map((event) => event.text).join('');
-  assert.equal(text, '证据型回答。');
+  assert.equal(text, '');
   assert.doesNotMatch(text, /缺口清单/u);
+  assert.equal(fallbackStarted, false);
 });
 
-test('a rejected hedge budget waits for failure and records a serial failover start', async () => {
+test('serial execution does not consult the obsolete hedge reservation callback', async () => {
   const launchKinds: string[] = [];
   let reserveCalls = 0;
   const primary = delayedProvider({
@@ -532,7 +551,7 @@ test('a rejected hedge budget waits for failure and records a serial failover st
   }))) events.push(event);
 
   assert.deepEqual(launchKinds, ['primary', 'failover']);
-  assert.equal(reserveCalls, 1);
+  assert.equal(reserveCalls, 0);
   assert.equal(events.filter((event) => event.type === 'delta').map((event) => event.text).join(''), 'Serial.');
 });
 

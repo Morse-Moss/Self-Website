@@ -113,7 +113,7 @@ test('chat route emits status and maps unknown failures without exposing raw pay
   assert.equal(scheduler.clearCount, 1);
 });
 
-test('chat route serializes switching and degraded done from the public contract', async () => {
+test('chat route serializes switching without claiming an automatic degraded answer', async () => {
   const output = await new Response(createChatRouteStream({
     requestSignal: new AbortController().signal,
     heartbeatMs: 15_000,
@@ -124,13 +124,13 @@ test('chat route serializes switching and degraded done from the public contract
         type: 'done' as const,
         usage: null,
         budgetLevel: 'normal' as const,
-        consumed: false,
-        degraded: true,
+        consumed: true,
+        degraded: false,
         remainingMessages: 3,
       };
     })(),
   })).text();
 
   assert.match(output, /event: status\ndata: {"type":"status","stage":"switching"}/);
-  assert.match(output, /event: done\ndata: .*"consumed":false,"degraded":true/);
+  assert.match(output, /event: done\ndata: .*"consumed":true,"degraded":false/);
 });

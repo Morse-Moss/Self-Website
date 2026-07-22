@@ -1,4 +1,5 @@
 import type { TokenUsage } from './budget.ts';
+import type { ChatExecutionBudget } from './chat-execution-budget.ts';
 
 export interface AiMessage {
   role: 'user' | 'assistant';
@@ -30,6 +31,8 @@ export interface AnswerExecutionOptions {
   releasePolicy: 'segment' | 'complete';
   minimumBufferCharacters: number;
   totalTimeoutMs: number;
+  budget: ChatExecutionBudget;
+  generationMode: 'normal' | 'strict';
   hedgingEnabled: boolean;
   delaysMs: readonly number[];
   acceptCandidate(text: string, complete: boolean): boolean;
@@ -107,6 +110,7 @@ export class ProviderRunError extends Error {
 
 export type AnswerEvent =
   | { type: 'delta'; text: string }
+  | { type: 'switching' }
   | { type: 'attempt'; attempt: ProviderAttempt }
   | {
       type: 'done';

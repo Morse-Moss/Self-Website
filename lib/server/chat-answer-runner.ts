@@ -1,5 +1,4 @@
 import type { ChatGuardResult } from './chat-output-guard.ts';
-import type { SafeChatAnswer } from './chat-safe-answer.ts';
 import {
   AnswerExecutionError,
   ProviderRunError,
@@ -8,9 +7,11 @@ import {
   type ProviderWinner,
 } from './ai-provider.ts';
 import type { TokenUsage } from './budget.ts';
+import type { ChatExecutionBudget } from './chat-execution-budget.ts';
 
 export type ChatAnswerRunnerEvent =
   | { type: 'delta'; text: string }
+  | { type: 'switching' }
   | { type: 'attempt'; attempt: ProviderAttempt }
   | { type: 'reset' }
   | {
@@ -26,11 +27,18 @@ export type ChatAnswerRunnerEvent =
       providerAlias: string | null;
     };
 
+export interface GenerateChatAnswerInput {
+  strict: boolean;
+  generationMode: 'normal' | 'strict';
+  remainingAttempts: number;
+  remainingProviderMs: number;
+}
+
 export interface ChatAnswerRunnerInput {
-  generate(strict: boolean): AsyncIterable<AnswerEvent>;
+  budget: ChatExecutionBudget;
+  now(): number;
+  generate(input: GenerateChatAnswerInput): AsyncIterable<AnswerEvent>;
   inspect(answer: string): ChatGuardResult;
-  safeAnswer(): SafeChatAnswer | null;
-  canRegenerate(error: unknown): boolean;
 }
 
 export async function* runGuardedChatAnswer(
@@ -49,12 +57,23 @@ export async function* runGuardedChatAnswer(
   });
 
   for (const strict of [false, true]) {
-    if (strict && !input.canRegenerate(regenerationError)) throw regenerationError;
+    if (strict && !(
+      regenerationError instanceof AnswerExecutionError
+      && regenerationError.code === 'OUTPUT_GUARD_REJECTED'
+    )) throw regenerationError;
+    if (strict && !input.budget.canStartAttempt(input.now(), 10_000)) {
+      throw regenerationError;
+    }
     let answer = '';
     let emitted = false;
     let maximumLocalAttemptIndex = -1;
     try {
-      for await (const event of input.generate(strict)) {
+      for await (const event of input.generate({
+        strict,
+        generationMode: strict ? 'strict' : 'normal',
+        remainingAttempts: input.budget.remainingAttempts(),
+        remainingProviderMs: input.budget.remainingMs(input.now()),
+      })) {
         if (event.type === 'delta') {
           const nextAnswer = answer + event.text;
           if (!input.inspect(nextAnswer).ok) {
@@ -73,6 +92,10 @@ export async function* runGuardedChatAnswer(
           const attempt = normalizeAttempt(event.attempt, attemptOffset);
           attempts.set(attempt.attemptIndex, attempt);
           yield { type: 'attempt', attempt };
+          continue;
+        }
+        if (event.type === 'switching') {
+          yield event;
           continue;
         }
         if (!answer.trim()) throw new AnswerExecutionError('PROVIDER_INCOMPLETE');
@@ -122,36 +145,14 @@ export async function* runGuardedChatAnswer(
           }
         }
       }
-      if (!input.canRegenerate(error)) throw error;
+      if (!(
+        error instanceof AnswerExecutionError
+        && error.code === 'OUTPUT_GUARD_REJECTED'
+      )) throw error;
       regenerationError = error;
       if (emitted) yield { type: 'reset' };
       attemptOffset += maximumLocalAttemptIndex + 1;
     }
   }
-
-  const safe = input.safeAnswer();
-  if (!safe) throw new AnswerExecutionError('OUTPUT_GUARD_REJECTED');
-  yield { type: 'delta', text: safe.text };
-  yield {
-    type: 'complete',
-    answer: safe.text,
-    attempts: [...attempts.values()].sort(
-      (left, right) => left.attemptIndex - right.attemptIndex,
-    ),
-    costComplete: attempts.size > 0
-      && [...attempts.values()].every((attempt) => attempt.costComplete),
-    usage: null,
-    usageComplete: attempts.size > 0
-      && [...attempts.values()].every((attempt) => attempt.usageComplete),
-    knownCostUsd: attempts.size > 0
-      && [...attempts.values()].some((attempt) => attempt.knownCostUsd !== null)
-      ? [...attempts.values()].reduce(
-          (total, attempt) => total + (attempt.knownCostUsd ?? 0),
-          0,
-        )
-      : null,
-    winner: null,
-    degraded: true,
-    providerAlias: null,
-  };
+  throw regenerationError ?? new AnswerExecutionError('OUTPUT_GUARD_REJECTED');
 }

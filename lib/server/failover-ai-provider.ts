@@ -20,23 +20,6 @@ export interface ProviderNode {
   snapshot: ProviderTargetSnapshot;
 }
 
-interface ActiveAttempt {
-  attemptNo: number;
-  node: ProviderNode;
-  controller: AbortController;
-  iterator: AsyncIterator<AnswerEvent>;
-  next: Promise<AttemptResult>;
-  firstByteAt: number | null;
-  startedAt: number;
-  text: string;
-  releasedLength: number;
-  firstByte: boolean;
-}
-
-type AttemptResult =
-  | { attempt: ActiveAttempt; kind: 'event'; result: IteratorResult<AnswerEvent> }
-  | { attempt: ActiveAttempt; kind: 'error'; error: unknown };
-
 function addUsage(current: TokenUsage | null, next: TokenUsage | null): TokenUsage | null {
   if (!next) return current;
   if (!current) return next;
@@ -46,22 +29,15 @@ function addUsage(current: TokenUsage | null, next: TokenUsage | null): TokenUsa
   };
 }
 
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, milliseconds)));
+}
+
 function stableErrorCode(error: unknown): string {
   const code = error && typeof error === 'object' && 'code' in error
     ? String((error as { code?: unknown }).code ?? '')
     : '';
   return /^[A-Z0-9_]{1,80}$/u.test(code) ? code : 'PROVIDER_UNAVAILABLE';
-}
-
-function wait(milliseconds: number): Promise<'timer'> {
-  return new Promise((resolve) => setTimeout(() => resolve('timer'), Math.max(0, milliseconds)));
-}
-
-function nextResult(attempt: ActiveAttempt): Promise<AttemptResult> {
-  return attempt.iterator.next().then(
-    (result) => ({ attempt, kind: 'event' as const, result }),
-    (error: unknown) => ({ attempt, kind: 'error' as const, error }),
-  );
 }
 
 export class FailoverAiProvider implements AiProvider {
@@ -190,264 +166,186 @@ export class FailoverAiProvider implements AiProvider {
 
   private async *streamCoordinated(request: AnswerRequest, signal?: AbortSignal): AsyncIterable<AnswerEvent> {
     const execution = request.execution!;
-    const timeout = createTimeoutSignal({ timeoutMs: execution.totalTimeoutMs, code: 'PROVIDER_TOTAL_TIMEOUT', signal });
-    const active = new Set<ActiveAttempt>();
-    const attempts: ProviderAttempt[] = [];
-    const startedAt = Date.now();
-    let nextNode = 0;
-    let usage: TokenUsage | null = null;
-    let winner: ActiveAttempt | null = null;
-    let lastError: unknown;
-    let guardRejected = false;
-    let hedgeBlockedNode: number | null = null;
-    const timeoutFailure = new Promise<never>((_resolve, reject) => {
-      if (timeout.signal.aborted) reject(timeout.signal.reason);
-      else timeout.signal.addEventListener('abort', () => reject(timeout.signal.reason), { once: true });
+    const timeout = createTimeoutSignal({
+      timeoutMs: Math.max(1, Math.min(
+        execution.totalTimeoutMs,
+        execution.budget.remainingMs(Date.now()),
+      )),
+      code: 'PROVIDER_TOTAL_TIMEOUT',
+      signal,
     });
-
-    const startAttempt = async (index: number, launchKind: 'primary' | 'hedge' | 'failover') => {
-      const node = this.nodes[index];
-      if (!this.health.acquire(node.alias, new Date())) return false;
-      const event: Extract<ProviderAttemptEvent, { type: 'started' }> = {
-        type: 'started', attemptNo: index + 1, providerAlias: node.alias, launchKind,
-        startedAt: new Date(), startDelayMs: execution.delaysMs[index] ?? 0,
-      };
-      if (launchKind === 'hedge') {
-        if (!await execution.reserveHedgedAttempt(event)) {
-          this.health.abort(node.alias);
-          return false;
-        }
-      } else {
-        await execution.onAttempt(event);
-      }
-      const controller = new AbortController();
-      const abort = () => controller.abort(timeout.signal.reason);
-      if (timeout.signal.aborted) abort();
-      else timeout.signal.addEventListener('abort', abort, { once: true });
-      const iterator = node.provider.streamAnswer(request, controller.signal)[Symbol.asyncIterator]();
-      const attempt = {
-        attemptNo: index + 1, node, controller, iterator, startedAt: Date.now(),
-        text: '', releasedLength: 0, firstByte: false, firstByteAt: null,
-      } as ActiveAttempt;
-      attempt.next = nextResult(attempt);
-      active.add(attempt);
-      return true;
-    };
-
-    const launchEligible = async () => {
-      while (nextNode < this.nodes.length && active.size < 2 && !winner) {
-        const eligibleAt = execution.delaysMs[nextNode] ?? 0;
-        if (Date.now() - startedAt < eligibleAt) break;
-        const launchKind = nextNode === 0 ? 'primary' : active.size === 0 ? 'failover' : 'hedge';
-        if (launchKind === 'hedge' && !execution.hedgingEnabled) break;
-        if (launchKind === 'hedge' && hedgeBlockedNode === nextNode) break;
-        const launched = await startAttempt(nextNode, launchKind);
-        if (!launched && launchKind === 'hedge') {
-          hedgeBlockedNode = nextNode;
-          break;
-        }
-        hedgeBlockedNode = null;
-        nextNode += 1;
-      }
-    };
+    const attempts: ProviderAttempt[] = [];
+    let lastError: unknown;
+    let localAttemptNo = 0;
 
     try {
-      await launchEligible();
-      while (active.size > 0 || (!winner && nextNode < this.nodes.length)) {
+      for (const [nodeIndex, node] of this.nodes.entries()) {
         if (timeout.signal.aborted) throw timeout.signal.reason;
-        await launchEligible();
-        if (active.size === 0) {
-          const delay = (execution.delaysMs[nextNode] ?? 0) - (Date.now() - startedAt);
-          if (delay > 0) await Promise.race([wait(delay), timeoutFailure]);
-          await launchEligible();
-          if (active.size === 0 && nextNode >= this.nodes.length) break;
-        }
-        const nextDelay = nextNode < this.nodes.length && !(hedgeBlockedNode === nextNode && active.size > 0)
-          ? (execution.delaysMs[nextNode] ?? 0) - (Date.now() - startedAt)
-          : Number.POSITIVE_INFINITY;
-        const races: Array<Promise<AttemptResult | 'timer'>> = [...active].map((attempt) => attempt.next);
-        if (Number.isFinite(nextDelay) && active.size < 2 && !winner) races.push(wait(nextDelay));
-        races.push(timeoutFailure);
-        const outcome = await Promise.race(races);
-        if (outcome === 'timer') continue;
-        const attempt = outcome.attempt;
-        if (!active.has(attempt)) continue;
+        if (!this.health.acquire(node.alias, new Date())) continue;
 
-        if (outcome.kind === 'error') {
-          active.delete(attempt);
-          const aborted = attempt.controller.signal.aborted;
-          const errorUsage = outcome.error instanceof OpenAIProviderError ? outcome.error.usage : null;
-          usage = addUsage(usage, errorUsage);
+        const reservedAt = Date.now();
+        if (!execution.budget.canStartAttempt(reservedAt, 10_000)
+          || !execution.budget.reserveAttempt(reservedAt)) {
+          this.health.abort(node.alias);
+          break;
+        }
+        localAttemptNo += 1;
+        const attemptNo = localAttemptNo;
+        const launchKind = nodeIndex === 0 ? 'primary' : 'failover';
+        const startedAt = Date.now();
+        const startedEvent: Extract<ProviderAttemptEvent, { type: 'started' }> = {
+          type: 'started',
+          attemptNo,
+          providerAlias: node.alias,
+          launchKind,
+          startedAt: new Date(startedAt),
+          startDelayMs: 0,
+        };
+        await execution.onAttempt(startedEvent);
+        if (launchKind === 'failover') yield { type: 'switching' };
+
+        const controller = new AbortController();
+        const forwardAbort = () => controller.abort(timeout.signal.reason);
+        if (timeout.signal.aborted) forwardAbort();
+        else timeout.signal.addEventListener('abort', forwardAbort, { once: true });
+        const iterator = node.provider.streamAnswer(request, controller.signal)[Symbol.asyncIterator]();
+        let text = '';
+        let releasedLength = 0;
+        let firstByteAt: number | null = null;
+        let terminalRecorded = false;
+
+        const recordTerminal = async (
+          status: ProviderAttempt['status'],
+          errorCode: string | null,
+          eventUsage: TokenUsage | null,
+        ): Promise<ProviderAttempt> => {
           await execution.onAttempt({
-            type: aborted ? 'aborted' : 'failed', attemptNo: attempt.attemptNo,
-            providerAlias: attempt.node.alias, durationMs: Date.now() - attempt.startedAt,
-            winner: false, errorCode: aborted ? null : stableErrorCode(outcome.error), usage: errorUsage,
+            type: status === 'completed' ? 'completed' : status === 'stopped' ? 'aborted' : 'failed',
+            attemptNo,
+            providerAlias: node.alias,
+            durationMs: Date.now() - startedAt,
+            winner: status === 'completed',
+            errorCode,
+            usage: eventUsage,
           });
-          const recordedAttempt = createAttempt({
-            attemptIndex: attempt.attemptNo - 1,
-            snapshot: attempt.node.snapshot,
-            startedAt: new Date(attempt.startedAt),
-            firstByteAt: attempt.firstByteAt === null ? null : new Date(attempt.firstByteAt),
-            usage: errorUsage,
-            status: aborted ? 'stopped' : 'failed',
-            errorCode: aborted ? null : stableErrorCode(outcome.error),
+          const recorded = createAttempt({
+            attemptIndex: attemptNo - 1,
+            snapshot: node.snapshot,
+            startedAt: new Date(startedAt),
+            firstByteAt: firstByteAt === null ? null : new Date(firstByteAt),
+            usage: eventUsage,
+            status,
+            errorCode,
+            generationMode: execution.generationMode,
+            launchKind,
           });
-          attempts.push(recordedAttempt);
-          yield { type: 'attempt', attempt: recordedAttempt };
-          if (aborted) this.health.abort(attempt.node.alias);
-          else this.health.failure(attempt.node.alias, new Date());
-          if (!aborted) lastError = outcome.error;
-          if (winner === attempt) throw outcome.error;
-          continue;
-        }
+          attempts.push(recorded);
+          terminalRecorded = true;
+          return recorded;
+        };
 
-        if (outcome.result.done) {
-          active.delete(attempt);
-          if (!winner) {
-            lastError = new AnswerExecutionError('PROVIDER_INCOMPLETE');
-            this.health.failure(attempt.node.alias, new Date());
-            await execution.onAttempt({
-              type: 'failed',
-              attemptNo: attempt.attemptNo,
-              providerAlias: attempt.node.alias,
-              durationMs: Date.now() - attempt.startedAt,
-              winner: false,
-              errorCode: 'PROVIDER_INCOMPLETE',
-              usage: null,
-            });
-            const recordedAttempt = createAttempt({
-              attemptIndex: attempt.attemptNo - 1,
-              snapshot: attempt.node.snapshot,
-              startedAt: new Date(attempt.startedAt),
-              firstByteAt: attempt.firstByteAt === null ? null : new Date(attempt.firstByteAt),
-              usage: null,
-              status: 'failed',
-              errorCode: 'PROVIDER_INCOMPLETE',
-            });
-            attempts.push(recordedAttempt);
-            yield { type: 'attempt', attempt: recordedAttempt };
-          }
-          continue;
-        }
-        const event = outcome.result.value;
-        if (event.type === 'delta') {
-          if (!attempt.firstByte) {
-            attempt.firstByte = true;
-            attempt.firstByteAt = Date.now();
-            await execution.onAttempt({ type: 'first_byte', attemptNo: attempt.attemptNo, providerAlias: attempt.node.alias, firstByteMs: Date.now() - attempt.startedAt });
-          }
-          attempt.text += event.text;
-          const completeSegment = /[.!?\n\u3002\uFF01\uFF1F]\s*$/u.test(attempt.text);
-          if (execution.releasePolicy === 'segment' && completeSegment && attempt.text.length >= execution.minimumBufferCharacters) {
-            if (execution.acceptCandidate(attempt.text, false)) {
-              if (!winner) {
-                winner = attempt;
-                for (const other of active) if (other !== attempt) other.controller.abort(new Error('LOSER_ABORTED'));
+        try {
+          while (true) {
+            const result = await Promise.race([
+              iterator.next(),
+              new Promise<never>((_resolve, reject) => {
+                if (timeout.signal.aborted) reject(timeout.signal.reason);
+                else timeout.signal.addEventListener('abort', () => reject(timeout.signal.reason), { once: true });
+              }),
+            ]);
+            if (result.done) throw new AnswerExecutionError('PROVIDER_INCOMPLETE');
+            const event = result.value;
+            if (event.type === 'attempt') continue;
+            if (event.type === 'switching') {
+              yield event;
+              continue;
+            }
+            if (event.type === 'delta') {
+              if (!event.text) continue;
+              if (firstByteAt === null) {
+                firstByteAt = Date.now();
+                await execution.onAttempt({
+                  type: 'first_byte',
+                  attemptNo,
+                  providerAlias: node.alias,
+                  firstByteMs: firstByteAt - startedAt,
+                });
               }
-              if (winner === attempt && attempt.text.length > attempt.releasedLength) {
-                yield { type: 'delta', text: attempt.text.slice(attempt.releasedLength) };
-                attempt.releasedLength = attempt.text.length;
+              text += event.text;
+              const completeSegment = /[.!?\n\u3002\uFF01\uFF1F]\s*$/u.test(text);
+              if (execution.releasePolicy === 'segment'
+                && completeSegment
+                && text.length >= execution.minimumBufferCharacters) {
+                if (!execution.acceptCandidate(text, false)) {
+                  throw new AnswerExecutionError('OUTPUT_GUARD_REJECTED');
+                }
+                yield { type: 'delta', text: text.slice(releasedLength) };
+                releasedLength = text.length;
               }
-            } else if (winner === attempt) {
-              await execution.onAttempt({
-                type: 'failed', attemptNo: attempt.attemptNo, providerAlias: attempt.node.alias,
-                durationMs: Date.now() - attempt.startedAt, winner: false,
-                errorCode: 'OUTPUT_GUARD_REJECTED', usage: null,
-              });
-              const recordedAttempt = createAttempt({
-                attemptIndex: attempt.attemptNo - 1,
-                snapshot: attempt.node.snapshot,
-                startedAt: new Date(attempt.startedAt),
-                firstByteAt: attempt.firstByteAt === null ? null : new Date(attempt.firstByteAt),
-                usage: null,
-                status: 'failed',
-                errorCode: 'OUTPUT_GUARD_REJECTED',
-              });
-              attempts.push(recordedAttempt);
-              yield { type: 'attempt', attempt: recordedAttempt };
-              active.delete(attempt);
-              this.health.success(attempt.node.alias);
-              attempt.controller.abort(new Error('OUTPUT_GUARD_REJECTED'));
+              continue;
+            }
+
+            if (!text.trim()) throw new AnswerExecutionError('PROVIDER_INCOMPLETE');
+            if (!execution.acceptCandidate(text, true)) {
               throw new AnswerExecutionError('OUTPUT_GUARD_REJECTED');
             }
+            if (execution.releasePolicy === 'complete' || releasedLength === 0) {
+              yield { type: 'delta', text: text.slice(releasedLength) };
+            }
+            const recorded = await recordTerminal('completed', null, event.usage);
+            yield { type: 'attempt', attempt: recorded };
+            this.health.success(node.alias);
+            const aggregate = aggregateAttempts(attempts);
+            yield {
+              type: 'done',
+              attempts: [...attempts],
+              costComplete: aggregate.costComplete,
+              knownCostUsd: aggregate.knownCostUsd,
+              providerAlias: node.alias,
+              usage: aggregate.usage,
+              usageComplete: aggregate.usageComplete,
+              winner: { ...node.snapshot, attemptIndex: attemptNo - 1 },
+            };
+            return;
           }
-          attempt.next = nextResult(attempt);
-          continue;
-        }
-
-        if (event.type === 'attempt') {
-          attempt.next = nextResult(attempt);
-          continue;
-        }
-
-        usage = addUsage(usage, event.usage);
-        const accepted = execution.acceptCandidate(attempt.text, true);
-        if (execution.releasePolicy === 'complete' && accepted && !winner) {
-          winner = attempt;
-          for (const other of active) if (other !== attempt) other.controller.abort(new Error('LOSER_ABORTED'));
-          if (attempt.text) yield { type: 'delta', text: attempt.text };
-        } else if (execution.releasePolicy === 'segment' && !winner && accepted) {
-          winner = attempt;
-          if (attempt.text) yield { type: 'delta', text: attempt.text };
-        }
-        const isWinner = winner === attempt;
-        await execution.onAttempt({
-          type: accepted ? 'completed' : 'failed', attemptNo: attempt.attemptNo,
-          providerAlias: attempt.node.alias, durationMs: Date.now() - attempt.startedAt,
-          winner: isWinner, errorCode: accepted ? null : 'OUTPUT_GUARD_REJECTED', usage: event.usage,
-        });
-        const recordedAttempt = createAttempt({
-          attemptIndex: attempt.attemptNo - 1,
-          snapshot: attempt.node.snapshot,
-          startedAt: new Date(attempt.startedAt),
-          firstByteAt: attempt.firstByteAt === null ? null : new Date(attempt.firstByteAt),
-          usage: event.usage,
-          status: accepted ? 'completed' : 'failed',
-          errorCode: accepted ? null : 'OUTPUT_GUARD_REJECTED',
-        });
-        attempts.push(recordedAttempt);
-        yield { type: 'attempt', attempt: recordedAttempt };
-        active.delete(attempt);
-        if (accepted) this.health.success(attempt.node.alias);
-        else {
-          guardRejected = true;
-          this.health.success(attempt.node.alias);
+        } catch (error) {
+          const callerStopped = Boolean(signal?.aborted);
+          const guardRejected = error instanceof AnswerExecutionError
+            && error.code === 'OUTPUT_GUARD_REJECTED';
+          const errorUsage = error instanceof OpenAIProviderError ? error.usage : null;
+          const errorCode = callerStopped ? null : stableErrorCode(error);
+          if (!terminalRecorded) {
+            const recorded = await recordTerminal(
+              callerStopped ? 'stopped' : 'failed',
+              guardRejected ? 'OUTPUT_GUARD_REJECTED' : errorCode,
+              errorUsage,
+            );
+            yield { type: 'attempt', attempt: recorded };
+          }
+          if (callerStopped) {
+            this.health.abort(node.alias);
+            throw signal?.reason;
+          }
+          if (guardRejected) {
+            this.health.success(node.alias);
+            throw error;
+          }
+          this.health.failure(node.alias, new Date());
+          lastError = error;
+          if (releasedLength > 0 || timeout.signal.aborted) throw error;
+        } finally {
+          timeout.signal.removeEventListener('abort', forwardAbort);
+          controller.abort(new Error('ATTEMPT_CLOSED'));
+          if (iterator.return) {
+            await Promise.race([
+              Promise.resolve(iterator.return()).catch(() => undefined),
+              wait(100),
+            ]);
+          }
         }
       }
-      if (!winner) {
-        if (guardRejected) throw new AnswerExecutionError('OUTPUT_GUARD_REJECTED');
-        throw lastError ?? new AnswerExecutionError('PROVIDER_INCOMPLETE');
-      }
-      const aggregate = aggregateAttempts(attempts);
-      yield {
-        type: 'done',
-        attempts: [...attempts],
-        costComplete: aggregate.costComplete,
-        knownCostUsd: aggregate.knownCostUsd,
-        providerAlias: winner.node.alias,
-        usage: aggregate.usage,
-        usageComplete: aggregate.usageComplete,
-        winner: {
-          ...winner.node.snapshot,
-          attemptIndex: winner.attemptNo - 1,
-        },
-      };
+      throw new ProviderRunError(stableErrorCode(lastError), attempts);
     } finally {
-      for (const attempt of active) {
-        attempt.controller.abort(timeout.signal.reason ?? new Error('EXECUTION_CLOSED'));
-        await execution.onAttempt({
-          type: 'aborted', attemptNo: attempt.attemptNo, providerAlias: attempt.node.alias,
-          durationMs: Date.now() - attempt.startedAt, winner: false, errorCode: null, usage: null,
-        });
-        this.health.abort(attempt.node.alias);
-      }
-      await Promise.all([...active].map(async (attempt) => {
-        if (!attempt.iterator.return) return;
-        await Promise.race([
-          Promise.resolve(attempt.iterator.return()).catch(() => undefined),
-          wait(100),
-        ]);
-      }));
       timeout.dispose();
     }
   }
@@ -478,6 +376,8 @@ function createAttempt(input: {
   usage: TokenUsage | null;
   status: ProviderAttempt['status'];
   errorCode: string | null;
+  generationMode?: ProviderAttempt['generationMode'];
+  launchKind?: ProviderAttempt['launchKind'];
 }): ProviderAttempt {
   const completedAt = new Date();
   const inputRate = input.snapshot.inputUsdPerMillion === null
@@ -503,7 +403,16 @@ function createAttempt(input: {
     firstByteLatencyMs: input.firstByteAt
       ? Math.max(0, input.firstByteAt.getTime() - input.startedAt.getTime())
       : null,
+    firstModelTextMs: input.firstByteAt
+      ? Math.max(0, input.firstByteAt.getTime() - input.startedAt.getTime())
+      : null,
+    firstProtocolEventMs: null,
+    firstUserVisibleMs: input.firstByteAt
+      ? Math.max(0, input.firstByteAt.getTime() - input.startedAt.getTime())
+      : null,
+    generationMode: input.generationMode ?? 'normal',
     knownCostUsd,
+    launchKind: input.launchKind ?? (input.attemptIndex === 0 ? 'primary' : 'failover'),
     startedAt: input.startedAt,
     status: input.status,
     totalLatencyMs: Math.max(0, completedAt.getTime() - input.startedAt.getTime()),

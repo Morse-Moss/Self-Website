@@ -363,6 +363,9 @@ test('deactivation blocks new redemption but preserves an already authenticated 
         hedgedFailoverEnabled: false,
         chatSafeMode: false,
         providerTotalTimeoutMs: 90_000,
+        providerStageTimeoutMs: 80_000,
+        chatTurnTimeoutMs: 90_000,
+        providerMaxAttempts: 3,
       },
     })) {
       // The probe provider fails after reservation; reaching it proves the session stayed usable.
