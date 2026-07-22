@@ -14,12 +14,19 @@ import {
 } from '../lib/server/ai-provider.ts';
 import { redeemInvite } from '../lib/server/access.ts';
 import { normalizeChatRequest } from '../lib/server/chat-core.ts';
+import { routeChatTurn } from '../lib/server/chat-route-policy.ts';
 import { ChatServiceError, runChat, type ChatServiceEvent } from '../lib/server/chat-service.ts';
+import { compileCapabilityLedger } from '../lib/server/capability-evidence.ts';
 import { FailoverAiProvider } from '../lib/server/failover-ai-provider.ts';
 import { OpenAIProviderError } from '../lib/server/openai-provider.ts';
 import { hashSecret } from '../lib/server/security.ts';
 import type { SearchProvider, SearchResponse } from '../lib/server/search-provider.ts';
 import { OperationTimeoutError } from '../lib/server/timeout.ts';
+import {
+  loadPreviousRouteAnchor,
+  recordInteractionRoute,
+} from '../lib/server/interaction-log.ts';
+import { chatCapabilityPolicy, siteContent } from '../lib/site-content.ts';
 
 const { Pool } = pg;
 const connectionString = process.env.DATABASE_URL;
@@ -1196,6 +1203,74 @@ test('runChat Provider payload events and persisted history exclude the private 
     );
   } finally {
     await cleanupFailureFixture(fixture);
+  }
+});
+
+test('route anchors persist controlled fields and inherit for one turn only', {
+  skip: !pool,
+}, async () => {
+  const conversationId = randomUUID();
+  const firstTurnId = randomUUID();
+  const secondTurnId = randomUUID();
+  const thirdTurnId = randomUUID();
+  const ledger = compileCapabilityLedger(siteContent, chatCapabilityPolicy);
+  try {
+    for (const [turnId, question, createdAt] of [
+      [firstTurnId, '数字 Morse 怎么实现 RAG？', new Date(now.getTime() + 1_000)],
+      [secondTurnId, '这个为什么这样设计？', new Date(now.getTime() + 2_000)],
+      [thirdTurnId, '那结果呢？', new Date(now.getTime() + 3_000)],
+    ] as const) {
+      await pool!.query(
+        `INSERT INTO interaction_turns
+          (id, access_session_id, conversation_id, workflow, audience_intent,
+           question, status, created_at, delete_after)
+         VALUES ($1, $2, $3, 'chat', 'general', $4, 'completed', $5,
+           $5 + interval '10 days')`,
+        [turnId, accessSessionId, conversationId, question, createdAt],
+      );
+    }
+
+    const first = routeChatTurn({
+      request: normalizeChatRequest({ message: '数字 Morse 怎么实现 RAG？' }),
+      ledger,
+    });
+    await recordInteractionRoute(pool!, firstTurnId, first);
+    const previous = await loadPreviousRouteAnchor(pool!, conversationId, secondTurnId);
+    assert.deepEqual(previous, {
+      turnId: firstTurnId,
+      routeKind: 'grounded',
+      topicKind: 'project',
+      topicRef: 'digital-morse',
+    });
+
+    const second = routeChatTurn({
+      request: normalizeChatRequest({ message: '这个为什么这样设计？' }),
+      previous,
+      ledger,
+    });
+    await recordInteractionRoute(pool!, secondTurnId, second);
+    assert.equal(second.inheritedFromTurnId, firstTurnId);
+    assert.equal(await loadPreviousRouteAnchor(pool!, conversationId, thirdTurnId), null);
+
+    const stored = await pool!.query<{
+      route_kind: string;
+      topic_ref: string | null;
+      inherited_from_turn_id: string | null;
+    }>(
+      `SELECT route_kind, topic_ref, inherited_from_turn_id::text
+         FROM interaction_turns WHERE id = $1`,
+      [secondTurnId],
+    );
+    assert.deepEqual(stored.rows, [{
+      route_kind: 'grounded',
+      topic_ref: 'digital-morse',
+      inherited_from_turn_id: firstTurnId,
+    }]);
+  } finally {
+    await pool!.query(
+      'DELETE FROM interaction_turns WHERE id = ANY($1::uuid[])',
+      [[firstTurnId, secondTurnId, thirdTurnId]],
+    );
   }
 });
 

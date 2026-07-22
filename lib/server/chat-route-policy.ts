@@ -1,0 +1,246 @@
+import type {
+  ChatEvidenceClass,
+  ChatRouteKind,
+  ChatTopicKind,
+} from '../contracts/chat.ts';
+import type { NormalizedChatRequest } from './chat-core.ts';
+import {
+  assessCapability,
+  type CapabilityLedger,
+} from './capability-evidence.ts';
+import { looksLikeFullJobDescription } from './chat-behavior.ts';
+
+export interface ChatRouteDecision {
+  routeKind: ChatRouteKind;
+  reasonCode: string;
+  topicKind: ChatTopicKind;
+  topicRef: string | null;
+  evidenceClass: ChatEvidenceClass;
+  inheritedFromTurnId: string | null;
+  release: 'segment' | 'complete';
+  requiresEmbedding: boolean;
+  requiresSearch: boolean;
+  deterministicReply: string | null;
+}
+
+export interface RouteAnchor {
+  turnId: string;
+  routeKind: ChatRouteKind;
+  topicKind: ChatTopicKind;
+  topicRef: string | null;
+}
+
+export interface RouteChatTurnInput {
+  request: NormalizedChatRequest;
+  ledger: CapabilityLedger;
+  previous?: RouteAnchor | null;
+}
+
+const PROJECT_ALIASES: ReadonlyArray<{
+  slug: string;
+  aliases: readonly string[];
+}> = [
+  { slug: 'digital-morse', aliases: ['数字morse', '数字摩斯', 'digitalmorse'] },
+  { slug: 'deep-research', aliases: ['深度研究', 'deepresearch'] },
+  { slug: 'content-agent', aliases: ['内容生成agent', '内容agent', 'contentagent'] },
+  { slug: 'auto-operations', aliases: ['自动运营', 'autooperations'] },
+  { slug: 'ai-leadgen', aliases: ['线索', 'aileadgen'] },
+];
+
+const JD_INTAKE_REPLY = '请提供完整 JD（岗位职责与任职要求）；收到后我会基于公开项目证据整理匹配内容，并把需要面谈核实的部分单独标明。';
+const CLARIFY_REPLY = '你是想了解这个问题的一般做法，还是想核实我本人做过的具体经历？';
+
+function normalize(value: string): string {
+  return value
+    .normalize('NFKC')
+    .toLocaleLowerCase('en-US')
+    .replace(/[\p{P}\p{S}\s]+/gu, '');
+}
+
+function decision(input: Partial<ChatRouteDecision> & Pick<ChatRouteDecision, 'routeKind' | 'reasonCode'>): ChatRouteDecision {
+  return {
+    topicKind: 'none',
+    topicRef: null,
+    evidenceClass: 'none',
+    inheritedFromTurnId: null,
+    release: 'segment',
+    requiresEmbedding: false,
+    requiresSearch: false,
+    deterministicReply: null,
+    ...input,
+  };
+}
+
+function isMissingJdFitRequest(message: string): boolean {
+  return /(?:岗位|职位)(?:适配|匹配)(?:度|分析)?|(?:适合|胜任)(?:这个|该)?(?:岗位|职位)|分析.*(?:岗位|职位).*(?:适合|匹配)/iu.test(message);
+}
+
+function isExplicitPersonalFact(message: string): boolean {
+  const personalSubject = /(?:你|你的|你以前|morse|摩斯)/iu.test(message);
+  const experiencePredicate = /(?:有|具备).{0,24}(?:经验|经历)|(?:用过|做过|负责过|参与过|实践过|落地过)|以前怎么(?:处理|做)|是否(?:有|做过|用过)/iu.test(message);
+  return personalSubject && experiencePredicate;
+}
+
+function isExternalCurrent(message: string): boolean {
+  return /(?:当前|现在|截至目前).{0,16}(?:最新|版本|价格|天气|新闻)|(?:最新|实时)(?:版本|消息|新闻|价格|天气)|帮我(?:查|核实)|外部(?:资料|信息)|联网(?:查|核实)/iu.test(message);
+}
+
+function isIdentityQuestion(message: string): boolean {
+  return /你是谁|介绍(?:一下)?(?:你|自己)|你擅长什么|你能做什么|数字\s*(?:morse|摩斯)是什么/iu.test(message);
+}
+
+function projectTopic(message: string): string | null {
+  const normalized = normalize(message);
+  return PROJECT_ALIASES.find((project) => (
+    project.aliases.some((alias) => normalized.includes(normalize(alias)))
+  ))?.slug ?? null;
+}
+
+function isProjectFact(message: string): boolean {
+  if (projectTopic(message)) return true;
+  return /(?:morse|摩斯|你|你的).{0,24}(?:项目|作品|实现|架构|做法|成果|职责)|(?:有哪些|介绍).{0,12}(?:项目|作品)/iu.test(message);
+}
+
+function isStableGeneralConversation(message: string): boolean {
+  if (/^(?:你好|嗨|hello|hi|谢谢|多谢|再见)/iu.test(message)) return true;
+  if (/(?:吃饭|吃什么|近况|最近忙|怎么看|什么是|是什么|如何|怎么|为什么|建议|职场|同事|分歧|兴趣|感受)/iu.test(message)) {
+    return !isAnaphoricFollowUp(message);
+  }
+  return /^(?:请)?(?:解释|介绍|讨论).{1,80}$/iu.test(message);
+}
+
+function isAnaphoricFollowUp(message: string): boolean {
+  const trimmed = message.trim();
+  return trimmed.length <= 40
+    && /^(?:这个|那个|它|这(?:一)?点|那(?:一)?点|上述|前面|刚才|那结果|然后呢|还有呢)/iu.test(trimmed);
+}
+
+function inheritRoute(previous: RouteAnchor, ledger: CapabilityLedger): ChatRouteDecision {
+  if (previous.topicKind === 'project') {
+    return decision({
+      routeKind: 'grounded',
+      reasonCode: 'anaphoric_project_followup',
+      topicKind: 'project',
+      topicRef: previous.topicRef,
+      evidenceClass: 'direct',
+      inheritedFromTurnId: previous.turnId,
+      requiresEmbedding: true,
+    });
+  }
+  if (previous.topicKind === 'capability' && previous.topicRef) {
+    const capability = assessCapability(previous.topicRef, ledger);
+    return decision({
+      routeKind: 'personal_fact',
+      reasonCode: 'anaphoric_capability_followup',
+      topicKind: 'capability',
+      topicRef: previous.topicRef,
+      evidenceClass: capability.evidenceClass === 'none'
+        ? 'unavailable'
+        : capability.evidenceClass,
+      inheritedFromTurnId: previous.turnId,
+      release: 'complete',
+    });
+  }
+  if (previous.topicKind === 'jd') {
+    return decision({
+      routeKind: 'jd',
+      reasonCode: 'anaphoric_jd_followup',
+      topicKind: 'jd',
+      topicRef: 'jd',
+      evidenceClass: 'mixed',
+      inheritedFromTurnId: previous.turnId,
+      release: 'complete',
+      requiresEmbedding: true,
+    });
+  }
+  if (previous.topicKind === 'external') {
+    return decision({
+      routeKind: 'external_current',
+      reasonCode: 'anaphoric_external_followup',
+      topicKind: 'external',
+      evidenceClass: 'web',
+      inheritedFromTurnId: previous.turnId,
+      requiresSearch: true,
+    });
+  }
+  return decision({
+    routeKind: 'clarify',
+    reasonCode: 'anaphoric_topic_unavailable',
+    deterministicReply: CLARIFY_REPLY,
+  });
+}
+
+export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
+  const message = input.request.message.trim();
+  if (input.request.workflow === 'jd_match' || looksLikeFullJobDescription(message)) {
+    return decision({
+      routeKind: 'jd',
+      reasonCode: input.request.workflow === 'jd_match' ? 'explicit_jd_workflow' : 'full_jd_detected',
+      topicKind: 'jd',
+      topicRef: 'jd',
+      evidenceClass: 'mixed',
+      release: 'complete',
+      requiresEmbedding: true,
+    });
+  }
+  if (isMissingJdFitRequest(message)) {
+    return decision({
+      routeKind: 'jd_intake',
+      reasonCode: 'jd_required',
+      deterministicReply: JD_INTAKE_REPLY,
+    });
+  }
+  if (isExplicitPersonalFact(message)) {
+    const capability = assessCapability(message, input.ledger);
+    return decision({
+      routeKind: 'personal_fact',
+      reasonCode: capability.capabilityId ? 'personal_capability_query' : 'personal_history_query',
+      topicKind: capability.capabilityId ? 'capability' : 'none',
+      topicRef: capability.capabilityId,
+      evidenceClass: capability.evidenceClass === 'none'
+        ? 'unavailable'
+        : capability.evidenceClass,
+      release: 'complete',
+    });
+  }
+  if (isExternalCurrent(message) && !isProjectFact(message)) {
+    return decision({
+      routeKind: 'external_current',
+      reasonCode: 'external_current_query',
+      topicKind: 'external',
+      evidenceClass: 'web',
+      requiresSearch: true,
+    });
+  }
+  if (isIdentityQuestion(message)) {
+    return decision({
+      routeKind: 'identity',
+      reasonCode: 'identity_query',
+      evidenceClass: 'identity',
+    });
+  }
+  if (isProjectFact(message)) {
+    return decision({
+      routeKind: 'grounded',
+      reasonCode: 'project_fact_query',
+      topicKind: 'project',
+      topicRef: projectTopic(message),
+      evidenceClass: 'direct',
+      requiresEmbedding: true,
+    });
+  }
+  if (isStableGeneralConversation(message)) {
+    return decision({
+      routeKind: 'conversation',
+      reasonCode: 'stable_general_conversation',
+    });
+  }
+  if (input.previous && isAnaphoricFollowUp(message)) {
+    return inheritRoute(input.previous, input.ledger);
+  }
+  return decision({
+    routeKind: 'clarify',
+    reasonCode: 'personal_scope_ambiguous',
+    deterministicReply: CLARIFY_REPLY,
+  });
+}

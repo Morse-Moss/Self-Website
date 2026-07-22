@@ -2,14 +2,131 @@ import type { Pool, PoolClient } from 'pg';
 
 import type {
   ChatAudienceIntent,
+  ChatRouteKind,
   ChatSource,
+  ChatTopicKind,
   ChatWorkflow,
 } from '../contracts/chat.ts';
 import type { TokenUsage } from './budget.ts';
 import type { ProviderAttempt, ProviderWinner } from './ai-provider.ts';
 import { sanitizeTurnSources } from './turn-codec.ts';
+import type { ChatRouteDecision, RouteAnchor } from './chat-route-policy.ts';
+import { chatCapabilityPolicy, projectSlugs } from '../site-content.ts';
 
 export type InteractionStatus = 'running' | 'completed' | 'stopped' | 'failed';
+
+type Queryable = Pick<Pool, 'query'> | Pick<PoolClient, 'query'>;
+
+const routeKinds = new Set<ChatRouteKind>([
+  'conversation', 'external_current', 'identity', 'personal_fact',
+  'grounded', 'jd_intake', 'jd', 'clarify',
+]);
+const topicKinds = new Set<ChatTopicKind>([
+  'none', 'external', 'project', 'capability', 'jd',
+]);
+const capabilityIds = new Set(chatCapabilityPolicy.canonical.map((entry) => entry.id));
+const publicProjectSlugs = new Set<string>(projectSlugs);
+
+function validateTopicRef(decision: ChatRouteDecision): void {
+  const valid = decision.topicKind === 'none' || decision.topicKind === 'external'
+    ? decision.topicRef === null
+    : decision.topicKind === 'jd'
+      ? decision.topicRef === 'jd'
+      : decision.topicKind === 'project'
+        ? decision.topicRef === null || publicProjectSlugs.has(decision.topicRef)
+        : decision.topicRef !== null && capabilityIds.has(decision.topicRef);
+  if (!valid) throw new TypeError('Interaction route topicRef is not a controlled identifier.');
+}
+
+export async function loadPreviousRouteAnchor(
+  client: Queryable,
+  conversationId: string,
+  currentTurnId: string,
+): Promise<RouteAnchor | null> {
+  const result = await client.query<{
+    id: string;
+    inherited_from_turn_id: string | null;
+    route_kind: string | null;
+    topic_kind: string | null;
+    topic_ref: string | null;
+  }>(
+    `SELECT previous.id::text, previous.route_kind, previous.topic_kind,
+            previous.topic_ref, previous.inherited_from_turn_id::text
+       FROM interaction_turns AS current
+       JOIN LATERAL (
+         SELECT id, route_kind, topic_kind, topic_ref, inherited_from_turn_id
+           FROM interaction_turns
+          WHERE conversation_id = current.conversation_id
+            AND id <> current.id
+            AND created_at < current.created_at
+          ORDER BY created_at DESC, id DESC
+          LIMIT 1
+       ) AS previous ON true
+      WHERE current.id = $1 AND current.conversation_id = $2`,
+    [currentTurnId, conversationId],
+  );
+  const row = result.rows[0];
+  if (
+    !row
+    || row.inherited_from_turn_id !== null
+    || !row.route_kind
+    || !routeKinds.has(row.route_kind as ChatRouteKind)
+    || !row.topic_kind
+    || !topicKinds.has(row.topic_kind as ChatTopicKind)
+  ) {
+    return null;
+  }
+  return {
+    turnId: row.id,
+    routeKind: row.route_kind as ChatRouteKind,
+    topicKind: row.topic_kind as ChatTopicKind,
+    topicRef: row.topic_ref,
+  };
+}
+
+export async function recordInteractionRoute(
+  client: Queryable,
+  turnId: string,
+  route: ChatRouteDecision,
+): Promise<void> {
+  validateTopicRef(route);
+  if (!/^[a-z0-9_]{1,80}$/u.test(route.reasonCode)) {
+    throw new TypeError('Interaction route reasonCode must be a stable identifier.');
+  }
+  const result = await client.query(
+    `UPDATE interaction_turns
+        SET route_kind = $2,
+            route_reason_code = $3,
+            topic_kind = $4,
+            topic_ref = $5,
+            evidence_class = $6,
+            inherited_from_turn_id = $7
+      WHERE id = $1
+        AND (
+          route_kind IS NULL
+          OR (
+            route_kind = $2
+            AND route_reason_code = $3
+            AND topic_kind = $4
+            AND topic_ref IS NOT DISTINCT FROM $5::text
+            AND evidence_class = $6
+            AND inherited_from_turn_id IS NOT DISTINCT FROM $7::uuid
+          )
+        )`,
+    [
+      turnId,
+      route.routeKind,
+      route.reasonCode,
+      route.topicKind,
+      route.topicRef,
+      route.evidenceClass,
+      route.inheritedFromTurnId,
+    ],
+  );
+  if (result.rowCount !== 1) {
+    throw new Error('Interaction route is missing or already frozen to another decision.');
+  }
+}
 
 export interface InteractionTurn {
   id: string;
