@@ -1,4 +1,7 @@
 import contentJson from "../content/site-content.json" with { type: "json" };
+import capabilityPolicyJson from "../content/chat-capability-policy.json" with { type: "json" };
+
+import type { CapabilityPolicy } from "./server/capability-evidence.ts";
 
 export const projectSlugs = [
   "content-agent",
@@ -137,6 +140,7 @@ export type SiteContent = {
 };
 
 export const siteContent = contentJson as SiteContent;
+export const chatCapabilityPolicy = capabilityPolicyJson as CapabilityPolicy;
 
 export const getAllProjects = (): Project[] => siteContent.projects;
 
