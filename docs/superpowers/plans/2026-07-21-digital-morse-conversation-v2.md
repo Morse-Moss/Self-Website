@@ -1245,7 +1245,7 @@ assert.match(adminInviteDialog, /灰度 ID/);
 assert.match(adminInviteDialog, /invite\.id/);
 ```
 
-浏览器合同新增 desktop/mobile 的 social、recruitment、JD、switching、degraded 和原位 retry 场景；管理员邀请码列表还要验证 UUID 可复制，但一次性邀请码仍只展示一次。
+浏览器合同新增 desktop/mobile 的 social、recruitment、JD、switching、degraded 和原位 retry 场景；管理员邀请码列表还要验证 UUID 可复制，但一次性邀请码仍只展示一次。保留已落地的邀请备注归属合同：对话列表和详情显示 `inviteLabel`，Session 删除后快照仍存在，桌面与移动详情均可独立滚到底。
 
 - [ ] **Step 2: 运行测试确认 RED**
 
@@ -1276,6 +1276,7 @@ prompt: '请介绍与岗位最相关的项目和能力证据。'
 - 第一条可见片段后断线、同 turn 原位恢复；
 - 两次守卫拒绝后的安全结果；
 - 管理员创建邀请码后可分别复制一次性明文和灰度 UUID，访客页面无法读取 UUID 列表；
+- 管理员对话列表/详情显示合成邀请备注，详情在 1440x900 / 390x844 均满足 `scrollHeight > clientHeight` 且可滚到底；
 - 1440x900 / 390x844 无横向溢出、console/page error 为 0。
 
 - [ ] **Step 5: 运行合同和可视验收**
@@ -1396,7 +1397,7 @@ git commit -m "test: evaluate natural evidence-led chat"
 - safe mode 可在 hedging 开启时覆盖生成；
 - fallback 节点不完整仍拒绝；
 - 新变量没有 `NEXT_PUBLIC_` 前缀；
-- 旧镜像可忽略 additive `004`。
+- 旧镜像可忽略 additive `004` / `005`。
 
 - [ ] **Step 2: 运行测试确认 RED**
 
@@ -1406,7 +1407,7 @@ Run:
 node --test tests/production-config.test.ts scripts/s11-production-contract.test.mjs
 ```
 
-Expected: FAIL，生产 validator 和 runbook 还不知道 v2 开关及 migration 004。
+Expected: FAIL，生产 validator 和 runbook 还不知道 v2 开关及 migration 004 / 005。
 
 - [ ] **Step 3: 更新生产合同**
 
@@ -1422,7 +1423,7 @@ Expected: FAIL，生产 validator 和 runbook 还不知道 v2 开关及 migratio
 4. 先在 hedging 关闭时完成已授权的 20 轮真实输出评审，再单独启用 hedging 做故障注入。
 5. `MORSE_CHAT_V2_CANARY_PERCENT=25` / `100` 分阶段重启 Web 和观察。
 6. 人格或证据异常切 `MORSE_CHAT_SAFE_MODE=true`；成本异常只切 `MORSE_CHAT_HEDGED_FAILOVER_ENABLED=false`；隐私问题切 `MORSE_CHAT_ENABLED=false`。
-7. 不执行 `004` down migration。
+7. `004` / `005` 均为 additive migration，不执行 down migration；`005` 只增加并回填非敏感邀请备注快照。
 
 历史生产状态保持历史事实，不提前写成 v2 已上线。
 
@@ -1469,7 +1470,7 @@ Run:
 node --env-file-if-exists=.env.local --test tests/migration-integration.test.ts tests/chat-service-integration.test.ts tests/resume-isolation.test.ts
 ```
 
-Expected: migration 001-004 幂等、Chat 主链和私密简历隔离全部 PASS；不得用 skip 宣称数据库已验收。
+Expected: migration 001-005 幂等、Chat 主链和私密简历隔离全部 PASS；不得用 skip 宣称数据库已验收。
 
 - [ ] **Step 3: 运行最终出口检查一次**
 
@@ -1521,7 +1522,7 @@ git diff --check
 
 - [ ] **Step 2: 停在 push 和部署授权边界**
 
-报告将要 push 的冻结 commit、远端分支、migration 004、配置变化、回滚开关和预计 Provider 重复成本。没有明确授权不得 push、合并或 SSH。
+报告将要 push 的冻结 commit、远端分支、migration 004 / 005、配置变化、回滚开关和预计 Provider 重复成本。没有明确授权不得 push、合并或 SSH。
 
 - [ ] **Step 3: 在独立 release worktree 吸收并 push 精确提交**
 
@@ -1577,7 +1578,7 @@ docker compose --env-file .env.production -f compose.production.yaml run --rm in
 docker compose --env-file .env.production -f compose.production.yaml up -d web worker edge
 ```
 
-Expected: migration 004 registered once，旧数据保留，live/ready 200，公开页面和 v1 会话可用；白名单为空且 canary 为 0，因此没有 Session 进入 v2。不得启用私密简历或执行无关真实 Bocha/Feishu。
+Expected: migration 004 / 005 each registered once，旧数据保留且仍可关联的历史对话已回填邀请备注，live/ready 200，公开页面和 v1 会话可用；白名单为空且 canary 为 0，因此没有 Session 进入 v2。不得启用私密简历或执行无关真实 Bocha/Feishu。
 
 - [ ] **Step 5: 注入实际管理员白名单并完成 20 轮真实输出评审**
 

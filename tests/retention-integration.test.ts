@@ -359,7 +359,14 @@ test('cleanup enforces the 12-hour and 10-day retention boundaries idempotently'
       assert.equal((await client.query('SELECT id FROM knowledge_documents WHERE id = $1', [documentId])).rowCount, 1);
       assert.deepEqual(
         (await client.query<{ version: string }>('SELECT version FROM schema_migrations ORDER BY version')).rows,
-        [{ version: '001' }, { version: '002' }, { version: '003' }, { version: '004' }],
+        [
+          { version: '001' },
+          { version: '002' },
+          { version: '003' },
+          { version: '004' },
+          { version: '005' },
+          { version: '006' },
+        ],
       );
       assert.equal((await client.query('SELECT id FROM admin_sessions')).rowCount, 0);
       assert.equal((await client.query('SELECT id FROM alert_outbox')).rowCount, 0);

@@ -24,6 +24,9 @@ let pool: InstanceType<typeof Pool>;
 let chatTurnId = '';
 let jdTurnId = '';
 let diagnosisTurnId = '';
+const trackedInviteId = randomUUID();
+const trackedSessionId = randomUUID();
+const trackedInviteLabel = '星河科技招聘';
 
 async function runMigrations(connectionString: string): Promise<void> {
   const result = await new Promise<{ code: number | null; stderr: string }>((resolve, reject) => {
@@ -49,6 +52,8 @@ async function seedTurn(input: {
   answer?: string | null;
   usedSearch?: boolean;
   badcase?: boolean;
+  accessSessionId?: string;
+  inviteLabel?: string | null;
   createdAt: Date;
   deleteAfter: Date;
 }): Promise<string> {
@@ -58,13 +63,14 @@ async function seedTurn(input: {
       (id, access_session_id, conversation_id, workflow, audience_intent,
        question, answer, status, error_code, knowledge_sources,
        input_tokens, output_tokens, estimated_cost_usd, provider, model,
-       latency_ms, used_search, badcase, created_at, completed_at, delete_after)
+       latency_ms, used_search, badcase, created_at, completed_at, delete_after,
+       invite_label)
      VALUES ($1, $2, $3, $4, 'general', $5, $6, $7, $8, $9::jsonb,
              $10, $11, $12, 'openai', 'configured-model', 120,
-             $13, $14, $15, $15, $16)`,
+             $13, $14, $15, $15, $16, $17)`,
     [
       id,
-      randomUUID(),
+      input.accessSessionId ?? randomUUID(),
       randomUUID(),
       input.workflow,
       input.question,
@@ -86,6 +92,7 @@ async function seedTurn(input: {
       input.badcase ?? false,
       input.createdAt,
       input.deleteAfter,
+      input.inviteLabel ?? null,
     ],
   );
   return id;
@@ -96,11 +103,38 @@ before(async () => {
   await runMigrations(database.connectionString);
   pool = new Pool({ connectionString: database.connectionString });
 
+  await pool.query(
+    `INSERT INTO invite_codes
+      (id, code_hash, label, active, expires_at, max_sessions, session_count, created_at)
+     VALUES ($1, $2, $3, true, $4, 1, 1, $5)`,
+    [
+      trackedInviteId,
+      'a'.repeat(64),
+      trackedInviteLabel,
+      new Date(now.getTime() + 24 * 60 * 60 * 1000),
+      now,
+    ],
+  );
+  await pool.query(
+    `INSERT INTO access_sessions
+      (id, invite_code_id, token_hash, expires_at, created_at, last_seen_at)
+     VALUES ($1, $2, $3, $4, $5, $5)`,
+    [
+      trackedSessionId,
+      trackedInviteId,
+      'b'.repeat(64),
+      new Date(now.getTime() + 12 * 60 * 60 * 1000),
+      now,
+    ],
+  );
+
   chatTurnId = await seedTurn({
     workflow: 'chat',
     status: 'completed',
     question: '介绍深度研究系统',
     answer: '基于公开证据回答。',
+    accessSessionId: trackedSessionId,
+    inviteLabel: trackedInviteLabel,
     createdAt: new Date(now.getTime() - 30 * 60 * 1000),
     deleteAfter: new Date(now.getTime() + 24 * 60 * 60 * 1000),
   });
@@ -219,6 +253,8 @@ test('listAdminTurns enforces the live ten-day boundary, filters, and stable pag
   assert.equal(all.page, 1);
   assert.equal(all.limit, 2);
   assert.deepEqual(all.items.map((item) => item.id), [chatTurnId, jdTurnId]);
+  assert.equal(all.items[0].inviteLabel, trackedInviteLabel);
+  assert.equal(all.items[1].inviteLabel, null);
   assert.equal(all.items.some((item) => item.question.includes('十天外')), false);
   assert.equal(all.items.some((item) => item.question.includes('未来')), false);
 
@@ -247,11 +283,23 @@ test('getAdminTurn returns raw analysis detail with joined search and diagnosis 
   assert.deepEqual(jd?.search?.results, []);
   assert.equal(jd?.diagnosis, null);
 
+  const attributed = await getAdminTurn(pool, chatTurnId, now);
+  assert.equal(attributed?.inviteLabel, trackedInviteLabel);
+
   const diagnosis = await getAdminTurn(pool, diagnosisTurnId, now);
   assert.equal(diagnosis?.diagnosis?.status, 'handoff_pending');
   assert.equal(diagnosis?.diagnosis?.fields.problem, '需要整理需求');
   assert.equal(diagnosis?.search, null);
   assert.equal(await getAdminTurn(pool, randomUUID(), now), null);
+});
+
+test('invite attribution survives deletion of the visitor session', async () => {
+  await pool.query('DELETE FROM access_sessions WHERE id = $1', [trackedSessionId]);
+
+  const list = await listAdminTurns(pool, { now, page: 1, limit: 20 });
+  const attributed = list.items.find((item) => item.id === chatTurnId);
+  assert.equal(attributed?.inviteLabel, trackedInviteLabel);
+  assert.equal((await getAdminTurn(pool, chatTurnId, now))?.inviteLabel, trackedInviteLabel);
 });
 
 test('updateAdminBadcase validates notes and updates only a live turn', async () => {

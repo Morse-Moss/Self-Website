@@ -216,12 +216,14 @@
   display: flex;
   width: min(1500px, 100%);
   min-width: 0;
+  height: 100dvh;
   min-height: 100dvh;
   max-width: 100%;
   margin: 0 auto;
   padding: var(--space-5);
   flex-direction: column;
   gap: var(--space-4);
+  overflow: hidden;
 }
 
 .topbar {
@@ -328,7 +330,7 @@
   grid-template-columns: minmax(330px, .86fr) minmax(0, 1.54fr);
   flex: 1;
   min-width: 0;
-  min-height: 520px;
+  min-height: 0;
   max-width: 100%;
   max-height: calc(100dvh - 250px);
   overflow: hidden;
@@ -429,6 +431,7 @@
 
 .workflow,
 .status,
+.inviteLabel,
 .searchFlag,
 .badcaseFlag {
   display: inline-flex;
@@ -445,6 +448,14 @@
 .workflow,
 .searchFlag {
   color: var(--status-blue);
+}
+
+.inviteLabel {
+  max-width: min(220px, 100%);
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .badcaseFlag {
@@ -552,8 +563,24 @@
 .detailScroll {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  overflow-y: scroll;
   overscroll-behavior: contain;
+  scrollbar-color: var(--line-strong) var(--surface-glass);
+  scrollbar-gutter: stable;
+}
+
+.detailScroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+.detailScroll::-webkit-scrollbar-track {
+  background: var(--surface-glass);
+}
+
+.detailScroll::-webkit-scrollbar-thumb {
+  border: 2px solid var(--surface-glass);
+  border-radius: var(--radius-pill);
+  background: var(--line-strong);
 }
 
 .detailSection,
@@ -826,9 +853,11 @@
   }
 
   .console {
+    height: auto;
     min-height: 100dvh;
     padding: var(--space-3);
     gap: var(--space-3);
+    overflow: visible;
   }
 
   .topbar {

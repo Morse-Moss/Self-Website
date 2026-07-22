@@ -68,6 +68,7 @@ export type AdminSource = ChatSource;
 export interface AdminTurnSummary {
   id: string;
   accessSessionId: string;
+  inviteLabel: string | null;
   conversationId: string | null;
   workflow: AdminWorkflow;
   audienceIntent: ChatAudienceIntent;

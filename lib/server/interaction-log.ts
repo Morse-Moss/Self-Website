@@ -103,6 +103,7 @@ export async function insertRunningInteraction(input: {
   client: PoolClient;
   turnId: string;
   accessSessionId: string;
+  inviteLabel: string;
   conversationId: string;
   workflow: InteractionTurn['workflow'];
   audienceIntent: ChatAudienceIntent;
@@ -112,12 +113,13 @@ export async function insertRunningInteraction(input: {
 }): Promise<void> {
   await input.client.query(
     `INSERT INTO interaction_turns
-      (id, access_session_id, conversation_id, workflow, audience_intent,
+      (id, access_session_id, invite_label, conversation_id, workflow, audience_intent,
        question, status, created_at, delete_after)
-     VALUES ($1, $2, $3, $4, $5, $6, 'running', $7, $8)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'running', $8, $9)`,
     [
       input.turnId,
       input.accessSessionId,
+      input.inviteLabel,
       input.conversationId,
       input.workflow,
       input.audienceIntent,

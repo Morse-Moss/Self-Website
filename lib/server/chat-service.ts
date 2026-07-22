@@ -154,6 +154,7 @@ interface SessionLockRow {
   message_count: number;
   search_count: number;
   invite_code_id: string;
+  invite_label: string;
   chat_behavior_version: 'v1' | 'v2' | null;
 }
 
@@ -520,8 +521,10 @@ async function reserveTurnInTransaction(input: {
 }): Promise<TurnContext> {
   const sessionResult = await input.client.query<SessionLockRow>(
     `SELECT session.expires_at, session.message_count, session.search_count,
-            session.invite_code_id::text, session.chat_behavior_version
+            session.invite_code_id::text, invite.label AS invite_label,
+            session.chat_behavior_version
        FROM access_sessions AS session
+       JOIN invite_codes AS invite ON invite.id = session.invite_code_id
       WHERE session.id = $1
         AND session.expires_at > $2
       FOR UPDATE OF session`,
@@ -700,6 +703,7 @@ async function reserveTurnInTransaction(input: {
       client: input.client,
       turnId: input.turnId,
       accessSessionId: input.accessSessionId,
+      inviteLabel: session.invite_label,
       conversationId,
       workflow: requestWorkflow(input.request),
       audienceIntent: input.request.audienceIntent,

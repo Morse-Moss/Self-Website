@@ -91,7 +91,7 @@ test('migration runner bootstraps an empty database in order and is repeatable',
     });
     assert.deepEqual(
       firstRows.migrations.map((row) => row.version),
-      ['001', '002', '003', '004', '005'],
+      ['001', '002', '003', '004', '005', '006'],
     );
     assert.ok(firstRows.migrations.every((row) => /^[0-9a-f]{64}$/.test(row.checksum)));
     assert.deepEqual(firstRows.tables.map((row) => row.name), [
@@ -146,6 +146,7 @@ test('two migration runners serialize an empty database', async () => {
         { version: '003', count: 1 },
         { version: '004', count: 1 },
         { version: '005', count: 1 },
+        { version: '006', count: 1 },
       ]);
     });
   } finally {
@@ -221,10 +222,10 @@ test('migration runner baselines a complete 001 database and preserves old data'
         "SELECT id FROM conversation_messages WHERE conversation_id = $1 AND content = 'legacy history'",
         [conversationId],
       );
-    assert.deepEqual(
-      migrations.rows.map((row) => row.version),
-      ['001', '002', '003', '004', '005'],
-    );
+      assert.deepEqual(
+        migrations.rows.map((row) => row.version),
+        ['001', '002', '003', '004', '005', '006'],
+      );
       assert.equal(invite.rowCount, 1);
       assert.equal(document.rowCount, 1);
       assert.equal(session.rowCount, 1);
@@ -271,6 +272,7 @@ test('two migration runners serialize baseline registration on a complete 001 da
         { version: '003', count: 1 },
         { version: '004', count: 1 },
         { version: '005', count: 1 },
+        { version: '006', count: 1 },
       ]);
     });
   } finally {
@@ -363,6 +365,7 @@ test('migration runner accepts an equivalent CRLF and BOM checkout after registr
       '003_private_resume.sql',
       '004_admin_api_management.sql',
       '005_chat_v2.sql',
+      '006_interaction_invite_label.sql',
     ]) {
       const filePath = path.join(directory, fileName);
       const text = await fs.readFile(filePath, 'utf8');
@@ -434,6 +437,10 @@ test('migration runner rejects a partial 002 schema after 001 was registered', a
     );
     await fs.rm(
       path.join(initialOnlyDirectory, '005_chat_v2.sql'),
+      { force: true },
+    );
+    await fs.rm(
+      path.join(initialOnlyDirectory, '006_interaction_invite_label.sql'),
       { force: true },
     );
     const initial = await runMigrations(database.connectionString, initialOnlyDirectory);
@@ -522,6 +529,7 @@ test('migration 004 upgrades a populated 001-003 database without rewriting exis
   try {
     await fs.rm(path.join(through003, '004_admin_api_management.sql'), { force: true });
     await fs.rm(path.join(through003, '005_chat_v2.sql'), { force: true });
+    await fs.rm(path.join(through003, '006_interaction_invite_label.sql'), { force: true });
     const initial = await runMigrations(database.connectionString, through003);
     assert.equal(initial.code, 0, initial.stderr);
     await withPostgresClient(database.connectionString, async (client) => {
@@ -555,7 +563,7 @@ test('migration 004 upgrades a populated 001-003 database without rewriting exis
       );
       assert.deepEqual(
         versions.rows.map((row) => row.version),
-        ['001', '002', '003', '004', '005'],
+        ['001', '002', '003', '004', '005', '006'],
       );
       assert.deepEqual(interaction.rows, [{ question: 'preserve interaction' }]);
       assert.deepEqual(invite.rows, [{ trusted_person_note: 'preserve invite' }]);
@@ -793,6 +801,72 @@ test('chat v2 migration adds stable assignment and metadata-only provider attemp
       assert.equal(rawTextColumns.rowCount, 0);
     });
   } finally {
+    await database.dispose();
+  }
+});
+
+test('interaction attribution migration adds and backfills only an invite label snapshot', async () => {
+  const database = await createDisposablePostgresDatabase();
+  const initialDirectory = await copyMigrations();
+  const inviteId = randomUUID();
+  const sessionId = randomUUID();
+  const turnId = randomUUID();
+  try {
+    await fs.rm(
+      path.join(initialDirectory, '006_interaction_invite_label.sql'),
+      { force: true },
+    );
+    const initial = await runMigrations(database.connectionString, initialDirectory);
+    assert.equal(initial.code, 0, initial.stderr);
+    await withPostgresClient(database.connectionString, async (client) => {
+      await client.query(
+        `INSERT INTO invite_codes
+          (id, code_hash, label, active, expires_at, max_sessions, session_count)
+         VALUES ($1, $2, $3, true, NOW() + INTERVAL '1 day', 1, 1)`,
+        [inviteId, 'c'.repeat(64), '历史公司备注'],
+      );
+      await client.query(
+        `INSERT INTO access_sessions
+          (id, invite_code_id, token_hash, expires_at)
+         VALUES ($1, $2, $3, NOW() + INTERVAL '12 hours')`,
+        [sessionId, inviteId, 'd'.repeat(64)],
+      );
+      await client.query(
+        `INSERT INTO interaction_turns
+          (id, access_session_id, workflow, audience_intent, question, status, delete_after)
+         VALUES ($1, $2, 'chat', 'general', '历史问题', 'completed', NOW() + INTERVAL '10 days')`,
+        [turnId, sessionId],
+      );
+    });
+
+    const result = await runMigrations(database.connectionString);
+    assert.equal(result.code, 0, result.stderr);
+    await withPostgresClient(database.connectionString, async (client) => {
+      const attributionColumns = await client.query<{
+        column_name: string;
+        data_type: string;
+        is_nullable: string;
+      }>(
+        `SELECT column_name, data_type, is_nullable
+           FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'interaction_turns'
+            AND column_name IN ('invite_label', 'invite_code_id')
+          ORDER BY column_name`,
+      );
+      assert.deepEqual(attributionColumns.rows, [{
+        column_name: 'invite_label',
+        data_type: 'text',
+        is_nullable: 'YES',
+      }]);
+      const attribution = await client.query<{ invite_label: string | null }>(
+        'SELECT invite_label FROM interaction_turns WHERE id = $1',
+        [turnId],
+      );
+      assert.deepEqual(attribution.rows, [{ invite_label: '历史公司备注' }]);
+    });
+  } finally {
+    await fs.rm(initialDirectory, { force: true, recursive: true });
     await database.dispose();
   }
 });

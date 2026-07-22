@@ -118,7 +118,7 @@ export default function AdminTurnDetailPanel({
         </div>
       </header>
 
-      <div className={styles.detailScroll}>
+      <div className={styles.detailScroll} data-testid="admin-turn-detail-scroll">
         {loading ? (
           <div className={styles.detailState} role="status">正在加载对话详情...</div>
         ) : error ? (
@@ -151,6 +151,7 @@ export default function AdminTurnDetailPanel({
             <section className={styles.detailSection} aria-labelledby="turn-metrics-title">
               <h3 id="turn-metrics-title">运行信息</h3>
               <dl className={styles.metrics}>
+                <div><dt>邀请对象</dt><dd>{detail.inviteLabel ?? '未记录'}</dd></div>
                 <div><dt>流程</dt><dd>{detail.workflow}</dd></div>
                 <div><dt>访客意图</dt><dd>{detail.audienceIntent}</dd></div>
                 <div><dt>创建时间</dt><dd>{new Date(detail.createdAt).toLocaleString('zh-CN')}</dd></div>

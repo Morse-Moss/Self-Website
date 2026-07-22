@@ -46,6 +46,7 @@ export interface NormalizedAdminTurnFilters {
 export interface AdminTurn {
   id: string;
   accessSessionId: string;
+  inviteLabel: string | null;
   conversationId: string | null;
   workflow: Workflow;
   audienceIntent: ChatAudienceIntent;
@@ -98,6 +99,7 @@ export interface AdminTurnDetail extends AdminTurn {
 interface AdminTurnRow {
   id: string;
   access_session_id: string;
+  invite_label: string | null;
   conversation_id: string | null;
   workflow: Workflow;
   audience_intent: ChatAudienceIntent;
@@ -141,6 +143,7 @@ interface AdminTurnDetailRow extends AdminTurnRow {
 
 const turnColumns = `turn.id::text,
   turn.access_session_id::text,
+  turn.invite_label,
   turn.conversation_id::text,
   turn.workflow,
   turn.audience_intent,
@@ -224,6 +227,7 @@ function toAdminTurn(row: AdminTurnRow): AdminTurn {
   return {
     id: row.id,
     accessSessionId: row.access_session_id,
+    inviteLabel: row.invite_label,
     conversationId: row.conversation_id,
     workflow: row.workflow,
     audienceIntent: row.audience_intent,

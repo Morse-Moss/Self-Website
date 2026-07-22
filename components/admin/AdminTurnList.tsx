@@ -71,6 +71,13 @@ export default function AdminTurnList({
                   <span className={styles.rowMeta}>
                     <span className={styles.workflow}>{workflowLabels[turn.workflow]}</span>
                     <span className={styles.status} data-status={turn.status}>{statusLabels[turn.status]}</span>
+                    <span
+                      className={styles.inviteLabel}
+                      data-testid="admin-turn-invite-label"
+                      title={turn.inviteLabel ?? '邀请对象未记录'}
+                    >
+                      {turn.inviteLabel ?? '邀请对象未记录'}
+                    </span>
                     {turn.usedSearch ? <span className={styles.searchFlag}>联网</span> : null}
                     {turn.badcase ? <span className={styles.badcaseFlag}>BADCASE</span> : null}
                   </span>

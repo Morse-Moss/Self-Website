@@ -189,6 +189,24 @@ test('S10 proves the one-time invite lifecycle and mobile dialog geometry', () =
   );
 });
 
+test('S10 proves invite attribution and independent detail scrolling at both widths', () => {
+  const source = readFileSync(harnessUrl, 'utf8');
+  const adminStart = source.indexOf('async function runAdminScenarios');
+  const collectStart = source.indexOf('function collectBrowserErrors');
+  const adminSource = source.slice(adminStart, collectStart);
+
+  assert.ok(adminStart >= 0 && collectStart > adminStart);
+  assert.match(source, /admin-turn-invite-label/u);
+  assert.match(source, /admin-turn-detail-scroll/u);
+  assert.match(adminSource, /s10-loopback-smoke/u);
+  assert.match(adminSource, /admin:invite-label-list/u);
+  assert.match(adminSource, /admin:invite-label-detail/u);
+  assert.match(adminSource, /admin:detail-scrollable-desktop/u);
+  assert.match(adminSource, /admin:detail-scroll-bottom-desktop/u);
+  assert.match(adminSource, /admin:detail-scrollable-mobile/u);
+  assert.match(adminSource, /admin:detail-scroll-bottom-mobile/u);
+});
+
 test('source navigation keeps the active chat while project evidence opens separately', () => {
   const source = readFileSync(harnessUrl, 'utf8');
   const visitorStart = source.indexOf('async function runVisitorScenarios');

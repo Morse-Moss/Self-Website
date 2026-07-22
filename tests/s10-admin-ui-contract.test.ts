@@ -127,6 +127,22 @@ test('admin provides an inspectable list-detail workflow and full-screen mobile 
   assert.match(styles, /\.detailPanel\[data-mobile-open=['"]true['"]\][\s\S]*inset:\s*0/);
 });
 
+test('admin identifies each visitor by invite label and keeps detail content scrollable', () => {
+  const source = adminSource();
+  const styles = read(stylePath);
+
+  assert.match(source, /turn\.inviteLabel/);
+  assert.match(source, /detail\.inviteLabel/);
+  assert.match(source, /邀请对象/);
+  assert.match(source, /data-testid=["']admin-turn-invite-label["']/);
+  assert.match(source, /data-testid=["']admin-turn-detail-scroll["']/);
+  assert.match(styles, /\.console[\s\S]*height:\s*100dvh/);
+  assert.match(styles, /\.console[\s\S]*overflow:\s*hidden/);
+  assert.match(styles, /\.workspace[\s\S]*min-height:\s*0/);
+  assert.match(styles, /\.detailScroll[\s\S]*overflow-y:\s*scroll/);
+  assert.match(styles, /\.detailScroll[\s\S]*scrollbar-gutter:\s*stable/);
+});
+
 test('badcase editing persists a bounded note through PATCH', () => {
   const source = adminSource();
 

@@ -4553,6 +4553,11 @@ test('v2 social skips embedding, RAG and search and uses low reasoning', {
     assert.equal(searchProvider.calls.length, 0);
     assert.equal(aiProvider.requests[0].reasoningEffort, 'low');
     assert.deepEqual(meta.sources, []);
+    const attribution = await pool!.query<{ invite_label: string | null }>(
+      'SELECT invite_label FROM interaction_turns WHERE access_session_id = $1',
+      [fixture.accessSessionId],
+    );
+    assert.equal(attribution.rows[0].invite_label, 'chat-v2-social-light-route');
     assert.deepEqual(
       events.filter((event) => event.type === 'status').map((event) => event.stage),
       ['routing', 'answering'],

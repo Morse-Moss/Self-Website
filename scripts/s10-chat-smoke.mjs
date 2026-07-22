@@ -103,7 +103,9 @@ const SELECTORS = Object.freeze({
   adminConsole: '[data-testid="admin-console"]',
   adminList: '[data-testid="admin-turn-list"]',
   adminRow: '[data-testid="admin-turn-row"]',
+  adminInviteLabel: '[data-testid="admin-turn-invite-label"]',
   adminDetail: '[data-testid="admin-turn-detail"]',
+  adminDetailScroll: '[data-testid="admin-turn-detail-scroll"]',
   adminBadcase: '[data-testid="admin-badcase-form"]',
   adminInvitesOpen: '[data-testid="admin-invites-open"]',
   adminInviteDialog: '[data-testid="admin-invite-dialog"]',
@@ -669,6 +671,29 @@ async function assertNoOverflow(page, label) {
   check(geometry.dialogLeft >= -1 && geometry.dialogRight <= geometry.clientWidth + 1, `dialog-overflow:${label}`);
 }
 
+async function assertScrollableToBottom(page, selector, scrollableCode, bottomCode) {
+  const geometry = await page.evaluate(`(() => {
+    const element = document.querySelector(${JSON.stringify(selector)});
+    if (!(element instanceof HTMLElement)) return null;
+    element.scrollTop = element.scrollHeight;
+    return { clientHeight: element.clientHeight, scrollHeight: element.scrollHeight };
+  })()`);
+  check(geometry && geometry.scrollHeight > geometry.clientHeight + 1, scrollableCode);
+  await delay(50);
+  const reachedBottom = await page.evaluate(`(() => {
+    const element = document.querySelector(${JSON.stringify(selector)});
+    return element instanceof HTMLElement
+      && Math.ceil(element.scrollTop + element.clientHeight) >= element.scrollHeight - 1;
+  })()`);
+  check(reachedBottom, bottomCode);
+  await page.evaluate(`(() => {
+    const element = document.querySelector(${JSON.stringify(selector)});
+    if (!(element instanceof HTMLElement)) return false;
+    element.scrollTop = 0;
+    return true;
+  })()`);
+}
+
 async function capture(page, outputDirectory, fileName) {
   await page.send('Page.bringToFront');
   await page.evaluate('window.getSelection()?.removeAllRanges(); true');
@@ -968,9 +993,24 @@ async function runAdminScenarios({
   await waitFor(desktopPage, `Boolean(document.querySelector(${JSON.stringify(SELECTORS.adminConsole)}))`, 'admin:login');
   checks.add('admin-login');
   await waitFor(desktopPage, `document.querySelectorAll(${JSON.stringify(SELECTORS.adminRow)}).length >= 5`, 'admin:list');
-  checks.add('admin-list-detail');
+  await waitFor(
+    desktopPage,
+    `document.querySelector(${JSON.stringify(SELECTORS.adminInviteLabel)})?.textContent?.includes('s10-loopback-smoke')`,
+    'admin:invite-label-list',
+  );
   await click(desktopPage, SELECTORS.adminRow);
   await waitFor(desktopPage, `Boolean(document.querySelector(${JSON.stringify(`${SELECTORS.adminDetail} ${SELECTORS.adminBadcase}`)}))`, 'admin:detail');
+  await waitFor(
+    desktopPage,
+    `document.querySelector(${JSON.stringify(SELECTORS.adminDetail)})?.textContent?.includes('s10-loopback-smoke')`,
+    'admin:invite-label-detail',
+  );
+  await assertScrollableToBottom(
+    desktopPage,
+    SELECTORS.adminDetailScroll,
+    'admin:detail-scrollable-desktop',
+    'admin:detail-scroll-bottom-desktop',
+  );
 
   const badcaseCheckbox = `${SELECTORS.adminBadcase} input[name="badcase"]`;
   if (!await desktopPage.evaluate(`document.querySelector(${JSON.stringify(badcaseCheckbox)})?.checked === true`)) {
@@ -1122,6 +1162,17 @@ async function runAdminScenarios({
   })()`);
   check(mobileDetail.left <= 1 && mobileDetail.top <= 1, 'admin:mobile-detail-origin');
   check(mobileDetail.width >= 388 && mobileDetail.height >= 842, 'admin:mobile-detail-fullscreen');
+  await waitFor(
+    mobilePage,
+    `document.querySelector(${JSON.stringify(SELECTORS.adminDetail)})?.textContent?.includes('s10-loopback-smoke')`,
+    'admin:invite-label-detail-mobile',
+  );
+  await assertScrollableToBottom(
+    mobilePage,
+    SELECTORS.adminDetailScroll,
+    'admin:detail-scrollable-mobile',
+    'admin:detail-scroll-bottom-mobile',
+  );
   await assertNoOverflow(mobilePage, 'admin-mobile');
   const mobileScreenshot = await capture(
     mobilePage,
@@ -1131,6 +1182,7 @@ async function runAdminScenarios({
   await click(mobilePage, '[data-testid="admin-detail-back"]');
   await waitFor(mobilePage, `document.querySelector(${JSON.stringify(SELECTORS.adminDetail)})?.getAttribute('data-mobile-open') === 'false'`,
     'admin:mobile-back');
+  checks.add('admin-list-detail');
 
   await click(mobilePage, SELECTORS.adminInvitesOpen);
   await waitFor(
