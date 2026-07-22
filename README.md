@@ -1,97 +1,104 @@
-# Revolution
+# Morse
 
-数字生命摩斯个人作品集正式站。项目使用 Next.js App Router + TypeScript，样式采用 CSS Modules 与全局设计 token。
+AI 原生个人独立站与数字分身系统。
 
-## 当前状态
+Morse 将个人主页、项目作品集和可追溯 AI 对话整合在一个站点中。访客既可以浏览结构化内容，也可以通过自由问答、岗位匹配和需求初诊等工作流，与基于审核知识构建的数字分身进行交互。
 
-- S3 滚动叙事、系统展厅与杠杆账本已完成；历史公开简历模式已由邀请授权的私密 PDF 入口取代，公开页面不再嵌入结构化简历。
-- S4 本地统计管线已完成，真实数字来自 `content/stats.json`。
-- S5 安全内容基线已完成；S7 已将内容缺口和联系占位退出 live 页面。
-- `content/drafts/` 仍是待摩斯终审的草稿，未终审内容不得导入线上内容。
-- S6 上线前验收已完成：测试、生产构建、1440/390 双宽、触控、减弱动画、当时的简历打印与 Lighthouse 均已通过。
-- S7 多页作品集已完成：首页、作品索引、四个项目案例、共享导航/页脚/简历入口和唯一公开内容源均已进入正式站。
-- S8 智能客服文字对话闭环已完成并进入 `origin/master`：三类访客意图、失败补偿、幂等重放、公开来源、可恢复重试、双宽浏览器验证和分层评测均已通过。
-- S9 Morse 作品集重设计已完成并进入 `origin/master`：首页以 `Morse` 为主身份，作品集改为四项目单页折叠；企业内部项目只公开获批的脱敏事实与示例媒体，不提供系统访问入口。全视口首屏、1440/390 双宽、减弱动画和 Lighthouse 门禁均已通过。
-- S10 数字摩斯智能客服已达到 `MAINLINE_PROVIDER_READY / CHAT_UX_LOCAL_READY`：访客三流程、自动搜索、管理后台与离线评测完成；19/19 Mock E2E、1440/390 真实浏览器、543/543 零 skip 全量测试、BGE/pgvector 语义评测和 19/19 生产构建均已通过。2026-07-17 针对中转 WAF 和易变模型目录加入显式兼容 User-Agent，并以 Provider 当前可用模型配置完成验收；随后修复默认问题只填框、等待态仍显示建议、Markdown 源码外露、来源编号不清和 OpenAI-compatible 中转间歇性空输出/502。聊天区已扩大；正文“依据”和底部来源统一遵循不打断合同：当前页资料静态显示，项目案例和联网资料在新标签页打开，不能改变当前对话 URL、消息或 transcript 滚动位置。未配置备用节点时，Responses 仍只在零正文的空完成、incomplete 或明确瞬时 HTTP 状态下进行最多 3 次同节点尝试；配置备用节点后，每个节点最多尝试一次，并在任何节点级错误且零正文时按主节点、备用 1、备用 2 切换。已有部分回答或访客主动停止时不会切换；可用 usage 会累计。最新持久化 usage 证据 turn `e9d03006-2cbd-40dd-a31c-1cd65c6b6e45` 到达 SSE `done` 和数据库 `completed`，usage 为 5766 输入 / 102 输出 token；本轮另有三个真实浏览器 turn `45d91a62-38b9-4505-9a80-5e7b563a2cb2`、`3023fc9a-af03-45e0-91c6-3994022a1fc5` 与 `389f9ccd-9f42-451f-a641-050bad5f1106` 均为 `completed`，额度各从 30 降到 29；最新一轮延迟 15706ms、5 个检索来源、`used_search=false`。中转未返回 usage，费用保持未知。真实博查/飞书未验收；S10 当时未部署，当前生产状态以 S11 条目为准。
-- 管理员固定入口为 `/admin`，不出现在公开导航；生产使用独立管理员密码登录，有效管理 Session 内可生成和停用邀请码，导出私有数据时重新输入密码。安全边界仍包括 scrypt、五次失败锁定、30 分钟 Strict Session、精确 Origin 和服务端权限校验。
-- S11 生产部署已于 2026-07-18 达到 `PRODUCTION_OBSERVED / LIMITED_LAUNCH`；2026-07-22 当前应用 release 为 `292a24b`。`aimorse.tech` 与 `www.aimorse.tech` 的 Caddy/HTTPS、Web、Worker、PostgreSQL/pgvector 和 CPU BGE 均在运行；migration 001/002/003/004、最小数据库 grants、公开知识、live/ready 与 release smoke 已通过。仅管理员可用的 `/admin/api` 会在当前主线路、环境备用和数据库动态线路上显示脱敏后的中转主机名，不返回 Key 或 Base URL 路径/查询参数；私密简历入口已启用并保持邀请制访问。
-- 生产 Chat 固定使用 `gpt-5.6-terra`、Responses 和 high reasoning，按主节点、备用 1、备用 2 顺序切换。切流前分别强制验证两级故障接管，切流后从运行 Web 容器复验主节点；共 4 次受控真实调用均返回完整终态和 usage，未保存回答正文、原始 payload 或凭据。
-- 内容创作 Agent、自动运营 Agent、深度研究 Agent、数字摩斯与 AI 外贸获客系统的简洁页面、正式主图和展开详情均已进入生产 Web；五张主图、公网页面和健康接口均为 HTTP 200。
-- 生产 RAG 已全量收敛到 40 documents / 47 chunks；此前首轮摄取更新 10 documents / 16 chunks，当前 Provider 发布摄取为 0 更新、40 documents 跳过。生产 BGE + pgvector 的 46 条 gold 为 top-1 36/46、top-3 46/46，正负阈值均通过。
-- AI 外贸获客系统的作品集页面、真实 Graphite 总控台主图、五段详情和六个主题知识已经上线。这里的“上线”只指 Revolution 作品集与公开知识发布，不改变源系统仍是本地 MVP 的状态，也不宣称规模化获客成果。
-- 首页 Warp Tunnel 已合并、推送并在生产环境完成双宽浏览器观察；生产 Lighthouse 13.4.0 的移动端与桌面端 Performance 均为 99，已满足 `>= 90` 门槛。
-- 当前仍不标记 `ONLINE_READY`：监控、托管备份与恢复演练、edge 速率/连接限制、真实 Bocha/Feishu smoke、moderate dependency advisory 处置及更多国内网络可达性复核仍待完成；剩余工作区改动与未跟踪证据未复制到服务器。
-- M3-RAG 基础能力继续复用短期邀请码、PostgreSQL + pgvector、OpenAI 适配层、SSE、短期会话和费用门；本地 BGE 语义向量已接入。S8 的 3 次历史 `runChat` 未完成，但已由 2026-07-17 的 S10 真实 Provider 全链 PASS 更新当前结论；历史失败记录不删除，也不由 Mock 替代。
-- 本次部署为用户明确授权的生产发布；后续 push、再次部署和远端变更仍需单独授权。
-- 私密简历访问已进入 `origin/master`：独立邀请码和 Session、AES-256-GCM 密文存储、管理员上传、撤销、30 天审计清理、密钥轮换及 RAG/Provider/镜像隔离均已完成。2026-07-22 已在生产 release `292a24b` 上启用，经确认的定向版最终 PDF 仅通过认证后台进入私有密文卷；未授权访客只能看到邀请码表单，文件接口保持 401。上线验收码已兑换后立即停用，后续由管理员按访客创建新码；站内不提供公开申请或直接下载。
+![Morse 数字分身界面](public/works/digital-morse/digital-morse-main-local-2026-07-19.png)
+
+> 本地验收截图 · 示例会话 · 非生产访客数据。
+
+## 核心能力
+
+- **个人独立站**：以统一内容源组织身份信息、项目案例和公开知识，并适配桌面与移动端。
+- **AI 数字分身**：提供自由问答、JD 匹配和需求初诊三种对话工作流，用对话代替静态信息检索。
+- **可追溯回答**：使用本地 BGE Embeddings、PostgreSQL 与 pgvector 检索审核后的公开知识，回答附带服务端确认的来源。
+- **项目作品集**：集中展示内容创作、自动运营、外贸获客、深度研究和数字分身等 Agent 系统。
+- **完整治理链路**：包含访问额度、会话恢复、停止与重试、Provider 故障切换、管理后台、异步 Worker 和健康检查。
+- **受控内容访问**：私密内容使用独立邀请与 Session、加密存储和审计清理，不进入公开内容、RAG 或模型输入。
+
+## 项目组成
+
+### 数字摩斯
+
+嵌入个人独立站的 AI 数字分身。它基于审核后的公开知识回答访客问题，并通过来源、工作流状态和访问治理控制回答边界。
+
+### 内容创作 Agent 系统
+
+面向企业内容团队的多模态创作系统，将对话式创作、多模型适配、异步生成任务和数字资产管理连接成完整工作流。
+
+### 自动运营 Agent 系统
+
+面向企业运营团队的受控运营系统，连接数据发现、内容沉淀、AI 内容生产、发布校验和任务追踪。
+
+### AI 外贸获客系统
+
+面向外贸销售团队的获客运营系统，串联线索入池、官网信息补全、AI 评分、协同跟进、邮件触达和回信处理。
+
+### 深度研究 Agent 系统
+
+本地优先的多 Agent 深度研究系统，围绕研究问题完成方法发现、证据采集、横纵分析、质量审查和正式报告生成。
+
+## 系统架构
+
+```mermaid
+flowchart LR
+    Visitor[访客] --> Web[Next.js 个人独立站]
+    Web --> Portfolio[作品与公开内容]
+    Web --> Chat[数字分身对话]
+    Web --> Private[受控私密内容]
+
+    Chat --> Workflow[对话工作流]
+    Workflow --> RAG[RAG 检索]
+    Workflow --> Search[受控联网搜索]
+    Workflow --> Gateway[模型网关与故障切换]
+
+    RAG --> Knowledge[审核知识源]
+    RAG --> Vector[BGE + pgvector]
+    Gateway --> Provider[OpenAI-compatible Provider]
+
+    Admin[管理后台] --> Access[邀请码与访问治理]
+    Admin --> ProviderConfig[Provider 管理]
+    Worker[异步 Worker] --> Cleanup[会话、审计与任务清理]
+```
+
+站点页面和 RAG 共用同一份审核后的公开内容源。模型不能自行生成可点击来源，也不能从草稿、私密简历或企业内部资料中补全事实。
+
+## 技术栈
+
+- Next.js App Router、React、TypeScript
+- CSS Modules、全局设计 Token、Three.js、GSAP
+- PostgreSQL、pgvector、本地 BGE Embeddings
+- OpenAI-compatible Responses、SSE、Provider 故障切换
+- Node.js Worker、Docker Compose、Caddy
 
 ## 本地运行
+
+安装依赖并启动基础站点：
 
 ```powershell
 npm ci
 npm run dev
 ```
 
-开发服务默认位于 `http://localhost:3000`。
-
-## M3-RAG 本地运行
-
-先按 `.env.example` 准备 `.env.local`。`OPENAI_CHAT_MODEL` 使用 API 项目实际可用的模型 ID；费用单价必须按所选模型当前价格填写，不能把 ChatGPT/Codex 订阅当作 API 额度。
-
-Chat 与 Embeddings 可使用不同的 base URL 和密钥。本地 Embeddings 服务复用现有 Python 环境中的 `torch`、`sentence-transformers` 和 `numpy`，首次启动只下载 `BAAI/bge-small-zh-v1.5`：
+完整数字分身需要按 `.env.example` 配置环境，并启动 PostgreSQL 与本地 Embedding 服务：
 
 ```powershell
+npm run db:up
 $env:MORSE_EMBEDDING_DEVICE = 'auto'
 E:\AI\Python\python.exe scripts\local-embedding-server.py
 ```
 
-服务只监听 `127.0.0.1:18091`。`auto` 仅在当前 PyTorch 支持 CUDA 时使用显卡，否则明确降级为 CPU；可通过 `http://127.0.0.1:18091/health` 核对实际设备。若本机无法直连 Hugging Face，首次下载可临时设置 `HF_ENDPOINT=https://hf-mirror.com`，模型进入本地缓存后不再依赖镜像运行。
+随后初始化数据库和公开知识：
 
 ```powershell
-npm run db:up
 $env:DATABASE_URL = 'postgresql://revolution@127.0.0.1:55432/revolution'
 npm run db:migrate
 npm run knowledge:ingest
-npm run rag:eval
 npm run dev
 ```
 
-创建一个 72 小时、最多 3 个会话的短期码。脚本只保存哈希，也不会回显邀请码：
-
-```powershell
-$env:MORSE_NEW_INVITE_CODE = Read-Host '输入短期邀请码'
-npm run invite:create -- --label '2026-07 activity' --hours 72 --max-sessions 3
-Remove-Item Env:MORSE_NEW_INVITE_CODE
-```
-
-定期清理过期短期会话：
-
-```powershell
-npm run session:cleanup
-```
-
-`MORSE_ALLOW_TEST_EMBEDDINGS=true` 只用于本地 pgvector 集成验证，生产环境禁止开启。它能验证迁移、摄取、幂等和 top-k 查询，但不能作为语义召回质量证据。
-
-当前受控访问、低并发和小规模知识库继续使用 PostgreSQL + pgvector，不额外部署 Milvus/Qdrant。只有基准测试证明检索延迟或写入吞吐不达标，或出现独立扩缩容、多租户强隔离、专用混合检索需求时，才评估外置向量库。
-
-`GET /api/health/live` 只报告进程存活；`GET /api/health/ready` 与兼容入口 `GET /api/health` 只返回通用 `{ "ok": true|false }`，并以运行配置、数据库、migration checksum 和非空公开知识为就绪条件，不公开 Provider、费用、表名或 chunk 数。完整生产边界见 `docs/runbooks/production.md`。
-
-部分 OpenAI-compatible 中转会拦截 SDK 默认 User-Agent。仅在模型列表用默认 SDK 请求返回 403、而同凭据的受控兼容请求返回 200 时，设置 `OPENAI_COMPAT_USER_AGENT`；值必须是单行且不超过 256 字符。2026-07-17 本地直连验收使用 `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Revolution/1.0`，该值不含秘密，但属于当前中转兼容配置，部署时仍需重新验证。模型 ID 必须以中转实时 `/models` 返回为准，不能把某次目录快照当作持久事实。
-
-Chat 可通过 `OPENAI_FALLBACK_1_API_KEY` / `OPENAI_FALLBACK_1_BASE_URL` 和 `OPENAI_FALLBACK_2_API_KEY` / `OPENAI_FALLBACK_2_BASE_URL` 配置两个有序备用 endpoint。三个节点共享模型、协议、reasoning effort 和兼容 User-Agent；只在零正文时切换，Embedding 不参与该切换。
-
-## 私密简历本地验证与生产边界
-
-私密简历默认关闭：未设置 `MORSE_RESUME_ENABLED` 或设为 `false` 时，Web 不开放授权、解密或文件返回，也不读取生产简历密钥；已初始化的 Worker 仍可按保留合同清理过期行和无引用密文。启用时需要 `DATABASE_URL`、`MORSE_PUBLIC_ORIGIN`、`MORSE_RESUME_STORAGE_DIR`、`MORSE_RESUME_ENCRYPTION_KEY_FILE`、`MORSE_RESUME_KEY_VERSION`、`MORSE_RESUME_FINGERPRINT_SECRET` 和 `MORSE_RESUME_TRUSTED_PROXY_HOPS`；`MORSE_RESUME_COOKIE` 可覆盖独立 Cookie 名，但不得与聊天或管理员 Cookie 重名。生产只接受文件型加密密钥，明文环境变量 `MORSE_RESUME_ENCRYPTION_KEY` 仅允许 development/test。
-
-本地验收只使用一次性数据库、随机测试密钥和合成 PDF：
-
-```powershell
-npm run build
-node scripts/private-resume-visual-smoke.mjs http://127.0.0.1:3010
-```
-
-脚本在生产构建服务存活期间执行 `release:smoke`，覆盖 1440x900 与 390x844 的未授权、无效码、兑换、退出、过期、撤销、无文档、管理员上传和邀请码管理；不调用真实 Provider，也不保留 PDF 画面。真实最终 PDF 只能在获得生产部署和上传授权后，通过已认证的 `/admin` 上传；不得写入 Git、`public/`、公开知识、构建镜像、截图或日志。
+本地 BGE 服务只监听 `127.0.0.1:18091`。生产环境的完整配置、角色划分、健康检查、备份与恢复边界见 [`docs/runbooks/production.md`](docs/runbooks/production.md)。
 
 ## 验证
 
@@ -102,34 +109,33 @@ npm run rag:eval
 npm run build
 ```
 
-UI 改动还需检查 1440 与 390 双宽、浏览器控制台、横向溢出和 `prefers-reduced-motion`。Lighthouse 性能分数需在上线前达到 90 以上。
+UI 改动还需检查 1440 与 390 双宽、浏览器控制台、横向溢出和 `prefers-reduced-motion`。上线前 Lighthouse Performance 需达到 90 以上。
 
-S6 最终验收证据位于 `docs/verify/v1/s6-*`；桌面 Lighthouse 性能分数为 100。
-S8 最终验收与真实/Mock 证据边界位于 `docs/verify/s8/s8-closeout.md`。
-S9 最终验收、公开内容边界与主线吸收记录位于 `docs/verify/s9/s9-closeout.md`。
-S11 腾讯云生产部署证据与剩余边界位于 `docs/verify/s11/production-closeout.md`。
-内容创作 Agent 项目简介、主图、知识主题与双视口验收记录位于 `docs/verify/content-agent/content-agent-closeout.md`。
-自动运营 Agent 项目简介、主图、知识主题与双视口验收记录位于 `docs/verify/auto-operations/auto-operations-closeout.md`。
-数字摩斯项目简介、主图、知识主题与双视口验收记录位于 `docs/verify/digital-morse/digital-morse-closeout.md`。
-深度研究 Agent 项目简介、主图、知识主题与双视口验收记录位于 `docs/verify/deep-research/deep-research-closeout.md`。
-AI 外贸获客系统本地展示、主图、知识主题与双视口验收记录位于 `docs/verify/ai-leadgen/ai-leadgen-closeout.md`。
-私密简历本地安全与 disabled-first 生产发布位于 `docs/verify/private-resume/private-resume-closeout.md`；生产启用、最终 PDF 上传、兑换与撤销验收位于 `docs/verify/private-resume/private-resume-activation-closeout.md`。
+## 安全与内容边界
+
+- `content/site-content.json` 是页面与 RAG 的唯一公开内容源；`content/drafts/` 不直接上线。
+- 企业内部项目只展示获批的脱敏事实与示例媒体，不提供内部系统、源码或生产数据。
+- 私密简历使用独立邀请、独立 Session 和 AES-256-GCM 加密存储，不写入 Git、公开目录、RAG、Provider 输入、截图或日志。
+- Provider 密钥、管理员凭据和生产配置只保留在服务端，不进入代码仓库。
+- 健康接口只返回通用就绪状态，不公开 Provider、费用、表名或知识库规模。
+
+## 项目状态
+
+项目已经完成生产部署，个人独立站、数字分身、管理后台和私密内容访问均已进入运行状态。当前仍持续完善监控、备份恢复、边缘限流和外部服务验收。
+
+详细设计、决策和验收记录：
+
+- [`docs/portfolio-blueprint.md`](docs/portfolio-blueprint.md)：产品需求与决策源
+- [`docs/runbooks/production.md`](docs/runbooks/production.md)：生产部署与运维边界
+- [`docs/verify/`](docs/verify/)：功能、视觉、评测与发布证据
 
 ## 目录
 
 - `app/`：路由、页面入口与全局样式
 - `components/`：正式站组件与 CSS Modules
-- `content/site-content.json`：当前页面与 RAG 的唯一公开内容源
-- `content/drafts/`：待人工终审内容，不直接上线
-- `scripts/`：统计、测试与视觉冒烟脚本
-- `db/migrations/`：M3-RAG PostgreSQL + pgvector schema
-- `docs/portfolio-blueprint.md`：唯一需求源
-- `docs/task-center/`：阶段状态与交接记录
+- `content/site-content.json`：页面与 RAG 的唯一公开内容源
+- `content/drafts/`：待人工终审内容
+- `db/migrations/`：PostgreSQL 与 pgvector 数据结构
+- `scripts/`：运行、摄取、评测、测试与视觉检查
+- `docs/`：产品决策、运行手册和验收记录
 - `prototype/`：冻结的静态原型，仅供参照
-
-## 内容边界
-
-- 缺失事实进入“内容缺口台账”，不补造联系方式、履历或量化效果。
-- 真实数字必须来自可追溯的数据管线；占位内容必须明确标注状态。
-- 不引入外部运行时字体、脚本或 CDN 资源。
-- 不自动 push 或部署。
