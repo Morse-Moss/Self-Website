@@ -47,8 +47,8 @@ const PROJECT_ALIASES: ReadonlyArray<{
   { slug: 'ai-leadgen', aliases: ['线索', 'aileadgen'] },
 ];
 
-const JD_INTAKE_REPLY = '请提供完整 JD（岗位职责与任职要求）；收到后我会基于公开项目证据整理匹配内容，并把需要面谈核实的部分单独标明。';
-const CLARIFY_REPLY = '你是想了解这个问题的一般做法，还是想核实我本人做过的具体经历？';
+export const JD_INTAKE_REPLY = '请提供完整 JD（岗位职责与任职要求）；收到后我会基于公开项目证据整理匹配内容，并把需要面谈核实的部分单独标明。';
+export const CLARIFY_REPLY = '你是想了解这个问题的一般做法，还是想核实我本人做过的具体经历？';
 
 function normalize(value: string): string {
   return value

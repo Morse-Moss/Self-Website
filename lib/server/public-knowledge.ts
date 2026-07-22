@@ -4,6 +4,8 @@ export interface PublicKnowledgeDocument {
   sourcePath: string;
   href: string;
   content: string;
+  projectSlug: string | null;
+  topicIds: string[];
 }
 
 const publicProjectSlugs = [
@@ -61,6 +63,34 @@ interface SiteContent {
 
 function joinParts(parts: Array<string | undefined>): string {
   return parts.filter((part): part is string => Boolean(part?.trim())).join('\n\n');
+}
+
+export function normalizeKnowledgeTopicId(value: string): string {
+  return value
+    .normalize('NFKC')
+    .toLocaleLowerCase('en-US')
+    .replace(/[^\p{Letter}\p{Number}]+/gu, '-')
+    .replace(/^-+|-+$/gu, '');
+}
+
+function projectTopicIds(project: NonNullable<SiteContent['projects']>[number]): string[] {
+  const topics = new Set<string>();
+  if (project.slug) topics.add(project.slug);
+  for (const capability of project.capabilities ?? []) {
+    const normalized = normalizeKnowledgeTopicId(capability);
+    if (normalized) topics.add(normalized);
+  }
+  for (const group of project.techStack ?? []) {
+    for (const item of group.items ?? []) {
+      const normalized = normalizeKnowledgeTopicId(item);
+      if (normalized) topics.add(normalized);
+    }
+  }
+  for (const topic of project.knowledgeTopics ?? []) {
+    const normalized = normalizeKnowledgeTopicId(topic.id ?? '');
+    if (normalized) topics.add(normalized);
+  }
+  return [...topics];
 }
 
 function projectDetailParts(
@@ -123,6 +153,8 @@ export function extractPublicKnowledge(content: SiteContent): PublicKnowledgeDoc
         sourcePath: 'content/site-content.json#profile',
         href: publicKnowledgeHref('about'),
         content: profileContent,
+        projectSlug: null,
+        topicIds: ['identity'],
       });
     }
   }
@@ -135,6 +167,8 @@ export function extractPublicKnowledge(content: SiteContent): PublicKnowledgeDoc
       title: project.name,
       sourcePath: `content/site-content.json#projects.${project.slug}`,
       href: publicKnowledgeHref(`project-${project.slug}`),
+      projectSlug: project.slug,
+      topicIds: projectTopicIds(project),
       content: joinParts([
         project.name,
         project.status,
@@ -160,6 +194,11 @@ export function extractPublicKnowledge(content: SiteContent): PublicKnowledgeDoc
         title: `${project.name}：${topic.title}`,
         sourcePath: `content/site-content.json#projects.${project.slug}.knowledge.${topic.id}`,
         href: publicKnowledgeHref(id),
+        projectSlug: project.slug,
+        topicIds: [
+          project.slug,
+          normalizeKnowledgeTopicId(topic.id),
+        ],
         content: joinParts([project.name, topic.title, topic.content]),
       });
     }
@@ -173,6 +212,8 @@ export function extractPublicKnowledge(content: SiteContent): PublicKnowledgeDoc
       title: item.question,
       sourcePath: `content/site-content.json#faq.${index + 1}`,
       href: publicKnowledgeHref(`faq-${index + 1}`),
+      projectSlug: null,
+      topicIds: ['faq'],
       content: joinParts([item.question, item.answer]),
     });
   }

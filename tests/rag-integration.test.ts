@@ -4,11 +4,13 @@ import { after, test } from 'node:test';
 import pg from 'pg';
 
 import {
+  admitKnowledgeForRoute,
   filterRelevantKnowledge,
   hasSufficientLocalEvidence,
   retrieveKnowledge,
   type KnowledgeSource,
 } from '../lib/server/rag.ts';
+import type { ChatRouteDecision } from '../lib/server/chat-route-policy.ts';
 
 const { Pool } = pg;
 const connectionString = process.env.DATABASE_URL;
@@ -39,6 +41,28 @@ test('filterRelevantKnowledge removes every source below the calibrated gate', (
       source('nan', Number.NaN),
     ]).map((item) => item.documentId),
     ['keep', 'boundary'],
+  );
+});
+
+test('admission requires a matching project topic after cosine relevance', () => {
+  const route: ChatRouteDecision = {
+    routeKind: 'grounded',
+    reasonCode: 'project_fact_query',
+    topicKind: 'project',
+    topicRef: 'digital-morse',
+    evidenceClass: 'direct',
+    inheritedFromTurnId: null,
+    release: 'segment',
+    requiresEmbedding: true,
+    requiresSearch: false,
+    deterministicReply: null,
+  };
+  const matching = { ...source('project-digital-morse', 0.9), projectSlug: 'digital-morse' };
+  const adjacent = { ...source('project-deep-research', 0.95), projectSlug: 'deep-research' };
+
+  assert.deepEqual(
+    admitKnowledgeForRoute(route, [adjacent, matching]).map((item) => item.documentId),
+    ['project-digital-morse'],
   );
 });
 

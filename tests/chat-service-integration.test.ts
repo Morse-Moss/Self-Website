@@ -4806,6 +4806,55 @@ test('v2 social skips embedding, RAG and search and uses low reasoning', {
   }
 });
 
+test('v2 missing JD completes deterministically without Provider calls or quota deduction', {
+  skip: !pool,
+}, async () => {
+  const fixture = await createFailureFixture('chat-v2-jd-intake');
+  const aiProvider = new FakeProvider();
+  const searchProvider = new FakeSearchProvider({
+    status: 'completed',
+    errorCode: null,
+    results: [],
+  });
+  const turnId = randomUUID();
+  try {
+    const events = await collectChat({
+      pool: pool!,
+      provider: aiProvider,
+      searchProvider,
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        message: '给我一份岗位适配度。',
+        audienceIntent: 'recruiter',
+        turnId,
+      }),
+      config: { ...searchConfig, chatV2Enabled: true, chatV2CanaryPercent: 100 },
+      now,
+    });
+
+    assert.equal(aiProvider.embedCalls, 0);
+    assert.equal(aiProvider.requests.length, 0);
+    assert.equal(searchProvider.calls.length, 0);
+    assert.match(
+      events.filter((event) => event.type === 'delta').map((event) => event.text).join(''),
+      /完整 JD/,
+    );
+    const done = events.at(-1);
+    assert.equal(done?.type, 'done');
+    if (done?.type === 'done') assert.equal(done.consumed, false);
+    assert.deepEqual(await readSessionSnapshot(fixture.accessSessionId), {
+      messageCount: 0,
+      messageRows: 2,
+      usageRows: 0,
+    });
+    const interaction = await readInteraction(turnId);
+    assert.equal(interaction.status, 'completed');
+    assert.match(interaction.answer ?? '', /完整 JD/);
+  } finally {
+    await cleanupFailureFixture(fixture);
+  }
+});
+
 test('recruitment guard hides the rejected candidate and strictly regenerates once', {
   skip: !pool,
 }, async () => {
@@ -5126,7 +5175,7 @@ test('a rejected later segment switches and restarts strict output from blank', 
   }
 });
 
-test('provider exhaustion returns SAFE_DEGRADED without consuming message quota', {
+test('provider exhaustion fails without a local project-summary answer', {
   skip: !pool,
 }, async () => {
   const fixture = await createFailureFixture('chat-v2-provider-degraded');
@@ -5139,7 +5188,7 @@ test('provider exhaustion returns SAFE_DEGRADED without consuming message quota'
   const turnId = randomUUID();
 
   try {
-    const events = await collectChat({
+    await assert.rejects(consumeChat({
       pool: pool!,
       provider: coordinated,
       accessSessionId: fixture.accessSessionId,
@@ -5149,12 +5198,9 @@ test('provider exhaustion returns SAFE_DEGRADED without consuming message quota'
       }),
       config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
       now,
-    });
-    const done = events.at(-1) as (ChatServiceEvent & { degraded?: boolean }) | undefined;
-    assert.equal(done?.type, 'done');
-    if (done?.type !== 'done') throw new Error('provider degraded done event is missing');
-    assert.equal(done.consumed, false);
-    assert.equal(done.degraded, true);
+    }), (error: unknown) => (
+      error instanceof ChatServiceError && error.code === 'PROVIDER_UNAVAILABLE'
+    ));
     assert.ok(node.answerCalls >= 1);
     assert.deepEqual(await readSessionSnapshot(fixture.accessSessionId), {
       messageCount: 0,
@@ -5163,7 +5209,8 @@ test('provider exhaustion returns SAFE_DEGRADED without consuming message quota'
     });
     const interaction = await readInteraction(turnId);
     assert.equal(interaction.status, 'failed');
-    assert.equal(interaction.error_code, 'SAFE_DEGRADED');
+    assert.equal(interaction.answer, null);
+    assert.notEqual(interaction.error_code, 'SAFE_DEGRADED');
     const attempts = await pool!.query<{ status: string }>(
       `SELECT status
          FROM chat_provider_attempts

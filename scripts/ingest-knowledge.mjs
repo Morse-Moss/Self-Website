@@ -81,7 +81,13 @@ try {
 
   for (const document of documents) {
     const chunkOptions = knowledgeChunkOptions(document.id);
-    const checksum = knowledgeChecksum(document, embeddingSignature, chunkOptions);
+    const checksum = knowledgeChecksum({
+      ...document,
+      content: `${document.content}\0${JSON.stringify({
+        projectSlug: document.projectSlug,
+        topicIds: document.topicIds,
+      })}`,
+    }, embeddingSignature, chunkOptions);
     const existing = await client.query(
       'SELECT checksum FROM knowledge_documents WHERE id = $1',
       [document.id],
@@ -122,6 +128,8 @@ try {
             title: document.title,
             sourcePath: document.sourcePath,
             href: document.href,
+            projectSlug: document.projectSlug,
+            topicIds: document.topicIds,
           }),
         ],
       );

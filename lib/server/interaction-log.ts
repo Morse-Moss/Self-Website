@@ -10,7 +10,12 @@ import type {
 import type { TokenUsage } from './budget.ts';
 import type { ProviderAttempt, ProviderWinner } from './ai-provider.ts';
 import { sanitizeTurnSources } from './turn-codec.ts';
-import type { ChatRouteDecision, RouteAnchor } from './chat-route-policy.ts';
+import {
+  CLARIFY_REPLY,
+  JD_INTAKE_REPLY,
+  type ChatRouteDecision,
+  type RouteAnchor,
+} from './chat-route-policy.ts';
 import { chatCapabilityPolicy, projectSlugs } from '../site-content.ts';
 
 export type InteractionStatus = 'running' | 'completed' | 'stopped' | 'failed';
@@ -81,6 +86,53 @@ export async function loadPreviousRouteAnchor(
     routeKind: row.route_kind as ChatRouteKind,
     topicKind: row.topic_kind as ChatTopicKind,
     topicRef: row.topic_ref,
+  };
+}
+
+export async function loadRecordedInteractionRoute(
+  client: Queryable,
+  turnId: string,
+): Promise<ChatRouteDecision | null> {
+  const result = await client.query<{
+    evidence_class: ChatRouteDecision['evidenceClass'] | null;
+    inherited_from_turn_id: string | null;
+    route_kind: ChatRouteDecision['routeKind'] | null;
+    route_reason_code: string | null;
+    topic_kind: ChatRouteDecision['topicKind'] | null;
+    topic_ref: string | null;
+  }>(
+    `SELECT route_kind, route_reason_code, topic_kind, topic_ref,
+            evidence_class, inherited_from_turn_id::text
+       FROM interaction_turns
+      WHERE id = $1`,
+    [turnId],
+  );
+  const row = result.rows[0];
+  if (
+    !row?.route_kind
+    || !row.route_reason_code
+    || !row.topic_kind
+    || !row.evidence_class
+    || !routeKinds.has(row.route_kind)
+    || !topicKinds.has(row.topic_kind)
+  ) return null;
+  return {
+    routeKind: row.route_kind,
+    reasonCode: row.route_reason_code,
+    topicKind: row.topic_kind,
+    topicRef: row.topic_ref,
+    evidenceClass: row.evidence_class,
+    inheritedFromTurnId: row.inherited_from_turn_id,
+    release: row.route_kind === 'jd' || row.route_kind === 'personal_fact'
+      ? 'complete'
+      : 'segment',
+    requiresEmbedding: row.route_kind === 'grounded' || row.route_kind === 'jd',
+    requiresSearch: row.route_kind === 'external_current',
+    deterministicReply: row.route_kind === 'jd_intake'
+      ? JD_INTAKE_REPLY
+      : row.route_kind === 'clarify'
+        ? CLARIFY_REPLY
+        : null,
   };
 }
 

@@ -2,6 +2,7 @@ import type { Pool, PoolClient } from 'pg';
 
 import { EMBEDDING_DIMENSIONS, serializeVector } from './embedding.ts';
 import { publicKnowledgeHref } from './public-knowledge.ts';
+import type { ChatRouteDecision } from './chat-route-policy.ts';
 
 export interface KnowledgeSource {
   chunkId: string;
@@ -11,6 +12,8 @@ export interface KnowledgeSource {
   href: string;
   content: string;
   score: number;
+  projectSlug?: string | null;
+  topicIds?: string[];
 }
 
 // Calibrated against the 20-case BGE retrieval set (minimum positive top score 0.482)
@@ -24,6 +27,24 @@ export function filterRelevantKnowledge(
   return sources.filter((source) => (
     Number.isFinite(source.score) && source.score >= minimumScore
   ));
+}
+
+export function admitKnowledgeForRoute(
+  route: ChatRouteDecision,
+  sources: KnowledgeSource[],
+): KnowledgeSource[] {
+  const relevant = filterRelevantKnowledge(sources);
+  if (route.routeKind === 'jd') {
+    return relevant.filter((source) => Boolean(source.projectSlug));
+  }
+  if (route.routeKind !== 'grounded') return [];
+  if (route.topicKind === 'project' && route.topicRef) {
+    return relevant.filter((source) => source.projectSlug === route.topicRef);
+  }
+  if (route.topicKind === 'capability' && route.topicRef) {
+    return relevant.filter((source) => source.topicIds?.includes(route.topicRef));
+  }
+  return relevant.filter((source) => Boolean(source.projectSlug));
 }
 
 export function hasSufficientLocalEvidence(sources: KnowledgeSource[]): boolean {
@@ -41,6 +62,8 @@ interface KnowledgeRow {
   href: string | null;
   content: string;
   score: number;
+  project_slug: string | null;
+  topic_ids: unknown;
 }
 
 export async function retrieveKnowledge(
@@ -60,6 +83,8 @@ export async function retrieveKnowledge(
             ranked.source_path,
             ranked.href,
             ranked.content,
+            ranked.project_slug,
+            ranked.topic_ids,
             1 - ranked.distance AS score
        FROM (
          SELECT DISTINCT ON (chunk.document_id)
@@ -69,6 +94,8 @@ export async function retrieveKnowledge(
                 chunk.metadata->>'sourcePath' AS source_path,
                 chunk.metadata->>'href' AS href,
                 chunk.content,
+                chunk.metadata->>'projectSlug' AS project_slug,
+                chunk.metadata->'topicIds' AS topic_ids,
                 chunk.embedding <=> $1::vector AS distance
            FROM knowledge_chunks AS chunk
           ORDER BY chunk.document_id, chunk.embedding <=> $1::vector, chunk.id
@@ -86,5 +113,9 @@ export async function retrieveKnowledge(
     href: row.href || publicKnowledgeHref(row.document_id),
     content: row.content,
     score: Number(row.score),
+    projectSlug: row.project_slug,
+    topicIds: Array.isArray(row.topic_ids)
+      ? row.topic_ids.filter((value): value is string => typeof value === 'string')
+      : [],
   }));
 }

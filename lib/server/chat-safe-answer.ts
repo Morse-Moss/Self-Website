@@ -5,6 +5,7 @@ import type { KnowledgeSource } from './rag.ts';
 export interface SafeChatAnswerInput {
   intent: TurnIntent;
   sources: KnowledgeSource[];
+  operatorSafeMode?: boolean;
 }
 
 export interface SafeChatAnswer {
@@ -43,6 +44,7 @@ function safeSummary(content: string): string {
 }
 
 export function buildSafeChatAnswer(input: SafeChatAnswerInput): SafeChatAnswer | null {
+  if (!input.operatorSafeMode) return null;
   if (input.intent === 'social' || input.intent === 'identity') {
     return {
       text: approvedIdentitySummary(),
