@@ -22,6 +22,7 @@ export type ProviderAttemptEvent =
   | {
       attemptNo: number;
       launchKind: ProviderAttemptLaunchKind;
+      generationMode?: 'normal' | 'strict';
       providerAlias: string;
       startDelayMs: number;
       startedAt: Date;
@@ -32,6 +33,12 @@ export type ProviderAttemptEvent =
       firstByteMs: number;
       providerAlias: string;
       type: 'first_byte';
+    }
+  | {
+      attemptNo: number;
+      elapsedMs: number;
+      providerAlias: string;
+      type: 'first_protocol' | 'first_model_text' | 'first_user_visible';
     }
   | {
       attemptNo: number;
@@ -80,11 +87,12 @@ async function recordStartedEvent(
   await client.query(
     `INSERT INTO chat_provider_attempts
       (interaction_turn_id, execution_id, attempt_no, provider_alias, launch_kind,
-       status, winner, start_delay_ms, started_at, delete_after)
-     VALUES ($1, $2, $3, $4, $5, 'started', false, $6, $7, $8)
+       generation_mode, status, winner, start_delay_ms, started_at, delete_after)
+     VALUES ($1, $2, $3, $4, $5, $6, 'started', false, $7, $8, $9)
      ON CONFLICT (interaction_turn_id, execution_id, attempt_no) DO UPDATE
        SET provider_alias = EXCLUDED.provider_alias,
            launch_kind = EXCLUDED.launch_kind,
+           generation_mode = EXCLUDED.generation_mode,
            start_delay_ms = EXCLUDED.start_delay_ms,
            started_at = EXCLUDED.started_at,
            delete_after = EXCLUDED.delete_after
@@ -95,6 +103,7 @@ async function recordStartedEvent(
       event.attemptNo,
       event.providerAlias,
       event.launchKind,
+      event.generationMode ?? 'normal',
       event.startDelayMs,
       event.startedAt,
       deleteAfter,
@@ -126,6 +135,40 @@ async function recordFirstByteEvent(
   );
   if (result.rowCount !== 1) {
     throw new Error('Provider first-byte event has no matching active attempt.');
+  }
+}
+
+async function recordMilestoneEvent(
+  client: PoolClient,
+  key: ProviderAttemptKey,
+  event: Extract<ProviderAttemptEvent, {
+    type: 'first_protocol' | 'first_model_text' | 'first_user_visible';
+  }>,
+): Promise<void> {
+  const column = {
+    first_protocol: 'first_protocol_event_ms',
+    first_model_text: 'first_model_text_ms',
+    first_user_visible: 'first_user_visible_ms',
+  }[event.type];
+  const result = await client.query(
+    `UPDATE chat_provider_attempts
+        SET status = 'streaming',
+            ${column} = COALESCE(${column}, $4)
+      WHERE interaction_turn_id = $1
+        AND execution_id = $2
+        AND attempt_no = $3
+        AND provider_alias = $5
+        AND status IN ('started', 'streaming')`,
+    [
+      key.interactionTurnId,
+      key.executionId,
+      event.attemptNo,
+      event.elapsedMs,
+      event.providerAlias,
+    ],
+  );
+  if (result.rowCount !== 1) {
+    throw new Error('Provider milestone event has no matching active attempt.');
   }
 }
 
@@ -184,6 +227,12 @@ export async function recordProviderAttemptEvent(
   }
   if (event.type === 'first_byte') {
     await recordFirstByteEvent(client, key, event);
+    return;
+  }
+  if (event.type === 'first_protocol'
+    || event.type === 'first_model_text'
+    || event.type === 'first_user_visible') {
+    await recordMilestoneEvent(client, key, event);
     return;
   }
   await recordTerminalEvent(client, key, event);

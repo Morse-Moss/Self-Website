@@ -6,6 +6,8 @@ import { test } from 'node:test';
 
 import pg from 'pg';
 
+import type { ProviderAttempt } from '../lib/server/ai-provider.ts';
+import { replaceProviderAttempts } from '../lib/server/interaction-log.ts';
 import {
   recordProviderAttemptEvent,
   reserveHedgedProviderAttempt,
@@ -86,12 +88,25 @@ test('provider attempt events upsert one metadata-only lifecycle and cascade wit
         launchKind: 'primary',
         startedAt,
         startDelayMs: 0,
+        generationMode: 'normal',
       }, deleteAfter);
       await recordProviderAttemptEvent(client, key, {
-        type: 'first_byte',
+        type: 'first_protocol',
         attemptNo: 1,
         providerAlias: 'primary',
-        firstByteMs: 125,
+        elapsedMs: 120,
+      }, deleteAfter);
+      await recordProviderAttemptEvent(client, key, {
+        type: 'first_model_text',
+        attemptNo: 1,
+        providerAlias: 'primary',
+        elapsedMs: 2_400,
+      }, deleteAfter);
+      await recordProviderAttemptEvent(client, key, {
+        type: 'first_user_visible',
+        attemptNo: 1,
+        providerAlias: 'primary',
+        elapsedMs: 2_650,
       }, deleteAfter);
       await recordProviderAttemptEvent(client, key, {
         type: 'completed',
@@ -125,7 +140,10 @@ test('provider attempt events upsert one metadata-only lifecycle and cascade wit
       duration_ms: number;
       error_code: string | null;
       estimated_cost_usd: string;
-      first_byte_ms: number;
+      first_protocol_event_ms: number;
+      first_model_text_ms: number;
+      first_user_visible_ms: number;
+      generation_mode: string;
       input_tokens: number;
       launch_kind: string;
       output_tokens: number;
@@ -133,7 +151,8 @@ test('provider attempt events upsert one metadata-only lifecycle and cascade wit
       status: string;
       winner: boolean;
     }>(
-      `SELECT provider_alias, launch_kind, status, winner, first_byte_ms, duration_ms,
+      `SELECT provider_alias, launch_kind, generation_mode, status, winner,
+              first_protocol_event_ms, first_model_text_ms, first_user_visible_ms, duration_ms,
               error_code, input_tokens, output_tokens, estimated_cost_usd::text,
               completed_at, delete_after
          FROM chat_provider_attempts
@@ -143,9 +162,12 @@ test('provider attempt events upsert one metadata-only lifecycle and cascade wit
     assert.deepEqual(stored.rows[0], {
       provider_alias: 'primary',
       launch_kind: 'primary',
+      generation_mode: 'normal',
       status: 'completed',
       winner: true,
-      first_byte_ms: 125,
+      first_protocol_event_ms: 120,
+      first_model_text_ms: 2_400,
+      first_user_visible_ms: 2_650,
       duration_ms: 600,
       error_code: null,
       input_tokens: 100,
@@ -177,6 +199,70 @@ test('provider attempt events upsert one metadata-only lifecycle and cascade wit
       [interactionTurnId],
     );
     assert.equal(afterDelete.rowCount, 0);
+  } finally {
+    await pool.end();
+    await database.dispose();
+  }
+});
+
+test('terminal reconciliation copies generation and three latency milestones', async () => {
+  const database = await createDisposablePostgresDatabase();
+  const pool = new Pool({ connectionString: database.connectionString });
+  try {
+    await runMigrations(database.connectionString);
+    const turnId = await insertTurn(pool);
+    const startedAt = new Date('2026-07-22T02:00:00.000Z');
+    const attempt: ProviderAttempt = {
+      attemptIndex: 0,
+      completedAt: new Date(startedAt.getTime() + 3_000),
+      configDigest: 'a'.repeat(64),
+      connectionDisplayName: 'Primary',
+      connectionVersionId: null,
+      costComplete: false,
+      errorCode: null,
+      firstByteLatencyMs: 120,
+      firstProtocolEventMs: 120,
+      firstModelTextMs: 2_400,
+      firstUserVisibleMs: 2_650,
+      generationMode: 'strict',
+      inputUsdPerMillion: null,
+      knownCostUsd: null,
+      launchKind: 'failover',
+      modelDisplayName: 'Model',
+      modelId: 'model',
+      modelVersionId: null,
+      outputUsdPerMillion: null,
+      position: 1,
+      protocol: 'responses',
+      routeRevisionId: null,
+      sourceType: 'environment',
+      startedAt,
+      status: 'completed',
+      totalLatencyMs: 3_000,
+      usage: null,
+      usageComplete: false,
+    };
+    const client = await pool.connect();
+    try {
+      await replaceProviderAttempts(client, turnId, [attempt]);
+    } finally {
+      client.release();
+    }
+
+    const stored = await pool.query(
+      `SELECT launch_kind, generation_mode, first_protocol_event_ms,
+              first_model_text_ms, first_user_visible_ms
+         FROM interaction_provider_attempts
+        WHERE interaction_turn_id = $1`,
+      [turnId],
+    );
+    assert.deepEqual(stored.rows[0], {
+      launch_kind: 'failover',
+      generation_mode: 'strict',
+      first_protocol_event_ms: 120,
+      first_model_text_ms: 2_400,
+      first_user_visible_ms: 2_650,
+    });
   } finally {
     await pool.end();
     await database.dispose();

@@ -22,6 +22,7 @@ interface OpenAIResponseUsage {
 }
 
 type OpenAIResponseStreamEvent =
+  | { type: 'response.created'; response?: unknown }
   | {
       type: 'response.output_text.delta';
       delta: string;
@@ -286,7 +287,9 @@ export class OpenAIProvider implements AiProvider {
             completed = true;
             break;
           }
-          emittedOutput = true;
+          if (next.value.type === 'delta' && next.value.text.trim()) {
+            emittedOutput = true;
+          }
           yield next.value;
         }
       } finally {
@@ -314,6 +317,7 @@ export class OpenAIProvider implements AiProvider {
     if (!responses) throw new Error('Configured Responses client is unavailable.');
 
     const effectiveReasoningEffort = request.reasoningEffort ?? this.config.reasoningEffort;
+    const startedAt = Date.now();
     const stream = streamWithTimeout({
       create: (requestSignal) => responses.create({
         model: this.config.chatModel,
@@ -327,21 +331,37 @@ export class OpenAIProvider implements AiProvider {
         store: false,
       }, { signal: requestSignal }),
       totalSignal,
-      firstByteTimeoutMs: this.config.firstByteTimeoutMs,
+      firstByteTimeoutMs: request.execution
+        ? Math.min(this.config.totalTimeoutMs, request.execution.totalTimeoutMs)
+        : this.config.firstByteTimeoutMs,
     });
 
     let completed = false;
     let usage: TokenUsage | null = null;
     const streamedTextParts = new Set<string>();
+    let protocolEmitted = false;
+    let modelTextEmitted = false;
 
     for await (const event of stream) {
+      if (request.execution && !protocolEmitted) {
+        protocolEmitted = true;
+        yield { type: 'activity', kind: 'protocol', elapsedMs: Date.now() - startedAt };
+      }
       if (event.type === 'response.output_text.delta') {
         if (!event.delta) continue;
+        if (request.execution && !modelTextEmitted) {
+          modelTextEmitted = true;
+          yield { type: 'activity', kind: 'model_text', elapsedMs: Date.now() - startedAt };
+        }
         streamedTextParts.add(responseTextPartKey(event));
         yield { type: 'delta', text: event.delta };
       } else if (event.type === 'response.output_text.done') {
         const partKey = responseTextPartKey(event);
         if (event.text && !streamedTextParts.has(partKey)) {
+          if (request.execution && !modelTextEmitted) {
+            modelTextEmitted = true;
+            yield { type: 'activity', kind: 'model_text', elapsedMs: Date.now() - startedAt };
+          }
           streamedTextParts.add(partKey);
           yield { type: 'delta', text: event.text };
         }
@@ -372,6 +392,7 @@ export class OpenAIProvider implements AiProvider {
     if (!completions) throw new Error('Configured Chat Completions client is unavailable.');
 
     const effectiveReasoningEffort = request.reasoningEffort ?? this.config.reasoningEffort;
+    const startedAt = Date.now();
     const stream = streamWithTimeout({
       create: (requestSignal) => completions.create({
         model: this.config.chatModel,
@@ -387,12 +408,20 @@ export class OpenAIProvider implements AiProvider {
         stream_options: { include_usage: true },
       }, { signal: requestSignal }),
       totalSignal,
-      firstByteTimeoutMs: this.config.firstByteTimeoutMs,
+      firstByteTimeoutMs: request.execution
+        ? Math.min(this.config.totalTimeoutMs, request.execution.totalTimeoutMs)
+        : this.config.firstByteTimeoutMs,
     });
     let usage: TokenUsage | null = null;
     let completed = false;
+    let protocolEmitted = false;
+    let modelTextEmitted = false;
 
     for await (const chunk of stream) {
+      if (request.execution && !protocolEmitted) {
+        protocolEmitted = true;
+        yield { type: 'activity', kind: 'protocol', elapsedMs: Date.now() - startedAt };
+      }
       if (chunk.usage) {
         usage = {
           inputTokens: chunk.usage.prompt_tokens,
@@ -404,6 +433,10 @@ export class OpenAIProvider implements AiProvider {
           completed = true;
         }
         if (choice.delta.content) {
+          if (request.execution && !modelTextEmitted) {
+            modelTextEmitted = true;
+            yield { type: 'activity', kind: 'model_text', elapsedMs: Date.now() - startedAt };
+          }
           yield { type: 'delta', text: choice.delta.content };
         }
       }

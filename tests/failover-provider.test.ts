@@ -326,6 +326,8 @@ function v2Request(overrides: Partial<NonNullable<AnswerRequest['execution']>> =
         maxAttempts: 3,
       }),
       generationMode: 'normal',
+      protocolEventTimeoutMs: 25,
+      modelTextTimeoutMs: 40,
       hedgingEnabled: true,
       delaysMs: [0, 8, 14],
       acceptCandidate: () => true,
@@ -553,6 +555,69 @@ test('serial execution does not consult the obsolete hedge reservation callback'
   assert.deepEqual(launchKinds, ['primary', 'failover']);
   assert.equal(reserveCalls, 0);
   assert.equal(events.filter((event) => event.type === 'delta').map((event) => event.text).join(''), 'Serial.');
+});
+
+test('no protocol activity switches serially at the protocol deadline', async () => {
+  const startedAt = Date.now();
+  const started: string[] = [];
+  const silent = delayedProvider({ delayMs: 100, events: [], onStart: () => started.push('primary') });
+  const fallback = delayedProvider({
+    delayMs: 1,
+    events: [{ type: 'delta', text: 'Recovered.' }, { type: 'done', usage: null }],
+    onStart: () => started.push('fallback-1'),
+  });
+  const provider = new FailoverAiProvider(silent, [
+    { alias: 'primary', provider: silent },
+    { alias: 'fallback-1', provider: fallback },
+  ], 1_000);
+  const events: AnswerEvent[] = [];
+
+  for await (const event of provider.streamAnswer(v2Request({
+    totalTimeoutMs: 200,
+    protocolEventTimeoutMs: 15,
+    modelTextTimeoutMs: 35,
+  }))) events.push(event);
+
+  assert.deepEqual(started, ['primary', 'fallback-1']);
+  assert.ok(Date.now() - startedAt < 50, 'silent primary must stop near the 15ms protocol deadline');
+  assert.equal(events.filter((event) => event.type === 'switching').length, 1);
+  assert.equal(events.filter((event) => event.type === 'delta').map((event) => event.text).join(''), 'Recovered.');
+});
+
+test('protocol activity switches the attempt to the model-text deadline', async () => {
+  const startedAt = Date.now();
+  const primary: AiProvider = {
+    async embed() { return [[0.1, 0.2]]; },
+    async *streamAnswer() {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      yield { type: 'activity', kind: 'protocol', elapsedMs: 10 };
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    },
+  };
+  const fallback = delayedProvider({
+    delayMs: 1,
+    events: [{ type: 'delta', text: 'Deadline recovery.' }, { type: 'done', usage: null }],
+  });
+  const provider = new FailoverAiProvider(primary, [
+    { alias: 'primary', provider: primary },
+    { alias: 'fallback-1', provider: fallback },
+  ], 1_000);
+  const events: AnswerEvent[] = [];
+
+  for await (const event of provider.streamAnswer(v2Request({
+    totalTimeoutMs: 400,
+    protocolEventTimeoutMs: 30,
+    modelTextTimeoutMs: 100,
+  }))) events.push(event);
+
+  const firstAttempt = events.find(
+    (event): event is Extract<AnswerEvent, { type: 'attempt' }> => event.type === 'attempt',
+  );
+  assert.ok((firstAttempt?.attempt.totalLatencyMs ?? 0) >= 80,
+    'metadata must keep the primary attempt alive until the model-text deadline');
+  assert.equal(firstAttempt?.attempt.errorCode, 'PROVIDER_MODEL_TEXT_TIMEOUT');
+  assert.ok(Date.now() - startedAt >= 80, 'protocol activity must extend beyond the 30ms protocol deadline');
+  assert.equal(events.filter((event) => event.type === 'delta').map((event) => event.text).join(''), 'Deadline recovery.');
 });
 
 test('coordinated execution records caller abort and never starts a fallback', async () => {

@@ -98,6 +98,7 @@ export async function* runGuardedChatAnswer(
           yield event;
           continue;
         }
+        if (event.type === 'activity') continue;
         if (!answer.trim()) throw new AnswerExecutionError('PROVIDER_INCOMPLETE');
         const completedAttempts = (event.attempts ?? []).map((attempt) => {
           maximumLocalAttemptIndex = Math.max(

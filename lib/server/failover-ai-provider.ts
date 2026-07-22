@@ -11,8 +11,9 @@ import {
   type ProviderTargetSnapshot,
 } from './ai-provider.ts';
 import { OpenAIProviderError } from './openai-provider.ts';
+import { createProviderDeadline } from './provider-deadline.ts';
 import { ProviderHealthRegistry } from './provider-health.ts';
-import { createTimeoutSignal } from './timeout.ts';
+import { createTimeoutSignal, raceWithSignal } from './timeout.ts';
 
 export interface ProviderNode {
   alias: string;
@@ -198,6 +199,7 @@ export class FailoverAiProvider implements AiProvider {
           attemptNo,
           providerAlias: node.alias,
           launchKind,
+          generationMode: execution.generationMode,
           startedAt: new Date(startedAt),
           startDelayMs: 0,
         };
@@ -212,7 +214,51 @@ export class FailoverAiProvider implements AiProvider {
         let text = '';
         let releasedLength = 0;
         let firstByteAt: number | null = null;
+        let firstProtocolAt: number | null = null;
+        let firstModelTextAt: number | null = null;
+        let firstUserVisibleAt: number | null = null;
         let terminalRecorded = false;
+        const providerDeadline = createProviderDeadline({
+          startedAtMs: startedAt,
+          protocolTimeoutMs: execution.protocolEventTimeoutMs,
+          modelTextTimeoutMs: execution.modelTextTimeoutMs,
+        });
+
+        const recordProtocol = async (atMs: number) => {
+          providerDeadline.recordProtocolEvent(atMs);
+          if (firstProtocolAt !== null) return;
+          firstProtocolAt = atMs;
+          firstByteAt = atMs;
+          const elapsedMs = atMs - startedAt;
+          await execution.onAttempt({
+            type: 'first_protocol', attemptNo, providerAlias: node.alias, elapsedMs,
+          });
+          await execution.onAttempt({
+            type: 'first_byte', attemptNo, providerAlias: node.alias, firstByteMs: elapsedMs,
+          });
+        };
+        const recordModelText = async (atMs: number) => {
+          await recordProtocol(atMs);
+          providerDeadline.recordModelText(atMs);
+          if (firstModelTextAt !== null) return;
+          firstModelTextAt = atMs;
+          await execution.onAttempt({
+            type: 'first_model_text',
+            attemptNo,
+            providerAlias: node.alias,
+            elapsedMs: atMs - startedAt,
+          });
+        };
+        const recordUserVisible = async (atMs: number) => {
+          if (firstUserVisibleAt !== null) return;
+          firstUserVisibleAt = atMs;
+          await execution.onAttempt({
+            type: 'first_user_visible',
+            attemptNo,
+            providerAlias: node.alias,
+            elapsedMs: atMs - startedAt,
+          });
+        };
 
         const recordTerminal = async (
           status: ProviderAttempt['status'],
@@ -233,6 +279,9 @@ export class FailoverAiProvider implements AiProvider {
             snapshot: node.snapshot,
             startedAt: new Date(startedAt),
             firstByteAt: firstByteAt === null ? null : new Date(firstByteAt),
+            firstProtocolAt: firstProtocolAt === null ? null : new Date(firstProtocolAt),
+            firstModelTextAt: firstModelTextAt === null ? null : new Date(firstModelTextAt),
+            firstUserVisibleAt: firstUserVisibleAt === null ? null : new Date(firstUserVisibleAt),
             usage: eventUsage,
             status,
             errorCode,
@@ -246,13 +295,25 @@ export class FailoverAiProvider implements AiProvider {
 
         try {
           while (true) {
-            const result = await Promise.race([
-              iterator.next(),
-              new Promise<never>((_resolve, reject) => {
-                if (timeout.signal.aborted) reject(timeout.signal.reason);
-                else timeout.signal.addEventListener('abort', () => reject(timeout.signal.reason), { once: true });
-              }),
-            ]);
+            const deadlineMs = providerDeadline.deadlineMs();
+            const adaptiveTimeout = deadlineMs === null
+              ? null
+              : createTimeoutSignal({
+                  timeoutMs: Math.max(1, deadlineMs - Date.now()),
+                  code: firstProtocolAt === null
+                    ? 'PROVIDER_PROTOCOL_TIMEOUT'
+                    : 'PROVIDER_MODEL_TEXT_TIMEOUT',
+                  signal: timeout.signal,
+                });
+            let result: IteratorResult<AnswerEvent>;
+            try {
+              result = await raceWithSignal(
+                iterator.next(),
+                adaptiveTimeout?.signal ?? timeout.signal,
+              );
+            } finally {
+              adaptiveTimeout?.dispose();
+            }
             if (result.done) throw new AnswerExecutionError('PROVIDER_INCOMPLETE');
             const event = result.value;
             if (event.type === 'attempt') continue;
@@ -260,17 +321,15 @@ export class FailoverAiProvider implements AiProvider {
               yield event;
               continue;
             }
+            if (event.type === 'activity') {
+              const observedAt = Date.now();
+              if (event.kind === 'protocol') await recordProtocol(observedAt);
+              else await recordModelText(observedAt);
+              continue;
+            }
             if (event.type === 'delta') {
               if (!event.text) continue;
-              if (firstByteAt === null) {
-                firstByteAt = Date.now();
-                await execution.onAttempt({
-                  type: 'first_byte',
-                  attemptNo,
-                  providerAlias: node.alias,
-                  firstByteMs: firstByteAt - startedAt,
-                });
-              }
+              await recordModelText(Date.now());
               text += event.text;
               const completeSegment = /[.!?\n\u3002\uFF01\uFF1F]\s*$/u.test(text);
               if (execution.releasePolicy === 'segment'
@@ -279,6 +338,7 @@ export class FailoverAiProvider implements AiProvider {
                 if (!execution.acceptCandidate(text, false)) {
                   throw new AnswerExecutionError('OUTPUT_GUARD_REJECTED');
                 }
+                await recordUserVisible(Date.now());
                 yield { type: 'delta', text: text.slice(releasedLength) };
                 releasedLength = text.length;
               }
@@ -290,6 +350,7 @@ export class FailoverAiProvider implements AiProvider {
               throw new AnswerExecutionError('OUTPUT_GUARD_REJECTED');
             }
             if (execution.releasePolicy === 'complete' || releasedLength === 0) {
+              await recordUserVisible(Date.now());
               yield { type: 'delta', text: text.slice(releasedLength) };
             }
             const recorded = await recordTerminal('completed', null, event.usage);
@@ -373,6 +434,9 @@ function createAttempt(input: {
   snapshot: ProviderTargetSnapshot;
   startedAt: Date;
   firstByteAt: Date | null;
+  firstProtocolAt?: Date | null;
+  firstModelTextAt?: Date | null;
+  firstUserVisibleAt?: Date | null;
   usage: TokenUsage | null;
   status: ProviderAttempt['status'];
   errorCode: string | null;
@@ -403,12 +467,14 @@ function createAttempt(input: {
     firstByteLatencyMs: input.firstByteAt
       ? Math.max(0, input.firstByteAt.getTime() - input.startedAt.getTime())
       : null,
-    firstModelTextMs: input.firstByteAt
-      ? Math.max(0, input.firstByteAt.getTime() - input.startedAt.getTime())
+    firstModelTextMs: (input.firstModelTextAt ?? input.firstByteAt)
+      ? Math.max(0, (input.firstModelTextAt ?? input.firstByteAt)!.getTime() - input.startedAt.getTime())
       : null,
-    firstProtocolEventMs: null,
-    firstUserVisibleMs: input.firstByteAt
-      ? Math.max(0, input.firstByteAt.getTime() - input.startedAt.getTime())
+    firstProtocolEventMs: (input.firstProtocolAt ?? input.firstByteAt)
+      ? Math.max(0, (input.firstProtocolAt ?? input.firstByteAt)!.getTime() - input.startedAt.getTime())
+      : null,
+    firstUserVisibleMs: (input.firstUserVisibleAt ?? input.firstByteAt)
+      ? Math.max(0, (input.firstUserVisibleAt ?? input.firstByteAt)!.getTime() - input.startedAt.getTime())
       : null,
     generationMode: input.generationMode ?? 'normal',
     knownCostUsd,

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { OpenAIProvider } from '../lib/server/openai-provider.ts';
+import { createChatExecutionBudget } from '../lib/server/chat-execution-budget.ts';
 
 const providerConfig = {
   protocol: 'responses' as const,
@@ -15,6 +16,54 @@ const providerConfig = {
   providerConcurrency: 4,
   reasoningEffort: 'high' as const,
 };
+
+test('Responses metadata is protocol activity but not model text', async () => {
+  const now = Date.now();
+  const provider = new OpenAIProvider({
+    responses: {
+      create: async () => (async function* () {
+        yield { type: 'response.created' as const, response: {} };
+        yield { type: 'response.output_text.delta' as const, delta: 'Hello' };
+        yield { type: 'response.completed' as const, response: {} };
+      })(),
+    },
+  }, {
+    embeddings: { create: async () => ({ data: [] }) },
+  }, providerConfig);
+  const budget = createChatExecutionBudget({
+    turnStartedAtMs: now,
+    providerStartedAtMs: now,
+    turnTimeoutMs: 90_000,
+    providerTimeoutMs: 80_000,
+    maxAttempts: 3,
+  });
+
+  const events = [];
+  for await (const event of provider.streamAnswer({
+    instructions: 'Answer directly.',
+    messages: [{ role: 'user', content: 'Hello' }],
+    execution: {
+      executionId: '11111111-1111-4111-8111-111111111111',
+      releasePolicy: 'segment',
+      minimumBufferCharacters: 1,
+      totalTimeoutMs: 80_000,
+      budget,
+      generationMode: 'normal',
+      protocolEventTimeoutMs: 25_000,
+      modelTextTimeoutMs: 40_000,
+      hedgingEnabled: false,
+      delaysMs: [0],
+      acceptCandidate: () => true,
+      reserveHedgedAttempt: async () => false,
+      onAttempt: async () => undefined,
+    },
+  })) events.push(event);
+
+  assert.deepEqual(
+    events.filter((event) => event.type === 'activity').map((event) => event.kind),
+    ['protocol', 'model_text'],
+  );
+});
 
 async function* fakeResponseStream() {
   yield {

@@ -356,11 +356,13 @@ export async function replaceProviderAttempts(
         (interaction_turn_id, attempt_index, route_revision_id, target_position,
          source_type, connection_version_id, model_version_id,
          connection_display_name, model_display_name, model_id, protocol,
-         config_digest, status, error_code, first_byte_latency_ms, total_latency_ms,
+         config_digest, launch_kind, generation_mode, status, error_code,
+         first_byte_latency_ms, first_protocol_event_ms, first_model_text_ms,
+         first_user_visible_ms, total_latency_ms,
          input_tokens, output_tokens, usage_complete, known_cost_usd, cost_complete,
          created_at, completed_at, delete_after)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,
-               $17,$18,$19,$20,$21,$22,$23,$24)`,
+               $17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)`,
       [
         turnId,
         attempt.attemptIndex,
@@ -374,9 +376,14 @@ export async function replaceProviderAttempts(
         attempt.modelId,
         attempt.protocol,
         attempt.configDigest,
+        attempt.launchKind,
+        attempt.generationMode,
         attempt.status,
         attempt.errorCode,
         attempt.firstByteLatencyMs,
+        attempt.firstProtocolEventMs,
+        attempt.firstModelTextMs,
+        attempt.firstUserVisibleMs,
         attempt.totalLatencyMs,
         attempt.usage?.inputTokens ?? null,
         attempt.usage?.outputTokens ?? null,
@@ -405,8 +412,13 @@ export async function providerAttemptsMatch(
     cost_complete: boolean;
     error_code: string | null;
     first_byte_latency_ms: number | null;
+    first_protocol_event_ms: number | null;
+    first_model_text_ms: number | null;
+    first_user_visible_ms: number | null;
+    generation_mode: ProviderAttempt['generationMode'];
     input_tokens: number | null;
     known_cost_usd: string | null;
+    launch_kind: ProviderAttempt['launchKind'];
     model_display_name: string;
     model_id: string;
     model_version_id: string | null;
@@ -423,7 +435,9 @@ export async function providerAttemptsMatch(
     `SELECT attempt_index, route_revision_id::text, target_position, source_type,
             connection_version_id::text, model_version_id::text,
             connection_display_name, model_display_name, model_id, protocol,
-            config_digest, status, error_code, first_byte_latency_ms, total_latency_ms,
+            config_digest, launch_kind, generation_mode, status, error_code,
+            first_byte_latency_ms, first_protocol_event_ms, first_model_text_ms,
+            first_user_visible_ms, total_latency_ms,
             input_tokens, output_tokens, usage_complete, known_cost_usd::text,
             cost_complete, created_at AS started_at, completed_at
        FROM interaction_provider_attempts
@@ -449,9 +463,14 @@ export async function providerAttemptsMatch(
       && row.model_id === attempt.modelId
       && row.protocol === attempt.protocol
       && row.config_digest === attempt.configDigest
+      && row.launch_kind === attempt.launchKind
+      && row.generation_mode === attempt.generationMode
       && row.status === attempt.status
       && row.error_code === attempt.errorCode
       && row.first_byte_latency_ms === attempt.firstByteLatencyMs
+      && row.first_protocol_event_ms === attempt.firstProtocolEventMs
+      && row.first_model_text_ms === attempt.firstModelTextMs
+      && row.first_user_visible_ms === attempt.firstUserVisibleMs
       && row.total_latency_ms === attempt.totalLatencyMs
       && row.input_tokens === (attempt.usage?.inputTokens ?? null)
       && row.output_tokens === (attempt.usage?.outputTokens ?? null)

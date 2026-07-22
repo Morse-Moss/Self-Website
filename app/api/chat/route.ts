@@ -69,6 +69,8 @@ export async function POST(request: NextRequest) {
         hedgedFailoverEnabled: config.hedgedFailoverEnabled,
         chatSafeMode: config.chatSafeMode,
         providerTotalTimeoutMs: config.providerTotalTimeoutMs,
+        providerProtocolEventTimeoutMs: config.providerProtocolEventTimeoutMs,
+        providerModelTextTimeoutMs: config.providerModelTextTimeoutMs,
         providerStageTimeoutMs: config.providerStageTimeoutMs,
         chatTurnTimeoutMs: config.chatTurnTimeoutMs,
         providerMaxAttempts: config.providerMaxAttempts,

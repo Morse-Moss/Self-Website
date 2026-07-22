@@ -141,6 +141,8 @@ export interface ChatServiceConfig {
   hedgedFailoverEnabled: boolean;
   chatSafeMode: boolean;
   providerTotalTimeoutMs: number;
+  providerProtocolEventTimeoutMs: number;
+  providerModelTextTimeoutMs: number;
   providerStageTimeoutMs: number;
   chatTurnTimeoutMs: number;
   providerMaxAttempts: number;
@@ -2235,6 +2237,8 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
                 totalTimeoutMs: remainingProviderMs,
                 budget: executionBudget,
                 generationMode,
+                protocolEventTimeoutMs: input.config.providerProtocolEventTimeoutMs,
+                modelTextTimeoutMs: input.config.providerModelTextTimeoutMs,
                 hedgingEnabled: false,
                 delaysMs: [0],
                 acceptCandidate(candidate) {

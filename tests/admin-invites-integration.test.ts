@@ -363,6 +363,8 @@ test('deactivation blocks new redemption but preserves an already authenticated 
         hedgedFailoverEnabled: false,
         chatSafeMode: false,
         providerTotalTimeoutMs: 90_000,
+        providerProtocolEventTimeoutMs: 25_000,
+        providerModelTextTimeoutMs: 40_000,
         providerStageTimeoutMs: 80_000,
         chatTurnTimeoutMs: 90_000,
         providerMaxAttempts: 3,
