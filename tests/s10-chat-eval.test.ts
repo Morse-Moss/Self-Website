@@ -12,12 +12,31 @@ interface EvalCase {
   feedbackRegression?: string;
   workflow?: 'chat' | 'jd_match' | 'diagnosis';
   intent?: 'general' | 'recruiter' | 'collaboration' | 'peer';
+  expectedRoute?: string;
+  expectedEvidence?: string;
+  expectedAnswerFragments?: string[];
+  expectedSourceSlugs?: string[];
+  expectedDependencies?: {
+    chat: number;
+    embedding: number;
+    rag: number;
+    search: number;
+  };
 }
 
 interface ReviewCase {
   id: string;
+  category: string;
   prompt: string;
-  primaryDimension: string;
+  route: string;
+  evidence: string;
+  expectedDependencies: {
+    chat: number;
+    embedding: number;
+    rag: number;
+    search: number;
+  };
+  zeroTolerance?: boolean;
   expectedSignals: string[];
 }
 
@@ -32,9 +51,9 @@ function readDataset(): { version: number; cases: EvalCase[] } {
   };
 }
 
-test('S10 deterministic evaluation freezes 72 cases and the three user regressions', () => {
+test('S10 deterministic evaluation freezes 72 cases around the current routing contract', () => {
   const dataset = readDataset();
-  assert.ok(dataset.version >= 4, 'conversation v2 evaluation schema must be version 4 or newer');
+  assert.ok(dataset.version >= 5, 'response reliability evaluation schema must be version 5 or newer');
   assert.equal(dataset.cases.length, 72);
   assert.equal(new Set(dataset.cases.map((item) => item.id)).size, 72);
   assert.ok(dataset.cases.every((item) => item.query.trim() && item.expectedBehavior.trim()));
@@ -44,7 +63,7 @@ test('S10 deterministic evaluation freezes 72 cases and the three user regressio
       .filter((item) => item.feedbackRegression)
       .map((item) => item.feedbackRegression)
       .sort(),
-    ['Provider回答失败', '数字Morse像开发助手', '招聘措辞过直'].sort(),
+    ['回答答非所问', '回复像固定RAG模板', '未提供JD仍生成匹配'].sort(),
   );
 
   const categories = new Set(dataset.cases.map((item) => item.category));
@@ -66,9 +85,7 @@ test('S10 deterministic evaluation freezes 72 cases and the three user regressio
     'social',
     'identity',
     'recruitment-positive',
-    'explicit-unknown',
-    'no-rag',
-    'recovery',
+    'route-policy',
   ]) {
     assert.ok(categories.has(category), `conversation v2 category is missing: ${category}`);
   }
@@ -91,9 +108,7 @@ test('S10 deterministic evaluation freezes 72 cases and the three user regressio
     'social',
     'identity',
     'recruitment',
-    'explicit-unknown',
-    'no-rag',
-    'recovery',
+    'route-policy',
   ]) {
     assert.ok(behaviors.has(behavior), `evaluation behavior is missing: ${behavior}`);
   }
@@ -108,12 +123,65 @@ test('S10 validators are scenario-specific instead of forcing gaps and next step
     'validateIdentity',
     'validateGrounded',
     'validateRecruitment',
-    'validateExplicitUnknown',
     'validateSafetyRefusal',
-    'validateRecovery',
+    'validateRouteReliability',
   ]) {
     assert.match(source, new RegExp(`function ${validator}\\b`));
   }
+});
+
+test('deterministic evaluation has no automatic safe or degraded answer path', () => {
+  const source = fs.readFileSync(runnerPath, 'utf8');
+  assert.doesNotMatch(source, /buildSafeChatAnswer|safeAnswer\s*:|degraded\s*===\s*true/u);
+  assert.match(source, /expectedDependencies/u);
+  assert.match(source, /inspectChatAnswer/u);
+});
+
+test('all answer-quality cases execute the production v2 route, evidence and guard chain', () => {
+  const source = fs.readFileSync(runnerPath, 'utf8');
+  assert.doesNotMatch(source, /routeLegacyChatTurn|\.\/chat-behavior\.ts/u);
+
+  const routedExecutionSource = source.slice(
+    source.indexOf('async function executeRoutedCase'),
+    source.indexOf('function evaluateError'),
+  );
+  assert.match(routedExecutionSource, /routeChatTurn\s*\(/u);
+  assert.match(routedExecutionSource, /resolveChatEvidence\s*\(/u);
+  assert.match(source, /validateRouteReliability\s*\(/u);
+
+  const qualityBehaviors = new Set([
+    'grounded',
+    'refuse',
+    'social',
+    'identity',
+    'recruitment',
+    'explicit-unknown',
+  ]);
+  const qualityCases = readDataset().cases.filter((item) => qualityBehaviors.has(item.expectedBehavior));
+  assert.ok(qualityCases.length > 0);
+  assert.ok(qualityCases.every((item) => (
+    item.expectedRoute
+    && item.expectedEvidence
+    && item.expectedDependencies
+    && Object.values(item.expectedDependencies).every(Number.isInteger)
+  )));
+});
+
+test('route evaluation derives provider execution from the route instead of expected call counts', () => {
+  const source = fs.readFileSync(runnerPath, 'utf8');
+  assert.doesNotMatch(source, /if \(item\.expectedDependencies\.chat > 0\)/u);
+  assert.match(source, /route\.deterministicReply === null/u);
+
+  const dataset = readDataset();
+  const comparison = dataset.cases.find((item) => item.id === 'cross-project-research-portfolio') as
+    | (EvalCase & { expectedAnswerFragments?: string[] })
+    | undefined;
+  assert.deepEqual(comparison?.expectedAnswerFragments, ['深度研究', '数字摩斯']);
+
+  const contentOperations = dataset.cases.find((item) => item.id === 'cross-project-content-ops');
+  assert.deepEqual(contentOperations?.expectedAnswerFragments, ['内容创作', '自动运营']);
+  assert.deepEqual(contentOperations?.expectedSourceSlugs, ['content-agent', 'auto-operations']);
+  assert.match(source, /expectedSourceSlugs/u);
 });
 
 test('deterministic provider derives behavior only from real instructions and messages', () => {
@@ -184,13 +252,13 @@ test('S10 evaluation is offline, passes 72/72, and emits no prompt or answer tex
   assert.equal(/"(?:query|prompt|answer|instructions|messages)"\s*:/iu.test(output), false);
 });
 
-test('manual review input contains 20 synthetic cases balanced across five dimensions', () => {
+test('real review manifest has the frozen 20-case category composition', () => {
   const dataset = JSON.parse(fs.readFileSync(reviewCasesPath, 'utf8')) as {
     version: number;
     dimensions: string[];
     cases: ReviewCase[];
   };
-  assert.equal(dataset.version, 1);
+  assert.equal(dataset.version, 2);
   assert.deepEqual(dataset.dimensions, [
     'naturalCommunication',
     'identityConsistency',
@@ -200,14 +268,40 @@ test('manual review input contains 20 synthetic cases balanced across five dimen
   ]);
   assert.equal(dataset.cases.length, 20);
   assert.equal(new Set(dataset.cases.map((item) => item.id)).size, 20);
-  assert.ok(dataset.cases.every((item) => item.prompt.trim() && item.expectedSignals.length > 0));
-  for (const dimension of dataset.dimensions) {
-    assert.equal(
-      dataset.cases.filter((item) => item.primaryDimension === dimension).length,
-      4,
-      `${dimension} must own four review cases`,
-    );
+  assert.ok(dataset.cases.every((item) => (
+    item.prompt.trim()
+    && item.route.trim()
+    && item.evidence.trim()
+    && item.expectedSignals.length > 0
+    && Object.values(item.expectedDependencies).every(Number.isInteger)
+  )));
+  const composition = Object.fromEntries([...new Set(dataset.cases.map((item) => item.category))]
+    .sort()
+    .map((category) => [
+      category,
+      dataset.cases.filter((item) => item.category === category).length,
+    ]));
+  assert.deepEqual(composition, {
+    capability_evidence: 3,
+    conversation: 6,
+    general_advice: 3,
+    identity_project: 3,
+    recruitment_jd: 2,
+    technical_contrast: 3,
+  });
+});
+
+test('zero-tolerance review cases cover wrong RAG, fabricated facts and missing JD', () => {
+  const dataset = JSON.parse(fs.readFileSync(reviewCasesPath, 'utf8')) as {
+    cases: ReviewCase[];
+  };
+  for (const id of ['conversation-no-rag', 'kubernetes-no-direct', 'jd-intake-no-provider']) {
+    assert.equal(dataset.cases.find((item) => item.id === id)?.zeroTolerance, true);
   }
+  const jd = dataset.cases.find((item) => item.id === 'jd-complete');
+  assert.equal(jd?.route, 'jd');
+  assert.equal(jd?.expectedDependencies.chat, 1);
+  assert.equal(jd?.expectedDependencies.embedding, 1);
 });
 
 test('S10 source contract retains the exact S9 project Hash destinations', () => {

@@ -2,6 +2,10 @@ import type { ChatWorkflow } from '../contracts/chat.ts';
 import { chatCapabilityPolicy } from '../site-content.ts';
 import type { TurnIntent } from './chat-behavior.ts';
 import type { ChatRouteDecision } from './chat-route-policy.ts';
+import {
+  matchChatProjectSlugs,
+  mentionsChatProject,
+} from './chat-projects.ts';
 
 export type ChatGuardReason =
   | 'invalid_citation'
@@ -45,7 +49,7 @@ function citationNumbers(answer: string): number[] {
   return [...answer.matchAll(/\[来源(\d+)\]/gu)].map((match) => Number(match[1]));
 }
 
-function validateCitations(input: ChatGuardInput, reasons: ReasonSet): void {
+function validateCitations(input: ChatGuardInput, reasons: ReasonSet, complete: boolean): void {
   const citations = citationNumbers(input.answer);
   if (citations.some((citation) => citation < 1 || citation > input.sourceCount)) {
     reasons.add('invalid_citation');
@@ -53,7 +57,7 @@ function validateCitations(input: ChatGuardInput, reasons: ReasonSet): void {
   }
   const groundedClaim = /我(?:负责|完成|实现|主导)|项目|系统|能力/iu.test(input.answer);
   const groundedRoute = ['identity', 'personal_fact', 'grounded', 'jd'].includes(routeKind(input));
-  if (groundedRoute && input.sourceCount > 0 && groundedClaim && citations.length === 0) {
+  if (complete && groundedRoute && input.sourceCount > 0 && groundedClaim && citations.length === 0) {
     reasons.add('missing_grounded_citation');
   }
 }
@@ -104,6 +108,59 @@ function normalize(value: string): string {
   return value.normalize('NFKC').toLocaleLowerCase('en-US').replace(/[\p{P}\p{S}\s]+/gu, '');
 }
 
+function validateDirectAnswer(input: ChatGuardInput, reasons: ReasonSet): void {
+  const kind = routeKind(input);
+  if (kind !== 'grounded' && kind !== 'jd') return;
+
+  const normalizedAnswer = normalize(input.answer);
+  const namedProjects = matchChatProjectSlugs(input.question);
+  if (namedProjects.some((slug) => !mentionsChatProject(input.answer, slug))) {
+    reasons.add('answer_not_direct');
+    return;
+  }
+  if (namedProjects.length > 1) {
+    const answerClauses = input.answer.split(/[，,。；;！？!?\n]+/u);
+    const explainsProject = (slug: typeof namedProjects[number]) => answerClauses.some((clause) => (
+      mentionsChatProject(clause, slug)
+      && /解决|处理|用于|用来|面向|聚焦|帮助|支持|提供|承担|负责|实现|让|把/iu.test(clause)
+    ));
+    if (namedProjects.some((slug) => !explainsProject(slug))) {
+      reasons.add('answer_not_direct');
+      return;
+    }
+  }
+
+  if (kind === 'grounded' && input.route?.topicKind === 'project' && namedProjects.length === 0) {
+    const answerProjects = matchChatProjectSlugs(input.answer);
+    const substantive = /解决|处理|用于|用来|面向|聚焦|帮助|支持|提供|承担|负责|实现|架构|设计|取舍|目标|边界|验证|结果|能力|覆盖|证据|展示|沉淀|连接|编排|检索|生成/iu.test(input.answer);
+    const inheritedProject = Boolean(input.route.inheritedFromTurnId && input.route.topicRef);
+    if (!substantive || (!inheritedProject && answerProjects.length === 0)) {
+      reasons.add('answer_not_direct');
+    }
+  }
+
+  const requestedCapabilities = chatCapabilityPolicy.canonical.filter((capability) => (
+    normalize(input.question).includes(normalize(capability.label))
+      || capability.aliases.some((alias) => normalize(input.question).includes(normalize(alias)))
+  ));
+  if (kind === 'grounded' && namedProjects.length === 0 && requestedCapabilities.length > 0) {
+    const answersRequestedCapability = requestedCapabilities.some((capability) => (
+      capability.aliases.some((alias) => normalizedAnswer.includes(normalize(alias)))
+    ));
+    if (!answersRequestedCapability) reasons.add('answer_not_direct');
+    return;
+  }
+
+  if (kind === 'jd') {
+    const addressesRole = requestedCapabilities.length > 0
+      ? requestedCapabilities.some((capability) => (
+        capability.aliases.some((alias) => normalizedAnswer.includes(normalize(alias)))
+      ))
+      : /\bjd\b|岗位|职位|职责|任职|要求/iu.test(input.answer);
+    if (!addressesRole) reasons.add('answer_not_direct');
+  }
+}
+
 function validateRouteFormat(input: ChatGuardInput, reasons: ReasonSet): void {
   if (
     routeKind(input) === 'conversation'
@@ -113,7 +170,8 @@ function validateRouteFormat(input: ChatGuardInput, reasons: ReasonSet): void {
   }
 }
 
-function validatePersonalFact(input: ChatGuardInput, reasons: ReasonSet): void {
+function validatePersonalFact(input: ChatGuardInput, reasons: ReasonSet, complete: boolean): void {
+  if (!complete) return;
   const route = input.route;
   if (route?.routeKind !== 'personal_fact' || route.topicKind !== 'capability' || !route.topicRef) return;
   const policy = chatCapabilityPolicy.canonical.find((entry) => entry.id === route.topicRef);
@@ -126,22 +184,35 @@ function validatePersonalFact(input: ChatGuardInput, reasons: ReasonSet): void {
   }
   if (route.evidenceClass !== 'transferable' && route.evidenceClass !== 'unavailable') return;
 
-  const directExperience = /(?:我)?(?:有|具备|拥有).{0,16}(?:生产|实战|直接)?(?:经验|实践)|我(?:做过|负责过|落地过|实践过)/iu.test(input.answer);
+  const answerWithoutNegatedClaims = input.answer.replace(
+    /(?:不能|无法|未能|没有公开证据)(?:据此)?确认(?:(?!(?:但是|不过|然而|但)|[，,。；;！？\n]).){0,80}/giu,
+    '',
+  );
+  const directExperience = /(?:我)?(?:有|具备|拥有).{0,16}(?:生产|实战|直接)?(?:经验|实践)|我(?:确实|的确|曾经|曾)?(?:做过|负责过|落地过|实践过)/iu.test(answerWithoutNegatedClaims);
   if (directExperience) reasons.add('unsupported_evidence_upgrade');
   const preservesBoundary = /不能据此确认|没有公开证据|无法确认|未能确认|只能确认|建议面谈核实/iu.test(input.answer);
   if (!preservesBoundary && !directExperience) reasons.add('answer_not_direct');
 }
 
-export function inspectChatAnswer(input: ChatGuardInput): ChatGuardResult {
+function inspect(input: ChatGuardInput, complete: boolean): ChatGuardResult {
   if (!input.route && !input.intent) throw new TypeError('route or intent is required.');
   const reasons: ReasonSet = new Set();
-  validateCitations(input, reasons);
+  validateCitations(input, reasons, complete);
   validateRecruitmentLanguage(input, reasons);
   validateNextStep(input, reasons);
   validateVoice(input, reasons);
   validateRouteFormat(input, reasons);
-  validatePersonalFact(input, reasons);
+  if (complete) validateDirectAnswer(input, reasons);
+  validatePersonalFact(input, reasons, complete);
   return { ok: reasons.size === 0, reasons: [...reasons] };
+}
+
+export function inspectChatAnswer(input: ChatGuardInput): ChatGuardResult {
+  return inspect(input, true);
+}
+
+export function inspectChatAnswerPrefix(input: ChatGuardInput): ChatGuardResult {
+  return inspect(input, false);
 }
 
 function characterBigrams(value: string): Set<string> {

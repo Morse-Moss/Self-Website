@@ -522,6 +522,69 @@ test('complete release sends a rejected candidate to strict regeneration without
   assert.equal(text, '');
   assert.doesNotMatch(text, /缺口清单/u);
   assert.equal(fallbackStarted, false);
+  const rejectedAttempt = events.find(
+    (event): event is Extract<AnswerEvent, { type: 'attempt' }> => event.type === 'attempt',
+  );
+  assert.deepEqual(rejectedAttempt?.attempt.usage, { inputTokens: 5, outputTokens: 2 });
+});
+
+test('terminal events price each node with its own immutable target rates', async () => {
+  const primary = new FakeProvider([], new OpenAIProviderError(
+    'PROVIDER_UNAVAILABLE',
+    { inputTokens: 10, outputTokens: 2 },
+  ));
+  const fallback = new FakeProvider([
+    { type: 'delta', text: 'Recovered.' },
+    { type: 'done', usage: { inputTokens: 20, outputTokens: 4 } },
+  ]);
+  const primaryTarget = target(primary, 0);
+  const fallbackTarget = target(fallback, 1);
+  fallbackTarget.snapshot.inputUsdPerMillion = '3';
+  fallbackTarget.snapshot.outputUsdPerMillion = '6';
+  const provider = new FailoverAiProvider(primary, [primaryTarget, fallbackTarget], 1_000);
+  const terminalEvents: Array<Record<string, unknown>> = [];
+
+  for await (const _event of provider.streamAnswer(v2Request({
+    onAttempt: async (event) => {
+      if (event.type === 'completed' || event.type === 'failed' || event.type === 'aborted') {
+        terminalEvents.push(event as unknown as Record<string, unknown>);
+      }
+    },
+  }))) {
+    // consume the stream
+  }
+
+  assert.deepEqual(
+    terminalEvents.map((event) => event.estimatedCostUsd),
+    [0.000014, 0.000084],
+  );
+});
+
+test('guard-rejected terminal events retain usage priced by the rejected node', async () => {
+  const primary = new FakeProvider([
+    { type: 'delta', text: 'Rejected.' },
+    { type: 'done', usage: { inputTokens: 5, outputTokens: 2 } },
+  ]);
+  const provider = new FailoverAiProvider(primary, [target(primary, 0)], 1_000);
+  const terminalEvents: Array<Record<string, unknown>> = [];
+
+  await assert.rejects(async () => {
+    for await (const _event of provider.streamAnswer(v2Request({
+      releasePolicy: 'complete',
+      acceptCandidate: () => false,
+      onAttempt: async (event) => {
+        if (event.type === 'completed' || event.type === 'failed' || event.type === 'aborted') {
+          terminalEvents.push(event as unknown as Record<string, unknown>);
+        }
+      },
+    }))) {
+      // consume the stream
+    }
+  }, (error: unknown) => (
+    error instanceof AnswerExecutionError && error.code === 'OUTPUT_GUARD_REJECTED'
+  ));
+
+  assert.deepEqual(terminalEvents.map((event) => event.estimatedCostUsd), [0.000009]);
 });
 
 test('serial execution does not consult the obsolete hedge reservation callback', async () => {
@@ -558,7 +621,6 @@ test('serial execution does not consult the obsolete hedge reservation callback'
 });
 
 test('no protocol activity switches serially at the protocol deadline', async () => {
-  const startedAt = Date.now();
   const started: string[] = [];
   const silent = delayedProvider({ delayMs: 100, events: [], onStart: () => started.push('primary') });
   const fallback = delayedProvider({
@@ -579,7 +641,11 @@ test('no protocol activity switches serially at the protocol deadline', async ()
   }))) events.push(event);
 
   assert.deepEqual(started, ['primary', 'fallback-1']);
-  assert.ok(Date.now() - startedAt < 50, 'silent primary must stop near the 15ms protocol deadline');
+  const firstAttempt = events.find(
+    (event): event is Extract<AnswerEvent, { type: 'attempt' }> => event.type === 'attempt',
+  );
+  assert.equal(firstAttempt?.attempt.errorCode, 'PROVIDER_PROTOCOL_TIMEOUT');
+  assert.equal(firstAttempt?.attempt.firstProtocolEventMs, null);
   assert.equal(events.filter((event) => event.type === 'switching').length, 1);
   assert.equal(events.filter((event) => event.type === 'delta').map((event) => event.text).join(''), 'Recovered.');
 });

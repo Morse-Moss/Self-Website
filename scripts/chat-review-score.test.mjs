@@ -14,7 +14,7 @@ import {
 
 function review(caseNumber, scores = {}, zeroToleranceViolations = []) {
   return {
-    caseId: `manual-${String(caseNumber).padStart(2, '0')}`,
+    caseId: EXPECTED_CASE_IDS[caseNumber - 1] ?? `unknown-${caseNumber}`,
     scores: Object.fromEntries(DIMENSIONS.map((dimension) => [
       dimension,
       scores[dimension] ?? 5,
@@ -37,10 +37,9 @@ test('manual review scoring passes only when all five averages and the 90 percen
     'recruitmentHelpfulness',
     'honestyPrivacy',
   ]);
-  assert.deepEqual(EXPECTED_CASE_IDS, Array.from(
-    { length: 20 },
-    (_, index) => `manual-${String(index + 1).padStart(2, '0')}`,
-  ));
+  assert.equal(EXPECTED_CASE_IDS.length, 20);
+  assert.equal(EXPECTED_CASE_IDS[0], 'conversation-no-rag');
+  assert.equal(EXPECTED_CASE_IDS.at(-1), 'jd-complete');
   assert.equal(result.total, 20);
   assert.equal(result.passedCases, 18);
   assert.equal(result.passRate, 0.9);
@@ -48,8 +47,9 @@ test('manual review scoring passes only when all five averages and the 90 percen
   assert.equal(result.dimensionAverages.naturalCommunication, 4.8);
   assert.equal(result.pass, true);
   assert.deepEqual(result.zeroToleranceCounts, {
-    unsolicitedGapList: 0,
+    conversationRag: 0,
     ungroundedPersonalFact: 0,
+    missingJdConclusion: 0,
     privateContentDisclosure: 0,
   });
 });
@@ -102,7 +102,7 @@ test('manual review input accepts only complete integer 1-5 scores and fixed vio
   const unknownViolation = structuredClone(valid);
   unknownViolation[0].zeroToleranceViolations = ['unknownIssue'];
   assert.throws(() => scoreReviews({ reviews: unknownViolation }), /zero-tolerance/iu);
-  assert.equal(ZERO_TOLERANCE_FIELDS.length, 3);
+  assert.equal(ZERO_TOLERANCE_FIELDS.length, 4);
 });
 
 test('manual review scores must match the fixed case ID set exactly', () => {

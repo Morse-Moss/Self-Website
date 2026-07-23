@@ -89,7 +89,7 @@ export async function resolveChatEvidence(
       const candidates = await input.retrieve(embedding);
       return {
         capability: null,
-        knowledge: admitKnowledgeForRoute(input.route, candidates),
+        knowledge: admitKnowledgeForRoute(input.route, candidates, input.question),
         search: undefined,
       };
     }

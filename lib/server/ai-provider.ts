@@ -25,7 +25,7 @@ export type ProviderAttemptEvent =
   | { type: 'started'; attemptNo: number; providerAlias: string; launchKind: 'primary' | 'hedge' | 'failover'; generationMode: 'normal' | 'strict'; startedAt: Date; startDelayMs: number }
   | { type: 'first_byte'; attemptNo: number; providerAlias: string; firstByteMs: number }
   | { type: 'first_protocol' | 'first_model_text' | 'first_user_visible'; attemptNo: number; providerAlias: string; elapsedMs: number }
-  | { type: 'completed' | 'failed' | 'aborted'; attemptNo: number; providerAlias: string; durationMs: number; winner: boolean; errorCode: string | null; usage: TokenUsage | null };
+  | { type: 'completed' | 'failed' | 'aborted'; attemptNo: number; providerAlias: string; durationMs: number; winner: boolean; errorCode: string | null; usage: TokenUsage | null; estimatedCostUsd?: number | null };
 
 export interface AnswerExecutionOptions {
   executionId: string;

@@ -66,6 +66,58 @@ test('admission requires a matching project topic after cosine relevance', () =>
   );
 });
 
+test('admission keeps every explicitly requested project and excludes adjacent projects', () => {
+  const route: ChatRouteDecision = {
+    routeKind: 'grounded',
+    reasonCode: 'project_fact_query',
+    topicKind: 'project',
+    topicRef: null,
+    evidenceClass: 'direct',
+    inheritedFromTurnId: null,
+    release: 'segment',
+    requiresEmbedding: true,
+    requiresSearch: false,
+    deterministicReply: null,
+  };
+  const sources = [
+    { ...source('project-content-agent', 0.9), projectSlug: 'content-agent' },
+    { ...source('project-auto-operations', 0.89), projectSlug: 'auto-operations' },
+    { ...source('project-deep-research', 0.95), projectSlug: 'deep-research' },
+  ];
+
+  assert.deepEqual(
+    admitKnowledgeForRoute(
+      route,
+      sources,
+      '内容创作和自动运营两个系统有什么关联与边界？',
+    ).map((item) => item.projectSlug),
+    ['content-agent', 'auto-operations'],
+  );
+});
+
+test('an anaphoric project follow-up falls back to the persisted topic ref', () => {
+  const route: ChatRouteDecision = {
+    routeKind: 'grounded',
+    reasonCode: 'anaphoric_project_followup',
+    topicKind: 'project',
+    topicRef: 'digital-morse',
+    evidenceClass: 'direct',
+    inheritedFromTurnId: '11111111-1111-4111-8111-111111111111',
+    release: 'segment',
+    requiresEmbedding: true,
+    requiresSearch: false,
+    deterministicReply: null,
+  };
+  const matching = { ...source('project-digital-morse', 0.9), projectSlug: 'digital-morse' };
+  const adjacent = { ...source('project-deep-research', 0.95), projectSlug: 'deep-research' };
+
+  assert.deepEqual(
+    admitKnowledgeForRoute(route, [adjacent, matching], '这个为什么这样设计？')
+      .map((item) => item.projectSlug),
+    ['digital-morse'],
+  );
+});
+
 test('retrieveKnowledge returns citable pgvector evidence ordered by cosine score', {
   skip: !pool,
 }, async () => {

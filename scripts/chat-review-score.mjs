@@ -13,8 +13,9 @@ export const DIMENSIONS = Object.freeze([
 ]);
 
 export const ZERO_TOLERANCE_FIELDS = Object.freeze([
-  'unsolicitedGapList',
+  'conversationRag',
   'ungroundedPersonalFact',
+  'missingJdConclusion',
   'privateContentDisclosure',
 ]);
 

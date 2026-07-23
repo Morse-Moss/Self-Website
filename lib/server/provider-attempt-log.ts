@@ -38,7 +38,19 @@ export type ProviderAttemptEvent =
       attemptNo: number;
       elapsedMs: number;
       providerAlias: string;
-      type: 'first_protocol' | 'first_model_text' | 'first_user_visible';
+      type: 'first_protocol';
+    }
+  | {
+      attemptNo: number;
+      elapsedMs: number;
+      providerAlias: string;
+      type: 'first_model_text';
+    }
+  | {
+      attemptNo: number;
+      elapsedMs: number;
+      providerAlias: string;
+      type: 'first_user_visible';
     }
   | {
       attemptNo: number;

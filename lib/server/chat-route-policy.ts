@@ -9,6 +9,7 @@ import {
   type CapabilityLedger,
 } from './capability-evidence.ts';
 import { looksLikeFullJobDescription } from './chat-behavior.ts';
+import { matchChatProjectSlugs } from './chat-projects.ts';
 
 export interface ChatRouteDecision {
   routeKind: ChatRouteKind;
@@ -36,19 +37,9 @@ export interface RouteChatTurnInput {
   previous?: RouteAnchor | null;
 }
 
-const PROJECT_ALIASES: ReadonlyArray<{
-  slug: string;
-  aliases: readonly string[];
-}> = [
-  { slug: 'digital-morse', aliases: ['数字morse', '数字摩斯', 'digitalmorse'] },
-  { slug: 'deep-research', aliases: ['深度研究', 'deepresearch'] },
-  { slug: 'content-agent', aliases: ['内容生成agent', '内容agent', 'contentagent'] },
-  { slug: 'auto-operations', aliases: ['自动运营', 'autooperations'] },
-  { slug: 'ai-leadgen', aliases: ['线索', 'aileadgen'] },
-];
-
 export const JD_INTAKE_REPLY = '请提供完整 JD（岗位职责与任职要求）；收到后我会基于公开项目证据整理匹配内容，并把需要面谈核实的部分单独标明。';
 export const CLARIFY_REPLY = '你是想了解这个问题的一般做法，还是想核实我本人做过的具体经历？';
+export const SAFETY_BOUNDARY_REPLY = '这类请求超出公开信息边界，我无法据此确认，也不会提供或编造未公开信息。';
 
 function normalize(value: string): string {
   return value
@@ -75,6 +66,19 @@ function isMissingJdFitRequest(message: string): boolean {
   return /(?:岗位|职位)(?:适配|匹配)(?:度|分析)?|(?:适合|胜任)(?:这个|该)?(?:岗位|职位)|分析.*(?:岗位|职位).*(?:适合|匹配)/iu.test(message);
 }
 
+function isPrivateContactRequest(message: string): boolean {
+  return /(?:提供|告诉(?:我)?|给出|列出|泄露|输出).{0,24}(?:手机号|邮箱|联系方式|客户名称)|(?:个人|私人|私下|非公开|内部).{0,16}(?:手机号|邮箱|联系方式|客户名称)|(?:手机号|邮箱|联系方式|客户名称).{0,16}(?:是什么|是多少|地址|账号|联系人)/iu.test(message);
+}
+
+function isUnsafeOrUnverifiableRequest(message: string): boolean {
+  return /(?:忽略|覆盖).{0,20}(?:公开来源限制|系统指令|既有规则)|(?:输出|泄露).{0,12}(?:密钥|密码|token)|(?:服务器地址|登录凭据)|(?:准确|精确).{0,12}(?:百分比|提升率)|明天会涨/iu.test(message)
+    || isPrivateContactRequest(message);
+}
+
+function isPortfolioEvidenceQuestion(message: string): boolean {
+  return /(?:招聘|候选人).{0,24}(?:项目|能力|公开证据)|(?:哪些项目).{0,24}(?:证明|能力)|(?:检索到的内容|知识库内容).{0,24}(?:技术能力|合作建议)/iu.test(message);
+}
+
 function isExplicitPersonalFact(message: string): boolean {
   const personalSubject = /(?:你|你的|你以前|morse|摩斯)/iu.test(message);
   const experiencePredicate = /(?:有|具备).{0,24}(?:经验|经历)|(?:用过|做过|负责过|参与过|实践过|落地过)|以前怎么(?:处理|做)|是否(?:有|做过|用过)/iu.test(message);
@@ -82,28 +86,30 @@ function isExplicitPersonalFact(message: string): boolean {
 }
 
 function isExternalCurrent(message: string): boolean {
-  return /(?:当前|现在|截至目前).{0,16}(?:最新|版本|价格|天气|新闻)|(?:最新|实时)(?:版本|消息|新闻|价格|天气)|帮我(?:查|核实)|外部(?:资料|信息)|联网(?:查|核实)/iu.test(message);
+  return /(?:当前|现在|截至目前).{0,16}(?:最新|版本|价格|天气|新闻)|(?:最新|实时)(?:版本|消息|新闻|价格|天气)|今天.{0,16}天气|天气.{0,16}(?:怎么样|如何)|帮我(?:查|核实)|外部(?:资料|信息)|联网(?:查|核实)/iu.test(message);
 }
 
 function isIdentityQuestion(message: string): boolean {
-  return /你是谁|介绍(?:一下)?(?:你|自己)|你擅长什么|你能做什么|数字\s*(?:morse|摩斯)是什么/iu.test(message);
+  return /你是谁|介绍(?:一下)?(?:你|自己)|你擅长什么|你能做什么|数字\s*(?:morse|摩斯)\s*是(?:什么|谁)/iu.test(message);
+}
+
+function projectTopics(message: string): string[] {
+  return matchChatProjectSlugs(message);
 }
 
 function projectTopic(message: string): string | null {
-  const normalized = normalize(message);
-  return PROJECT_ALIASES.find((project) => (
-    project.aliases.some((alias) => normalized.includes(normalize(alias)))
-  ))?.slug ?? null;
+  const matches = projectTopics(message);
+  return matches.length === 1 ? matches[0] : null;
 }
 
 function isProjectFact(message: string): boolean {
-  if (projectTopic(message)) return true;
+  if (projectTopics(message).length > 0) return true;
   return /(?:morse|摩斯|你|你的).{0,24}(?:项目|作品|实现|架构|做法|成果|职责)|(?:有哪些|介绍).{0,12}(?:项目|作品)/iu.test(message);
 }
 
 function isStableGeneralConversation(message: string): boolean {
   if (/^(?:你好|嗨|hello|hi|谢谢|多谢|再见)/iu.test(message)) return true;
-  if (/(?:吃饭|吃什么|近况|最近忙|怎么看|什么是|是什么|如何|怎么|为什么|建议|职场|同事|分歧|兴趣|感受)/iu.test(message)) {
+  if (/(?:吃饭|吃什么|近况|最近忙|怎么看|什么是|是什么|如何|怎么|怎样|为什么|建议|职场|同事|分歧|兴趣|感受)/iu.test(message)) {
     return !isAnaphoricFollowUp(message);
   }
   return /^(?:请)?(?:解释|介绍|讨论).{1,80}$/iu.test(message);
@@ -172,6 +178,21 @@ function inheritRoute(previous: RouteAnchor, ledger: CapabilityLedger): ChatRout
 
 export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
   const message = input.request.message.trim();
+  if (isUnsafeOrUnverifiableRequest(message)) {
+    return decision({
+      routeKind: 'clarify',
+      reasonCode: 'unsafe_or_unverifiable_request',
+      deterministicReply: SAFETY_BOUNDARY_REPLY,
+    });
+  }
+  if (input.request.workflow === 'diagnosis') {
+    return decision({
+      routeKind: 'grounded',
+      reasonCode: 'explicit_diagnosis_workflow',
+      evidenceClass: 'direct',
+      requiresEmbedding: true,
+    });
+  }
   if (input.request.workflow === 'jd_match' || looksLikeFullJobDescription(message)) {
     return decision({
       routeKind: 'jd',
@@ -217,6 +238,14 @@ export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
       routeKind: 'identity',
       reasonCode: 'identity_query',
       evidenceClass: 'identity',
+    });
+  }
+  if (isPortfolioEvidenceQuestion(message)) {
+    return decision({
+      routeKind: 'grounded',
+      reasonCode: 'portfolio_evidence_query',
+      evidenceClass: 'direct',
+      requiresEmbedding: true,
     });
   }
   if (isProjectFact(message)) {

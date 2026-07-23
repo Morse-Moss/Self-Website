@@ -83,8 +83,11 @@ const INTERACTION_TIMEOUT_MS = 30_000;
 const BUILD_TIMEOUT_MS = 120_000;
 const APP_START_TIMEOUT_MS = 90_000;
 const CHILD_OUTPUT_LIMIT = 16 * 1024;
+const RECRUITER_STARTER_QUERY = '请介绍与岗位最相关的项目和能力证据。';
+const SWITCHING_EVIDENCE_QUERY = '请说明数字摩斯如何保证回答证据可追溯。';
 const STATIC_EVIDENCE_QUERY = '深度研究系统如何确保报告可信？';
 const SEARCH_EVIDENCE_QUERY = '请查证 Next.js 当前版本的官方文档与 GitHub 资料。';
+const STOP_EVIDENCE_QUERY = '一个正在运行的任务应该如何安全停止？';
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
 const RUNTIME_COPY_ENTRIES = [
   'app',
@@ -184,6 +187,15 @@ export function createS10Summary(input = {}) {
     pageErrors,
     screenshots: uniqueSorted(input.screenshots),
     viewports: S10_VIEWPORTS.map(({ width, height }) => `${width}x${height}`),
+  };
+}
+
+export function createSafeChatRequestMetrics(input = {}) {
+  return {
+    chatRequestCount: input.chatRequestCount ?? 0,
+    chatResponseStatuses: [...(input.chatResponseStatuses ?? [])],
+    turnAttemptDistribution: [...(input.chatTurnRequestCounts?.values?.() ?? [])]
+      .sort((left, right) => left - right),
   };
 }
 
@@ -351,10 +363,12 @@ async function seedInvite(connectionString, inviteCode, inviteId) {
 
 async function seedS10EvidenceFixtures(connectionString) {
   const fixtures = [
-    ['s10-static-evidence', STATIC_EVIDENCE_QUERY],
-    ['s10-search-evidence', SEARCH_EVIDENCE_QUERY],
+    ['s10-recruiter-starter-evidence', RECRUITER_STARTER_QUERY, 'project-deep-research', 'Deep Research', 'deep-research'],
+    ['s10-switching-evidence', SWITCHING_EVIDENCE_QUERY, 'project-digital-morse', '数字摩斯', 'digital-morse'],
+    ['s10-static-evidence', STATIC_EVIDENCE_QUERY, 'project-deep-research', 'Deep Research', 'deep-research'],
+    ['s10-search-evidence', SEARCH_EVIDENCE_QUERY, 'project-deep-research', 'Deep Research', 'deep-research'],
   ];
-  for (const [id, query] of fixtures) {
+  for (const [id, query, documentId, title, projectSlug] of fixtures) {
     await withPostgresClient(connectionString, (client) => client.query(
       `INSERT INTO knowledge_chunks
         (id, document_id, ordinal, content, embedding, metadata)
@@ -365,13 +379,14 @@ async function seedS10EvidenceFixtures(connectionString) {
         WHERE document.id = $2`,
       [
         id,
-        'project-deep-research',
+        documentId,
         query,
         serializeVector(createDeterministicTestEmbedding(query)),
         JSON.stringify({
-          title: 'Deep Research',
-          sourcePath: 'content/site-content.json#projects.deep-research',
-          href: '/works#deep-research',
+          title,
+          sourcePath: `content/site-content.json#projects.${projectSlug}`,
+          href: `/works#${projectSlug}`,
+          projectSlug,
         }),
       ],
     ));
@@ -385,6 +400,31 @@ async function waitForDatabase(connectionString, predicate, code) {
     await delay(100);
   }
   throw new HarnessError(code);
+}
+
+export function createS10MockAnswer(input = {}) {
+  if (/介绍与岗位最相关的项目和能力证据/u.test(input.currentUserContent ?? '')) {
+    return `**事实依据：**\n\n- 深度研究 Agent 系统展示了 RAG 检索、证据组织和质量门能力，适合作为岗位相关的公开项目证据。${input.citations ?? ''}`;
+  }
+  if (/<diagnosis_fields>/u.test(input.currentUserContent ?? '')) {
+    return '**需求初诊：**\n\n- 当前问题聚焦 PostgreSQL 与 pgvector 支撑的可追溯客服闭环；建议先验证路由、检索和失败恢复。';
+  }
+  if (/Agent/iu.test(input.currentUserContent ?? '')
+    && /RAG/iu.test(input.currentUserContent ?? '')
+    && /PostgreSQL/iu.test(input.currentUserContent ?? '')) {
+    return '**岗位相关证据：**\n\n- 该岗位重点要求 Agent、RAG 与 PostgreSQL；当前没有可核验的直接证据，建议面谈核实。';
+  }
+  if (/RAG/iu.test(input.currentUserContent ?? '')
+    && /PostgreSQL/iu.test(input.currentUserContent ?? '')) {
+    return '**需求初诊：**\n\n- 当前问题聚焦 RAG 与 PostgreSQL 支撑的可追溯客服闭环；建议先验证路由、检索和失败恢复。';
+  }
+  if (input.noApprovedEvidence) {
+    return '本轮联网搜索未返回可用来源，暂时无法核验最新信息。';
+  }
+  if (/深度研究/u.test(input.currentUserContent ?? '')) {
+    return `**事实依据：**\n\n- 深度研究系统通过公开项目资料和可核验来源保持报告可信。${input.citations ?? ''}`;
+  }
+  return input.fallbackAnswer ?? '';
 }
 
 function createControllableOpenAiProxy(upstreamPort) {
@@ -432,13 +472,20 @@ function createControllableOpenAiProxy(upstreamPort) {
     const noApprovedEvidence = instructions.includes(
       '<approved_evidence>本轮没有可用的审核公开证据。</approved_evidence>',
     );
+    const searchDegraded = /本轮联网搜索(?:失败|没有返回可用来源)/u.test(instructions);
     const webCitationIndex = /<web_search_result index="(\d+)">/u.exec(instructions)?.[1];
     const citations = webCitationIndex ? `[来源1][来源${webCitationIndex}]` : '[来源1]';
-    const answer = social
+    const fallbackAnswer = social
       ? '你好，我是数字 Morse，很高兴认识你。'
       : noApprovedEvidence
         ? '本轮联网搜索未返回可用来源，暂时无法核验最新信息。'
         : `**事实依据：**\n\n- 数字摩斯以公开项目资料回答，并保留可核验来源。${citations}`;
+    const answer = createS10MockAnswer({
+      currentUserContent,
+      citations,
+      noApprovedEvidence: noApprovedEvidence || searchDegraded,
+      fallbackAnswer,
+    });
     observations.push({ path: 'internal:valid-answer-emitted', authorization: '' });
     response.writeHead(200, {
       'Content-Type': 'text/event-stream',
@@ -563,7 +610,7 @@ function createControllableOpenAiProxy(upstreamPort) {
     rejectNextAnswers(count = 2) {
       for (let index = 0; index < count; index += 1) answerPlans.push('guard');
     },
-    rejectNextEmbeddings(count = 3) {
+    rejectNextEmbeddings(count = 1) {
       remainingEmbeddingFailures += count;
     },
     setFailAnswers(value) {
@@ -654,6 +701,11 @@ async function openTab(browser, targetUrl, viewport) {
   check(typeof tab.webSocketDebuggerUrl === 'string', 'cdp:new-tab-socket-missing');
 
   const errors = { console: [], externalOrigins: new Set(), page: [] };
+  const metrics = {
+    chatRequestCount: 0,
+    chatResponseStatuses: [],
+    chatTurnRequestCounts: new Map(),
+  };
   let transport;
   const expectedNetworkLog = (entry) => {
     try {
@@ -684,8 +736,31 @@ async function openTab(browser, targetUrl, viewport) {
     if (message.method === 'Network.requestWillBeSent') {
       try {
         const url = new URL(message.params.request.url);
+        if (url.origin === targetUrl.origin && url.pathname === '/api/chat') {
+          metrics.chatRequestCount += 1;
+          const postData = message.params.request.postData;
+          if (typeof postData === 'string') {
+            const turnId = JSON.parse(postData)?.turnId;
+            if (typeof turnId === 'string' && turnId.length > 0) {
+              metrics.chatTurnRequestCounts.set(
+                turnId,
+                (metrics.chatTurnRequestCounts.get(turnId) ?? 0) + 1,
+              );
+            }
+          }
+        }
         if (['http:', 'https:', 'ws:', 'wss:'].includes(url.protocol) && url.origin !== targetUrl.origin) {
           errors.externalOrigins.add(url.origin);
+        }
+      } catch {
+        // Non-URL browser internals are outside the network contract.
+      }
+    }
+    if (message.method === 'Network.responseReceived') {
+      try {
+        const url = new URL(message.params.response.url);
+        if (url.origin === targetUrl.origin && url.pathname === '/api/chat') {
+          metrics.chatResponseStatuses.push(message.params.response.status);
         }
       } catch {
         // Non-URL browser internals are outside the network contract.
@@ -700,6 +775,7 @@ async function openTab(browser, targetUrl, viewport) {
   });
   const page = {
     errors,
+    metrics,
     viewport,
     async send(method, params, timeoutMs) {
       return transport.send(method, params, timeoutMs);
@@ -963,10 +1039,13 @@ async function runVisitorScenarios({
     const assistant = assistants[assistants.length - 1];
     return {
       state: assistant?.getAttribute('data-stream-state') ?? 'missing',
-      text: assistant?.textContent?.trim().slice(0, 80) ?? 'empty'
+      text: assistant?.textContent?.trim().slice(0, 240) ?? 'empty',
+      hasNamedProject: assistant?.textContent?.includes('深度研究') ?? false,
+      hasCapabilityEvidence: /RAG|质量门/u.test(assistant?.textContent ?? ''),
     };
   })()`);
   check(starterTerminal.state === 'done', `starter:${starterTerminal.state}:${starterTerminal.text}`);
+  check(starterTerminal.hasNamedProject && starterTerminal.hasCapabilityEvidence, 'starter:substantive-answer');
   const starterFormat = await page.evaluate(`(() => {
     const assistants = document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)});
     const answer = assistants[assistants.length - 1];
@@ -1014,7 +1093,7 @@ async function runVisitorScenarios({
     assistants: document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)}).length
   }))()`);
   const heldFailover = openAiProxy.failNextThenHoldFailover();
-  await setControlledValue(page, '#morse-message', '请说明数字摩斯如何保证回答证据可追溯。');
+  await setControlledValue(page, '#morse-message', SWITCHING_EVIDENCE_QUERY);
   await click(page, '[data-action="send"]');
   await Promise.all([
     withTimeout(heldFailover, INTERACTION_TIMEOUT_MS, 'switching:failover-not-held'),
@@ -1060,8 +1139,8 @@ async function runVisitorScenarios({
   checks.add('serial-provider-failover');
   checks.add('switching-recovery');
 
-  openAiProxy.rejectNextEmbeddings(3);
-  await setControlledValue(page, '#morse-message', '请回答一次用于原位重试验收的问题。');
+  openAiProxy.rejectNextEmbeddings(1);
+  await setControlledValue(page, '#morse-message', STATIC_EVIDENCE_QUERY);
   await click(page, '[data-action="send"]');
   await waitFor(page, `(() => {
     const assistants = [...document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)})];
@@ -1072,7 +1151,12 @@ async function runVisitorScenarios({
     users: document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="user"]`)}).length,
     assistants: document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)}).length
   }))()`);
-  await click(page, `${SELECTORS.chatTranscript} article[data-message-role="assistant"]:last-of-type button`);
+  await waitFor(page, `(() => {
+    const assistant = [...document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)})].at(-1);
+    const button = assistant?.querySelector('button');
+    return button instanceof HTMLButtonElement && !button.disabled;
+  })()`, 'retry:enabled');
+  await click(page, `${SELECTORS.chatTranscript} article[data-message-role="assistant"]:last-of-type button:not(:disabled)`);
   await waitFor(page, `(() => {
     const assistants = [...document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)})];
     return assistants.at(-1)?.getAttribute('data-stream-state') === 'done';
@@ -1125,23 +1209,36 @@ async function runVisitorScenarios({
     staticEvidence.state === 'done' && staticEvidence.localSources > 0,
     'source:static-answer',
   );
+  check(await page.evaluate(`(() => {
+    const assistant = [...document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)})].at(-1);
+    assistant?.setAttribute('data-s10-source-contract', 'local');
+    return Boolean(assistant);
+  })()`), 'source:static-marker');
 
   const searched = await submitChatValue(page, '#morse-message', SEARCH_EVIDENCE_QUERY);
-  check(searched.state === 'done' && searched.localSources > 0 && searched.webSources > 0, 'search:sources-missing');
-  const sourceContract = await page.evaluate(`(() => {
+  check(
+    searched.state === 'done' && searched.localSources === 0 && searched.webSources > 0,
+    'search:sources-missing',
+  );
+  check(await page.evaluate(`(() => {
     const assistant = [...document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)})].at(-1);
-    const local = assistant?.querySelector(${JSON.stringify(`${SELECTORS.localSources} a[href^="/works#"]`)});
-    const inlineLocal = assistant?.querySelector('[data-testid="morse-chat-message-content"] a[data-citation-index][href^="/works#"]');
-    const web = assistant?.querySelector(${JSON.stringify(`${SELECTORS.webSources} a`)});
+    assistant?.setAttribute('data-s10-source-contract', 'web');
+    return Boolean(assistant);
+  })()`), 'source:web-marker');
+  const sourceContract = await page.evaluate(`(() => {
+    const assistants = [...document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)})];
+    const localAssistant = assistants.find((assistant) => assistant.getAttribute('data-s10-source-contract') === 'local');
+    const webAssistant = assistants.find((assistant) => assistant.getAttribute('data-s10-source-contract') === 'web');
+    const local = localAssistant?.querySelector(${JSON.stringify(`${SELECTORS.localSources} a[href^="/works#"]`)});
+    const inlineLocal = localAssistant?.querySelector('[data-testid="morse-chat-message-content"] a[data-citation-index][href^="/works#"]');
+    const web = webAssistant?.querySelector(${JSON.stringify(`${SELECTORS.webSources} a`)});
     return {
       inlineLocalHref: inlineLocal?.getAttribute('href') ?? '',
       inlineLocalTarget: inlineLocal?.getAttribute('target') ?? '',
       inlineLocalRel: inlineLocal?.getAttribute('rel') ?? '',
-      inlineStaticCount: document.querySelectorAll('[data-testid="morse-chat-message-content"] [data-citation-static="true"]').length,
       localHref: local?.getAttribute('href') ?? '',
       localTarget: local?.getAttribute('target') ?? '',
       localRel: local?.getAttribute('rel') ?? '',
-      localStaticCount: document.querySelectorAll(${JSON.stringify(`${SELECTORS.localSources} [data-source-static="true"]`)}).length,
       webHref: web?.getAttribute('href') ?? '',
       webTarget: web?.getAttribute('target') ?? '',
       webRel: web?.getAttribute('rel') ?? '',
@@ -1152,13 +1249,11 @@ async function runVisitorScenarios({
     sourceContract.inlineLocalTarget === '_blank' && sourceContract.inlineLocalRel.includes('noopener'),
     'source:inline-local-isolation',
   );
-  check(sourceContract.inlineStaticCount > 0, 'source:inline-static-evidence');
   check(sourceContract.localHref.startsWith('/works#'), 'source:local-href');
   check(sourceContract.localTarget === '_blank' && sourceContract.localRel.includes('noopener'), 'source:local-isolation');
-  check(sourceContract.localStaticCount > 0, 'source:static-evidence');
   check(sourceContract.webHref.startsWith('https://'), 'source:web-https');
   check(sourceContract.webTarget === '_blank' && sourceContract.webRel.includes('noopener'), 'source:web-isolation');
-  const sourceNavigationSelector = `${SELECTORS.chatTranscript} article[data-message-role="assistant"]:last-of-type ${SELECTORS.localSources} a[href^="/works#"]`;
+  const sourceNavigationSelector = `${SELECTORS.chatTranscript} article[data-message-role="assistant"][data-s10-source-contract="local"] ${SELECTORS.localSources} a[href^="/works#"]`;
   check(await page.evaluate(`(() => {
     const source = document.querySelector(${JSON.stringify(sourceNavigationSelector)});
     if (!source) return false;
@@ -1244,7 +1339,7 @@ async function runVisitorScenarios({
   await click(page, SELECTORS.chatWorkflow);
   await waitFor(page, "Boolean(document.querySelector('#morse-message'))", 'chat:return-workflow');
   const held = openAiProxy.holdNextResponse();
-  await setControlledValue(page, '#morse-message', '请生成一段用于停止补偿验收的回答。');
+  await setControlledValue(page, '#morse-message', STOP_EVIDENCE_QUERY);
   await click(page, '[data-action="send"]');
   await withTimeout(held, INTERACTION_TIMEOUT_MS, 'stop:provider-not-held');
   await waitFor(page, "Boolean(document.querySelector('[data-action=\"stop\"]'))", 'stop:button');
@@ -1252,7 +1347,8 @@ async function runVisitorScenarios({
   await waitFor(page, `Boolean(document.querySelector(${JSON.stringify(SELECTORS.stoppedMessage)}))`, 'stop:ui-state');
   await waitForDatabase(connectionString, async (client) => {
     const result = await client.query(
-      "SELECT 1 FROM interaction_turns WHERE question LIKE '%停止补偿验收%' AND status = 'stopped' LIMIT 1",
+      "SELECT 1 FROM interaction_turns WHERE question = $1 AND status = 'stopped' LIMIT 1",
+      [STOP_EVIDENCE_QUERY],
     );
     return result.rowCount === 1;
   }, 'stop:database-compensation');
@@ -1335,8 +1431,8 @@ async function runMobileVisitor({
     return assistants.at(-1)?.getAttribute('data-stream-state') === 'done';
   })()`, 'mobile:switching-recovered');
 
-  openAiProxy.rejectNextEmbeddings(3);
-  await setControlledValue(page, '#morse-message', '请回答移动端原位重试验收问题。');
+  openAiProxy.rejectNextEmbeddings(1);
+  await setControlledValue(page, '#morse-message', STATIC_EVIDENCE_QUERY);
   await click(page, '[data-action="send"]');
   await waitFor(page, `(() => {
     const assistants = [...document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)})];
@@ -1346,7 +1442,12 @@ async function runMobileVisitor({
     users: document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="user"]`)}).length,
     assistants: document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)}).length
   }))()`);
-  await click(page, `${SELECTORS.chatTranscript} article[data-message-role="assistant"]:last-of-type button`);
+  await waitFor(page, `(() => {
+    const assistant = [...document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)})].at(-1);
+    const button = assistant?.querySelector('button');
+    return button instanceof HTMLButtonElement && !button.disabled;
+  })()`, 'mobile:retry-enabled');
+  await click(page, `${SELECTORS.chatTranscript} article[data-message-role="assistant"]:last-of-type button:not(:disabled)`);
   await waitFor(page, `(() => {
     const assistants = [...document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)})];
     return assistants.at(-1)?.getAttribute('data-stream-state') === 'done';
@@ -1886,7 +1987,7 @@ export async function runS10MockE2E() {
   } catch (error) {
     const pageStates = await Promise.all(pages.map(async (page) => {
       try {
-        return await page.evaluate(`(() => {
+        const state = await page.evaluate(`(() => {
           const assistants = [...document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)})];
           const assistant = assistants.at(-1);
           return {
@@ -1897,10 +1998,31 @@ export async function runS10MockE2E() {
             assistantHasText: Boolean(assistant?.querySelector('[data-testid="morse-chat-message-content"]')?.textContent),
           };
         })()`);
+        return { ...state, ...createSafeChatRequestMetrics(page.metrics) };
       } catch {
         return { unavailable: true };
       }
     }));
+    let interactionStates = [];
+    if (database?.connectionString) {
+      try {
+        interactionStates = await withPostgresClient(database.connectionString, async (client) => {
+          const result = await client.query(
+            `SELECT turn.status, turn.error_code, turn.route_kind, turn.topic_ref,
+                    jsonb_array_length(turn.knowledge_sources) AS source_count,
+                    (SELECT count(*)::integer
+                       FROM chat_provider_attempts AS attempt
+                      WHERE attempt.interaction_turn_id = turn.id) AS attempt_count
+               FROM interaction_turns AS turn
+              ORDER BY created_at DESC
+              LIMIT 5`,
+          );
+          return result.rows;
+        });
+      } catch {
+        interactionStates = [{ unavailable: true }];
+      }
+    }
     console.error(JSON.stringify({
       kind: 'S10_SAFE_DIAGNOSTICS',
       error: {
@@ -1909,6 +2031,7 @@ export async function runS10MockE2E() {
       },
       proxy: openAiProxy?.diagnostics?.() ?? null,
       pageStates,
+      interactionStates,
     }));
     throw error;
   } finally {

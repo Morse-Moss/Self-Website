@@ -217,6 +217,7 @@ export class FailoverAiProvider implements AiProvider {
         let firstProtocolAt: number | null = null;
         let firstModelTextAt: number | null = null;
         let firstUserVisibleAt: number | null = null;
+        let latestUsage: TokenUsage | null = null;
         let terminalRecorded = false;
         const providerDeadline = createProviderDeadline({
           startedAtMs: startedAt,
@@ -265,15 +266,6 @@ export class FailoverAiProvider implements AiProvider {
           errorCode: string | null,
           eventUsage: TokenUsage | null,
         ): Promise<ProviderAttempt> => {
-          await execution.onAttempt({
-            type: status === 'completed' ? 'completed' : status === 'stopped' ? 'aborted' : 'failed',
-            attemptNo,
-            providerAlias: node.alias,
-            durationMs: Date.now() - startedAt,
-            winner: status === 'completed',
-            errorCode,
-            usage: eventUsage,
-          });
           const recorded = createAttempt({
             attemptIndex: attemptNo - 1,
             snapshot: node.snapshot,
@@ -287,6 +279,16 @@ export class FailoverAiProvider implements AiProvider {
             errorCode,
             generationMode: execution.generationMode,
             launchKind,
+          });
+          await execution.onAttempt({
+            type: status === 'completed' ? 'completed' : status === 'stopped' ? 'aborted' : 'failed',
+            attemptNo,
+            providerAlias: node.alias,
+            durationMs: recorded.totalLatencyMs,
+            winner: status === 'completed',
+            errorCode,
+            usage: eventUsage,
+            estimatedCostUsd: recorded.knownCostUsd,
           });
           attempts.push(recorded);
           terminalRecorded = true;
@@ -345,6 +347,7 @@ export class FailoverAiProvider implements AiProvider {
               continue;
             }
 
+            latestUsage = event.usage;
             if (!text.trim()) throw new AnswerExecutionError('PROVIDER_INCOMPLETE');
             if (!execution.acceptCandidate(text, true)) {
               throw new AnswerExecutionError('OUTPUT_GUARD_REJECTED');
@@ -373,7 +376,7 @@ export class FailoverAiProvider implements AiProvider {
           const callerStopped = Boolean(signal?.aborted);
           const guardRejected = error instanceof AnswerExecutionError
             && error.code === 'OUTPUT_GUARD_REJECTED';
-          const errorUsage = error instanceof OpenAIProviderError ? error.usage : null;
+          const errorUsage = error instanceof OpenAIProviderError ? error.usage : latestUsage;
           const errorCode = callerStopped ? null : stableErrorCode(error);
           if (!terminalRecorded) {
             const recorded = await recordTerminal(

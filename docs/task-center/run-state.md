@@ -4,10 +4,18 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**CHAT_V2_DISABLED_FIRST_PRODUCTION_OBSERVED / LIMITED_LAUNCH**
+**CHAT_V2_RESPONSE_RELIABILITY_LOCAL_READY / DEPLOYMENT_PENDING**
 
 ## next_allowed_pointer
-当前生产实例运行 `e56e457`。Chat v2 已按 disabled-first 发布：服务端总开关开启、canary 0%、白名单为空、hedging 与 safe mode 均关闭；生产 `v2_sessions=0`、`chat_provider_attempts=0`，本轮未调用真实 Provider。私密简历保持 `MORSE_RESUME_ENABLED=true`，当前加密文档仍在，未授权文件接口保持 401。下一步只有在单独授权调用数、成本、评审数据和邀请码后，才可创建专用 canary 并开始真实 Provider 20 轮评审；25%、100% 和 24/48 小时观察仍是后续独立门槛。生产硬化余项关闭前不得宣称完整 `ONLINE_READY`。
+当前生产实例仍运行 `e56e457`，Chat v2 保持 disabled-first：总开关开启、canary 0%、白名单为空、hedging 与 safe mode 关闭。回答可靠性增量已在 `codex/chat-v2-release` 达到本地门禁：路由后按需检索、证据相关性准入、串行 `25/40/80/90` 秒共享预算、最多 3 个 attempt、回答直接性/重复守卫和原位等待反馈均通过 focused、PostgreSQL、构建与双宽 Mock E2E；CRITICAL 双审查 PASS。下一步是精确提交并同步本分支与 `master`，按 disabled-first 部署 migration 007 和冻结镜像，完成生产观察后再运行已授权的固定 20 轮真实 Provider 评审；不扩大灰度、不启用 hedging。私密简历与现有 Secrets 不进入评审证据。25%、100% 和 24/48 小时观察仍是后续独立门槛，生产硬化余项关闭前不得宣称完整 `ONLINE_READY`。
+
+## Chat v2 response reliability local closeout (2026-07-23)
+
+- Mode: `CEO / STAGED / CRITICAL / DEPLOYED`; reached: `LOCAL_READY / REVIEW_PASS / REAL_PROVIDER_NOT_RUN`。
+- Scope: 轻量路由、按需 Embedding/RAG、项目证据相关性准入、回答直接性/重复守卫、串行 Provider 共享 deadline、attempt 遥测、原位等待/切换/停止体验、migration 007 和固定 20 轮评审清单。
+- Verification: focused 37/37；`chat:eval` 72/72 且 `externalCalls=0`；fresh PostgreSQL migration 001–007、40 documents / 47 chunks、affected integration 93/93；`npm run build` 30 routes；`visual:s10` 26/26，1440x900 与 390x844、console/page error 0；`git diff --check`、密钥扫描和 debug 扫描 PASS。
+- Review: Compliance PASS；Quality `QSR-01` 与 `QSR-05` delta CLOSED，最终 PASS。
+- Boundary: 未调用真实 Chat/Embedding/Search Provider，未创建或读取邀请码，未读取生产管理员密码、Provider key、私密简历或 raw prompt/answer；未 push、未部署，生产 revision 未改变。
 
 ## Chat v2 disabled-first production release (2026-07-22)
 

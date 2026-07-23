@@ -6,6 +6,8 @@ import {
   S10_SCENARIOS,
   S10_VIEWPORTS,
   cleanupS10Browser,
+  createS10MockAnswer,
+  createSafeChatRequestMetrics,
   createS10Summary,
   validateLoopbackHttpUrl,
 } from '../scripts/s10-chat-smoke.mjs';
@@ -85,6 +87,94 @@ test('S10 summary is deterministic and does not carry credentials', () => {
     screenshots: ['desktop.png', 'mobile.png'],
     viewports: ['1440x900', '390x844'],
   });
+});
+
+test('S10 retry diagnostics expose response status and turn frequency without turn ids', () => {
+  const metrics = createSafeChatRequestMetrics({
+    chatRequestCount: 5,
+    chatResponseStatuses: [200, 503, 200, 200, 200],
+    chatTurnRequestCounts: new Map([
+      ['first-private-turn-id', 1],
+      ['second-private-turn-id', 2],
+      ['third-private-turn-id', 1],
+      ['fourth-private-turn-id', 1],
+    ]),
+  });
+
+  assert.deepEqual(metrics, {
+    chatRequestCount: 5,
+    chatResponseStatuses: [200, 503, 200, 200, 200],
+    turnAttemptDistribution: [1, 1, 1, 2],
+  });
+  assert.doesNotMatch(JSON.stringify(metrics), /private-turn-id/u);
+
+  const source = readFileSync(harnessUrl, 'utf8');
+  assert.match(source, /Network\.responseReceived/u);
+  assert.match(source, /request\.postData/u);
+});
+
+test('S10 mock answer addresses the named project used by retry acceptance', () => {
+  const answer = createS10MockAnswer({
+    currentUserContent: '深度研究系统如何确保报告可信？',
+    citations: '[来源1]',
+    noApprovedEvidence: false,
+  });
+
+  assert.match(answer, /深度研究/u);
+  assert.match(answer, /\[来源1\]/u);
+});
+
+test('S10 mock recruiter starter answers with a named project and capability evidence', () => {
+  const answer = createS10MockAnswer({
+    currentUserContent: '请介绍与岗位最相关的项目和能力证据。',
+    citations: '[来源1]',
+    noApprovedEvidence: false,
+  });
+
+  assert.match(answer, /深度研究/u);
+  assert.match(answer, /RAG/u);
+  assert.match(answer, /质量门/u);
+  assert.match(answer, /\[来源1\]/u);
+});
+
+test('S10 mock search degradation answer never invents a source citation', () => {
+  const answer = createS10MockAnswer({
+    currentUserContent: '请核验 OpenAI API 当前最新官方文档。',
+    citations: '[来源1]',
+    noApprovedEvidence: true,
+    fallbackAnswer: '通用回答。[来源1]',
+  });
+
+  assert.match(answer, /无法核验最新信息/u);
+  assert.doesNotMatch(answer, /\[来源\d+\]/u);
+});
+
+test('S10 mock JD answer addresses requested capabilities without fake citations', () => {
+  const answer = createS10MockAnswer({
+    currentUserContent: '招聘 Agent 系统工程师，要求 RAG 与 PostgreSQL 经验。',
+    citations: '[来源1]',
+    noApprovedEvidence: true,
+    fallbackAnswer: '通用项目回答。[来源1]',
+  });
+
+  assert.match(answer, /Agent/u);
+  assert.match(answer, /RAG/u);
+  assert.match(answer, /PostgreSQL/u);
+  assert.doesNotMatch(answer, /\[来源\d+\]/u);
+});
+
+test('S10 mock diagnosis answer addresses the submitted system constraints', () => {
+  const answer = createS10MockAnswer({
+    currentUserContent: '<diagnosis_fields>现有客服使用 PostgreSQL 与 pgvector，需要形成可追溯闭环。</diagnosis_fields>',
+    citations: '[来源1]',
+    noApprovedEvidence: true,
+    fallbackAnswer: '通用项目回答。[来源1]',
+  });
+
+  assert.match(answer, /PostgreSQL/u);
+  assert.match(answer, /pgvector/u);
+  assert.match(answer, /可追溯/u);
+  assert.doesNotMatch(answer, /\[来源\d+\]/u);
 });
 
 test('S10 harness reuses bounded project infrastructure and never loads local secrets', () => {
@@ -241,8 +331,10 @@ test('S10 proves social isolation, in-place recovery, explicit failure, and roll
     'failover:primary-then-backup',
     'provider-failure:error',
     'provider-failure:no-degraded-result',
+    'retry:enabled',
     'retry:same-assistant',
     'retry:same-user',
+    'mobile:retry-enabled',
     'admin:invite-id-copy',
     'admin:invite-id-clipboard',
     'visitor:no-rollout-id',
@@ -298,16 +390,23 @@ test('source navigation keeps the active chat while project evidence opens separ
   const visitorSource = source.slice(visitorStart, mobileStart);
 
   assert.ok(visitorStart >= 0 && mobileStart > visitorStart);
+  assert.match(source, /const SWITCHING_EVIDENCE_QUERY = '请说明数字摩斯如何保证回答证据可追溯。'/u);
   assert.match(source, /const STATIC_EVIDENCE_QUERY = '深度研究系统如何确保报告可信？'/u);
   assert.match(source, /const SEARCH_EVIDENCE_QUERY = '请查证 Next\.js 当前版本的官方文档与 GitHub 资料。'/u);
   assert.match(source, /seedS10EvidenceFixtures\(database\.connectionString\)/u);
+  assert.match(source, /'project-digital-morse', '数字摩斯', 'digital-morse'/u);
+  assert.match(visitorSource, /setControlledValue\(page, '#morse-message', SWITCHING_EVIDENCE_QUERY\)/u);
   assert.match(visitorSource, /submitChatValue\(page, '#morse-message', STATIC_EVIDENCE_QUERY\)/u);
   assert.match(visitorSource, /submitChatValue\(page, '#morse-message', SEARCH_EVIDENCE_QUERY\)/u);
-  assert.match(visitorSource, /localStaticCount/u);
+  assert.match(visitorSource, /searched\.localSources === 0/u);
+  assert.match(visitorSource, /setAttribute\('data-s10-source-contract', 'local'\)/u);
+  assert.match(visitorSource, /setAttribute\('data-s10-source-contract', 'web'\)/u);
   assert.match(visitorSource, /inlineLocalHref/u);
-  assert.match(visitorSource, /inlineStaticCount/u);
   assert.match(visitorSource, /data-citation-index/u);
-  assert.match(visitorSource, /data-citation-static/u);
+  assert.doesNotMatch(
+    visitorSource,
+    /inlineStaticCount|localStaticCount|source:inline-static-evidence|source:static-evidence/u,
+  );
   assert.match(visitorSource, /localTarget === '_blank'/u);
   assert.match(visitorSource, /localRel\.includes\('noopener'\)/u);
   assert.match(visitorSource, /beforeSourceClick/u);
@@ -513,6 +612,10 @@ test('S10 keeps the mock provider held until stop compensation is durable', () =
   const durableStop = visitorSource.indexOf("'stop:database-compensation'");
   const releaseProvider = visitorSource.indexOf('openAiProxy.releaseHeldResponse()', stopHold);
 
+  assert.match(source, /const STOP_EVIDENCE_QUERY = '一个正在运行的任务应该如何安全停止？'/u);
+  assert.match(visitorSource, /setControlledValue\(page, '#morse-message', STOP_EVIDENCE_QUERY\)/u);
+  assert.match(visitorSource, /WHERE question = \$1 AND status = 'stopped'/u);
+  assert.match(visitorSource, /\[STOP_EVIDENCE_QUERY\]/u);
   assert.ok(
     stopHold >= 0
       && stopHold < stoppedUi

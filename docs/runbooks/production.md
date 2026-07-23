@@ -91,13 +91,15 @@ npm run production:worker
 
 以下步骤每次都先保留当前已观察镜像，记录变更后只重启 Web，并复验 live、ready、公开页面和 v1 会话。真实 Provider 评审、故障注入和扩大流量分别需要明确授权，不能因配置已写入手册而自动执行：
 
+回答可靠性版本的默认时序为：`MORSE_PROVIDER_PROTOCOL_EVENT_TIMEOUT_MS=25000`、`MORSE_PROVIDER_MODEL_TEXT_TIMEOUT_MS=40000`、`MORSE_PROVIDER_STAGE_TIMEOUT_MS=80000`、`MORSE_CHAT_TURN_TIMEOUT_MS=90000`、`MORSE_PROVIDER_MAX_ATTEMPTS=3`。启动时必须满足“协议事件 < 模型正文 <= Provider 阶段 < 完整 turn”，attempt 数必须等于 3。normal、strict 和串行 failover 共用同一个绝对 deadline；切换节点不得重置 80 秒预算，SSE heartbeat 不延长任何 deadline，hedging 在真实输出评审期间保持关闭。
+
 1. 首次发布设置 `MORSE_CHAT_V2_ENABLED=true`、`MORSE_CHAT_V2_CANARY_PERCENT=0`、`MORSE_CHAT_V2_CANARY_INVITE_IDS` 留空、`MORSE_CHAT_HEDGED_FAILOVER_ENABLED=false`、`MORSE_CHAT_SAFE_MODE=false`，先证明没有 Session 进入 v2。
 2. 部署新管理 UI 后创建专用聊天邀请码。一次性明文只保留在当前浏览器内；当场复制后台显示的非敏感灰度 UUID，不能用邀请码明文做白名单。
 3. 把该实际 UUID 直接写入服务器 `.env.production` 的 `MORSE_CHAT_V2_CANARY_INVITE_IDS`，执行不回显值的 UUID 格式检查后只重启 Web；不得使用环境变量占位符、`$` 引用或尖括号占位值代替实际值。
-4. 保持 hedging 关闭，完成已授权的 20 轮真实输出评审；评审通过后再单独启用 hedging 做故障注入，不能把两类成本混在同一批调用中。
+4. 保持 hedging 关闭，完成已授权的固定 20 轮真实输出评审。清单固定为 6 轮自由对话、3 轮通用建议、3 轮身份/项目、3 轮通用技术与个人实现对照、3 轮个人能力证据、2 轮招聘/JD；岗位质量样本必须携带真实测试 JD，无 JD 样本只验证前置门。至少 18/20 通过，且私密信息泄露、虚构个人事实、无 JD 生成适配结论、自由对话错误调用 RAG 均为零容忍。评审只保存 case id、路由/依赖计数、attempt 状态与时延、脱敏评分，不保存 raw prompt、回答或 Provider payload。通过后再单独启用 hedging 做故障注入，不能把两类成本混在同一批调用中。
 5. 白名单验证稳定后，依次设置 `MORSE_CHAT_V2_CANARY_PERCENT=25` 和 `MORSE_CHAT_V2_CANARY_PERCENT=100`，每次只重启 Web 并独立观察错误率、延迟、Provider 尝试数和回答质量。
 6. 人格或证据异常时设置 `MORSE_CHAT_SAFE_MODE=true`，运行时 safe mode 优先于已开启的 hedging；成本异常时只设置 `MORSE_CHAT_HEDGED_FAILOVER_ENABLED=false`；隐私问题时设置 `MORSE_CHAT_ENABLED=false`。每次降级后只重启 Web 并复验，不改数据库。
-7. `005` / `006` 均为 additive migration，不执行 down migration；`006` 只增加并回填非敏感邀请备注快照。旧镜像会忽略 `005` / `006` 的新增列和表，因此上述开关已降级且 live/ready 通过后可切回上一冻结镜像，不删除迁移或数据。
+7. `005` / `006` / `007` 均为 additive migration，不执行 down migration；`006` 只增加并回填非敏感邀请备注快照，`007` 只增加路由锚点、证据分类、attempt 模式与分段延迟字段。旧镜像会忽略这些新增列和表，因此上述开关已降级且 live/ready 通过后可切回上一冻结镜像，不删除迁移或数据。
 
 本节是未来发布合同，不改变“当前生产状态与硬化余项”中的历史事实；在部署 revision、运行配置和真实观察完成前，不得描述为 Chat v2 已上线。
 

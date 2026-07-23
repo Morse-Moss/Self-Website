@@ -3,6 +3,7 @@ import type { Pool, PoolClient } from 'pg';
 import { EMBEDDING_DIMENSIONS, serializeVector } from './embedding.ts';
 import { publicKnowledgeHref } from './public-knowledge.ts';
 import type { ChatRouteDecision } from './chat-route-policy.ts';
+import { matchChatProjectSlugs } from './chat-projects.ts';
 
 export interface KnowledgeSource {
   chunkId: string;
@@ -32,17 +33,30 @@ export function filterRelevantKnowledge(
 export function admitKnowledgeForRoute(
   route: ChatRouteDecision,
   sources: KnowledgeSource[],
+  question?: string,
 ): KnowledgeSource[] {
   const relevant = filterRelevantKnowledge(sources);
   if (route.routeKind === 'jd') {
     return relevant.filter((source) => Boolean(source.projectSlug));
   }
   if (route.routeKind !== 'grounded') return [];
-  if (route.topicKind === 'project' && route.topicRef) {
-    return relevant.filter((source) => source.projectSlug === route.topicRef);
+  if (route.topicKind === 'project') {
+    const namedProjects = question ? matchChatProjectSlugs(question) : [];
+    const projectSlugs = namedProjects.length > 0
+      ? namedProjects
+      : route.topicRef
+        ? [route.topicRef]
+        : [];
+    if (projectSlugs.length > 0) {
+      return relevant.filter((source) => (
+        source.projectSlug !== undefined
+        && projectSlugs.includes(source.projectSlug as (typeof projectSlugs)[number])
+      ));
+    }
   }
-  if (route.topicKind === 'capability' && route.topicRef) {
-    return relevant.filter((source) => source.topicIds?.includes(route.topicRef));
+  const topicRef = route.topicRef;
+  if (route.topicKind === 'capability' && topicRef) {
+    return relevant.filter((source) => source.topicIds?.includes(topicRef));
   }
   return relevant.filter((source) => Boolean(source.projectSlug));
 }

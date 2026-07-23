@@ -54,7 +54,11 @@ import {
 } from './capability-evidence.ts';
 import { resolveChatEvidence } from './chat-evidence.ts';
 import { buildV2SystemInstructions } from './chat-prompt.ts';
-import { inspectChatAnswer } from './chat-output-guard.ts';
+import {
+  inspectChatAnswer,
+  inspectChatAnswerPrefix,
+  inspectTemplateRepetition,
+} from './chat-output-guard.ts';
 import { buildSafeChatAnswer } from './chat-safe-answer.ts';
 import {
   completeInteraction,
@@ -1143,130 +1147,6 @@ async function completeTurn(input: {
   }
 }
 
-async function completeDegradedTurn(input: {
-  pool: Pool;
-  client: PoolClient;
-  accessSessionId: string;
-  turn: TurnContext;
-  answer: string;
-  sources: PublicChatSource[];
-  attempts: ProviderAttempt[];
-  config: ChatServiceConfig;
-  startedAt: Date;
-  completedAt: Date;
-  signal?: AbortSignal;
-}): Promise<TokenUsage | null> {
-  const provider = input.config.providerName ?? 'openai';
-  const model = input.config.model ?? 'configured-model';
-  let commitAttempted = false;
-  let usage: TokenUsage | null = null;
-
-  try {
-    throwIfAborted(input.signal);
-    await input.client.query('BEGIN');
-    const summary = await summarizeProviderAttempts(input.client, input.turn.turnId);
-    const aggregate = aggregateProviderAttempts(input.attempts);
-    usage = summary.attemptCount > 0 ? summary.usage : aggregate.usage;
-    const estimatedCostUsd = summary.estimatedCostUsd
-      ?? (aggregate.costComplete ? aggregate.knownCostUsd : null)
-      ?? (usage && input.config.tokenRates
-        ? estimateCostUsd(usage, input.config.tokenRates)
-        : null);
-
-    if (input.turn.userMessageId !== null) {
-      const deleted = await input.client.query(
-        `DELETE FROM conversation_messages
-          WHERE id = $1
-            AND conversation_id = $2
-            AND role = 'user'`,
-        [input.turn.userMessageId, input.turn.conversationId],
-      );
-      if (deleted.rowCount === 1) {
-        await input.client.query(
-          `UPDATE access_sessions
-              SET message_count = GREATEST(message_count - 1, 0)
-            WHERE id = $1`,
-          [input.accessSessionId],
-        );
-      }
-    }
-
-    if (input.attempts.length > 0) {
-      await replaceProviderAttempts(input.client, input.turn.turnId, input.attempts);
-    }
-    if (usage && estimatedCostUsd !== null) {
-      await input.client.query(
-        `INSERT INTO usage_events
-          (access_session_id, conversation_id, provider, model,
-           input_tokens, output_tokens, estimated_cost_usd, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [
-          input.accessSessionId,
-          input.turn.conversationId,
-          provider,
-          model,
-          usage.inputTokens,
-          usage.outputTokens,
-          estimatedCostUsd,
-          input.completedAt,
-        ],
-      );
-    }
-
-    const terminated = await input.client.query(
-      `UPDATE interaction_turns
-          SET answer = $2,
-              status = 'failed',
-              error_code = 'SAFE_DEGRADED',
-              knowledge_sources = $3::jsonb,
-              input_tokens = $4,
-              output_tokens = $5,
-              estimated_cost_usd = $6,
-              provider = $7,
-              model = $8,
-              latency_ms = $9,
-              completed_at = $10
-        WHERE id = $1 AND status = 'running'`,
-      [
-        input.turn.turnId,
-        input.answer,
-        JSON.stringify(input.sources),
-        usage?.inputTokens ?? null,
-        usage?.outputTokens ?? null,
-        estimatedCostUsd,
-        provider,
-        model,
-        elapsedMilliseconds(input.startedAt, input.completedAt),
-        input.completedAt,
-      ],
-    );
-    if (terminated.rowCount !== 1) throw new Error('Interaction turn is not running.');
-
-    throwIfAborted(input.signal);
-    commitAttempted = true;
-    await input.client.query('COMMIT');
-    return usage;
-  } catch (error) {
-    if (commitAttempted) {
-      const durable = await loadInteraction(input.pool, input.turn.turnId).catch(() => null);
-      if (
-        durable?.status === 'failed'
-        && durable.errorCode === 'SAFE_DEGRADED'
-        && durable.answer === input.answer
-      ) {
-        const attemptsMatch = await providerAttemptsMatch(
-          input.pool,
-          input.turn.turnId,
-          input.attempts,
-        ).catch(() => false);
-        if (attemptsMatch) return usage;
-      }
-    }
-    await input.client.query('ROLLBACK').catch(() => undefined);
-    throw error;
-  }
-}
-
 async function completeDeterministicTurn(input: {
   pool: Pool;
   client: PoolClient;
@@ -1886,6 +1766,7 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
     } else if (v2Route) {
       if (v2Route.requiresEmbedding) yield { type: 'status', stage: 'knowledge' };
       if (v2Route.requiresSearch) yield { type: 'status', stage: 'web' };
+      const activeTurn = turn;
       const resolved = await resolveChatEvidence({
         route: v2Route,
         question: effectiveQuery,
@@ -1925,7 +1806,7 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
           client: lockClient,
           provider: input.searchProvider,
           accessSessionId: input.accessSessionId,
-          turn,
+          turn: activeTurn,
           routingQuestion,
           searchQuery: effectiveQuery,
           localEvidenceSufficient: false,
@@ -1953,9 +1834,8 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
       sources,
     };
 
-    if (v2Route?.routeKind === 'jd_intake') {
+    if (v2Route?.deterministicReply) {
       const deterministicAnswer = v2Route.deterministicReply;
-      if (!deterministicAnswer) throw new Error('JD intake reply is missing.');
       answer = deterministicAnswer;
       yield { type: 'delta', text: deterministicAnswer };
       await completeDeterministicTurn({
@@ -2065,6 +1945,7 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
           yield event;
           continue;
         }
+        if (event.type === 'activity' || event.type === 'switching') continue;
         if (!answer.trim()) {
           await recordDependencyFailure({
             client: lockClient,
@@ -2217,6 +2098,24 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
       providerTimeoutMs: input.config.providerStageTimeoutMs,
       maxAttempts: input.config.providerMaxAttempts,
     });
+    const previousAnswers = turn.messages
+      .filter((message) => message.role === 'assistant')
+      .map((message) => message.content);
+    const inspectCandidate = (candidate: string, complete: boolean) => {
+      const guard = (complete ? inspectChatAnswer : inspectChatAnswerPrefix)({
+        answer: candidate,
+        route: v2Route ?? undefined,
+        intent: v2Route ? undefined : route.intent,
+        workflow: requestWorkflow(input.request),
+        question: routingQuestion,
+        sourceCount: sources.length,
+      });
+      if (!guard.ok || !complete) return guard;
+      return inspectTemplateRepetition({
+        current: candidate,
+        previousAnswers,
+      });
+    };
     answerIterator = runGuardedChatAnswer({
       budget: executionBudget,
       now: () => Date.now(),
@@ -2241,15 +2140,8 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
                 modelTextTimeoutMs: input.config.providerModelTextTimeoutMs,
                 hedgingEnabled: false,
                 delaysMs: [0],
-                acceptCandidate(candidate) {
-                  return inspectChatAnswer({
-                    answer: candidate,
-                    route: v2Route ?? undefined,
-                    intent: v2Route ? undefined : route.intent,
-                    workflow: requestWorkflow(input.request),
-                    question: routingQuestion,
-                    sourceCount: sources.length,
-                  }).ok;
+                acceptCandidate(candidate, complete) {
+                  return inspectCandidate(candidate, complete).ok;
                 },
                 async reserveHedgedAttempt(event) {
                   try {
@@ -2270,21 +2162,11 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
                   }
                 },
                 async onAttempt(event: ProviderAttemptEvent) {
-                  const persistedEvent = event.type === 'completed'
-                    || event.type === 'failed'
-                    || event.type === 'aborted'
-                    ? {
-                        ...event,
-                        estimatedCostUsd: event.usage && input.config.tokenRates
-                          ? estimateCostUsd(event.usage, input.config.tokenRates)
-                          : null,
-                      }
-                    : event;
                   try {
                     await recordProviderAttemptEvent(
                       lockClient,
                       { interactionTurnId: currentTurn.turnId, executionId },
-                      persistedEvent,
+                      event,
                       deleteAfter,
                     );
                   } catch (error) {
@@ -2300,15 +2182,8 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
             : undefined,
         }, input.signal);
       },
-      inspect(candidate) {
-        return inspectChatAnswer({
-          answer: candidate,
-          route: v2Route ?? undefined,
-          intent: v2Route ? undefined : route.intent,
-          workflow: requestWorkflow(input.request),
-          question: routingQuestion,
-          sourceCount: sources.length,
-        });
+      inspect(candidate, complete) {
+        return inspectCandidate(candidate, complete);
       },
     })[Symbol.asyncIterator]();
 

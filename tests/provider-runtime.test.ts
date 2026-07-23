@@ -15,7 +15,7 @@ import {
   type AnswerRequest,
   type ProviderAttempt,
 } from '../lib/server/ai-provider.ts';
-import { runChat } from '../lib/server/chat-service.ts';
+import { runChat, type ChatServiceConfig } from '../lib/server/chat-service.ts';
 import { providerAttemptsMatch } from '../lib/server/interaction-log.ts';
 import { resolveProviderRuntime } from '../lib/server/provider-runtime.ts';
 import { createDisposablePostgresDatabase } from './postgres-test-utils.ts';
@@ -66,6 +66,25 @@ const environmentConfig = {
   providerConcurrency: 4,
 };
 
+const chatServiceConfig: ChatServiceConfig = {
+  maxMessagesPerSession: 2,
+  historyMessageLimit: 12,
+  retrievalLimit: 3,
+  interactionRetentionDays: 10,
+  tokenRates: null,
+  chatV2Enabled: false,
+  chatV2CanaryPercent: 0,
+  chatV2CanaryInviteIds: new Set<string>(),
+  hedgedFailoverEnabled: false,
+  chatSafeMode: false,
+  providerTotalTimeoutMs: 90_000,
+  providerProtocolEventTimeoutMs: 25_000,
+  providerModelTextTimeoutMs: 40_000,
+  providerStageTimeoutMs: 80_000,
+  chatTurnTimeoutMs: 90_000,
+  providerMaxAttempts: 3,
+};
+
 function providerAttempt(input: {
   attemptIndex: number;
   position: number;
@@ -88,11 +107,16 @@ function providerAttempt(input: {
       ? 'PROVIDER_UNAVAILABLE'
       : input.status === 'stopped' ? 'CHAT_STOPPED' : null,
     firstByteLatencyMs: input.status === 'completed' ? 10 : null,
+    firstModelTextMs: null,
+    firstProtocolEventMs: null,
+    firstUserVisibleMs: null,
+    generationMode: 'normal',
     inputUsdPerMillion: input.inputRate,
     knownCostUsd: (
       input.inputTokens * Number(input.inputRate)
       + input.outputTokens * Number(input.outputRate)
     ) / 1_000_000,
+    launchKind: input.position === 0 ? 'primary' : 'failover',
     modelDisplayName: `Model ${input.position}`,
     modelId: `model-${input.position}`,
     modelVersionId: null,
@@ -518,10 +542,7 @@ test('runChat persists routed attempts and per-attempt usage idempotently in one
         turnId,
       },
       config: {
-        maxMessagesPerSession: 2,
-        historyMessageLimit: 12,
-        retrievalLimit: 3,
-        interactionRetentionDays: 10,
+        ...chatServiceConfig,
         tokenRates: { inputUsdPerMillion: 99, outputUsdPerMillion: 99 },
       },
       now: runtimeNow,
@@ -646,10 +667,7 @@ test('runChat persists failed and stopped provider attempts before terminal comp
     const failedSessionId = await createSession('e');
     const stoppedSessionId = await createSession('f');
     const chatConfig = {
-      maxMessagesPerSession: 2,
-      historyMessageLimit: 12,
-      retrievalLimit: 3,
-      interactionRetentionDays: 10,
+      ...chatServiceConfig,
       tokenRates: null,
     };
 
@@ -796,24 +814,17 @@ test('v2 stopped compensation keeps completeness false when an active attempt ha
       provider: new PartiallyObservedStoppedProvider(),
       accessSessionId: sessionId,
       request: {
-        message: 'Stop after partial provider output.',
+        message: '你好，聊聊职场沟通。',
         mode: 'general',
         audienceIntent: 'general',
         conversationId: null,
         turnId,
       },
       config: {
-        maxMessagesPerSession: 2,
-        historyMessageLimit: 12,
-        retrievalLimit: 3,
-        interactionRetentionDays: 10,
+        ...chatServiceConfig,
         tokenRates: { inputUsdPerMillion: 1, outputUsdPerMillion: 2 },
         chatV2Enabled: true,
         chatV2CanaryPercent: 100,
-        chatV2CanaryInviteIds: new Set<string>(),
-        hedgedFailoverEnabled: false,
-        chatSafeMode: false,
-        providerTotalTimeoutMs: 90_000,
       },
       now: runtimeNow,
       signal: controller.signal,
