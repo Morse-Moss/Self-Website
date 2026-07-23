@@ -33,6 +33,33 @@ test('Docker Compose remains direct and points to public projects', () => {
   assert.equal(result.boundaryText, null);
 });
 
+test('sanitized resume facts provide direct evidence for Claude Code and Codex without promoting Cursor', () => {
+  const results = assessCapabilities(
+    '你使用过 Cursor、Claude Code 和 Codex 吗？',
+    compileCapabilityLedger(siteContent, chatCapabilityPolicy),
+  );
+
+  assert.equal(results.find((result) => result.capabilityId === 'claude-code')?.evidenceClass, 'direct');
+  assert.equal(results.find((result) => result.capabilityId === 'codex')?.evidenceClass, 'direct');
+  assert.equal(results.find((result) => result.capabilityId === 'cursor')?.evidenceClass, 'none');
+  assert.match(
+    results.find((result) => result.capabilityId === 'claude-code')?.direct[0]?.sourceText ?? '',
+    /Claude Code.*Codex/,
+  );
+});
+
+test('CC shorthand resolves to the same direct Claude Code resume evidence', () => {
+  const results = assessCapabilities(
+    '你用过 CC 和 codex 吗？',
+    compileCapabilityLedger(siteContent, chatCapabilityPolicy),
+  );
+
+  assert.deepEqual(
+    results.map((result) => [result.capabilityId, result.evidenceClass]),
+    [['claude-code', 'direct'], ['codex', 'direct']],
+  );
+});
+
 test('unknown capability has no personal evidence', () => {
   const result = assessCapability(
     '你有 Nomad 生产经验吗？',

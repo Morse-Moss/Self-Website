@@ -6,6 +6,7 @@ import type {
 import type { NormalizedChatRequest } from './chat-core.ts';
 import {
   assessCapability,
+  assessCapabilities,
   type CapabilityLedger,
 } from './capability-evidence.ts';
 import { looksLikeFullJobDescription } from './chat-behavior.ts';
@@ -212,7 +213,10 @@ export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
     });
   }
   if (isExplicitPersonalFact(message)) {
-    const capability = assessCapability(message, input.ledger);
+    const capabilities = assessCapabilities(message, input.ledger);
+    const capability = capabilities.find((candidate) => candidate.evidenceClass !== 'none')
+      ?? capabilities[0]
+      ?? assessCapability(message, input.ledger);
     return decision({
       routeKind: 'personal_fact',
       reasonCode: capability.capabilityId ? 'personal_capability_query' : 'personal_history_query',

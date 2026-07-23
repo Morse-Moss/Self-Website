@@ -39,6 +39,7 @@ export interface ChatGuardInput {
   workflow: ChatWorkflow;
   question: string;
   sourceCount: number;
+  hasResumeEvidence?: boolean;
 }
 
 type ReasonSet = Set<ChatGuardReason>;
@@ -79,10 +80,11 @@ function validateRecruitmentLanguage(input: ChatGuardInput, reasons: ReasonSet):
   if (/匹配(?:度|率)?\s*[:：]?\s*\d{1,3}(?:\.\d+)?%/iu.test(input.answer)) {
     reasons.add('match_percentage');
   }
-  if (
+  const gapRequested = /缺口|不匹配|不足|哪些.*(?:没有|不会|不具备)/iu.test(input.question);
+  if (!gapRequested && (
     /缺口清单|明显不匹配|无法声称具备|仍需补充/iu.test(input.answer)
     || /缺少[^。\n]*(?:、|，|,|和)[^。\n]*(?:、|，|,|和)/iu.test(input.answer)
-  ) {
+  )) {
     reasons.add('unsolicited_gap_list');
   }
 
@@ -92,6 +94,29 @@ function validateRecruitmentLanguage(input: ChatGuardInput, reasons: ReasonSet):
     || input.workflow === 'jd_match'
     || /是否|有没有|做过|熟悉/iu.test(input.question);
   if (confirmations > 0 && !confirmationAllowed) reasons.add('unsolicited_gap_list');
+}
+
+function validateUnsolicitedBoundaries(input: ChatGuardInput, reasons: ReasonSet): void {
+  const boundaryHeading = /(?:目前|当前)?(?:个人)?(?:事实|能力|证据)的边界/iu.test(input.answer);
+  const boundaryLanguagePattern = /没有(?:公开)?证据(?:显示|证明)|不能(?:据此)?确认|不能证明|无法确认|未能确认/iu;
+  const boundaryLanguage = boundaryLanguagePattern.test(input.answer);
+  const boundaryQuestion = /边界|缺口|不足|不匹配|不能证明|没有证据|没做过|不会/iu.test(input.question);
+  const personalFactQuestion = /是否|有没有|用过|做过|负责过|参与过|具备|熟悉|经验|经历/iu.test(input.question);
+  if ((boundaryHeading || (boundaryLanguage && !personalFactQuestion)) && !boundaryQuestion) {
+    reasons.add('unsolicited_gap_list');
+  }
+  if (!personalFactQuestion || boundaryQuestion) return;
+  const requestedCapabilities = chatCapabilityPolicy.canonical.filter((capability) => (
+    capability.aliases.some((alias) => containsCapabilityAlias(input.question, alias))
+  ));
+  if (requestedCapabilities.length === 0) return;
+  const unrelatedBoundary = input.answer
+    .split(/[。；;！？!?\n]+/u)
+    .filter((clause) => boundaryLanguagePattern.test(clause))
+    .some((clause) => !requestedCapabilities.some((capability) => (
+      capability.aliases.some((alias) => containsCapabilityAlias(clause, alias))
+    )));
+  if (unrelatedBoundary) reasons.add('unsolicited_gap_list');
 }
 
 function validateNextStep(input: ChatGuardInput, reasons: ReasonSet): void {
@@ -200,7 +225,7 @@ function validateDirectAnswer(input: ChatGuardInput, reasons: ReasonSet): void {
 
   if (kind === 'jd') {
     const addressesRole = requestedCapabilities.length > 0
-      ? requestedCapabilities.every((capability) => (
+      ? requestedCapabilities.some((capability) => (
         capability.aliases.some((alias) => containsCapabilityAlias(input.answer, alias))
       ))
       : /\bjd\b|岗位|职位|职责|任职|要求/iu.test(input.answer);
@@ -238,6 +263,15 @@ function validatePersonalFact(input: ChatGuardInput, reasons: ReasonSet, complet
   if (route?.routeKind !== 'personal_fact' || route.topicKind !== 'capability' || !route.topicRef) return;
   const policy = chatCapabilityPolicy.canonical.find((entry) => entry.id === route.topicRef);
   const aliases = policy?.aliases ?? [route.topicRef];
+  const requestedCapabilities = chatCapabilityPolicy.canonical.filter((capability) => (
+    capability.aliases.some((alias) => containsCapabilityAlias(input.question, alias))
+  ));
+  if (requestedCapabilities.some((capability) => (
+    !capability.aliases.some((alias) => containsCapabilityAlias(input.answer, alias))
+  ))) {
+    reasons.add('answer_not_direct');
+    return;
+  }
   const mentionsCapability = aliases.some((alias) => containsCapabilityAlias(input.answer, alias));
   if (!mentionsCapability) {
     reasons.add('answer_not_direct');
@@ -246,6 +280,7 @@ function validatePersonalFact(input: ChatGuardInput, reasons: ReasonSet, complet
   if (
     route.evidenceClass === 'direct'
     && input.sourceCount > 0
+    && !input.hasResumeEvidence
     && matchChatProjectSlugs(input.answer).length === 0
   ) {
     reasons.add('answer_not_direct');
@@ -272,6 +307,7 @@ function inspect(input: ChatGuardInput, complete: boolean): ChatGuardResult {
   const reasons: ReasonSet = new Set();
   validateCitations(input, reasons, complete);
   validateRecruitmentLanguage(input, reasons);
+  validateUnsolicitedBoundaries(input, reasons);
   validateNextStep(input, reasons);
   validateVoice(input, reasons);
   validateRouteFormat(input, reasons);

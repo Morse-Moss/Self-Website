@@ -79,28 +79,28 @@ test('conversation prompt makes realtime personal-state questions keep the digit
   }
 });
 
-test('personal fact prompt keeps evidence classes internal and asks for natural wording', () => {
+test('personal fact prompt answers only what was asked and never turns missing retrieval into denial', () => {
   const prompt = buildV2SystemInstructions({
     route: unavailablePersonalFactRoute(),
     question: '你以前怎么处理同事冲突？',
     sources: [],
   });
 
-  assert.match(prompt, /内部证据类别/);
-  assert.match(prompt, /不向用户展示.*(?:标签|等级|评分)/);
-  assert.match(prompt, /自然语言/);
-  assert.match(prompt, /直接证据.*公开项目/);
+  assert.match(prompt, /只回答用户明确询问的个人事实/);
+  assert.match(prompt, /未检索到事实不等于从未做过/);
+  assert.doesNotMatch(prompt, /主动罗列.*边界|逐项.*缺失/);
 });
 
-test('JD prompt requires every recognized capability requirement to be addressed', () => {
+test('JD prompt focuses on evidence-backed matches without forcing every gap into the answer', () => {
   const prompt = buildV2SystemInstructions({
     route: jdRoute(),
     question: '熟悉 PostgreSQL、Docker Compose；有 Kubernetes 生产经验优先。',
     sources: [],
   });
 
-  assert.match(prompt, /已识别.*(?:要求|能力项).*(?:逐项|遗漏)/);
-  assert.match(prompt, /Kubernetes.*Docker Compose.*PostgreSQL/);
+  assert.match(prompt, /只展开 JD 中有直接证据的匹配项/);
+  assert.match(prompt, /没有直接证据的能力不要主动列成缺口/);
+  assert.doesNotMatch(prompt, /必须逐项回应|不得遗漏/);
 });
 
 test('JD prompt does not invent RAG from an English word boundary', () => {

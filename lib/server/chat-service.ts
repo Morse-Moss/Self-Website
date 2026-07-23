@@ -1720,6 +1720,7 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
     let knowledge: KnowledgeSource[] = [];
     let search: SearchResponse | undefined;
     let capability: CapabilityAssessment | null = null;
+    let capabilities: CapabilityAssessment[] = [];
     if (turn.behavior === 'safe') {
       knowledge = approvedSafeKnowledge(route.intent);
     } else if (turn.behavior === 'v1') {
@@ -1820,6 +1821,7 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
       knowledge = resolved.knowledge;
       search = resolved.search;
       capability = resolved.capability;
+      capabilities = resolved.capabilities ?? [];
     }
     const localSources = toLocalPublicSources(knowledge);
     sources = [
@@ -1883,6 +1885,7 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
             sources: knowledge,
             search,
             capability: capability ?? undefined,
+            capabilities,
           }),
       workflowSystemBoundary(input.request, turn.diagnosis),
     ].filter(Boolean).join('\n\n');
@@ -2111,6 +2114,7 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
         workflow: requestWorkflow(input.request),
         question: routingQuestion,
         sourceCount: sources.length,
+        hasResumeEvidence: knowledge.some((source) => source.documentId === 'resume-facts'),
       });
       if (!guard.ok || !complete) return guard;
       return inspectTemplateRepetition({

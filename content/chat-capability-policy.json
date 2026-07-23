@@ -25,6 +25,46 @@
       "id": "rag",
       "label": "RAG",
       "aliases": ["RAG", "检索增强生成"]
+    },
+    {
+      "id": "claude-code",
+      "label": "Claude Code",
+      "aliases": ["Claude Code", "CC"]
+    },
+    {
+      "id": "codex",
+      "label": "Codex",
+      "aliases": ["Codex"]
+    },
+    {
+      "id": "workbuddy",
+      "label": "WorkBuddy",
+      "aliases": ["WorkBuddy"]
+    },
+    {
+      "id": "cursor",
+      "label": "Cursor",
+      "aliases": ["Cursor"]
+    },
+    {
+      "id": "react",
+      "label": "React",
+      "aliases": ["React"]
+    },
+    {
+      "id": "typescript",
+      "label": "TypeScript",
+      "aliases": ["TypeScript"]
+    },
+    {
+      "id": "fastapi",
+      "label": "FastAPI",
+      "aliases": ["FastAPI"]
+    },
+    {
+      "id": "java",
+      "label": "Java",
+      "aliases": ["Java"]
     }
   ],
   "transferRules": [

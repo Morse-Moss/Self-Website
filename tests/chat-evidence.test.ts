@@ -112,7 +112,25 @@ test('personal capability never uses web and exposes only ledger-backed project 
   assert.equal(result.capability?.evidenceClass, 'transferable');
   assert.equal(result.search, undefined);
   assert.ok(result.knowledge.length > 0);
-  assert.ok(result.knowledge.every((source) => source.documentId.startsWith('project-')));
+  assert.ok(result.knowledge.every((source) => source.documentId.startsWith('project-') || source.documentId === 'resume-facts'));
+  assert.deepEqual(calls.counts(), { embed: 0, retrieve: 0, search: 0 });
+});
+
+test('personal capability evidence resolves every named resume-backed tool', async () => {
+  const calls = input(route('personal_fact', {
+    topicKind: 'capability',
+    topicRef: 'claude-code',
+    evidenceClass: 'direct',
+    release: 'complete',
+  }), '你使用过 Cursor、Claude Code 和 Codex 吗？');
+  const result = await resolveChatEvidence(calls);
+
+  assert.equal(result.capabilities?.length, 3);
+  assert.deepEqual(
+    result.capabilities?.map((item) => [item.capabilityId, item.evidenceClass]),
+    [['cursor', 'none'], ['claude-code', 'direct'], ['codex', 'direct']],
+  );
+  assert.ok(result.knowledge.some((source) => source.documentId === 'resume-facts'));
   assert.deepEqual(calls.counts(), { embed: 0, retrieve: 0, search: 0 });
 });
 

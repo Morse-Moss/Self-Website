@@ -27,10 +27,10 @@ export interface CapabilityPolicy {
 export interface CapabilityEvidenceRef {
   capabilityId: string;
   label: string;
-  projectSlug: ProjectSlug;
+  projectSlug: ProjectSlug | null;
   projectName: string;
   disclosure: ProjectDisclosure;
-  sourceKind: 'capability' | 'tech_stack';
+  sourceKind: 'capability' | 'tech_stack' | 'resume_fact';
   sourceText: string;
 }
 
@@ -141,6 +141,25 @@ export function compileCapabilityLedger(
     }
   }
 
+  for (const fact of content.profile.resumeFacts ?? []) {
+    if (!fact.id.trim() || !fact.title.trim() || !fact.content.trim()) {
+      invalidPolicy('invalid resume fact ' + fact.id);
+    }
+    for (const capabilityId of fact.capabilityIds) {
+      const entry = entries.get(capabilityId);
+      if (!entry) invalidPolicy('resume fact ' + fact.id + ' references unknown capability ' + capabilityId);
+      entry.direct.push({
+        capabilityId,
+        label: entry.label,
+        projectSlug: null,
+        projectName: fact.title,
+        disclosure: 'internal-redacted',
+        sourceKind: 'resume_fact',
+        sourceText: fact.content,
+      });
+    }
+  }
+
   for (const rule of policy.transferRules) {
     if (!entries.has(rule.target)) invalidPolicy(`unknown transfer target ${rule.target}`);
     if (rule.from.length === 0 || !rule.allowedWording.trim()) {
@@ -232,14 +251,19 @@ export function assessCapabilities(
   question: string,
   ledger: CapabilityLedger,
 ): CapabilityAssessment[] {
+  const normalizedQuestion = normalize(question);
+  const matches = ledger.aliases
+    .filter((alias) => containsCapabilityAlias(question, alias.normalized))
+    .map((alias) => ({
+      ...alias,
+      position: normalizedQuestion.indexOf(alias.normalized),
+    }))
+    .sort((left, right) => (
+      left.position - right.position || right.normalized.length - left.normalized.length
+    ));
   const capabilityIds: string[] = [];
-  for (const alias of ledger.aliases) {
-    if (
-      containsCapabilityAlias(question, alias.normalized)
-      && !capabilityIds.includes(alias.capabilityId)
-    ) {
-      capabilityIds.push(alias.capabilityId);
-    }
+  for (const match of matches) {
+    if (!capabilityIds.includes(match.capabilityId)) capabilityIds.push(match.capabilityId);
   }
   return capabilityIds.map((capabilityId) => assessLedgerEntry(capabilityId, ledger));
 }

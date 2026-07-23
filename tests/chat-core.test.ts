@@ -199,6 +199,29 @@ test('v2 instructions compose persona, evidence policy, and escaped approved evi
   );
 });
 
+test('personal fact instructions do not force an evidence-boundary monologue', () => {
+  const instructions = buildV2SystemInstructions({
+    route: {
+      routeKind: 'personal_fact',
+      reasonCode: 'personal_capability_query',
+      topicKind: 'capability',
+      topicRef: 'claude-code',
+      evidenceClass: 'direct',
+      inheritedFromTurnId: null,
+      release: 'complete',
+      requiresEmbedding: false,
+      requiresSearch: false,
+      deterministicReply: null,
+    },
+    question: '你使用过 Claude Code 和 Codex 吗？',
+    sources: [source],
+  });
+
+  assert.match(instructions, /只回答用户明确询问的个人事实/);
+  assert.match(instructions, /未检索到事实不等于从未做过/);
+  assert.doesNotMatch(instructions, /主动列出缺失能力|目前证据的边界/);
+});
+
 test('strict v2 instructions add one regeneration constraint without changing evidence', () => {
   const normal = buildV2SystemInstructions({ intent: 'project', sources: [source] });
   const strict = buildV2SystemInstructions({ intent: 'project', sources: [source], strict: true });

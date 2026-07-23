@@ -109,6 +109,13 @@ export type ProfileCapability = {
   description: string;
 };
 
+export type PublicResumeFact = {
+  id: string;
+  title: string;
+  content: string;
+  capabilityIds: string[];
+};
+
 export type SiteContent = {
   site: {
     name: string;
@@ -132,6 +139,7 @@ export type SiteContent = {
     capabilities: string[];
     capabilityMatrix: ProfileCapability[];
     principles: string[];
+    resumeFacts?: PublicResumeFact[];
   };
   home: { worksIntro: string; featuredSlugs: ProjectSlug[] };
   works: { title: string };

@@ -9,6 +9,14 @@
 ## next_allowed_pointer
 当前生产实例运行 `74be589`。固定 20 轮真实 Provider 评审保留原始 `15/20`，五个失败 case 的定向回归全部通过；回答相关性修正版已按 canary 0 发布并完成生产观察。现有非空白名单保留但未回显，hedging 与 safe mode 关闭，历史 Provider attempt 计数保持 36，active v2 Session 为 0。migration 007、生产知识 40 documents / 47 chunks、公网 live/ready/health/pages、未授权 401、release smoke 和近期错误日志均通过。本里程碑已收口；25%、100%、hedging 故障注入和 24/48 小时观察均为后续独立授权门槛，生产硬化余项关闭前不得宣称完整 `ONLINE_READY`。
 
+## Chat v2 脱敏简历事实与主动边界修正（本地，2026-07-23）
+
+- 根因：个人事实路由只读取由项目 `capabilities/techStack` 编译的能力台账，首页虽然公开了 Claude Code 与 Codex，台账却没有对应 direct 引用；系统把“未命中”错误表达成“没有使用经历”。旧 JD/人格提示又要求主动说明缺失项，叠加后生成了“目前证据的边界”式负面段落。
+- 修正：从已批准简历成品提取公司/客户/学校/联系方式均已泛化的 `profile.resumeFacts`，新增独立 `resume-facts` 公开知识文档；Claude Code/CC、Codex、WorkBuddy 进入 direct 台账，Cursor 保持 none。多能力个人问题一次解析全部被问项，不再只看第一项。
+- 对话规则：未检索到只代表当前公开材料未提供，不等于从未做过；普通项目与 JD 回答只展开匹配项，不主动列边界或缺口。只有访客明确追问某一项能力时，才简短说明该项边界；输出守卫拒绝未被询问的“证据边界”段落。
+- 本地证据：受影响核心测试 `103/103`，站点/人格/私密简历隔离补充测试 `44/44`，`npm run build` 通过；脱敏扫描未发现真实公司、学校或精确任职日期进入公开知识。
+- 发布边界：本节只记录本地完成状态；生产仍为 `74be589`，知识库尚未重新 ingest，本轮未 push、未部署、未调用真实 Provider。发布后生产知识文档数将增加 1，需单独执行 ingest 与受控真实对话验收。
+
 ## Chat v2 answer relevance correction production release (2026-07-23)
 
 - Mode: `CEO / STAGED / CRITICAL / DEPLOYED`; reached: `PRODUCTION_OBSERVED / CANARY_0`。

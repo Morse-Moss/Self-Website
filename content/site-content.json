@@ -55,6 +55,32 @@
       "先定义事实与安全边界，再让 AI 加速。",
       "把重复工作沉淀为可检查、可恢复的流程。",
       "用测试、运行证据和人工验收约束完成状态。"
+    ],
+    "resumeFacts": [
+      {
+        "id": "ai-application-role",
+        "title": "AI 应用工程经历（公司信息已脱敏）",
+        "content": "在 AI 应用团队对接内容创作、自动运营和外贸获客需求，把业务问题整理成 SOP、产品流程和 Agent 工作流；独立完成前后端开发、测试、部署上线与持续维护。搭建并维护企业内部 LLM 中转，整合 Claude 模型与多个上游渠道，供团队统一调用。使用 Claude Code、Codex、WorkBuddy 完成开发、代码检查、测试、部署和上线维护，覆盖内容创作与自动运营系统。",
+        "capabilityIds": ["claude-code", "codex", "workbuddy"]
+      },
+      {
+        "id": "ai-leadgen-mvp",
+        "title": "AI 外贸获客系统本地 MVP（项目与公司信息已脱敏）",
+        "content": "为外贸销售开发线索工具，覆盖企业信息收集、官网与联系方式补全、AI 价值评分、线索认领及邮件往来同步；独立完成前后端、数据模型和 AI 评分，验证线索入池、信息补全、认领、发信和回信同步的完整链路。",
+        "capabilityIds": ["react", "typescript", "fastapi"]
+      },
+      {
+        "id": "auto-operations-role",
+        "title": "自动运营 Agent 系统（客户与公司信息已脱敏）",
+        "content": "根据运营流程开发内容库、AI 改写、图片处理、发布前检查和人工确认功能，负责平台接入、模型选择、定时任务、账号与数据隔离、异常排查和 Docker 部署上线；项目已完成外部客户试点链路验证。",
+        "capabilityIds": ["react", "typescript", "fastapi", "docker"]
+      },
+      {
+        "id": "internal-tool-role",
+        "title": "内部工具开发经历（公司信息已脱敏）",
+        "content": "使用 Java 开发内部工具，完成 CSV/SQL 数据整理与查询、数据库连接配置和查询优化，并通过 Git 配合团队交付。",
+        "capabilityIds": ["java"]
+      }
     ]
   },
   "home": {

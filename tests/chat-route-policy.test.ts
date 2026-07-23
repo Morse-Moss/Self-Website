@@ -198,6 +198,18 @@ test('personal history without public evidence stays unavailable', () => {
   assert.equal(decision.requiresSearch, false);
 });
 
+test('resume-backed AI coding tools route as direct personal facts', () => {
+  const decision = routeChatTurn({
+    request: request('你用过 CC 和 Codex 吗？'),
+    ledger,
+  });
+
+  assert.equal(decision.routeKind, 'personal_fact');
+  assert.equal(decision.topicRef, 'claude-code');
+  assert.equal(decision.evidenceClass, 'direct');
+  assert.equal(decision.requiresEmbedding, false);
+});
+
 test('portfolio evidence questions enter grounded retrieval without requiring a named project', () => {
   for (const message of [
     '从招聘方视角，哪些项目最能证明 Agent 系统开发能力？',

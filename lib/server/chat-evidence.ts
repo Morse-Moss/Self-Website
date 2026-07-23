@@ -1,7 +1,6 @@
 import type { ChatRouteDecision } from './chat-route-policy.ts';
 import { chatProjectReferences } from './chat-projects.ts';
 import {
-  assessCapability,
   assessCapabilities,
   type CapabilityAssessment,
   type CapabilityEvidenceRef,
@@ -15,6 +14,7 @@ import type { SearchResponse } from './search-provider.ts';
 
 export interface ResolvedChatEvidence {
   capability: CapabilityAssessment | null;
+  capabilities?: CapabilityAssessment[];
   knowledge: KnowledgeSource[];
   search: SearchResponse | undefined;
 }
@@ -34,17 +34,19 @@ function emptyEvidence(): ResolvedChatEvidence {
 }
 
 function ledgerSource(reference: CapabilityEvidenceRef): KnowledgeSource {
-  const documentId = `project-${reference.projectSlug}`;
+  const documentId = reference.projectSlug ? `project-${reference.projectSlug}` : 'resume-facts';
   return {
     chunkId: `${documentId}:ledger:${reference.capabilityId}`,
     documentId,
     title: reference.projectName,
-    sourcePath: `content/site-content.json#projects.${reference.projectSlug}`,
-    href: `/works#${reference.projectSlug}`,
+    sourcePath: reference.projectSlug
+      ? `content/site-content.json#projects.${reference.projectSlug}`
+      : 'content/site-content.json#profile.resumeFacts',
+    href: reference.projectSlug ? `/works#${reference.projectSlug}` : '/',
     content: `${reference.label}：${reference.sourceText}`,
     score: 1,
     projectSlug: reference.projectSlug,
-    topicIds: [reference.capabilityId],
+    topicIds: [reference.capabilityId, ...(reference.projectSlug ? [] : ['resume'])],
   };
 }
 
@@ -67,7 +69,8 @@ function jdCapabilityKnowledge(question: string, ledger: CapabilityLedger): Know
     const references = [...assessment.direct, ...assessment.transferable];
     for (const reference of references) {
       const source = ledgerSource(reference);
-      const group = grouped.get(reference.projectSlug) ?? {
+      const groupKey = reference.projectSlug ?? 'resume-facts';
+      const group = grouped.get(groupKey) ?? {
         source: { ...source, chunkId: `${source.documentId}:ledger:jd` },
         content: new Set<string>(),
         topicIds: new Set<string>(),
@@ -75,10 +78,10 @@ function jdCapabilityKnowledge(question: string, ledger: CapabilityLedger): Know
       group.content.add(source.content);
       group.topicIds.add(reference.capabilityId);
       if (assessment.capabilityId) group.topicIds.add(assessment.capabilityId);
-      grouped.set(reference.projectSlug, group);
+      grouped.set(groupKey, group);
     }
     if (assessment.boundaryText && references[0] && assessment.label) {
-      grouped.get(references[0].projectSlug)?.content.add(
+      grouped.get(references[0].projectSlug ?? 'resume-facts')?.content.add(
         `${assessment.label}：${assessment.boundaryText}`,
       );
     }
@@ -151,10 +154,18 @@ export async function resolveChatEvidence(
         search: await input.search(),
       };
     case 'personal_fact': {
-      const capability = assessCapability(input.question, input.ledger);
+      const capabilities = assessCapabilities(input.question, input.ledger);
+      const capability = capabilities[0] ?? null;
+      const knowledge = new Map<string, KnowledgeSource>();
+      for (const assessment of capabilities) {
+        for (const source of capabilityKnowledge(assessment)) {
+          knowledge.set(`${source.documentId}:${source.topicIds?.join(',')}`, source);
+        }
+      }
       return {
         capability,
-        knowledge: capabilityKnowledge(capability),
+        capabilities,
+        knowledge: [...knowledge.values()],
         search: undefined,
       };
     }

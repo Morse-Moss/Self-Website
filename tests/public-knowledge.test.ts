@@ -44,6 +44,11 @@ test('extractPublicKnowledge produces the approved site-content and project topi
     [
       { id: 'about', sourcePath: 'content/site-content.json#profile', href: '/' },
       {
+        id: 'resume-facts',
+        sourcePath: 'content/site-content.json#profile.resumeFacts',
+        href: '/',
+      },
+      {
         id: 'project-content-agent',
         sourcePath: 'content/site-content.json#projects.content-agent',
         href: '/works#content-agent',
@@ -227,6 +232,21 @@ test('extractPublicKnowledge limits profile and project content to approved fiel
       ].join('\n\n'),
     );
   }
+});
+
+test('extracts only sanitized resume facts into a dedicated knowledge document', () => {
+  const documents = extractPublicKnowledge(loadSiteContent());
+  const resume = documents.find((document) => document.id === 'resume-facts');
+
+  assert.ok(resume);
+  assert.equal(resume.sourcePath, 'content/site-content.json#profile.resumeFacts');
+  assert.match(resume.content, /Claude Code/);
+  assert.match(resume.content, /Codex/);
+  assert.match(resume.content, /公司信息已脱敏/);
+  assert.doesNotMatch(
+    JSON.stringify(resume),
+    /@|\+?\d[\d\s-]{7,}|身份证|住址|手机号|邮箱地址/iu,
+  );
 });
 
 test('extractPublicKnowledge ignores private resume-shaped fields', () => {

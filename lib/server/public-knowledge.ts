@@ -22,6 +22,12 @@ interface SiteContent {
     role?: string;
     summary?: string;
     principles?: string[];
+    resumeFacts?: Array<{
+      id?: string;
+      title?: string;
+      content?: string;
+      capabilityIds?: string[];
+    }>;
   };
   projects?: Array<{
     slug?: string;
@@ -122,7 +128,7 @@ function projectDetailParts(
 }
 
 export function publicKnowledgeHref(documentId: string): string {
-  if (documentId === 'about' || documentId.startsWith('faq-')) return '/';
+  if (documentId === 'about' || documentId === 'resume-facts' || documentId.startsWith('faq-')) return '/';
   if (documentId.startsWith('project-')) {
     const projectId = documentId.slice('project-'.length);
     const slug = publicProjectSlugs.find(
@@ -157,6 +163,27 @@ export function extractPublicKnowledge(content: SiteContent): PublicKnowledgeDoc
         topicIds: ['identity'],
       });
     }
+  }
+
+  const resumeFacts = (content.profile?.resumeFacts ?? []).filter((fact) => (
+    Boolean(fact.id?.trim() && fact.title?.trim() && fact.content?.trim())
+  ));
+  if (resumeFacts.length > 0) {
+    documents.push({
+      id: 'resume-facts',
+      title: '脱敏职业事实',
+      sourcePath: 'content/site-content.json#profile.resumeFacts',
+      href: publicKnowledgeHref('resume-facts'),
+      projectSlug: null,
+      topicIds: [
+        'resume',
+        ...new Set(resumeFacts.flatMap((fact) => fact.capabilityIds ?? [])),
+      ],
+      content: joinParts([
+        '脱敏职业事实（公开知识库）',
+        ...resumeFacts.map((fact) => fact.title + '\n' + fact.content),
+      ]),
+    });
   }
 
   for (const project of content.projects ?? []) {

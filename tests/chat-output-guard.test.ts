@@ -140,6 +140,57 @@ test('direct capability evidence must name a supporting public project', () => {
   assert.equal(grounded.ok, true);
 });
 
+test('resume-backed direct capability evidence may answer naturally without naming a project', () => {
+  const result = inspectChatAnswer({
+    answer: '用过 Claude Code 和 Codex，主要用于前后端开发、测试、部署和上线维护。[来源1]',
+    route: personalFactRoute('claude-code', 'direct'),
+    workflow: 'chat',
+    question: '你使用过 Claude Code 和 Codex 吗？',
+    sourceCount: 1,
+    hasResumeEvidence: true,
+  });
+
+  assert.equal(result.ok, true);
+});
+
+test('a multi-tool personal fact answer must address every explicitly named tool', () => {
+  const result = inspectChatAnswer({
+    answer: '用过 Claude Code，主要用于开发和测试。[来源1]',
+    route: personalFactRoute('claude-code', 'direct'),
+    workflow: 'chat',
+    question: '你使用过 Cursor、Claude Code 和 Codex 吗？',
+    sourceCount: 1,
+    hasResumeEvidence: true,
+  });
+
+  assert.ok(result.reasons.includes('answer_not_direct'));
+});
+
+test('a direct tool question cannot smuggle in unrelated personal boundaries', () => {
+  const result = inspectChatAnswer({
+    answer: 'Claude Code 和 Codex 都用过；Cursor 暂未能确认。不能证明我主导过用户访谈。[来源1]',
+    route: personalFactRoute('claude-code', 'direct'),
+    workflow: 'chat',
+    question: '你使用过 Cursor、Claude Code 和 Codex 吗？',
+    sourceCount: 1,
+    hasResumeEvidence: true,
+  });
+
+  assert.ok(result.reasons.includes('unsolicited_gap_list'));
+});
+
+test('unasked personal boundaries are rejected instead of being volunteered', () => {
+  const result = inspectChatAnswer({
+    answer: '目前证据的边界：没有证据显示我做过用户访谈、量化反馈分析或使用过 Cursor。',
+    route: groundedRoute(),
+    workflow: 'chat',
+    question: '介绍一下你做过的项目。',
+    sourceCount: 1,
+  });
+
+  assert.ok(result.reasons.includes('unsolicited_gap_list'));
+});
+
 test('transferable evidence cannot be upgraded to direct experience', () => {
   const result = inspectChatAnswer({
     answer: '我有 Kubernetes 生产实战经验。[来源1]',
@@ -262,7 +313,7 @@ test('JD answers cannot pass by repeating only the role label', () => {
   assert.ok(result.reasons.includes('answer_not_direct'));
 });
 
-test('JD answers must address every recognized capability requirement', () => {
+test('JD answers may focus on matched capabilities without volunteering a complete gap list', () => {
   const route = groundedRoute({
     routeKind: 'jd',
     reasonCode: 'explicit_jd_workflow',
@@ -287,7 +338,7 @@ test('JD answers must address every recognized capability requirement', () => {
     sourceCount: 0,
   });
 
-  assert.ok(omitted.reasons.includes('answer_not_direct'));
+  assert.equal(omitted.ok, true);
   assert.equal(complete.ok, true);
 });
 
