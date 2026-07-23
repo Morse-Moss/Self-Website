@@ -118,6 +118,8 @@ MORSE_RESUME_TRUSTED_PROXY_HOPS=1
 
 升级已有实例时，先显式确认 DB/Embedding healthy，再对 migration、grants、ingest 和 resume-storage-init 使用 `docker compose run --rm --no-deps ...`。plain `compose run` 会协调 `depends_on`，配置或 bind 源漂移时可能重建 DB/Embedding。切换应用 release 不得隐式重建依赖容器。
 
+Git 归档会保留 `deploy/secrets/.gitkeep` 与 `deploy/postgres/tls/.gitkeep`，因此解压后这两个路径最初是目录。必须先确认目录内只有受控占位文件，再删除占位目录并让路径本身分别链接到 `/opt/revolution/shared/secrets` 与 `/opt/revolution/shared/postgres/tls`；随后以不回显内容的 `test -f` 检查 Secret、证书和私钥。不得直接对现存目录执行 `ln -sfn`，否则链接会被创建在目录内部，Compose bind mount 将在服务重建时失败。
+
 ```bash
 docker compose --env-file .env.production -f compose.production.yaml build
 # 仅首次初始化执行；升级已有 healthy DB/Embedding 时跳过下一行

@@ -4,18 +4,19 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**CHAT_V2_ANSWER_RELEVANCE_PRODUCTION_OBSERVED / CANARY_0**
+**CHAT_V2_RESUME_FACTS_PRODUCTION_OBSERVED / CANARY_0**
 
 ## next_allowed_pointer
-当前生产实例运行 `74be589`。固定 20 轮真实 Provider 评审保留原始 `15/20`，五个失败 case 的定向回归全部通过；回答相关性修正版已按 canary 0 发布并完成生产观察。现有非空白名单保留但未回显，hedging 与 safe mode 关闭，历史 Provider attempt 计数保持 36，active v2 Session 为 0。migration 007、生产知识 40 documents / 47 chunks、公网 live/ready/health/pages、未授权 401、release smoke 和近期错误日志均通过。本里程碑已收口；25%、100%、hedging 故障注入和 24/48 小时观察均为后续独立授权门槛，生产硬化余项关闭前不得宣称完整 `ONLINE_READY`。
+当前生产实例运行 `b7e24f6`。脱敏简历事实、Claude Code/CC、Codex 与 WorkBuddy 的个人事实证据，以及不主动暴露无关能力边界的回答规则已按 canary 0 发布；Cursor 仍保持无直接证据。生产知识为 41 documents / 48 chunks，历史 Provider attempt 计数保持 36，active v2 Session 为 0。公网 live/ready、release smoke、Web 健康与 Web/Worker/Edge release 工作目录均已复验；DB/Embedding 未重建。该发布未执行真实 Provider 对话。25%、100%、hedging 故障注入、真实对话复验和 24/48 小时观察均为后续独立授权门槛，生产硬化余项关闭前不得宣称完整 `ONLINE_READY`。
 
-## Chat v2 脱敏简历事实与主动边界修正（本地，2026-07-23）
+## Chat v2 脱敏简历事实与主动边界修正生产发布（2026-07-23）
 
 - 根因：个人事实路由只读取由项目 `capabilities/techStack` 编译的能力台账，首页虽然公开了 Claude Code 与 Codex，台账却没有对应 direct 引用；系统把“未命中”错误表达成“没有使用经历”。旧 JD/人格提示又要求主动说明缺失项，叠加后生成了“目前证据的边界”式负面段落。
 - 修正：从已批准简历成品提取公司/客户/学校/联系方式均已泛化的 `profile.resumeFacts`，新增独立 `resume-facts` 公开知识文档；Claude Code/CC、Codex、WorkBuddy 进入 direct 台账，Cursor 保持 none。多能力个人问题一次解析全部被问项，不再只看第一项。
 - 对话规则：未检索到只代表当前公开材料未提供，不等于从未做过；普通项目与 JD 回答只展开匹配项，不主动列边界或缺口。只有访客明确追问某一项能力时，才简短说明该项边界；输出守卫拒绝未被询问的“证据边界”段落。
 - 本地证据：受影响核心测试 `103/103`，站点/人格/私密简历隔离补充测试 `44/44`，`npm run build` 通过；脱敏扫描未发现真实公司、学校或精确任职日期进入公开知识。
-- 发布边界：本节只记录本地完成状态；生产仍为 `74be589`，知识库尚未重新 ingest，本轮未 push、未部署、未调用真实 Provider。发布后生产知识文档数将增加 1，需单独执行 ingest 与受控真实对话验收。
+- Release/Observation：`b7e24f6` 已普通快进到 `origin/master` 与 `origin/codex/chat-v2-release`；冻结归档 18,950,608 bytes、SHA-256 `434f7b38bbd1597f7382e56c4169d240b90f79ce4048e266966b241a7e7af873`。`/opt/revolution/current` 与 Web/Worker/Edge 工作目录指向该 release；DB/Embedding 保持原 healthy 容器。生产 ingest 新增 1 document / 1 chunk、跳过 40 documents，总量为 41 documents / 48 chunks；live/ready 与 release smoke PASS。
+- Recovery/Boundary：ingest 前数据库备份为 `/opt/revolution/shared/backups/pre-b7e24f6-20260723T110159Z.dump`，305,031 bytes、SHA-256 `a0027e9464c32df32428d8da31ecc095a9e3dd76db32ef43f88bef50635fa20b`。首次 Web 重建因归档占位目录未被替换成共享 Secret/TLS 链接而被 Docker 拒绝；修复 release 内链接后 Web healthy，未改数据库。历史 Provider attempts 保持 36、active v2 Session 为 0；未创建邀请码、未使用管理员 Session、未读取私密简历正文或任何密钥，未执行真实 Provider 对话。
 
 ## Chat v2 answer relevance correction production release (2026-07-23)
 
