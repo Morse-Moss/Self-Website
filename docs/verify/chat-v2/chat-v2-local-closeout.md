@@ -1,12 +1,12 @@
 # Digital Morse Chat v2 release 集成账本
 
 > 日期：2026-07-23
-> 状态：`LOCAL_READY / RESPONSE_RELIABILITY / REAL_PROVIDER_NOT_RUN`
+> 状态：`PRODUCTION_OBSERVED / RESPONSE_RELIABILITY / REAL_PROVIDER_NOT_RUN`
 > 模式：`CEO / STAGED / CRITICAL / DEPLOYED`
 > release 分支：`codex/chat-v2-release`
 > release 集成基线：`2ae3ccc docs: record chat v2 local closeout`
 > source 历史：`codex/private-resume-access` 的 Task 13 提交证据保留，不改写为 release 提交
-> 主线：release merge `c7de64a` 已吸收此前 `origin/master=6e7e0ef`；功能 release `e56e457` 已推送到远端主线并完成 disabled-first 生产发布
+> 主线：回答可靠性 release `e5f9210` 已推送到 `origin/master` 与 `origin/codex/chat-v2-release`，并按 canary 0 完成生产观察
 
 ## 2026-07-23 回答可靠性增量
 
@@ -64,11 +64,11 @@
 ## 开放门槛
 
 - 固定 20 轮真实 Provider 输出评审已获本轮授权，但必须等待本增量完成冻结提交、push、disabled-first 部署与生产观察后开始；不扩大灰度，不启用 hedging，不用 Mock 冒充真实输出质量。
-- 2026-07-22 基线发布与 push 已完成，生产 closeout 见 `docs/verify/chat-v2/chat-v2-production-closeout.md`；2026-07-23 回答可靠性增量当前尚未 push 或部署，冻结提交与生产 revision 以实际 Git/生产观察为准。
+- 2026-07-23 回答可靠性增量已以 `e5f9210` push 并部署；生产事实与恢复事件见 `docs/verify/chat-v2/chat-v2-production-closeout.md`。
 - 生产发布按 disabled-first 执行：`MORSE_CHAT_V2_ENABLED=true`、canary 0%、空白名单、hedging 关闭、safe mode 关闭；migration 005/006/007 只向前执行，不做 down migration。
 - disabled-first 部署只证明 v2 代码和 schema 已上线但流量为 0；真实 Provider 评审、邀请码白名单、25%、100% 以及 24/48 小时指标观察都是后续独立门槛。
 
 ## 交付边界
 
 - 本账本保留 release 集成的本地证据；远端与生产事实以 `chat-v2-production-closeout.md` 为准。
-- 生产仍运行 2026-07-22 的 disabled-first 基线；本增量当前只达到 `LOCAL_READY`，未创建评审邀请码、未调用真实 Provider。
+- 生产已运行 `e5f9210` 且维持 canary 0；部署阶段未创建评审邀请码、未调用真实 Provider。历史 Provider attempt 计数保留为 36，不作为本次部署新增调用。

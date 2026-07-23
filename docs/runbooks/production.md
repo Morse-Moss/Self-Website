@@ -93,13 +93,15 @@ npm run production:worker
 
 回答可靠性版本的默认时序为：`MORSE_PROVIDER_PROTOCOL_EVENT_TIMEOUT_MS=25000`、`MORSE_PROVIDER_MODEL_TEXT_TIMEOUT_MS=40000`、`MORSE_PROVIDER_STAGE_TIMEOUT_MS=80000`、`MORSE_CHAT_TURN_TIMEOUT_MS=90000`、`MORSE_PROVIDER_MAX_ATTEMPTS=3`。启动时必须满足“协议事件 < 模型正文 <= Provider 阶段 < 完整 turn”，attempt 数必须等于 3。normal、strict 和串行 failover 共用同一个绝对 deadline；切换节点不得重置 80 秒预算，SSE heartbeat 不延长任何 deadline，hedging 在真实输出评审期间保持关闭。
 
+升级已有实例时，必须先独立验证 DB/Embedding healthy、PostgreSQL TLS 证书可解析且私钥为普通 `0600` 文件；migration、grants、ingest 和存储初始化使用 `docker compose run --rm --no-deps ...`。plain `compose run` 会协调 `depends_on`，配置或 bind 源漂移时可能重建依赖容器，不能用于升级路径。
+
 1. 首次发布设置 `MORSE_CHAT_V2_ENABLED=true`、`MORSE_CHAT_V2_CANARY_PERCENT=0`、`MORSE_CHAT_V2_CANARY_INVITE_IDS` 留空、`MORSE_CHAT_HEDGED_FAILOVER_ENABLED=false`、`MORSE_CHAT_SAFE_MODE=false`，先证明没有 Session 进入 v2。
 2. 部署新管理 UI 后创建专用聊天邀请码。一次性明文只保留在当前浏览器内；当场复制后台显示的非敏感灰度 UUID，不能用邀请码明文做白名单。
 3. 把该实际 UUID 直接写入服务器 `.env.production` 的 `MORSE_CHAT_V2_CANARY_INVITE_IDS`，执行不回显值的 UUID 格式检查后只重启 Web；不得使用环境变量占位符、`$` 引用或尖括号占位值代替实际值。
 4. 保持 hedging 关闭，完成已授权的固定 20 轮真实输出评审。清单固定为 6 轮自由对话、3 轮通用建议、3 轮身份/项目、3 轮通用技术与个人实现对照、3 轮个人能力证据、2 轮招聘/JD；岗位质量样本必须携带真实测试 JD，无 JD 样本只验证前置门。至少 18/20 通过，且私密信息泄露、虚构个人事实、无 JD 生成适配结论、自由对话错误调用 RAG 均为零容忍。评审只保存 case id、路由/依赖计数、attempt 状态与时延、脱敏评分，不保存 raw prompt、回答或 Provider payload。通过后再单独启用 hedging 做故障注入，不能把两类成本混在同一批调用中。
 5. 白名单验证稳定后，依次设置 `MORSE_CHAT_V2_CANARY_PERCENT=25` 和 `MORSE_CHAT_V2_CANARY_PERCENT=100`，每次只重启 Web 并独立观察错误率、延迟、Provider 尝试数和回答质量。
 6. 人格或证据异常时设置 `MORSE_CHAT_SAFE_MODE=true`，运行时 safe mode 优先于已开启的 hedging；成本异常时只设置 `MORSE_CHAT_HEDGED_FAILOVER_ENABLED=false`；隐私问题时设置 `MORSE_CHAT_ENABLED=false`。每次降级后只重启 Web 并复验，不改数据库。
-7. `005` / `006` / `007` 均为 additive migration，不执行 down migration；`006` 只增加并回填非敏感邀请备注快照，`007` 只增加路由锚点、证据分类、attempt 模式与分段延迟字段。旧镜像会忽略这些新增列和表，因此上述开关已降级且 live/ready 通过后可切回上一冻结镜像，不删除迁移或数据。
+7. `005` / `006` / `007` 均为 additive migration，不执行 down migration；`006` 只增加并回填非敏感邀请备注快照，`007` 只增加路由锚点、证据分类、attempt 模式与分段延迟字段。Readiness 要求数据库 registry 与镜像内 migration manifest 完全一致，因此 registry 已有 007 后只能切换到包含 007 的兼容镜像；不得回切 pre-007 镜像，不删除迁移或数据。
 
 本节是未来发布合同，不改变“当前生产状态与硬化余项”中的历史事实；在部署 revision、运行配置和真实观察完成前，不得描述为 Chat v2 已上线。
 
@@ -153,7 +155,7 @@ npm run production:worker
 
 ## 8. 当前生产状态与硬化余项
 
-首个生产实例在 `39849e1` 完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实对话 smoke 和公网 live/ready/release smoke。2026-07-22 当前应用 release 为 `e56e457`，沿用同一生产拓扑，并已发布密码登录、邀请码管理、私有导出密码复验、五个项目的简洁页面、展开详情和正式主图、首页 Warp Tunnel、三节点 Chat 容灾、私密简历、仅管理员可用的 OpenAI-compatible API 管理与 Chat v2 disabled-first 版本。管理页运行摘要显示安全的中转主机名；服务端只返回 `URL.host`，不返回 Key、协议、路径、查询参数或片段。生产 migration 001–006、私有卷、文件型 Secret 和 runtime grants 已部署并复验；Chat v2 当前为总开关开启、canary 0%、空白名单、hedging 与 safe mode 关闭，生产 `v2_sessions=0`、`chat_provider_attempts=0`。Provider 配置主密钥只挂载给 Web，配置表尚无管理员创建的中转或模型，运行继续使用只读环境目标。`MORSE_RESUME_ENABLED=true`，经确认的定向版最终 PDF 已通过认证后台进入私有密文卷；未授权状态可确认文档可用，但文件接口保持 401。一次性上线验收码已兑换并立即停用，关联 Session 已失效。生产公开知识为 40 documents / 47 chunks；最近一次摄取为 0 更新、40 documents 跳过。生产 BGE + pgvector 的 46 条 gold 为 top-1 36/46、top-3 46/46，正负阈值均通过。生产 Lighthouse 13.4.0 的移动端与桌面端历史 Performance 均为 99；实例细节和历史发布证据以实例手册及 Chat v2 生产 closeout 为准。
+首个生产实例在 `39849e1` 完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实对话 smoke 和公网 live/ready/release smoke。2026-07-23 当前应用 release 为 `e5f9210`，沿用同一生产拓扑，并已发布密码登录、邀请码管理、私有导出密码复验、五个项目页面、首页 Warp Tunnel、三节点 Chat 容灾、私密简历、管理员 OpenAI-compatible API 管理和 Chat v2 回答可靠性版本。生产 migration 001–007、私有卷、文件型 Secret 和 runtime grants 已部署并复验；PostgreSQL TLS 持久化到共享受限目录。Chat v2 当前为总开关开启、canary 0%、现有白名单非空但未回显、hedging 与 safe mode 关闭；历史 `chat_provider_attempts=36`，active v2 Session 为 0，本次部署没有新增 Provider 调用。Provider 配置主密钥只挂载给 Web，配置表尚无管理员创建的中转或模型，运行继续使用只读环境目标。`MORSE_RESUME_ENABLED=true`，经确认的定向版最终 PDF 保持在私有密文卷，未授权文件接口为 401。生产公开知识为 40 documents / 47 chunks；最近一次重复摄取为 0 更新、40 documents 跳过。生产 BGE + pgvector 的历史 46 条 gold 为 top-1 36/46、top-3 46/46，正负阈值均通过。生产 Lighthouse 13.4.0 的移动端与桌面端历史 Performance 均为 99；当前恢复事件、实例细节和发布证据以实例手册及 Chat v2 生产 closeout 为准。
 
 以下事项完成前保持 `LIMITED_LAUNCH`，不标记完整 `ONLINE_READY`：
 
