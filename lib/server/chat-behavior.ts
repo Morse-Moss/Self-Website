@@ -44,7 +44,13 @@ export function looksLikeFullJobDescription(message: string): boolean {
 
 export function routeChatTurn(request: NormalizedChatRequest): TurnRoute {
   if (request.workflow === 'jd_match' || looksLikeFullJobDescription(request.message)) {
-    return { intent: 'jd', profile: 'jd', evidence: 'rag', release: 'complete' };
+    return {
+      intent: 'jd',
+      profile: 'jd',
+      evidence: 'rag',
+      release: 'complete',
+      reasoningEffort: 'low',
+    };
   }
 
   const message = request.message.trim();

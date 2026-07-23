@@ -416,7 +416,9 @@ function adaptV2Route(route: ChatRouteDecision): TurnRoute {
         ? 'rag'
         : 'none',
     release: route.release,
-    reasoningEffort: route.routeKind === 'conversation' ? 'low' : undefined,
+    reasoningEffort: route.routeKind === 'conversation' || route.routeKind === 'jd'
+      ? 'low'
+      : undefined,
   };
 }
 

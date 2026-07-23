@@ -32,7 +32,13 @@ test('routeChatTurn gives the current message priority over the starter hint', (
     reasoningEffort: 'low',
   });
   assert.equal(routeChatTurn(request('这个岗位如何证明 Agent 经验？')).intent, 'recruitment');
-  assert.equal(routeChatTurn(jdRequest('Agent 工程师')).profile, 'jd');
+  assert.deepEqual(routeChatTurn(jdRequest('Agent 工程师')), {
+    intent: 'jd',
+    profile: 'jd',
+    evidence: 'rag',
+    release: 'complete',
+    reasoningEffort: 'low',
+  });
 });
 
 test('routeChatTurn keeps lightweight introductions social without hiding a real request', () => {
@@ -57,6 +63,7 @@ test('routeChatTurn detects a structured full JD submitted through normal chat',
     profile: 'jd',
     evidence: 'rag',
     release: 'complete',
+    reasoningEffort: 'low',
   });
 });
 

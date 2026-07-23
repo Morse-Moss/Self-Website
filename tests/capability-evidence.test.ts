@@ -3,6 +3,7 @@ import { test } from 'node:test';
 
 import {
   assessCapability,
+  assessCapabilities,
   compileCapabilityLedger,
   type CapabilityPolicy,
 } from '../lib/server/capability-evidence.ts';
@@ -69,4 +70,32 @@ test('capability matching is NFKC, case-insensitive, and punctuation tolerant', 
 
   assert.equal(assessCapability('你用过 ｄｏｃｋｅｒ－ｃｏｍｐｏｓｅ 吗', ledger).capabilityId, 'docker-compose');
   assert.equal(assessCapability('POSTGRES？', ledger).capabilityId, 'postgresql');
+});
+
+test('short capability aliases do not match across English word boundaries', () => {
+  const results = assessCapabilities(
+    '负责 server agent 的部署与维护。',
+    compileCapabilityLedger(siteContent, chatCapabilityPolicy),
+  );
+
+  assert.doesNotMatch(
+    results.map((result) => result.capabilityId).join(','),
+    /(?:^|,)rag(?:,|$)/u,
+  );
+});
+
+test('a JD resolves every explicitly named capability without inventing unknown skills', () => {
+  const results = assessCapabilities(
+    '设计 RAG，熟悉 PostgreSQL、Docker Compose；Kubernetes 生产经验优先。',
+    compileCapabilityLedger(siteContent, chatCapabilityPolicy),
+  );
+
+  assert.deepEqual(
+    new Set(results.map((result) => result.capabilityId)),
+    new Set(['rag', 'postgresql', 'docker', 'docker-compose', 'kubernetes']),
+  );
+  assert.equal(
+    results.find((result) => result.capabilityId === 'kubernetes')?.evidenceClass,
+    'transferable',
+  );
 });

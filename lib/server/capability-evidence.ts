@@ -70,6 +70,18 @@ function normalize(value: string): string {
     .replace(/[\p{P}\p{S}\s]+/gu, '');
 }
 
+export function containsCapabilityAlias(value: string, alias: string): boolean {
+  const normalizedAlias = normalize(alias);
+  if (!normalizedAlias) return false;
+  if (/^[a-z0-9]{2,8}$/u.test(normalizedAlias)) {
+    const escaped = normalizedAlias.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+    return new RegExp(`(?<![a-z0-9])${escaped}(?![a-z0-9])`, 'u').test(
+      value.normalize('NFKC').toLocaleLowerCase('en-US'),
+    );
+  }
+  return normalize(value).includes(normalizedAlias);
+}
+
 function validateId(id: string): void {
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(id)) {
     invalidPolicy(`invalid capability id ${id}`);
@@ -164,23 +176,22 @@ export function assessCapability(
   question: string,
   ledger: CapabilityLedger,
 ): CapabilityAssessment {
-  const normalizedQuestion = normalize(question);
-  const alias = ledger.aliases.find((candidate) => (
-    normalizedQuestion.includes(candidate.normalized)
-  ));
-  if (!alias) {
-    return {
-      capabilityId: null,
-      label: null,
-      evidenceClass: 'none',
-      direct: [],
-      transferable: [],
-      boundaryText: null,
-    };
-  }
+  return assessCapabilities(question, ledger)[0] ?? {
+    capabilityId: null,
+    label: null,
+    evidenceClass: 'none',
+    direct: [],
+    transferable: [],
+    boundaryText: null,
+  };
+}
 
-  const entry = ledger.entries.get(alias.capabilityId);
-  if (!entry) invalidPolicy(`missing compiled entry for ${alias.capabilityId}`);
+function assessLedgerEntry(
+  capabilityId: string,
+  ledger: CapabilityLedger,
+): CapabilityAssessment {
+  const entry = ledger.entries.get(capabilityId);
+  if (!entry) invalidPolicy(`missing compiled entry for ${capabilityId}`);
   if (entry.direct.length > 0) {
     return {
       capabilityId: entry.id,
@@ -215,4 +226,20 @@ export function assessCapability(
     transferable: [],
     boundaryText: null,
   };
+}
+
+export function assessCapabilities(
+  question: string,
+  ledger: CapabilityLedger,
+): CapabilityAssessment[] {
+  const capabilityIds: string[] = [];
+  for (const alias of ledger.aliases) {
+    if (
+      containsCapabilityAlias(question, alias.normalized)
+      && !capabilityIds.includes(alias.capabilityId)
+    ) {
+      capabilityIds.push(alias.capabilityId);
+    }
+  }
+  return capabilityIds.map((capabilityId) => assessLedgerEntry(capabilityId, ledger));
 }

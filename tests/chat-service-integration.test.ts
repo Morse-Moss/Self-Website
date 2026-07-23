@@ -2980,7 +2980,8 @@ test('runChat persists routed attempts, winner attribution, and per-attempt cost
 test('v2 persists each failover attempt with its target rate instead of the global rate', {
   skip: !pool,
 }, async () => {
-  const fixture = await createFailureFixture('provider-target-rate-attribution');
+  const testNow = new Date();
+  const fixture = await createFailureFixture('provider-target-rate-attribution', testNow);
   const turnId = randomUUID();
   const primary: AiProvider = {
     async embed() {
@@ -2998,7 +2999,7 @@ test('v2 persists each failover attempt with its target rate instead of the glob
       return [[0.1, 0.2]];
     },
     async *streamAnswer() {
-      yield { type: 'delta', text: 'Normal conversation answer.' };
+      yield { type: 'delta', text: '我是数字分身，没有身体，不会真正吃饭。' };
       yield { type: 'done', usage: { inputTokens: 20, outputTokens: 4 } };
     },
   };
@@ -3026,7 +3027,7 @@ test('v2 persists each failover attempt with its target rate instead of the glob
         chatV2Enabled: true,
         chatV2CanaryPercent: 100,
       },
-      now,
+      now: testNow,
     });
 
     const attempts = await pool!.query<{
@@ -4911,6 +4912,37 @@ test('v2 missing JD completes deterministically without Provider calls or quota 
   }
 });
 
+test('v2 JD uses low reasoning and the concise evidence prompt', {
+  skip: !pool,
+}, async () => {
+  const fixture = await createFailureFixture('chat-v2-jd-low-reasoning');
+  const aiProvider = new SequencedAnswerProvider([
+    '这个岗位与我在深度研究 Agent 系统中完成的 RAG 交付直接相关。[来源1]',
+  ]);
+
+  try {
+    await consumeChat({
+      pool: pool!,
+      provider: aiProvider,
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        workflow: 'jd_match',
+        jobDescription: '岗位要求：负责 RAG 系统的可审核交付。',
+        audienceIntent: 'recruiter',
+        turnId: randomUUID(),
+      }),
+      config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
+      now,
+    });
+
+    assert.equal(aiProvider.requests.length, 1);
+    assert.equal(aiProvider.requests[0].reasoningEffort, 'low');
+    assert.match(aiProvider.requests[0].messages[0].content, /800–900 字/u);
+  } finally {
+    await cleanupFailureFixture(fixture);
+  }
+});
+
 test('v2 clarification completes deterministically without Provider calls or quota deduction', {
   skip: !pool,
 }, async () => {
@@ -4962,10 +4994,11 @@ test('v2 clarification completes deterministically without Provider calls or quo
 test('recruitment guard hides the rejected candidate and strictly regenerates once', {
   skip: !pool,
 }, async () => {
-  const fixture = await createFailureFixture('chat-v2-guard-regeneration');
+  const testNow = new Date();
+  const fixture = await createFailureFixture('chat-v2-guard-regeneration', testNow);
   const node = new SequencedAnswerProvider([
     '匹配度: 90%',
-    'The JD is supported by public Agent delivery evidence.',
+    '我在深度研究 Agent 系统中完成了 RAG、Agent 交付与可验证证据链。[来源1]',
   ]);
   const coordinated = new FailoverAiProvider(
     node,
@@ -4981,27 +5014,29 @@ test('recruitment guard hides the rejected candidate and strictly regenerates on
       accessSessionId: fixture.accessSessionId,
       request: normalizeChatRequest({
         workflow: 'jd_match',
-        jobDescription: 'Public role requires evidence-backed agent delivery.',
+        jobDescription: '岗位要求：基于可审核证据交付 RAG 与 Agent 系统。',
         audienceIntent: 'recruiter',
         turnId,
       }),
       config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
-      now,
+      now: testNow,
     });
 
     assert.equal(node.requests.length, 2);
+    assert.equal(node.requests[0].reasoningEffort, 'low');
+    assert.equal(node.requests[1].reasoningEffort, 'low');
     assert.doesNotMatch(node.requests[0].instructions, /严格重生成/u);
     assert.match(node.requests[1].instructions, /严格重生成/u);
     assert.equal(node.requests[1].execution?.hedgingEnabled, false);
     assert.doesNotMatch(JSON.stringify(events), /匹配度: 90%/u);
     assert.equal(
       events.filter((event) => event.type === 'delta').map((event) => event.text).join(''),
-      'The JD is supported by public Agent delivery evidence.',
+      '我在深度研究 Agent 系统中完成了 RAG、Agent 交付与可验证证据链。[来源1]',
     );
 
     const interaction = await readInteraction(turnId);
     assert.equal(interaction.status, 'completed');
-    assert.equal(interaction.answer, 'The JD is supported by public Agent delivery evidence.');
+    assert.equal(interaction.answer, '我在深度研究 Agent 系统中完成了 RAG、Agent 交付与可验证证据链。[来源1]');
     assert.equal(interaction.input_tokens, 21);
     assert.equal(interaction.output_tokens, 5);
     assert.equal(Number(interaction.estimated_cost_usd), 0.000031);
@@ -5030,7 +5065,7 @@ test('recruitment guard hides the rejected candidate and strictly regenerates on
       accessSessionId: fixture.accessSessionId,
       request: normalizeChatRequest({
         workflow: 'jd_match',
-        jobDescription: 'Public role requires evidence-backed agent delivery.',
+        jobDescription: '岗位要求：基于可审核证据交付 RAG 与 Agent 系统。',
         audienceIntent: 'recruiter',
         conversationId: interaction.conversation_id,
         turnId,
@@ -5056,7 +5091,8 @@ test('recruitment guard hides the rejected candidate and strictly regenerates on
 test('two guard failures persist only attempt metadata and return an explicit failure', {
   skip: !pool,
 }, async () => {
-  const fixture = await createFailureFixture('chat-v2-guard-rejected');
+  const testNow = new Date();
+  const fixture = await createFailureFixture('chat-v2-guard-rejected', testNow);
   const node = new SequencedAnswerProvider([
     '匹配度: 90%',
     '匹配度: 95%',
@@ -5080,7 +5116,7 @@ test('two guard failures persist only attempt metadata and return an explicit fa
         turnId,
       }),
       config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
-      now,
+      now: testNow,
     }), (error: unknown) => (
       error instanceof ChatServiceError && error.code === 'PROVIDER_UNAVAILABLE'
     ));
@@ -5176,7 +5212,8 @@ test('v2 identity skips embedding and search while using the approved identity c
 test('a rejected later segment switches and restarts strict output from blank', {
   skip: !pool,
 }, async () => {
-  const fixture = await createFailureFixture('chat-v2-segment-reset');
+  const testNow = new Date();
+  const fixture = await createFailureFixture('chat-v2-segment-reset', testNow);
   const node = new SegmentedSequenceProvider([
     ['Kubernetes is an orchestration system. ', 'AGENTS.md.'],
     ['Kubernetes is an orchestration system.'],
@@ -5197,7 +5234,7 @@ test('a rejected later segment switches and restarts strict output from blank', 
         turnId: randomUUID(),
       }),
       config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
-      now,
+      now: testNow,
     });
     const answerEvents = events.filter((event) => (
       event.type === 'delta'
@@ -5224,7 +5261,8 @@ test('a rejected later segment switches and restarts strict output from blank', 
 test('a repeated long answer triggers one strict regeneration from conversation history', {
   skip: !pool,
 }, async () => {
-  const fixture = await createFailureFixture('chat-v2-template-repetition');
+  const testNow = new Date();
+  const fixture = await createFailureFixture('chat-v2-template-repetition', testNow);
   const repeated = '我目前公开展示的项目包括内容创作 Agent 系统、自动运营 Agent 系统、AI 外贸获客系统、深度研究 Agent 系统和数字摩斯，分别覆盖内容生产、运营编排、获客、研究与可验证对话交付。[来源1]';
   const provider = new SequencedAnswerProvider([
     repeated,
@@ -5242,7 +5280,7 @@ test('a repeated long answer triggers one strict regeneration from conversation 
         turnId: randomUUID(),
       }),
       config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
-      now,
+      now: testNow,
     });
     const meta = first.find((event) => event.type === 'meta');
     assert.equal(meta?.type, 'meta');
@@ -5258,7 +5296,7 @@ test('a repeated long answer triggers one strict regeneration from conversation 
         turnId: randomUUID(),
       }),
       config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
-      now: new Date(now.getTime() + 1_000),
+      now: new Date(testNow.getTime() + 1_000),
     });
     assert.equal(second.at(-1)?.type, 'done');
     assert.equal(provider.requests.length, 3);
@@ -5273,7 +5311,8 @@ test('a repeated long answer triggers one strict regeneration from conversation 
 test('provider exhaustion fails without a local project-summary answer', {
   skip: !pool,
 }, async () => {
-  const fixture = await createFailureFixture('chat-v2-provider-degraded');
+  const testNow = new Date();
+  const fixture = await createFailureFixture('chat-v2-provider-degraded', testNow);
   const node = new ExplicitProviderFailure();
   const coordinated = new FailoverAiProvider(
     node,
@@ -5292,7 +5331,7 @@ test('provider exhaustion fails without a local project-summary answer', {
         turnId,
       }),
       config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
-      now,
+      now: testNow,
     }), (error: unknown) => (
       error instanceof ChatServiceError && error.code === 'PROVIDER_UNAVAILABLE'
     ));
@@ -5383,7 +5422,8 @@ test('JD provider exhaustion has no invented fallback and can replay the same tu
 test('v1 same-turn retry books historical v2 attempts plus current legacy usage once', {
   skip: !pool,
 }, async () => {
-  const fixture = await createFailureFixture('chat-v2-to-v1-usage-retry');
+  const testNow = new Date();
+  const fixture = await createFailureFixture('chat-v2-to-v1-usage-retry', testNow);
   const node = new SequencedAnswerProvider([
     '匹配度：90%',
     '匹配度：95%',
@@ -5407,7 +5447,7 @@ test('v1 same-turn retry books historical v2 attempts plus current legacy usage 
       accessSessionId: fixture.accessSessionId,
       request,
       config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
-      now,
+      now: testNow,
     }), (error: unknown) => (
       error instanceof ChatServiceError && error.code === 'PROVIDER_UNAVAILABLE'
     ));
@@ -5437,7 +5477,7 @@ test('v1 same-turn retry books historical v2 attempts plus current legacy usage 
       accessSessionId: fixture.accessSessionId,
       request,
       config: { ...config, chatV2Enabled: false, chatV2CanaryPercent: 0 },
-      now: new Date(now.getTime() + 1_000),
+      now: new Date(testNow.getTime() + 1_000),
     });
     const done = events.at(-1);
     assert.equal(done?.type, 'done');
@@ -5489,7 +5529,8 @@ test('v1 same-turn retry books historical v2 attempts plus current legacy usage 
 test('unknown provider defects are not regenerated or converted into a safe answer', {
   skip: !pool,
 }, async () => {
-  const fixture = await createFailureFixture('chat-v2-program-defect');
+  const testNow = new Date();
+  const fixture = await createFailureFixture('chat-v2-program-defect', testNow);
   const node = new ProgrammingErrorProvider();
   const coordinated = new FailoverAiProvider(
     node,
@@ -5505,7 +5546,7 @@ test('unknown provider defects are not regenerated or converted into a safe answ
       accessSessionId: fixture.accessSessionId,
       request: normalizeChatRequest({ message: 'Kubernetes 是什么？', turnId }),
       config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
-      now,
+      now: testNow,
     }), (error: unknown) => (
       error instanceof ChatServiceError && error.code === 'PROVIDER_UNAVAILABLE'
     ));

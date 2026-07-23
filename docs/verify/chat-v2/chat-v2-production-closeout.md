@@ -42,4 +42,5 @@
 - No review invite was created, no administrator Session was used, and the new fixed 20-round Provider review was not started during deployment.
 - Provider keys, administrator credentials, allowlist values, invite plaintext, resume plaintext, Session values, raw prompts/answers, and Provider payloads were not read into evidence or committed.
 - For application degradation, keep schema 007, first use the Chat v2/safe-mode/master Chat switches and verify live/ready. Image rollback requires a frozen image that includes migration 007; retain the database backup, previous releases, private volume, durable TLS, and Secrets.
-- The authorized fixed 20-round review is the next gate. Hedging fault injection, 25% rollout, 100% rollout, and 24/48-hour observation remain separate approval gates.
+- The fixed 20-round review was completed after this deployment and retained its original `15/20` score; all five failed cases later passed targeted regression. See `chat-v2-real-provider-review-2026-07-23.md` for the redacted receipt. The corrected candidate is not represented as deployed by this historical receipt.
+- Hedging fault injection, 25% rollout, 100% rollout, and 24/48-hour observation remain separate approval gates.

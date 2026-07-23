@@ -42,6 +42,60 @@ function groundedRoute(input: Partial<ChatRouteDecision> = {}): ChatRouteDecisio
   };
 }
 
+function conversationRoute(): ChatRouteDecision {
+  return {
+    routeKind: 'conversation',
+    reasonCode: 'stable_general_conversation',
+    topicKind: 'none',
+    topicRef: null,
+    evidenceClass: 'none',
+    inheritedFromTurnId: null,
+    release: 'segment',
+    requiresEmbedding: false,
+    requiresSearch: false,
+    deterministicReply: null,
+  };
+}
+
+function identityRoute(): ChatRouteDecision {
+  return {
+    routeKind: 'identity',
+    reasonCode: 'identity_query',
+    topicKind: 'none',
+    topicRef: null,
+    evidenceClass: 'identity',
+    inheritedFromTurnId: null,
+    release: 'complete',
+    requiresEmbedding: false,
+    requiresSearch: false,
+    deterministicReply: null,
+  };
+}
+
+test('an opinion follow-up must address the current topic in the opening paragraph', () => {
+  const repeatedValueAnswer = [
+    '我认为 AI Agent 现在最实际的价值，是把“回答问题”推进到“完成任务”。它能围绕目标拆解步骤、检索信息并调用工具。',
+    '不过真正重要的是可靠、可控、可追溯。',
+  ].join('\n\n');
+  const rejected = inspectChatAnswer({
+    answer: repeatedValueAnswer,
+    route: conversationRoute(),
+    workflow: 'chat',
+    question: '那你怎么看可靠性？',
+    sourceCount: 0,
+  });
+  const direct = inspectChatAnswer({
+    answer: '我认为可靠性是 Agent 能不能进入真实工作流的门槛：失败必须可见、动作必须可恢复，关键结果还要能核验。',
+    route: conversationRoute(),
+    workflow: 'chat',
+    question: '那你怎么看可靠性？',
+    sourceCount: 0,
+  });
+
+  assert.ok(rejected.reasons.includes('answer_not_direct'));
+  assert.equal(direct.ok, true);
+});
+
 test('personal fact answer must mention the requested capability', () => {
   const result = inspectChatAnswer({
     answer: '我做过很多容器项目。[来源1]',
@@ -52,6 +106,38 @@ test('personal fact answer must mention the requested capability', () => {
   });
 
   assert.deepEqual(result.reasons, ['answer_not_direct']);
+});
+
+test('personal fact answers must not expose internal evidence labels', () => {
+  const result = inspectChatAnswer({
+    answer: '我目前没有可核验的个人经历。能力证据等级：none。',
+    route: personalFactRoute('kubernetes', 'unavailable'),
+    workflow: 'chat',
+    question: '你有 Kubernetes 生产经验吗？',
+    sourceCount: 0,
+  });
+
+  assert.ok(result.reasons.includes('system_metadata'));
+});
+
+test('direct capability evidence must name a supporting public project', () => {
+  const vague = inspectChatAnswer({
+    answer: '是的，我用过 Docker Compose。[来源1]',
+    route: personalFactRoute('docker-compose', 'direct'),
+    workflow: 'chat',
+    question: '你用过 Docker Compose 吗？',
+    sourceCount: 1,
+  });
+  const grounded = inspectChatAnswer({
+    answer: '是的，我在数字摩斯项目里用过 Docker Compose。[来源1]',
+    route: personalFactRoute('docker-compose', 'direct'),
+    workflow: 'chat',
+    question: '你用过 Docker Compose 吗？',
+    sourceCount: 1,
+  });
+
+  assert.ok(vague.reasons.includes('answer_not_direct'));
+  assert.equal(grounded.ok, true);
 });
 
 test('transferable evidence cannot be upgraded to direct experience', () => {
@@ -69,6 +155,18 @@ test('transferable evidence cannot be upgraded to direct experience', () => {
 test('a negated direct-experience phrase preserves the transferable boundary', () => {
   const result = inspectChatAnswer({
     answer: '公开资料不能确认我有 Kubernetes 生产经验，只能确认容器化部署基础。[来源1]',
+    route: personalFactRoute('kubernetes', 'transferable'),
+    workflow: 'chat',
+    question: '你有 Kubernetes 生产经验吗？',
+    sourceCount: 1,
+  });
+
+  assert.equal(result.ok, true);
+});
+
+test('a transferable answer may state direct experience with a different supported capability', () => {
+  const result = inspectChatAnswer({
+    answer: '公开资料不能确认我有 Kubernetes 生产经验，不过我确实做过 Docker Compose 容器化部署。[来源1]',
     route: personalFactRoute('kubernetes', 'transferable'),
     workflow: 'chat',
     question: '你有 Kubernetes 生产经验吗？',
@@ -164,6 +262,35 @@ test('JD answers cannot pass by repeating only the role label', () => {
   assert.ok(result.reasons.includes('answer_not_direct'));
 });
 
+test('JD answers must address every recognized capability requirement', () => {
+  const route = groundedRoute({
+    routeKind: 'jd',
+    reasonCode: 'explicit_jd_workflow',
+    topicKind: 'jd',
+    topicRef: 'jd',
+    evidenceClass: 'mixed',
+    release: 'complete',
+  });
+  const question = '岗位要求：设计 RAG，熟悉 PostgreSQL、Docker Compose；有 Kubernetes 生产经验优先。';
+  const omitted = inspectChatAnswer({
+    answer: '我有 RAG、PostgreSQL 和 Docker Compose 相关项目证据。',
+    route,
+    workflow: 'jd_match',
+    question,
+    sourceCount: 0,
+  });
+  const complete = inspectChatAnswer({
+    answer: '我有 RAG、PostgreSQL 和 Docker Compose 相关项目证据；Kubernetes 生产经验没有公开直接证据，建议面谈核实。',
+    route,
+    workflow: 'jd_match',
+    question,
+    sourceCount: 0,
+  });
+
+  assert.ok(omitted.reasons.includes('answer_not_direct'));
+  assert.equal(complete.ok, true);
+});
+
 test('generic project questions reject meta-only evidence templates', () => {
   const result = inspectChatAnswer({
     answer: '我会根据公开资料保持诚实表达，并保留可核验来源。',
@@ -186,6 +313,18 @@ test('an inherited project follow-up may use a natural pronoun when the answer i
     }),
     workflow: 'chat',
     question: '这个为什么这样设计？',
+    sourceCount: 1,
+  });
+
+  assert.equal(result.ok, true);
+});
+
+test('a single named-project capability question accepts a possessive direct answer', () => {
+  const result = inspectChatAnswer({
+    answer: '我的 RAG 实现会先用 BGE 生成向量，再通过 pgvector 检索公开知识。[来源1]',
+    route: groundedRoute({ topicRef: 'digital-morse' }),
+    workflow: 'chat',
+    question: '你的数字 Morse 项目怎么实现 RAG？',
     sourceCount: 1,
   });
 
@@ -253,6 +392,39 @@ test('conversation rejects grounded and recruitment formatting', () => {
   });
 
   assert.ok(result.reasons.includes('wrong_route_format'));
+});
+
+test('conversation rejects invented realtime activity and accepts a natural digital boundary', () => {
+  const invented = inspectChatAnswer({
+    answer: '最近主要在整理作品和一些创作上的想法。',
+    route: conversationRoute(),
+    workflow: 'chat',
+    question: '最近忙什么？',
+    sourceCount: 0,
+  });
+  const bounded = inspectChatAnswer({
+    answer: '我不真正吃饭，不过可以陪你想想今天吃什么。',
+    route: conversationRoute(),
+    workflow: 'chat',
+    question: '今天吃饭了吗？',
+    sourceCount: 0,
+  });
+
+  assert.ok(invented.reasons.includes('unsupported_personal_state'));
+  assert.equal(bounded.ok, true);
+});
+
+test('approved identity-card answers do not require a synthetic numbered citation', () => {
+  const result = inspectChatAnswer({
+    answer: '我是数字 Morse，真人 Morse 为作品集创建的数字分身。公开定位是 Agent 系统开发者。',
+    route: identityRoute(),
+    workflow: 'chat',
+    question: '你是谁？',
+    sourceCount: 1,
+  });
+
+  assert.equal(result.ok, true);
+  assert.doesNotMatch(result.reasons.join(','), /citation/);
 });
 
 test('different grounded questions reject the same long template answer', () => {

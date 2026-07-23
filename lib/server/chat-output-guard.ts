@@ -2,10 +2,15 @@ import type { ChatWorkflow } from '../contracts/chat.ts';
 import { chatCapabilityPolicy } from '../site-content.ts';
 import type { TurnIntent } from './chat-behavior.ts';
 import type { ChatRouteDecision } from './chat-route-policy.ts';
+import { containsCapabilityAlias } from './capability-evidence.ts';
 import {
   matchChatProjectSlugs,
   mentionsChatProject,
 } from './chat-projects.ts';
+import {
+  asksRealtimePersonalState,
+  preservesDigitalStateBoundary,
+} from './chat-personal-state.ts';
 
 export type ChatGuardReason =
   | 'invalid_citation'
@@ -18,6 +23,7 @@ export type ChatGuardReason =
   | 'system_metadata'
   | 'answer_not_direct'
   | 'wrong_route_format'
+  | 'unsupported_personal_state'
   | 'unsupported_evidence_upgrade'
   | 'template_repetition';
 
@@ -56,7 +62,7 @@ function validateCitations(input: ChatGuardInput, reasons: ReasonSet, complete: 
     return;
   }
   const groundedClaim = /我(?:负责|完成|实现|主导)|项目|系统|能力/iu.test(input.answer);
-  const groundedRoute = ['identity', 'personal_fact', 'grounded', 'jd'].includes(routeKind(input));
+  const groundedRoute = ['personal_fact', 'grounded', 'jd'].includes(routeKind(input));
   if (complete && groundedRoute && input.sourceCount > 0 && groundedClaim && citations.length === 0) {
     reasons.add('missing_grounded_citation');
   }
@@ -102,19 +108,67 @@ function validateVoice(input: ChatGuardInput, reasons: ReasonSet): void {
   if (/AGENTS\.md|system prompt|系统提示|turnId|MORSE_CHAT_[A-Z_]+|内部节点别名/iu.test(input.answer)) {
     reasons.add('system_metadata');
   }
+  if (
+    /(?:能力|证据)(?:证据)?(?:等级|类别|类型)\s*[:：]?\s*(?:direct|transferable|none|unavailable|mixed)\b/iu.test(input.answer)
+  ) {
+    reasons.add('system_metadata');
+  }
 }
 
 function normalize(value: string): string {
   return value.normalize('NFKC').toLocaleLowerCase('en-US').replace(/[\p{P}\p{S}\s]+/gu, '');
 }
 
+function opinionFocusAnchors(question: string): string[] {
+  const match = question.match(/怎么看\s*(.+?)(?:呢|吗)?[？?]*$/iu);
+  if (!match?.[1]) return [];
+  const topic = match[1].trim().replace(/^(?:关于|对于|对)/u, '');
+  const normalizedTopic = normalize(topic);
+  if (/^(?:这件事|这个|那个|它|这些|那些|这种情况|那种情况)$/u.test(normalizedTopic)) {
+    return [];
+  }
+
+  const anchors = new Set<string>();
+  const noun = normalize(topic.split('的').at(-1) ?? topic);
+  if (noun.length >= 2) anchors.add(noun);
+  if (normalizedTopic.length >= 2 && normalizedTopic.length <= 8) anchors.add(normalizedTopic);
+  for (const token of normalizedTopic.match(/[a-z][a-z0-9]{1,}/gu) ?? []) anchors.add(token);
+  for (const anchor of [...anchors]) {
+    if (anchor.endsWith('性') && anchor.length > 2) anchors.add(anchor.slice(0, -1));
+  }
+  return [...anchors];
+}
+
 function validateDirectAnswer(input: ChatGuardInput, reasons: ReasonSet): void {
   const kind = routeKind(input);
+  if (kind === 'conversation') {
+    const anchors = opinionFocusAnchors(input.question);
+    if (anchors.length === 0) return;
+    const openingParagraph = input.answer.split(/\n\s*\n/u, 1)[0] ?? input.answer;
+    const normalizedOpening = normalize(openingParagraph);
+    if (!anchors.some((anchor) => normalizedOpening.includes(anchor))) {
+      reasons.add('answer_not_direct');
+    }
+    return;
+  }
   if (kind !== 'grounded' && kind !== 'jd') return;
 
-  const normalizedAnswer = normalize(input.answer);
   const namedProjects = matchChatProjectSlugs(input.question);
-  if (namedProjects.some((slug) => !mentionsChatProject(input.answer, slug))) {
+  const requestedCapabilities = chatCapabilityPolicy.canonical.filter((capability) => (
+    containsCapabilityAlias(input.question, capability.label)
+      || capability.aliases.some((alias) => containsCapabilityAlias(input.question, alias))
+  ));
+  const answersRequestedCapability = requestedCapabilities.some((capability) => (
+    capability.aliases.some((alias) => containsCapabilityAlias(input.answer, alias))
+  ));
+  const naturalSingleProjectReference = namedProjects.length === 1
+    && requestedCapabilities.length > 0
+    && answersRequestedCapability
+    && /我的|这个项目|它/iu.test(input.answer);
+  if (
+    namedProjects.some((slug) => !mentionsChatProject(input.answer, slug))
+    && !naturalSingleProjectReference
+  ) {
     reasons.add('answer_not_direct');
     return;
   }
@@ -139,22 +193,15 @@ function validateDirectAnswer(input: ChatGuardInput, reasons: ReasonSet): void {
     }
   }
 
-  const requestedCapabilities = chatCapabilityPolicy.canonical.filter((capability) => (
-    normalize(input.question).includes(normalize(capability.label))
-      || capability.aliases.some((alias) => normalize(input.question).includes(normalize(alias)))
-  ));
   if (kind === 'grounded' && namedProjects.length === 0 && requestedCapabilities.length > 0) {
-    const answersRequestedCapability = requestedCapabilities.some((capability) => (
-      capability.aliases.some((alias) => normalizedAnswer.includes(normalize(alias)))
-    ));
     if (!answersRequestedCapability) reasons.add('answer_not_direct');
     return;
   }
 
   if (kind === 'jd') {
     const addressesRole = requestedCapabilities.length > 0
-      ? requestedCapabilities.some((capability) => (
-        capability.aliases.some((alias) => normalizedAnswer.includes(normalize(alias)))
+      ? requestedCapabilities.every((capability) => (
+        capability.aliases.some((alias) => containsCapabilityAlias(input.answer, alias))
       ))
       : /\bjd\b|岗位|职位|职责|任职|要求/iu.test(input.answer);
     if (!addressesRole) reasons.add('answer_not_direct');
@@ -170,27 +217,53 @@ function validateRouteFormat(input: ChatGuardInput, reasons: ReasonSet): void {
   }
 }
 
+function validateRealtimePersonalState(
+  input: ChatGuardInput,
+  reasons: ReasonSet,
+  complete: boolean,
+): void {
+  if (
+    complete
+    && routeKind(input) === 'conversation'
+    && asksRealtimePersonalState(input.question)
+    && !preservesDigitalStateBoundary(input.answer)
+  ) {
+    reasons.add('unsupported_personal_state');
+  }
+}
+
 function validatePersonalFact(input: ChatGuardInput, reasons: ReasonSet, complete: boolean): void {
   if (!complete) return;
   const route = input.route;
   if (route?.routeKind !== 'personal_fact' || route.topicKind !== 'capability' || !route.topicRef) return;
   const policy = chatCapabilityPolicy.canonical.find((entry) => entry.id === route.topicRef);
   const aliases = policy?.aliases ?? [route.topicRef];
-  const normalizedAnswer = normalize(input.answer);
-  const mentionsCapability = aliases.some((alias) => normalizedAnswer.includes(normalize(alias)));
+  const mentionsCapability = aliases.some((alias) => containsCapabilityAlias(input.answer, alias));
   if (!mentionsCapability) {
+    reasons.add('answer_not_direct');
+    return;
+  }
+  if (
+    route.evidenceClass === 'direct'
+    && input.sourceCount > 0
+    && matchChatProjectSlugs(input.answer).length === 0
+  ) {
     reasons.add('answer_not_direct');
     return;
   }
   if (route.evidenceClass !== 'transferable' && route.evidenceClass !== 'unavailable') return;
 
-  const answerWithoutNegatedClaims = input.answer.replace(
-    /(?:不能|无法|未能|没有公开证据)(?:据此)?确认(?:(?!(?:但是|不过|然而|但)|[，,。；;！？\n]).){0,80}/giu,
-    '',
-  );
-  const directExperience = /(?:我)?(?:有|具备|拥有).{0,16}(?:生产|实战|直接)?(?:经验|实践)|我(?:确实|的确|曾经|曾)?(?:做过|负责过|落地过|实践过)/iu.test(answerWithoutNegatedClaims);
+  const claimClauses = input.answer.split(/(?:但是|不过|然而|但)|[，,。；;！？\n]+/gu);
+  const directExperience = claimClauses.some((clause) => {
+    if (/(?:不能|无法|未能|没有公开证据)(?:据此)?确认/iu.test(clause)) return false;
+    const mentionsRequestedCapability = aliases.some((alias) => (
+      normalize(clause).includes(normalize(alias))
+    ));
+    if (!mentionsRequestedCapability) return false;
+    return /(?:我)?(?:有|具备|拥有).{0,16}(?:生产|实战|直接)?(?:经验|实践)|我(?:确实|的确|曾经|曾)?(?:用过|做过|负责过|落地过|实践过)/iu.test(clause);
+  });
   if (directExperience) reasons.add('unsupported_evidence_upgrade');
-  const preservesBoundary = /不能据此确认|没有公开证据|无法确认|未能确认|只能确认|建议面谈核实/iu.test(input.answer);
+  const preservesBoundary = /不能(?:据此)?确认|没有公开证据|无法确认|未能确认|只能确认|建议面谈核实/iu.test(input.answer);
   if (!preservesBoundary && !directExperience) reasons.add('answer_not_direct');
 }
 
@@ -202,6 +275,7 @@ function inspect(input: ChatGuardInput, complete: boolean): ChatGuardResult {
   validateNextStep(input, reasons);
   validateVoice(input, reasons);
   validateRouteFormat(input, reasons);
+  validateRealtimePersonalState(input, reasons, complete);
   if (complete) validateDirectAnswer(input, reasons);
   validatePersonalFact(input, reasons, complete);
   return { ok: reasons.size === 0, reasons: [...reasons] };

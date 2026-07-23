@@ -1,7 +1,7 @@
 # Digital Morse Chat v2 release 集成账本
 
 > 日期：2026-07-23
-> 状态：`PRODUCTION_OBSERVED / RESPONSE_RELIABILITY / REAL_PROVIDER_NOT_RUN`
+> 状态：`LOCAL_READY / REAL_PROVIDER_REVIEW_RECORDED / PRODUCTION_PENDING`
 > 模式：`CEO / STAGED / CRITICAL / DEPLOYED`
 > release 分支：`codex/chat-v2-release`
 > release 集成基线：`2ae3ccc docs: record chat v2 local closeout`
@@ -43,7 +43,7 @@
 - 最终 stopped completeness 修正 RED/GREEN：`node --test tests/provider-runtime.test.ts` 为 5/5 PASS；新增用例证明一个已知 usage attempt 加一个无 usage 的 aborted attempt 会写入部分已知合计，并保持 `usage_complete=false`、`cost_complete=false`、`estimated_cost_usd=null`。
 - `node --test scripts/s9-contract.test.mjs`：24/24 PASS；README 历史文案耦合已移除，剩余 S9 历史 invariant 保持。
 - loopback Mock `rag:eval` 的 top-3 为 41/46，未达到正向阈值。该结果只说明哈希 Mock 不具备真实 embedding 语义质量，不得标记 RAG 质量通过，也没有触发真实 embedding Provider。
-- 当前真实 Chat/Embedding Provider 调用数为 0。
+- 固定 20 题真实 Provider 评审原始成绩为 `15/20`；Q4、Q7、Q11、Q17、Q20 修正后的定向回归通过。脱敏汇总见 `docs/verify/chat-v2/chat-v2-real-provider-review-2026-07-23.md`。
 
 ## 持久截图
 
@@ -60,10 +60,11 @@
 - Compliance/Privacy：此前 source 实现审查已 PASS；release 集成保持私密简历与 Chat/RAG/日志/截图/评测隔离，未读取、上传或输出真实私密简历，未回显 Provider URL 或 key。
 - Quality/Reliability：最终复审发现 `QR-REL-01` stopped attempt completeness blocker；失败优先集成测试修复后 correction delta 复审 PASS，无开放 blocker。
 - 2026-07-23 回答可靠性复审：Compliance PASS；Quality 的 `QSR-01` 多项目别名/证据准入和 `QSR-05` 公开邮箱 API 误拦截均在 delta review 中 CLOSED，最终 PASS。
+- 2026-07-23 真实评审修正复审：Compliance/Privacy PASS；Quality 发现的短 ASCII 能力别名跨词误命中已经 RED/GREEN 修复，聚焦测试、service integration 和 build 重新 PASS，无开放 blocker。
 
 ## 开放门槛
 
-- 固定 20 轮真实 Provider 输出评审已获本轮授权，但必须等待本增量完成冻结提交、push、disabled-first 部署与生产观察后开始；不扩大灰度，不启用 hedging，不用 Mock 冒充真实输出质量。
+- 固定 20 轮真实 Provider 评审和失败题定向回归已完成；原始 `15/20` 不被回归覆盖。全程未扩大生产灰度，未启用 hedging，未使用 Mock 冒充真实输出质量。
 - 2026-07-23 回答可靠性增量已以 `e5f9210` push 并部署；生产事实与恢复事件见 `docs/verify/chat-v2/chat-v2-production-closeout.md`。
 - 生产发布按 disabled-first 执行：`MORSE_CHAT_V2_ENABLED=true`、canary 0%、空白名单、hedging 关闭、safe mode 关闭；migration 005/006/007 只向前执行，不做 down migration。
 - disabled-first 部署只证明 v2 代码和 schema 已上线但流量为 0；真实 Provider 评审、邀请码白名单、25%、100% 以及 24/48 小时指标观察都是后续独立门槛。
@@ -71,4 +72,4 @@
 ## 交付边界
 
 - 本账本保留 release 集成的本地证据；远端与生产事实以 `chat-v2-production-closeout.md` 为准。
-- 生产已运行 `e5f9210` 且维持 canary 0；部署阶段未创建评审邀请码、未调用真实 Provider。历史 Provider attempt 计数保留为 36，不作为本次部署新增调用。
+- 生产当前仍运行 `e5f9210` 且维持 canary 0；上一次部署阶段未调用真实 Provider。本轮评审与修正尚待冻结提交和 canary 0 部署观察。

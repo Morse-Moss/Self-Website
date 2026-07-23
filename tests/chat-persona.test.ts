@@ -23,6 +23,36 @@ function conversationRoute(): ChatRouteDecision {
   };
 }
 
+function unavailablePersonalFactRoute(): ChatRouteDecision {
+  return {
+    routeKind: 'personal_fact',
+    reasonCode: 'personal_history_query',
+    topicKind: 'none',
+    topicRef: null,
+    evidenceClass: 'unavailable',
+    inheritedFromTurnId: null,
+    release: 'complete',
+    requiresEmbedding: false,
+    requiresSearch: false,
+    deterministicReply: null,
+  };
+}
+
+function jdRoute(): ChatRouteDecision {
+  return {
+    routeKind: 'jd',
+    reasonCode: 'explicit_jd_workflow',
+    topicKind: 'jd',
+    topicRef: 'jd',
+    evidenceClass: 'mixed',
+    inheritedFromTurnId: null,
+    release: 'complete',
+    requiresEmbedding: true,
+    requiresSearch: false,
+    deterministicReply: null,
+  };
+}
+
 test('conversation prompt contains no project card or recruitment template', () => {
   const prompt = buildV2SystemInstructions({
     route: conversationRoute(),
@@ -33,6 +63,54 @@ test('conversation prompt contains no project card or recruitment template', () 
   assert.match(prompt, /数字 Morse/);
   assert.match(prompt, /今天吃饭了吗/);
   assert.doesNotMatch(prompt, /approved_identity_card|公开项目摘要|建议面谈核实|\[来源/);
+});
+
+test('conversation prompt makes realtime personal-state questions keep the digital boundary', () => {
+  for (const question of ['今天吃饭了吗？', '最近忙什么？']) {
+    const prompt = buildV2SystemInstructions({
+      route: conversationRoute(),
+      question,
+      sources: [],
+    });
+
+    assert.match(prompt, /实时|身体状态/);
+    assert.match(prompt, /数字分身/);
+    assert.match(prompt, /不得像真人|不能替真人(?:\s*Morse)?确认/);
+  }
+});
+
+test('personal fact prompt keeps evidence classes internal and asks for natural wording', () => {
+  const prompt = buildV2SystemInstructions({
+    route: unavailablePersonalFactRoute(),
+    question: '你以前怎么处理同事冲突？',
+    sources: [],
+  });
+
+  assert.match(prompt, /内部证据类别/);
+  assert.match(prompt, /不向用户展示.*(?:标签|等级|评分)/);
+  assert.match(prompt, /自然语言/);
+  assert.match(prompt, /直接证据.*公开项目/);
+});
+
+test('JD prompt requires every recognized capability requirement to be addressed', () => {
+  const prompt = buildV2SystemInstructions({
+    route: jdRoute(),
+    question: '熟悉 PostgreSQL、Docker Compose；有 Kubernetes 生产经验优先。',
+    sources: [],
+  });
+
+  assert.match(prompt, /已识别.*(?:要求|能力项).*(?:逐项|遗漏)/);
+  assert.match(prompt, /Kubernetes.*Docker Compose.*PostgreSQL/);
+});
+
+test('JD prompt does not invent RAG from an English word boundary', () => {
+  const prompt = buildV2SystemInstructions({
+    route: jdRoute(),
+    question: '负责 server agent 的部署与维护。',
+    sources: [],
+  });
+
+  assert.doesNotMatch(prompt, /recognized_jd_capabilities.*RAG/u);
 });
 
 test('social persona is first-person and contains no developer-assistant contract', () => {
