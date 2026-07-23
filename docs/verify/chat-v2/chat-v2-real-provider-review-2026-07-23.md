@@ -53,3 +53,4 @@
 - `git diff --check`: PASS. Secret-like diff scan found zero Provider keys, bearer credentials, or configured relay domains.
 - This document stores no raw prompt, answer, Cookie, invite token, Provider key, Provider URL, private resume content, or Provider payload.
 - Production remained on the prior release during review. Canary expansion and hedging are not part of this milestone.
+- The corrected candidate was subsequently frozen as `74be589`, deployed at canary `0`, and production-observed without adding a Provider attempt. This does not rewrite the original `15/20` score.

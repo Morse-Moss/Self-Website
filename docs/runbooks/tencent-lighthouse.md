@@ -4,8 +4,8 @@
 
 ## 当前生产状态（2026-07-23）
 
-- 状态：`PRODUCTION_OBSERVED / RESPONSE_RELIABILITY / CANARY_0`，当前应用 release `e5f9210`，私密简历已启用并保持受控访问。
-- 实例：`lhins-0oly57x8`；`/opt/revolution/current` 指向 `/opt/revolution/releases/e5f9210/revolution`，Web、Worker、Edge 与 DB Compose working directory 均指向该冻结 release，公网 live/ready 均为 HTTP 200。
+- 状态：`PRODUCTION_OBSERVED / ANSWER_RELEVANCE / CANARY_0`，当前应用 release `74be589`，私密简历已启用并保持受控访问。
+- 实例：`lhins-0oly57x8`；`/opt/revolution/current`、Web、Worker 与 Edge Compose working directory 指向 `/opt/revolution/releases/74be589/revolution`；DB 保持 `e5f9210`，Embedding 保持 `e56e457`，二者均未在本次无 migration 发布中重建。公网 live/ready 均为 HTTP 200。
 - 拓扑：Caddy edge、Next.js Web、Worker、PostgreSQL 16 + pgvector、CPU BGE/Embedding 均已启动；DB、Embedding 与 Web health 为 healthy。
 - 域名：`aimorse.tech` 与 `www.aimorse.tech` 均解析到 `43.133.68.202`；Let's Encrypt 证书已签发，HTTP 和 `www` 均重定向到主域 HTTPS。
 - 防火墙：腾讯云入站允许 TCP `22/80/443` 与 ICMP；UFW 允许 `22/80/443`，数据库、Embedding 和 Next 内部端口未映射到公网。

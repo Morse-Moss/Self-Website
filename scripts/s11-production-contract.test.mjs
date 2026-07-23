@@ -193,7 +193,7 @@ test('production launcher rejects invalid worker settings before announcing read
   assert.doesNotMatch(`${result.stdout}${result.stderr}`, /PRODUCTION_ROLE_READY/);
 });
 
-test('production runbooks govern disabled-first Chat v2 rollout and additive rollback', () => {
+test('production runbooks govern disabled-first Chat v2 rollout and schema-compatible rollback', () => {
   for (const relativePath of [
     'docs/runbooks/production.md',
     'docs/runbooks/tencent-lighthouse.md',
@@ -217,7 +217,8 @@ test('production runbooks govern disabled-first Chat v2 rollout and additive rol
     assert.match(runbook, /成本异常.*MORSE_CHAT_HEDGED_FAILOVER_ENABLED=false/);
     assert.match(runbook, /隐私问题.*MORSE_CHAT_ENABLED=false/);
     assert.match(runbook, /005.*006.*additive migration/);
-    assert.match(runbook, /旧镜像.*忽略.*005.*006/);
+    assert.match(runbook, /registry.*007.*只能切换.*包含 007.*兼容镜像/);
+    assert.match(runbook, /不得回切 pre-007 镜像/);
     assert.match(runbook, /006.*非敏感.*邀请备注快照/);
     assert.match(runbook, /不执行 down migration/);
   }

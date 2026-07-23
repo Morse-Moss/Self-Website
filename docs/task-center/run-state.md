@@ -4,10 +4,19 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**CHAT_V2_RESPONSE_RELIABILITY_PRODUCTION_OBSERVED / REAL_REVIEW_READY**
+**CHAT_V2_ANSWER_RELEVANCE_PRODUCTION_OBSERVED / CANARY_0**
 
 ## next_allowed_pointer
-当前生产实例运行 `e5f9210`，Chat v2 回答可靠性增量已按 canary 0 发布并完成生产观察：现有非空白名单保留但未回显，hedging 与 safe mode 关闭，历史 Provider attempt 计数保持 36，active v2 Session 为 0。migration 007、runtime grants、生产知识 40 documents / 47 chunks、公网 live/ready/health/pages、未授权 401 和 release smoke 均通过。下一步运行已授权的固定 20 轮真实 Provider 评审；不扩大灰度、不启用 hedging，评审证据不保存 raw prompt/answer、Provider payload、邀请码、Key 或私密简历。25%、100%、hedging 故障注入和 24/48 小时观察仍是后续独立门槛，生产硬化余项关闭前不得宣称完整 `ONLINE_READY`。
+当前生产实例运行 `74be589`。固定 20 轮真实 Provider 评审保留原始 `15/20`，五个失败 case 的定向回归全部通过；回答相关性修正版已按 canary 0 发布并完成生产观察。现有非空白名单保留但未回显，hedging 与 safe mode 关闭，历史 Provider attempt 计数保持 36，active v2 Session 为 0。migration 007、生产知识 40 documents / 47 chunks、公网 live/ready/health/pages、未授权 401、release smoke 和近期错误日志均通过。本里程碑已收口；25%、100%、hedging 故障注入和 24/48 小时观察均为后续独立授权门槛，生产硬化余项关闭前不得宣称完整 `ONLINE_READY`。
+
+## Chat v2 answer relevance correction production release (2026-07-23)
+
+- Mode: `CEO / STAGED / CRITICAL / DEPLOYED`; reached: `PRODUCTION_OBSERVED / CANARY_0`。
+- Scope: 修正自由对话直接性、项目指代继承、内部证据标签泄漏、能力项目支撑、JD 全能力覆盖和短 ASCII 能力别名误判；不扩大灰度，不启用 hedging。
+- Verification: 定向真实回归 Q4/Q7/Q11/Q17/Q20 及 Q16 companion PASS；相关路由、证据、人格、输出守卫和 runner 84/84，最终短别名修正 70/70，service integration 18/18，`npm run build` 30 routes，`git diff --check` 与密钥扫描 PASS。
+- Release: `74be589` 已快进到 `origin/master` 与 `origin/codex/chat-v2-release`；冻结归档 18,938,856 bytes、SHA-256 `dac319f44ee8945739bd83fe6279f99e666466c7fd010b78315414ced48d8b9f`。`/opt/revolution/current` 与 Web/Worker/Edge 指向该 release；DB/Embedding 未重建。
+- Observation: 公网 live/ready/health/root/works/admin 为 200，未登录受控 API 为 401，release smoke PASS；五个容器 restart count 为 0，Web/Worker/Edge/DB 最近三分钟错误关键词为 0。历史 attempts 保持 36，active v2 Session 保持 0。
+- Boundary: 部署观察未调用 Chat/Embedding/Search Provider，未创建邀请码或管理员 Session，未读取 Provider key/URL、allowlist 值、私密简历、raw prompt/answer 或 Provider payload。
 
 ## Chat v2 response reliability production release (2026-07-23)
 

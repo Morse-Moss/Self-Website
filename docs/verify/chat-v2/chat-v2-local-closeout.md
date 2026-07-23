@@ -6,7 +6,7 @@
 > release 分支：`codex/chat-v2-release`
 > release 集成基线：`2ae3ccc docs: record chat v2 local closeout`
 > source 历史：`codex/private-resume-access` 的 Task 13 提交证据保留，不改写为 release 提交
-> 主线：回答可靠性 release `e5f9210` 已推送到 `origin/master` 与 `origin/codex/chat-v2-release`，并按 canary 0 完成生产观察
+> 主线：回答相关性修正版 `74be589` 已推送到 `origin/master` 与 `origin/codex/chat-v2-release`，并按 canary 0 完成生产观察
 
 ## 2026-07-23 回答可靠性增量
 
@@ -72,4 +72,4 @@
 ## 交付边界
 
 - 本账本保留 release 集成的本地证据；远端与生产事实以 `chat-v2-production-closeout.md` 为准。
-- 生产当前仍运行 `e5f9210` 且维持 canary 0；上一次部署阶段未调用真实 Provider。本轮评审与修正尚待冻结提交和 canary 0 部署观察。
+- 生产当前运行 `74be589` 且维持 canary 0；评审与修正已冻结、推送、部署并完成生产观察，部署阶段没有新增 Provider 调用。
