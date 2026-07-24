@@ -1,5 +1,7 @@
 # 数字摩斯原生联网搜索设计
 
+> Absorption note (2026-07-25): This is a deferred replacement design, not current mainline behavior. Mainline still uses the separately called Bocha search-provider path; native Responses `web_search` has not been implemented or released. Revalidate Provider compatibility and the current chat contract before any implementation.
+
 > 日期：2026-07-20
 >
 > 状态：用户已确认设计，待书面规格审阅

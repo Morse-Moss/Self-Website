@@ -1,5 +1,7 @@
 # Native Web Search Implementation Plan
 
+> Absorption note (2026-07-25): This unexecuted historical plan was imported from the retired `codex/native-web-search` worktree. Its baseline SHA, branch assumptions, fixed paths, and checkbox state are historical. Any implementation requires a fresh branch and a new compatibility check against current Chat V2 mainline behavior.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the inactive Bocha-first search path with a controlled Responses `web_search` path that preserves privacy vetoes, 1+1 session budgeting, clickable citations, audit records, failover safety, and the production kill switch.

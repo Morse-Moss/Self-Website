@@ -1,5 +1,7 @@
 # AI Native Dual Resume Design
 
+> Absorption note (2026-07-25): This document is retained as approved design history. It is not an active task pointer and does not prove that any private artifact was generated, uploaded, or deployed. Current private-resume runtime and release status is owned by `docs/verify/private-resume/`.
+
 Date: 2026-07-21
 Revision: 2
 Status: Approved by the candidate on 2026-07-21

@@ -1,5 +1,7 @@
 # AI Native Dual Resume Revision 2 Implementation Plan
 
+> Absorption note (2026-07-25): This historical plan was imported from the retired `codex/dual-resume` worktree. Checkbox state and fixed local paths below are not current execution state. Any continuation must start from a fresh branch, re-check current evidence, and preserve the Git-ignored private-data boundary.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Redesign the two private Chinese one-page resumes into a portrait-enabled, recruiter-friendly and ATS-safe Revision 2 while preserving necessary evidence, placing education first, and adding a verified QR entry to Digital Morse.
