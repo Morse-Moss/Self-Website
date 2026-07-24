@@ -1,0 +1,25 @@
+# Revolution — 数字生命摩斯 · 作品集项目根
+
+## 目录约定
+- `docs/` — 需求与决策文档。`docs/portfolio-blueprint.md` 是唯一需求源,所有开发以它为准;`docs/verify/` 为验收证据
+- `prototype/` — 静态 UI 原型 v0.1(**已冻结,只读参照,不再迭代**)
+- 正式站(Next.js)在本根:`app/`(路由与全局样式)、`components/`(组件)、`public/`(静态资源)、`scripts/`(构建期脚本)、`content/`(站点内容;`content/drafts/` 为待摩斯终审的草稿,未终审不得上线)
+
+## 正式站约束
+- 技术栈:Next.js(App Router)+ TypeScript;不用 Tailwind,样式用 CSS Modules + 全局 token
+- 设计 token 只在 `app/styles/tokens.css` 定义(源自原型,唯一 token 源);组件样式禁用裸色值
+- 禁外部运行时资源:字体/脚本自托管,无 CDN 引用;文案中的外链(GitHub 等)允许
+- 占位与真实分明:占位内容必须带「示例数据 / 筹备中」标注;真实数字必须可溯源(数据管线产出)
+- `prefers-reduced-motion` 下无持续动画;移动端动画轻量化
+- 数字人区域组件化:视频源为配置项,素材就绪仅替换资源文件
+
+## 验证标准
+- `npm run build` 必过;`npm run dev` 冒烟
+- 1440 与 390 双宽各过一轮,控制台零报错
+- Lighthouse 性能 ≥ 90(上线前验收)
+
+## 红线
+- git:本地 init/commit 已授权(2026-07-08);push 仅跨设备同步且等摩斯指令;不自动部署
+- 依赖安装仅限阶段契约列明的包
+- `E:\Wiki`、`E:\demo2`、`E:\小红书`、`E:\多agent` 为外部资产,只读,禁止写入
+- 密钥、token、密码不进代码
