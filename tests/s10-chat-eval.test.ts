@@ -51,11 +51,11 @@ function readDataset(): { version: number; cases: EvalCase[] } {
   };
 }
 
-test('S10 deterministic evaluation freezes 72 cases around the current routing contract', () => {
+test('S10 deterministic evaluation freezes 76 cases around the current routing contract', () => {
   const dataset = readDataset();
-  assert.ok(dataset.version >= 5, 'response reliability evaluation schema must be version 5 or newer');
-  assert.equal(dataset.cases.length, 72);
-  assert.equal(new Set(dataset.cases.map((item) => item.id)).size, 72);
+  assert.ok(dataset.version >= 6, 'response reliability evaluation schema must be version 6 or newer');
+  assert.equal(dataset.cases.length, 76);
+  assert.equal(new Set(dataset.cases.map((item) => item.id)).size, 76);
   assert.ok(dataset.cases.every((item) => item.query.trim() && item.expectedBehavior.trim()));
 
   assert.deepEqual(
@@ -63,7 +63,15 @@ test('S10 deterministic evaluation freezes 72 cases around the current routing c
       .filter((item) => item.feedbackRegression)
       .map((item) => item.feedbackRegression)
       .sort(),
-    ['回答答非所问', '回复像固定RAG模板', '未提供JD仍生成匹配'].sort(),
+    [
+      '回答答非所问',
+      '回复像固定RAG模板',
+      '未提供JD仍生成匹配',
+      '自然身份问法被误澄清',
+      '澄清选项无法完成',
+      '重复固定澄清',
+      '省略追问丢失项目上下文',
+    ].sort(),
   );
 
   const categories = new Set(dataset.cases.map((item) => item.category));
@@ -220,7 +228,7 @@ test('removing identity or recruitment instructions makes the matching cases fai
   }
 });
 
-test('S10 evaluation is offline, passes 72/72, and emits no prompt or answer text', () => {
+test('S10 evaluation is offline, passes 76/76, and emits no prompt or answer text', () => {
   const output = execFileSync(process.execPath, [runnerPath], {
     cwd: process.cwd(),
     encoding: 'utf8',
@@ -241,10 +249,10 @@ test('S10 evaluation is offline, passes 72/72, and emits no prompt or answer tex
 
   assert.equal(result.evidence, 'deterministic adversarial prompt/provider');
   assert.equal(result.externalCalls, 0);
-  assert.equal(result.total, 72);
-  assert.equal(result.passed, 72);
+  assert.equal(result.total, 76);
+  assert.equal(result.passed, 76);
   assert.equal(result.pass, true);
-  assert.equal(result.cases.length, 72);
+  assert.equal(result.cases.length, 76);
   for (const item of result.cases) {
     assert.deepEqual(Object.keys(item).sort(), ['category', 'id', 'pass']);
     assert.equal(item.pass, true);

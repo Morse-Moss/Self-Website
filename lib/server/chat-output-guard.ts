@@ -130,7 +130,7 @@ function validateVoice(input: ChatGuardInput, reasons: ReasonSet): void {
   if (/作为(?:AI|开发)助手|招聘审计员|可执行的下一步/iu.test(input.answer)) {
     reasons.add('developer_assistant_voice');
   }
-  if (/AGENTS\.md|system prompt|系统提示|turnId|MORSE_CHAT_[A-Z_]+|内部节点别名/iu.test(input.answer)) {
+  if (/AGENTS\.md|system prompt|系统提示|turnId|MORSE_CHAT_[A-Z_]+|response_contract|内部节点别名/iu.test(input.answer)) {
     reasons.add('system_metadata');
   }
   if (

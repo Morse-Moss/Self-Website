@@ -20,8 +20,19 @@ function projectAnchor(topicRef: string): RouteAnchor {
   return {
     turnId: '11111111-1111-4111-8111-111111111111',
     routeKind: 'grounded',
+    reasonCode: 'project_fact_query',
     topicKind: 'project',
     topicRef,
+  };
+}
+
+function clarificationAnchor(): RouteAnchor {
+  return {
+    turnId: '22222222-2222-4222-8222-222222222222',
+    routeKind: 'clarify',
+    reasonCode: 'personal_scope_ambiguous',
+    topicKind: 'none',
+    topicRef: null,
   };
 }
 
@@ -60,6 +71,16 @@ test('asking who Digital Morse is stays on the identity route', () => {
   assert.equal(decision.routeKind, 'identity');
   assert.equal(decision.requiresEmbedding, false);
   assert.equal(decision.evidenceClass, 'identity');
+});
+
+test('natural Chinese onboarding questions enter identity without clarification', () => {
+  for (const message of ['你是干什么的？', '你主要是做什么的？', '你能帮我干什么？']) {
+    const decision = routeChatTurn({ request: request(message), ledger });
+
+    assert.equal(decision.routeKind, 'identity', message);
+    assert.equal(decision.reasonCode, 'identity_query', message);
+    assert.equal(decision.deterministicReply, null, message);
+  }
 });
 
 test('today weather is external-current while personal current projects stay grounded', () => {
@@ -185,6 +206,61 @@ test('only an anaphoric short follow-up inherits one persisted topic', () => {
   assert.equal(inherited.topicRef, 'digital-morse');
   assert.equal(inherited.inheritedFromTurnId, previous.turnId);
   assert.equal(switched.inheritedFromTurnId, null);
+});
+
+test('natural Chinese portfolio follow-ups inherit the active project topic', () => {
+  const previous = projectAnchor('digital-morse');
+
+  for (const message of [
+    '最有代表性的呢？',
+    '最推荐哪个？',
+    '哪个最能代表你？',
+    '那代表作呢？',
+  ]) {
+    const decision = routeChatTurn({ request: request(message), previous, ledger });
+
+    assert.equal(decision.routeKind, 'grounded', message);
+    assert.equal(decision.reasonCode, 'anaphoric_project_followup', message);
+    assert.equal(decision.topicRef, 'digital-morse', message);
+    assert.equal(decision.inheritedFromTurnId, previous.turnId, message);
+  }
+});
+
+test('a new explicit topic starting with 那 does not inherit the project anchor', () => {
+  const decision = routeChatTurn({
+    request: request('那 Kubernetes 是什么？'),
+    previous: projectAnchor('digital-morse'),
+    ledger,
+  });
+
+  assert.equal(decision.routeKind, 'conversation');
+  assert.equal(decision.inheritedFromTurnId, null);
+});
+
+test('a pending personal-scope clarification resolves the selected branch', () => {
+  const previous = clarificationAnchor();
+  const general = routeChatTurn({ request: request('一般做法'), previous, ledger });
+  const personal = routeChatTurn({ request: request('具体经历'), previous, ledger });
+
+  assert.equal(general.routeKind, 'conversation');
+  assert.equal(general.reasonCode, 'clarification_general_selected');
+  assert.equal(general.deterministicReply, null);
+  assert.equal(personal.routeKind, 'personal_fact');
+  assert.equal(personal.reasonCode, 'clarification_personal_selected');
+  assert.equal(personal.evidenceClass, 'unavailable');
+  assert.equal(personal.deterministicReply, null);
+});
+
+test('an unresolved clarification follow-up does not repeat the fixed prompt', () => {
+  const decision = routeChatTurn({
+    request: request('都说说'),
+    previous: clarificationAnchor(),
+    ledger,
+  });
+
+  assert.equal(decision.routeKind, 'conversation');
+  assert.equal(decision.reasonCode, 'clarification_followup');
+  assert.equal(decision.deterministicReply, null);
 });
 
 test('personal history without public evidence stays unavailable', () => {

@@ -52,14 +52,15 @@ export async function loadPreviousRouteAnchor(
     id: string;
     inherited_from_turn_id: string | null;
     route_kind: string | null;
+    route_reason_code: string | null;
     topic_kind: string | null;
     topic_ref: string | null;
   }>(
-    `SELECT previous.id::text, previous.route_kind, previous.topic_kind,
-            previous.topic_ref, previous.inherited_from_turn_id::text
+    `SELECT previous.id::text, previous.route_kind, previous.route_reason_code,
+            previous.topic_kind, previous.topic_ref, previous.inherited_from_turn_id::text
        FROM interaction_turns AS current
        JOIN LATERAL (
-         SELECT id, route_kind, topic_kind, topic_ref, inherited_from_turn_id
+         SELECT id, route_kind, route_reason_code, topic_kind, topic_ref, inherited_from_turn_id
            FROM interaction_turns
           WHERE conversation_id = current.conversation_id
             AND id <> current.id
@@ -73,9 +74,10 @@ export async function loadPreviousRouteAnchor(
   const row = result.rows[0];
   if (
     !row
-    || row.inherited_from_turn_id !== null
     || !row.route_kind
     || !routeKinds.has(row.route_kind as ChatRouteKind)
+    || !row.route_reason_code
+    || !/^[a-z0-9_]{1,80}$/u.test(row.route_reason_code)
     || !row.topic_kind
     || !topicKinds.has(row.topic_kind as ChatTopicKind)
   ) {
@@ -84,6 +86,7 @@ export async function loadPreviousRouteAnchor(
   return {
     turnId: row.id,
     routeKind: row.route_kind as ChatRouteKind,
+    reasonCode: row.route_reason_code,
     topicKind: row.topic_kind as ChatTopicKind,
     topicRef: row.topic_ref,
   };

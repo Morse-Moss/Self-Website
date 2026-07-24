@@ -116,7 +116,7 @@ if (!allowedMutations.has(evaluationMutation)) {
 function mutateInstructions(instructions) {
   if (!evaluationMutation) return instructions;
   const removedSignals = evaluationMutation === 'drop-identity-instructions'
-    ? ['先简洁说明公开定位']
+    ? ['<response_contract route="identity"']
     : [
         '使用证据型候选人陈述',
         '逐项匹配直接证据和可迁移能力',
@@ -147,11 +147,12 @@ class AdversarialDeterministicProvider {
       .map((index) => `[来源${index}]`)
       .join(' ');
     const noEvidence = request.instructions.includes('本轮没有可用的审核公开证据');
-    const conversationPersona = request.instructions.includes('像正常交流一样自然');
-    const identityPersona = request.instructions.includes('先简洁说明公开定位');
-    const externalPersona = request.instructions.includes('只回答需要外部时效核验的问题');
-    const personalFactPersona = request.instructions.includes('先直接回答被核验的个人能力');
-    const groundedPersona = request.instructions.includes('先直接回答当前项目问题');
+    const routeContract = request.instructions.match(/<response_contract route="([a-z_]+)"/u)?.[1] ?? null;
+    const conversationPersona = routeContract === 'conversation';
+    const identityPersona = routeContract === 'identity';
+    const externalPersona = routeContract === 'external_current';
+    const personalFactPersona = routeContract === 'personal_fact';
+    const groundedPersona = routeContract === 'grounded';
     const recruitmentPersona = request.instructions.includes('使用证据型候选人陈述')
       || request.instructions.includes('正向优先陈述与 JD 直接相关的项目和能力');
     const explicitUnknownQuestion = /是否|有没有|能确认|有相关经验吗/iu.test(userMessage);
@@ -573,6 +574,7 @@ function previousAnchor(item) {
   return {
     turnId: '11111111-1111-4111-8111-111111111111',
     routeKind: item.previous.route,
+    reasonCode: item.previous.reasonCode ?? 'project_fact_query',
     topicKind: item.previous.topicKind,
     topicRef: item.previous.topicRef ?? null,
   };
@@ -605,6 +607,7 @@ function validateRouteReliability({ answer, calls, evidence, item, normalized, r
         workflow: normalized.workflow,
         question: normalized.message,
         sourceCount: evidence.knowledge.length + (evidence.search?.results.length ?? 0),
+        hasResumeEvidence: evidence.knowledge.some((source) => source.documentId === 'resume-facts'),
       });
   const expectedInheritedFromTurnId = item.expectedInherited === true
     ? '11111111-1111-4111-8111-111111111111'

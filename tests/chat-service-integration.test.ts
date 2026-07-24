@@ -1180,7 +1180,7 @@ test('runChat Provider payload events and persisted history exclude the private 
   }
 });
 
-test('route anchors persist controlled fields and inherit for one turn only', {
+test('route anchors preserve the latest meaningful topic across follow-ups', {
   skip: !pool,
 }, async () => {
   const conversationId = randomUUID();
@@ -1213,6 +1213,7 @@ test('route anchors persist controlled fields and inherit for one turn only', {
     assert.deepEqual(previous, {
       turnId: firstTurnId,
       routeKind: 'grounded',
+      reasonCode: 'project_fact_query',
       topicKind: 'project',
       topicRef: 'digital-morse',
     });
@@ -1224,7 +1225,13 @@ test('route anchors persist controlled fields and inherit for one turn only', {
     });
     await recordInteractionRoute(pool!, secondTurnId, second);
     assert.equal(second.inheritedFromTurnId, firstTurnId);
-    assert.equal(await loadPreviousRouteAnchor(pool!, conversationId, thirdTurnId), null);
+    assert.deepEqual(await loadPreviousRouteAnchor(pool!, conversationId, thirdTurnId), {
+      turnId: secondTurnId,
+      routeKind: 'grounded',
+      reasonCode: 'anaphoric_project_followup',
+      topicKind: 'project',
+      topicRef: 'digital-morse',
+    });
 
     const stored = await pool!.query<{
       route_kind: string;
@@ -4812,7 +4819,7 @@ test('different provider error fingerprints do not combine into one outage and o
   }
 });
 
-test('v2 social skips embedding, RAG and search and uses low reasoning', {
+test('v2 social skips embedding, RAG and search without overriding model reasoning', {
   skip: !pool,
 }, async () => {
   const fixture = await createFailureFixture('chat-v2-social-light-route');
@@ -4847,7 +4854,7 @@ test('v2 social skips embedding, RAG and search and uses low reasoning', {
     if (meta?.type !== 'meta') return;
     assert.equal(aiProvider.embedCalls, 0);
     assert.equal(searchProvider.calls.length, 0);
-    assert.equal(aiProvider.requests[0].reasoningEffort, 'low');
+    assert.equal(aiProvider.requests[0].reasoningEffort, undefined);
     assert.deepEqual(meta.sources, []);
     const attribution = await pool!.query<{ invite_label: string | null }>(
       'SELECT invite_label FROM interaction_turns WHERE access_session_id = $1',
@@ -4912,7 +4919,7 @@ test('v2 missing JD completes deterministically without Provider calls or quota 
   }
 });
 
-test('v2 JD uses low reasoning and the concise evidence prompt', {
+test('v2 JD inherits model reasoning and uses the concise evidence prompt', {
   skip: !pool,
 }, async () => {
   const fixture = await createFailureFixture('chat-v2-jd-low-reasoning');
@@ -4936,7 +4943,7 @@ test('v2 JD uses low reasoning and the concise evidence prompt', {
     });
 
     assert.equal(aiProvider.requests.length, 1);
-    assert.equal(aiProvider.requests[0].reasoningEffort, 'low');
+    assert.equal(aiProvider.requests[0].reasoningEffort, undefined);
     assert.match(aiProvider.requests[0].messages[0].content, /800–900 字/u);
   } finally {
     await cleanupFailureFixture(fixture);
@@ -5023,8 +5030,8 @@ test('recruitment guard hides the rejected candidate and strictly regenerates on
     });
 
     assert.equal(node.requests.length, 2);
-    assert.equal(node.requests[0].reasoningEffort, 'low');
-    assert.equal(node.requests[1].reasoningEffort, 'low');
+    assert.equal(node.requests[0].reasoningEffort, undefined);
+    assert.equal(node.requests[1].reasoningEffort, undefined);
     assert.doesNotMatch(node.requests[0].instructions, /严格重生成/u);
     assert.match(node.requests[1].instructions, /严格重生成/u);
     assert.equal(node.requests[1].execution?.hedgingEnabled, false);

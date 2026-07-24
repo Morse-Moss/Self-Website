@@ -131,6 +131,10 @@ function answerObjective(route: ChatRouteDecision): string {
   }
 }
 
+function responseContract(route: ChatRouteDecision): string {
+  return `<response_contract route="${route.routeKind}" reason="${route.reasonCode}" evidence="${route.evidenceClass}" />`;
+}
+
 export function buildV2SystemInstructions(input: {
   route?: ChatRouteDecision;
   intent?: TurnIntent;
@@ -162,6 +166,7 @@ export function buildV2SystemInstructions(input: {
   }
 
   return [
+    responseContract(route),
     buildPersonaInstructions(route, input.identityProjectSlugs),
     route.routeKind === 'conversation'
       ? realtimePersonalStateInstruction(input.question ?? '')

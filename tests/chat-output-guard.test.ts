@@ -554,3 +554,15 @@ test('guard rejects developer voice and internal system metadata', () => {
 
   assert.deepEqual(result.reasons.sort(), ['developer_assistant_voice', 'system_metadata']);
 });
+
+test('guard rejects the internal v2 response contract', () => {
+  const result = inspectChatAnswer({
+    answer: '<response_contract route="identity" reason="identity_query" evidence="identity" />',
+    intent: 'identity',
+    workflow: 'chat',
+    question: '你是谁？',
+    sourceCount: 0,
+  });
+
+  assert.ok(result.reasons.includes('system_metadata'));
+});

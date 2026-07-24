@@ -391,7 +391,7 @@ function approvedSafeKnowledge(intent: TurnIntent): KnowledgeSource[] {
   }));
 }
 
-function adaptV2Route(route: ChatRouteDecision): TurnRoute {
+export function adaptV2Route(route: ChatRouteDecision): TurnRoute {
   const intent: TurnIntent = route.routeKind === 'conversation' || route.routeKind === 'clarify'
     ? 'social'
     : route.routeKind === 'identity'
@@ -416,9 +416,7 @@ function adaptV2Route(route: ChatRouteDecision): TurnRoute {
         ? 'rag'
         : 'none',
     release: route.release,
-    reasoningEffort: route.routeKind === 'conversation' || route.routeKind === 'jd'
-      ? 'low'
-      : undefined,
+    reasoningEffort: undefined,
   };
 }
 

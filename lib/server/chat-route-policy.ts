@@ -28,6 +28,7 @@ export interface ChatRouteDecision {
 export interface RouteAnchor {
   turnId: string;
   routeKind: ChatRouteKind;
+  reasonCode: string;
   topicKind: ChatTopicKind;
   topicRef: string | null;
 }
@@ -91,7 +92,7 @@ function isExternalCurrent(message: string): boolean {
 }
 
 function isIdentityQuestion(message: string): boolean {
-  return /你是谁|介绍(?:一下)?(?:你|自己)|你擅长什么|你能做什么|数字\s*(?:morse|摩斯)\s*是(?:什么|谁)/iu.test(message);
+  return /你是谁|介绍(?:一下)?(?:你|自己)|你(?:主要)?是(?:干|做)什么的|你(?:主要)?(?:能|可以)(?:帮我)?(?:干|做)什么|你擅长什么|你能做什么|数字\s*(?:morse|摩斯)\s*是(?:什么|谁)/iu.test(message);
 }
 
 function projectTopics(message: string): string[] {
@@ -119,7 +120,22 @@ function isStableGeneralConversation(message: string): boolean {
 function isAnaphoricFollowUp(message: string): boolean {
   const trimmed = message.trim();
   return trimmed.length <= 40
-    && /^(?:这个|那个|它|这(?:一)?点|那(?:一)?点|上述|前面|刚才|那结果|然后呢|还有呢)/iu.test(trimmed);
+    && (
+      /^(?:这个|那个|它|这(?:一)?点|那(?:一)?点|上述|前面|刚才|那结果|然后呢|还有呢)/iu.test(trimmed)
+      || /(?:哪个|哪一个|最(?:有)?代表性|最推荐|代表作|最能代表).*(?:呢|吗|[？?])?$/iu.test(trimmed)
+    );
+}
+
+function isPendingPersonalScopeClarification(previous?: RouteAnchor | null): previous is RouteAnchor {
+  return previous?.routeKind === 'clarify'
+    && previous.reasonCode === 'personal_scope_ambiguous';
+}
+
+function personalScopeSelection(message: string): 'general' | 'personal' | null {
+  const normalized = normalize(message);
+  if (/^(?:一般|通用|通常|普遍)(?:做法|方法|思路|建议)?$/u.test(normalized)) return 'general';
+  if (/^(?:具体|个人|本人|你的|你本人)(?:经历|经验|做法|案例)?$/u.test(normalized)) return 'personal';
+  return null;
 }
 
 function inheritRoute(previous: RouteAnchor, ledger: CapabilityLedger): ChatRouteDecision {
@@ -212,6 +228,25 @@ export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
       deterministicReply: JD_INTAKE_REPLY,
     });
   }
+  if (isPendingPersonalScopeClarification(input.previous)) {
+    const selection = personalScopeSelection(message);
+    if (selection === 'general') {
+      return decision({
+        routeKind: 'conversation',
+        reasonCode: 'clarification_general_selected',
+        inheritedFromTurnId: input.previous.turnId,
+      });
+    }
+    if (selection === 'personal') {
+      return decision({
+        routeKind: 'personal_fact',
+        reasonCode: 'clarification_personal_selected',
+        evidenceClass: 'unavailable',
+        inheritedFromTurnId: input.previous.turnId,
+        release: 'complete',
+      });
+    }
+  }
   if (isExplicitPersonalFact(message)) {
     const capabilities = assessCapabilities(message, input.ledger);
     const capability = capabilities.find((candidate) => candidate.evidenceClass !== 'none')
@@ -270,6 +305,13 @@ export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
   }
   if (input.previous && isAnaphoricFollowUp(message)) {
     return inheritRoute(input.previous, input.ledger);
+  }
+  if (isPendingPersonalScopeClarification(input.previous)) {
+    return decision({
+      routeKind: 'conversation',
+      reasonCode: 'clarification_followup',
+      inheritedFromTurnId: input.previous.turnId,
+    });
   }
   return decision({
     routeKind: 'clarify',
