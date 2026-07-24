@@ -4,10 +4,19 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**CHAT_V2_RESUME_FACTS_PRODUCTION_OBSERVED / CANARY_0**
+**CHAT_V2_REASONING_PRESET_PRODUCTION_OBSERVED / REAL_PROVIDER_NOT_RERUN**
 
 ## next_allowed_pointer
-当前生产实例运行 `b7e24f6`。脱敏简历事实、Claude Code/CC、Codex 与 WorkBuddy 的个人事实证据，以及不主动暴露无关能力边界的回答规则已按 canary 0 发布；Cursor 仍保持无直接证据。生产知识为 41 documents / 48 chunks，历史 Provider attempt 计数保持 36，active v2 Session 为 0。公网 live/ready、release smoke、Web 健康与 Web/Worker/Edge release 工作目录均已复验；DB/Embedding 未重建。该发布未执行真实 Provider 对话。25%、100%、hedging 故障注入、真实对话复验和 24/48 小时观察均为后续独立授权门槛，生产硬化余项关闭前不得宣称完整 `ONLINE_READY`。
+当前生产应用运行 `8c84ae7`。V2 不再在 `conversation` 或 `jd` 路由写入请求级 `low`，实际 Responses 请求由已激活模型预设 `gpt-5.6-terra / high / max_output_tokens 30000` 决定；V1 的低推理策略保留。公网 live/ready、release smoke、Web 健康和未登录权限边界已复验，Worker 正常运行；DB、Embedding、Edge 容器未重建。部署后未执行真实 Provider 对话，因此下一次授权用户测试才是管理面板出现新 `high` attempt 的最终观察门槛。生产现有 42 条 attempt 均早于本次 `20:20` 容器切换，active v2 Session 为 1；不得把这些历史记录误归因于本次发布。
+
+## Chat v2 活动模型推理参数修正生产发布（2026-07-24）
+
+- 根因：后台模型编辑和激活链路工作正常，生产活动预设已是 `gpt-5.6-terra / responses / high / 30000`；但 V2 的 `adaptV2Route()` 仍对 `conversation` 与 `jd` 写入请求级 `reasoningEffort: low`。`OpenAIProvider` 按“请求级参数优先于模型预设”解析，导致管理面板显示 Low。截图里的 High/Low 混合来自不同路由是否携带该覆写，不是后台保存随机失效。
+- 修正：V2 所有路由不再设置请求级推理强度，统一继承活动模型预设；V1 继续保留原低推理策略。同步修复连续短追问的路由锚点、身份/代表作追问、澄清重复和内部 `response_contract` 泄漏守卫；未把 `max_output_tokens` 改为 1200。
+- Verification：目标路由/继承测试 `29/29`，受影响非数据库行为测试 `84/84`，PostgreSQL 集成 `80/80`、0 skip，`chat:eval` `76/76` 且 `externalCalls=0`；本地和生产镜像构建均生成 30 routes，`git diff --check` PASS。全仓架构合同仍只有 3 条既有依赖环，本轮未增加 import 边。
+- Release：代码提交 `8c84ae7` 已进入 `origin/master` 与 `origin/codex/chat-v2-release`。冻结归档 18,954,355 bytes，SHA-256 `64002a6eff12ad9591753f56f303a0bdda360b1bbd23a3c1114eef496af44e38`；本地与服务器复核一致。`/opt/revolution/current`、Web 与 Worker 指向 `/opt/revolution/releases/8c84ae7/revolution`；DB、Embedding、Edge 容器 ID、启动时间和 restart count 保持不变。
+- Observation：生产活动路由只读查询为 `gpt-5.6-terra / responses / high / 30000`。公网 live/ready/health/root/works/admin 为 200，未登录 Provider/runtime/turn/resume API 为 401，`release:smoke` 返回 `{"ok":true}`；Web、Worker、Edge、DB 最近五分钟错误关键词均为 0，五个运行容器 restart count 均为 0。
+- Boundary：本次只重建 Web/Worker，未运行 migration、grants、ingest，未修改环境文件、模型参数或数据结构，未读取密钥、管理员凭据、Session 值、问题/回答或 Provider payload。attempt 计数从历史文档的 36 变为 42，但新增 6 条发生在 `17:13-17:32`，早于本次 `20:20` 切换；部署和验收没有创建 Provider attempt。真实 High 请求仍待用户测试观察。
 
 ## Chat v2 脱敏简历事实与主动边界修正生产发布（2026-07-23）
 
