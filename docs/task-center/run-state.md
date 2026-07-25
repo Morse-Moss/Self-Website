@@ -4,10 +4,19 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**CHAT_MULTITURN_EVIDENCE_PRODUCTION_OBSERVED / USER_CONVERSATION_NOT_RERUN**
+**CHAT_PROJECT_COLLECTION_PRODUCTION_OBSERVED / USER_CONVERSATION_NOT_RERUN**
 
 ## next_allowed_pointer
-当前生产应用运行 `43cbcf6`。旧固定澄清只允许紧邻、已完成、固定回答一致且十分钟内的精确选择继续；“具体经历”会恢复原问题的受控能力。多 Agent 映射到公开 `deep-research` 项目，明确命名项目使用对应项目证据，未知系统类别保持不可用。公网 live/ready、release smoke、Web 健康和未登录权限边界已复验，Worker 正常运行；DB、Embedding、Edge 容器未重建。部署没有执行真实 Provider 对话，下一步由用户在网站进行三轮原场景观察。
+当前生产应用运行 `11ce329`。“你做过的其他项目有哪些”等项目集合问法使用五项已审核作品目录，不调用 Embedding/RAG/Search；输出必须覆盖五个项目及五个对应来源。项目证据、排名、对比、项目管理经验、明确单项目和支付系统等未知类别保持原受控路由。公网 live/ready、release smoke、Web 健康和未登录权限边界已复验，Worker 正常运行；DB、Embedding、Edge 容器未重建。部署没有执行真实 Provider 对话，下一步由用户在网站复测截图原句及其自然变体。
+
+## Chat v2 项目集合答非所问修正生产发布（2026-07-25）
+
+- 根因：“你做过”先命中通用个人事实分支，使“其他项目有哪些”落入 `personal_fact / unavailable`；旧多 Agent 历史随后影响生成，而输出守卫只检查一般直接性，没有完整项目集合合同。
+- 修正：新增 `portfolio_project_collection_query`，直接注入站点五项已审核作品摘要，跳过 Embedding/RAG/Search；提示要求逐项说明，最终守卫要求五个项目名、五个证据源和 `[来源1]` 至 `[来源5]`。证据、排名、对比、项目管理经验、单项目与未知系统近邻问题保持原路由。
+- Verification：失败优先回归后，非数据库 Chat 边界测试 `186/186`，离线对抗评测 `91/91` 且 `externalCalls=0`，本地和生产镜像 `npm run build` 均通过并生成 30 routes，独立 CRITICAL review PASS，`git diff --check` PASS。
+- Release：功能提交 `11ce329` 已进入 `origin/master`。冻结归档 19,115,703 bytes，SHA-256 `3055b710accfbad71685b280f0af182ed6d1f2abbf10d6f020501cf2a3eb3936`；本地与服务器复核一致。`/opt/revolution/current`、Web 与 Worker 指向 `/opt/revolution/releases/11ce329/revolution`；回滚镜像标记为 `rollback-43cbcf6`。
+- Observation：公网 live/ready/health/root/works/admin/admin-api 为 HTTP 200，未登录 Provider、runtime、turn、resume file/access API 为 HTTP 401，`release:smoke` 返回 `{"ok":true}`。五个容器 restart count 均为 0；Web、Worker、Edge、DB 最近十分钟错误关键词计数均为 0。DB、Embedding、Edge 完整容器 ID 未变化。
+- Boundary：本次只重建 Web/Worker，没有运行 migration、grants、ingest，没有修改生产环境、数据库、公开知识、活动模型参数或私密简历；没有登录管理员、创建邀请码、读取密钥/Session/问题/回答/Provider payload，也没有发起真实 Chat/Search/Embedding Provider 请求。真实回答仍待用户复测。
 
 ## Chat v2 多轮个人事实与项目证据修正生产发布（2026-07-25）
 
