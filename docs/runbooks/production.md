@@ -155,7 +155,7 @@ npm run production:worker
 
 ## 8. 当前生产状态与硬化余项
 
-首个生产实例在 `39849e1` 完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实对话 smoke 和公网 live/ready/release smoke。2026-07-23 当前应用 release 为 `b7e24f6`，沿用同一生产拓扑，并已发布密码登录、邀请码管理、私有导出密码复验、五个项目页面、首页 Warp Tunnel、三节点 Chat 容灾、私密简历、管理员 OpenAI-compatible API 管理、Chat v2 回答相关性修正版和脱敏简历事实证据。Web、Worker 与 Edge 指向 `b7e24f6`；本次无 migration 发布未重建 DB/Embedding，二者分别保持 `e5f9210` 与 `e56e457` 的 Compose working directory。生产 migration 001–007、私有卷、文件型 Secret 和 runtime grants 已部署并复验；PostgreSQL TLS 持久化到共享受限目录。Chat v2 当前为总开关开启、canary 0%、现有白名单非空但未回显、hedging 与 safe mode 关闭；历史 `chat_provider_attempts=36`，active v2 Session 为 0，本次部署没有新增 Provider 调用。Provider 配置主密钥只挂载给 Web，配置表尚无管理员创建的中转或模型，运行继续使用只读环境目标。`MORSE_RESUME_ENABLED=true`，经确认的定向版最终 PDF 保持在私有密文卷，未授权文件接口为 401。生产公开知识为 41 documents / 48 chunks；最近一次摄取新增 1 document / 1 chunk，并跳过 40 个未变化文档。生产 BGE + pgvector 的历史 46 条 gold 为 top-1 36/46、top-3 46/46，正负阈值均通过。生产 Lighthouse 13.4.0 的移动端与桌面端历史 Performance 均为 99；当前恢复事件、实例细节和发布证据以实例手册及 Chat v2 生产 closeout 为准。
+首个生产实例在 `39849e1` 完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实对话 smoke 和公网 live/ready/release smoke。2026-07-25 当前应用 release 为 `1e34885`：`/opt/revolution/current`、Web 与 Worker 指向该冻结 release，Edge 保持 `b7e24f6`，DB 保持 `e5f9210`，Embedding 保持 `e56e457`。本次只重建 Web/Worker，没有执行 migration、grants、ingest、数据库备份恢复、生产配置修改、Provider 调用或私密简历操作。生产 migration 001–007、私有卷、文件型 Secret、runtime grants 与 PostgreSQL TLS 沿用已验收状态；公网 live/ready/release smoke、公开页面和未授权边界均通过。生产 BGE + pgvector 与 Lighthouse 数字仍属于历史验收证据，本轮未重跑。当前恢复事件、实例细节和发布证据以实例手册及 `docs/verify/release/mainline-cleanup-production-closeout-2026-07-25.md` 为准。
 
 以下事项完成前保持 `LIMITED_LAUNCH`，不标记完整 `ONLINE_READY`：
 
@@ -164,7 +164,7 @@ npm run production:worker
 - 接入监控与日志平台，覆盖 5xx、Provider/Embedding/Search、pool、Outbox、cleanup 和容量。
 - 冻结托管备份范围并完成一次独立恢复演练；当前只承诺公开知识可重建。
 - 获得当次授权后分别执行真实 Bocha 和 Feishu smoke。
-- 复核并处置当前生产依赖 advisory；2026-07-22 生产 `npm ci` 报告 1 个 moderate、2 个 high，不执行无评估的 `audit fix`。
+- 复核并处置当前生产依赖 advisory；2026-07-25 生产 `npm ci` 报告 3 个 high，不执行无评估的 `audit fix`。
 - 将经人工确认的最终内容与素材冻结成新提交后再发布；不得从当前脏工作区直接覆盖生产。
 - 私密简历已启用且最终 PDF 已上传；后续真实访客邀请码的创建与传递、密钥轮换和恢复演练仍需分别授权。
 

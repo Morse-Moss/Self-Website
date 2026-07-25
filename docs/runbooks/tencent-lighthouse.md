@@ -2,7 +2,16 @@
 
 本文对应 `aimorse.tech` 的生产部署。当前实例为腾讯云 Lighthouse 首尔节点，公网地址为 `43.133.68.202`。境外节点不需要 ICP 备案；DNS 解析和 HTTPS 证书签发已完成，域名实名状态继续由腾讯云注册控制台维护。
 
-## 当前生产状态（2026-07-23）
+## 当前生产状态（2026-07-25）
+
+- 状态：`PRODUCTION_OBSERVED / MAINLINE_CLEANUP`，当前应用 release `1e34885`。
+- `/opt/revolution/current`、Web 与 Worker Compose working directory 指向 `/opt/revolution/releases/1e34885/revolution`。Edge 继续运行 `b7e24f6`，DB 继续运行 `e5f9210`，Embedding 继续运行 `e56e457`；后三者在本次无 migration、无 ingest 发布中未重建。
+- Web、DB 与 Embedding 为 healthy，Worker 与 Edge 为 running；五个容器 restart count 均为 `0`。公网 live、ready、兼容 health、根页、作品页、`/admin` 与 `/admin/api` 均为 HTTP 200，未登录 Provider runtime、turn list、简历文件和简历授权接口均为 HTTP 401，`release:smoke` 返回 `{"ok":true}`。
+- 本次冻结归档为 19,101,015 bytes，SHA-256 `216d0c265a8869eebc75cbd936d08f2c330c0c1bf39f5fb78e3d69cc9390184f`；本地与服务器上传哈希一致。只重建 Web/Worker，生产环境文件、Provider 路由、数据库、公开知识、Embedding、Edge 与私密简历密文卷均未修改。
+- 发布流程没有登录管理员，没有创建邀请码，没有调用 Chat、Embedding、Bocha 或 Feishu Provider。最近五分钟 Web、Worker、Edge 与 DB 的 `error|exception|panic|fatal` 关键词计数均为 `0`。
+- `revolution-web:rollback-8c84ae7` 与 `revolution-worker:rollback-8c84ae7` 保留为应用回滚镜像；回滚后仍需复验 live、ready、未授权边界和 release smoke。
+
+## 历史生产状态（2026-07-23）
 
 - 状态：`PRODUCTION_OBSERVED / ANSWER_RELEVANCE / CANARY_0`，当前应用 release `74be589`，私密简历已启用并保持受控访问。
 - 实例：`lhins-0oly57x8`；`/opt/revolution/current`、Web、Worker 与 Edge Compose working directory 指向 `/opt/revolution/releases/74be589/revolution`；DB 保持 `e5f9210`，Embedding 保持 `e56e457`，二者均未在本次无 migration 发布中重建。公网 live/ready 均为 HTTP 200。
@@ -17,7 +26,7 @@
 - 私密简历：代码、API、migration `003`、权限为 `0700` 的私有卷和权限为 `0600` 的文件型 Secret 已部署；Web 可读取 Secret，Worker 不挂载 Secret。`MORSE_RESUME_ENABLED=true`，经确认的定向版最终 PDF 已通过认证后台进入私有密文卷；未授权文件请求保持 401。上线验收邀请码已停用且关联 Session 已失效，后续访问码由管理员按人创建和停用。
 - PostgreSQL TLS：证书与私钥已持久化到 `/opt/revolution/shared/postgres/tls`，release 内 `deploy/postgres/tls` 只保留指向该目录的符号链接。任何 Compose 升级命令前必须确认证书可解析、私钥为普通文件且权限为 `0600`；不得依赖运行中容器保存已从宿主删除的 bind 源。
 
-仍需保持诚实边界：监控、托管备份与恢复演练、独立 edge 速率/连接限制、真实 Bocha/Feishu smoke、依赖 advisory 处置和更多国内网络可达性复核尚未完成。本次生产 `npm ci` 报告 1 个 moderate、2 个 high，未执行未经评估的自动修复。首页 Warp Tunnel、五项目页面与公开知识已进入生产，但剩余工作区改动和未跟踪证据没有进入生产。
+仍需保持诚实边界：监控、托管备份与恢复演练、独立 edge 速率/连接限制、真实 Bocha/Feishu smoke、依赖 advisory 处置和更多国内网络可达性复核尚未完成。2026-07-25 生产 `npm ci` 报告 3 个 high，未执行未经评估的自动修复。首页 Warp Tunnel、五项目页面与公开知识已进入生产；本地忽略目录和归档素材没有进入冻结 release。
 
 ## 管理入口与邀请码发布验收
 
