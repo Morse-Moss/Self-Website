@@ -4,10 +4,19 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**CHAT_V2_REASONING_PRESET_PRODUCTION_OBSERVED / REAL_PROVIDER_NOT_RERUN**
+**CHAT_CONTEXT_ROUTING_PRODUCTION_OBSERVED / USER_CONVERSATION_NOT_RERUN**
 
 ## next_allowed_pointer
-当前生产应用运行 `8c84ae7`。V2 不再在 `conversation` 或 `jd` 路由写入请求级 `low`，实际 Responses 请求由已激活模型预设 `gpt-5.6-terra / high / max_output_tokens 30000` 决定；V1 的低推理策略保留。公网 live/ready、release smoke、Web 健康和未登录权限边界已复验，Worker 正常运行；DB、Embedding、Edge 容器未重建。部署后未执行真实 Provider 对话，因此下一次授权用户测试才是管理面板出现新 `high` attempt 的最终观察门槛。生产现有 42 条 attempt 均早于本次 `20:20` 容器切换，active v2 Session 为 1；不得把这些历史记录误归因于本次发布。
+当前生产应用运行 `7ea1de8`。完整技术问题默认进入 `conversation`；只有缺失指代对象、无可继承受控主题且本轮 Provider 消息没有真实历史时才进入 `clarify`。普通对话追问使用实际消息历史，项目、JD 和能力追问继续使用受控 route anchor。公网 live/ready、release smoke、Web 健康和未登录权限边界已复验，Worker 正常运行；DB、Embedding、Edge 容器未重建。部署没有执行真实 Provider 对话，下一步由用户在网站进行多轮对话观察；不得把历史 attempt 归因于本次发布。
+
+## Chat v2 context routing correction production release（2026-07-25）
+
+- 根因：旧策略把若干自包含技术问题误判成缺少上下文的短追问，并在没有可继承受控主题时直接进入固定 `clarify`；同时 route anchor 只保存受控项目/JD/能力主题，不能替代普通对话的真实消息上下文，因此多轮自由对话会出现答非所问或上下句断层。
+- 修正：自包含问题未命中更高置信路由时默认进入 `conversation`；只有真正缺少指代对象且没有真实消息历史时才澄清。项目/JD/能力追问继续受控继承，普通对话追问只在 `turn.messages` 包含前序消息时延续，安全拒绝重放保持安全文案。
+- Verification：相邻路由与服务测试 `54/54`，离线评测 `83/83`，`npm run build` 通过并生成 30 routes，独立 review PASS，`git diff --check` PASS。本地 PostgreSQL 未启动，76 条数据库集成测试 skip；全仓绿灯不作声明，既有 3 条依赖循环仍在本次范围外。
+- Release：功能提交 `7ea1de8` 已快进到 `origin/master`。冻结归档 19,106,795 bytes，SHA-256 `4e8c9898254104cbf93c625f226d84385586240657038d1e71da7f65048107b0`；本地与服务器复核一致。`/opt/revolution/current`、Web 与 Worker 指向 `/opt/revolution/releases/7ea1de8/revolution`；DB 保持 `e5f9210`，Embedding 保持 `e56e457`，Edge 保持 `b7e24f6`。
+- Observation：公网 live/ready/health/root/works/admin/admin-api 为 HTTP 200，未登录 Provider、runtime、turn、resume file/access API 为 HTTP 401，`release:smoke` 返回 `{"ok":true}`。五个容器 restart count 均为 0；Web、Worker、Edge、DB 最近五分钟错误关键词计数均为 0。
+- Boundary：本次只重建 Web/Worker，没有运行 migration、grants、ingest，没有修改生产环境、数据库、公开知识、活动模型参数或私密简历；没有登录管理员、创建邀请码、读取密钥/Session/问题/回答/Provider payload，也没有发起真实 Chat/Search/Embedding Provider 请求。
 
 ## Chat v2 活动模型推理参数修正生产发布（2026-07-24）
 
