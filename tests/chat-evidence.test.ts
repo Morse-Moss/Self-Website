@@ -116,6 +116,22 @@ test('personal capability never uses web and exposes only ledger-backed project 
   assert.deepEqual(calls.counts(), { embed: 0, retrieve: 0, search: 0 });
 });
 
+test('a clarification selection resolves evidence from its controlled capability topic', async () => {
+  const calls = input(route('personal_fact', {
+    reasonCode: 'clarification_personal_selected',
+    topicKind: 'capability',
+    topicRef: 'multi-agent',
+    evidenceClass: 'direct',
+    release: 'complete',
+  }), '具体经历');
+  const result = await resolveChatEvidence(calls);
+
+  assert.equal(result.capability?.capabilityId, 'multi-agent');
+  assert.equal(result.capability?.evidenceClass, 'direct');
+  assert.ok(result.knowledge.some((source) => source.projectSlug === 'deep-research'));
+  assert.deepEqual(calls.counts(), { embed: 0, retrieve: 0, search: 0 });
+});
+
 test('personal capability evidence resolves every named resume-backed tool', async () => {
   const calls = input(route('personal_fact', {
     topicKind: 'capability',

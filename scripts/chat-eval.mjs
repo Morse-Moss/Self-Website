@@ -197,6 +197,9 @@ class AdversarialDeterministicProvider {
         ? `公开资料不能确认我有 Kubernetes 生产经验，只能确认容器化部署基础。${citations}`
         : /Docker Compose/iu.test(userMessage)
           ? `我用过 Docker Compose，并在公开项目中用于容器化部署。${citations}`
+          : /多\s*Agent|multi[- ]?agent/iu.test(userMessage)
+              || request.instructions.includes('能力：多 Agent')
+            ? `我做过公开的多 Agent 深度研究系统，具体证据来自 deep-research 项目。${citations}`
           : '公开资料里没有这段具体个人经历，我不能替真人 Morse 补造。';
     } else if (noEvidence && recruitmentPersona && explicitUnknownQuestion) {
       answer = '这项经历没有出现在公开资料中，建议面谈确认。';
@@ -213,6 +216,10 @@ class AdversarialDeterministicProvider {
     } else if (groundedPersona) {
       answer = /深度研究.*数字摩斯|数字摩斯.*深度研究/iu.test(userMessage)
         ? `深度研究系统解决多来源研究的证据组织与质量门问题；数字摩斯解决作品集公开知识的可核验对话入口问题。${citations}`
+        : /深度研究/iu.test(userMessage)
+          ? `深度研究 Agent 系统通过多 Agent 编排组织研究任务、证据与质量门。${citations}`
+          : /数字\s*Morse/iu.test(userMessage) && !/RAG/iu.test(userMessage)
+            ? `数字 Morse 项目把公开作品知识、受控检索与可靠对话路由连接起来。${citations}`
         : /(?:内容创作|内容生成).*(?:自动运营)|(?:自动运营).*(?:内容创作|内容生成)/iu.test(userMessage)
           ? `内容创作 Agent 系统负责内容任务拆解与生成；自动运营 Agent 系统把数据发现、内容资产、任务编排和受控发布连接成运营流程。${citations}`
         : /RAG/iu.test(userMessage)
@@ -581,6 +588,12 @@ function previousAnchor(item) {
     reasonCode: item.previous.reasonCode ?? 'project_fact_query',
     topicKind: item.previous.topicKind,
     topicRef: item.previous.topicRef ?? null,
+    ...(typeof item.previous.question === 'string'
+      ? { question: item.previous.question }
+      : {}),
+    ...(item.previous.legacyClarificationEligible === true
+      ? { legacyClarificationEligible: true }
+      : {}),
   };
 }
 

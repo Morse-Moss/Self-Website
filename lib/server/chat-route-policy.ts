@@ -31,6 +31,8 @@ export interface RouteAnchor {
   reasonCode: string;
   topicKind: ChatTopicKind;
   topicRef: string | null;
+  question?: string;
+  legacyClarificationEligible?: boolean;
 }
 
 export interface RouteChatTurnInput {
@@ -130,7 +132,8 @@ function isUnresolvedReference(message: string): boolean {
 
 function isPendingPersonalScopeClarification(previous?: RouteAnchor | null): previous is RouteAnchor {
   return previous?.routeKind === 'clarify'
-    && previous.reasonCode === 'personal_scope_ambiguous';
+    && previous.reasonCode === 'personal_scope_ambiguous'
+    && previous.legacyClarificationEligible === true;
 }
 
 function personalScopeSelection(message: string): 'general' | 'personal' | null {
@@ -138,6 +141,42 @@ function personalScopeSelection(message: string): 'general' | 'personal' | null 
   if (/^(?:一般|通用|通常|普遍)(?:做法|方法|思路|建议)?$/u.test(normalized)) return 'general';
   if (/^(?:具体|个人|本人|你的|你本人)(?:经历|经验|做法|案例)?$/u.test(normalized)) return 'personal';
   return null;
+}
+
+function isExplicitCapabilityContinuation(
+  message: string,
+  previous: RouteAnchor | null | undefined,
+  ledger: CapabilityLedger,
+): boolean {
+  if (previous?.topicKind !== 'capability' || !previous.topicRef) return false;
+  if (!/(?:聊|讲|说|介绍|展开|详细)/u.test(message)) return false;
+  return assessCapabilities(message, ledger).some(
+    (capability) => capability.capabilityId === previous.topicRef,
+  );
+}
+
+function capabilityProjectFollowup(
+  message: string,
+  previous: RouteAnchor | null | undefined,
+  ledger: CapabilityLedger,
+): ChatRouteDecision | null {
+  if (previous?.topicKind !== 'capability' || !previous.topicRef) return null;
+  const normalized = normalize(message);
+  if (!/^(?:具体)?(?:怎么|如何)(?:实现|做|设计)(?:的)?$/u.test(normalized)) return null;
+  const capability = assessCapability(previous.topicRef, ledger);
+  const projectSlugs = [...new Set(capability.direct
+    .filter((reference) => reference.disclosure === 'public' && reference.projectSlug)
+    .map((reference) => reference.projectSlug!))];
+  if (projectSlugs.length !== 1) return null;
+  return decision({
+    routeKind: 'grounded',
+    reasonCode: 'anaphoric_capability_project_followup',
+    topicKind: 'project',
+    topicRef: projectSlugs[0],
+    evidenceClass: 'direct',
+    inheritedFromTurnId: previous.turnId,
+    requiresEmbedding: true,
+  });
 }
 
 function inheritRoute(previous: RouteAnchor, ledger: CapabilityLedger): ChatRouteDecision | null {
@@ -236,14 +275,34 @@ export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
       });
     }
     if (selection === 'personal') {
+      const capabilities = input.previous.question
+        ? assessCapabilities(input.previous.question, input.ledger)
+        : [];
+      const capability = capabilities.find((candidate) => candidate.evidenceClass !== 'none')
+        ?? capabilities[0]
+        ?? null;
       return decision({
         routeKind: 'personal_fact',
         reasonCode: 'clarification_personal_selected',
-        evidenceClass: 'unavailable',
+        topicKind: capability?.capabilityId ? 'capability' : 'none',
+        topicRef: capability?.capabilityId ?? null,
+        evidenceClass: capability && capability.evidenceClass !== 'none'
+          ? capability.evidenceClass
+          : 'unavailable',
         inheritedFromTurnId: input.previous.turnId,
         release: 'complete',
       });
     }
+  }
+  if (isExplicitPersonalFact(message) && projectTopics(message).length > 0) {
+    return decision({
+      routeKind: 'grounded',
+      reasonCode: 'personal_named_project_query',
+      topicKind: 'project',
+      topicRef: projectTopic(message),
+      evidenceClass: 'direct',
+      requiresEmbedding: true,
+    });
   }
   if (isExplicitPersonalFact(message)) {
     const capabilities = assessCapabilities(message, input.ledger);
@@ -295,6 +354,15 @@ export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
       requiresEmbedding: true,
     });
   }
+  if (isExplicitCapabilityContinuation(message, input.previous, input.ledger)) {
+    return inheritRoute(input.previous!, input.ledger)!;
+  }
+  const capabilityImplementation = capabilityProjectFollowup(
+    message,
+    input.previous,
+    input.ledger,
+  );
+  if (capabilityImplementation) return capabilityImplementation;
   if (isStableGeneralConversation(message)) {
     return decision({
       routeKind: 'conversation',

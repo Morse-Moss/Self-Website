@@ -33,6 +33,18 @@ test('Docker Compose remains direct and points to public projects', () => {
   assert.equal(result.boundaryText, null);
 });
 
+test('multi-agent is direct and points to the public deep-research project', () => {
+  const result = assessCapability(
+    '你不是有做过多 Agent 的系统吗？',
+    compileCapabilityLedger(siteContent, chatCapabilityPolicy),
+  );
+
+  assert.equal(result.capabilityId, 'multi-agent');
+  assert.equal(result.evidenceClass, 'direct');
+  assert.ok(result.direct.some((item) => item.projectSlug === 'deep-research'));
+  assert.deepEqual(result.transferable, []);
+});
+
 test('sanitized resume facts provide direct evidence for Claude Code and Codex without promoting Cursor', () => {
   const results = assessCapabilities(
     '你使用过 Cursor、Claude Code 和 Codex 吗？',

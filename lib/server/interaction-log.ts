@@ -57,12 +57,20 @@ export async function loadPreviousRouteAnchor(
     route_reason_code: string | null;
     topic_kind: string | null;
     topic_ref: string | null;
+    question: string;
+    legacy_clarification_eligible: boolean;
   }>(
     `SELECT previous.id::text, previous.route_kind, previous.route_reason_code,
-            previous.topic_kind, previous.topic_ref, previous.inherited_from_turn_id::text
+            previous.topic_kind, previous.topic_ref, previous.inherited_from_turn_id::text,
+            previous.question,
+            (previous.status = 'completed'
+              AND previous.answer = $3
+              AND previous.created_at >= current.created_at - INTERVAL '10 minutes'
+              AND previous.created_at <= current.created_at) AS legacy_clarification_eligible
        FROM interaction_turns AS current
        JOIN LATERAL (
-         SELECT id, route_kind, route_reason_code, topic_kind, topic_ref, inherited_from_turn_id
+         SELECT id, route_kind, route_reason_code, topic_kind, topic_ref, inherited_from_turn_id,
+                question, status, answer, created_at
            FROM interaction_turns
           WHERE conversation_id = current.conversation_id
             AND id <> current.id
@@ -71,7 +79,7 @@ export async function loadPreviousRouteAnchor(
           LIMIT 1
        ) AS previous ON true
       WHERE current.id = $1 AND current.conversation_id = $2`,
-    [currentTurnId, conversationId],
+    [currentTurnId, conversationId, CLARIFY_REPLY],
   );
   const row = result.rows[0];
   if (
@@ -91,6 +99,10 @@ export async function loadPreviousRouteAnchor(
     reasonCode: row.route_reason_code,
     topicKind: row.topic_kind as ChatTopicKind,
     topicRef: row.topic_ref,
+    ...(typeof row.question === 'string' ? { question: row.question } : {}),
+    ...(row.legacy_clarification_eligible === true
+      ? { legacyClarificationEligible: true }
+      : {}),
   };
 }
 

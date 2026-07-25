@@ -10,6 +10,7 @@ export interface CapabilityPolicyEntry {
   id: string;
   label: string;
   aliases: string[];
+  projectSlugs?: ProjectSlug[];
 }
 
 export interface CapabilityTransferRule {
@@ -137,6 +138,24 @@ export function compileCapabilityLedger(
         disclosure: project.disclosure,
         sourceKind: source.sourceKind,
         sourceText: source.sourceText,
+      });
+    }
+  }
+
+  for (const candidate of policy.canonical) {
+    const entry = entries.get(candidate.id);
+    if (!entry) invalidPolicy(`missing canonical entry for ${candidate.id}`);
+    for (const projectSlug of candidate.projectSlugs ?? []) {
+      const project = content.projects.find((item) => item.slug === projectSlug);
+      if (!project) invalidPolicy(`unknown project ${projectSlug} for ${candidate.id}`);
+      entry.direct.push({
+        capabilityId: entry.id,
+        label: entry.label,
+        projectSlug: project.slug,
+        projectName: project.name,
+        disclosure: project.disclosure,
+        sourceKind: 'capability',
+        sourceText: project.summary,
       });
     }
   }

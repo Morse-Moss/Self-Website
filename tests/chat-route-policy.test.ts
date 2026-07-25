@@ -36,6 +36,16 @@ function conversationAnchor(): RouteAnchor {
   };
 }
 
+function capabilityAnchor(): RouteAnchor {
+  return {
+    turnId: '44444444-4444-4444-8444-444444444444',
+    routeKind: 'personal_fact',
+    reasonCode: 'personal_capability_query',
+    topicKind: 'capability',
+    topicRef: 'multi-agent',
+  };
+}
+
 function clarificationAnchor(): RouteAnchor {
   return {
     turnId: '22222222-2222-4222-8222-222222222222',
@@ -43,6 +53,8 @@ function clarificationAnchor(): RouteAnchor {
     reasonCode: 'personal_scope_ambiguous',
     topicKind: 'none',
     topicRef: null,
+    question: '你有多 Agent 系统经验吗？',
+    legacyClarificationEligible: true,
   };
 }
 
@@ -257,8 +269,88 @@ test('a pending personal-scope clarification resolves the selected branch', () =
   assert.equal(general.deterministicReply, null);
   assert.equal(personal.routeKind, 'personal_fact');
   assert.equal(personal.reasonCode, 'clarification_personal_selected');
-  assert.equal(personal.evidenceClass, 'unavailable');
+  assert.equal(personal.topicKind, 'capability');
+  assert.equal(personal.topicRef, 'multi-agent');
+  assert.equal(personal.evidenceClass, 'direct');
   assert.equal(personal.deterministicReply, null);
+});
+
+test('an ineligible legacy clarification does not capture a later selection', () => {
+  const previous = { ...clarificationAnchor(), legacyClarificationEligible: false };
+  const decision = routeChatTurn({ request: request('具体经历'), previous, ledger });
+
+  assert.equal(decision.inheritedFromTurnId, null);
+  assert.notEqual(decision.reasonCode, 'clarification_personal_selected');
+});
+
+test('a personal multi-agent system question uses direct public project evidence', () => {
+  const decision = routeChatTurn({
+    request: request('你不是有做过多agent的系统吗？'),
+    ledger,
+  });
+
+  assert.equal(decision.routeKind, 'personal_fact');
+  assert.equal(decision.reasonCode, 'personal_capability_query');
+  assert.equal(decision.topicKind, 'capability');
+  assert.equal(decision.topicRef, 'multi-agent');
+  assert.equal(decision.evidenceClass, 'direct');
+});
+
+test('an explicit capability continuation inherits the controlled capability topic', () => {
+  const previous = capabilityAnchor();
+  const decision = routeChatTurn({
+    request: request('那你聊一下多agent系统吧'),
+    previous,
+    hasUsableHistory: true,
+    ledger,
+  });
+
+  assert.equal(decision.routeKind, 'personal_fact');
+  assert.equal(decision.reasonCode, 'anaphoric_capability_followup');
+  assert.equal(decision.topicRef, 'multi-agent');
+  assert.equal(decision.evidenceClass, 'direct');
+  assert.equal(decision.inheritedFromTurnId, previous.turnId);
+});
+
+test('a capability implementation follow-up is grounded only to its unique public project', () => {
+  const decision = routeChatTurn({
+    request: request('具体怎么实现的？'),
+    previous: capabilityAnchor(),
+    hasUsableHistory: true,
+    ledger,
+  });
+
+  assert.equal(decision.routeKind, 'grounded');
+  assert.equal(decision.reasonCode, 'anaphoric_capability_project_followup');
+  assert.equal(decision.topicKind, 'project');
+  assert.equal(decision.topicRef, 'deep-research');
+  assert.equal(decision.evidenceClass, 'direct');
+  assert.equal(decision.inheritedFromTurnId, capabilityAnchor().turnId);
+});
+
+test('an unknown personal system claim remains unavailable', () => {
+  for (const message of ['你做过支付系统吗？', '你做过医疗系统吗？', '你做过千万级系统吗？']) {
+    const decision = routeChatTurn({ request: request(message), ledger });
+    assert.equal(decision.routeKind, 'personal_fact', message);
+    assert.equal(decision.topicKind, 'none', message);
+    assert.equal(decision.topicRef, null, message);
+    assert.equal(decision.evidenceClass, 'unavailable', message);
+  }
+});
+
+test('an explicitly named public project experience question uses project evidence', () => {
+  for (const [message, projectSlug] of [
+    ['你做过深度研究 Agent 系统吗？', 'deep-research'],
+    ['你做过数字 Morse 项目吗？', 'digital-morse'],
+  ] as const) {
+    const decision = routeChatTurn({ request: request(message), ledger });
+    assert.equal(decision.routeKind, 'grounded', message);
+    assert.equal(decision.reasonCode, 'personal_named_project_query', message);
+    assert.equal(decision.topicKind, 'project', message);
+    assert.equal(decision.topicRef, projectSlug, message);
+    assert.equal(decision.evidenceClass, 'direct', message);
+    assert.equal(decision.requiresEmbedding, true, message);
+  }
 });
 
 test('an unresolved clarification follow-up does not repeat the fixed prompt', () => {

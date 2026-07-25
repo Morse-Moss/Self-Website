@@ -27,6 +27,12 @@
       "aliases": ["RAG", "检索增强生成"]
     },
     {
+      "id": "multi-agent",
+      "label": "多 Agent",
+      "aliases": ["多 Agent", "多Agent", "multi-agent", "multi agent"],
+      "projectSlugs": ["deep-research"]
+    },
+    {
       "id": "claude-code",
       "label": "Claude Code",
       "aliases": ["Claude Code", "CC"]

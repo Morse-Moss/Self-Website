@@ -5,7 +5,10 @@ import {
   loadPreviousRouteAnchor,
   loadRecordedInteractionRoute,
 } from '../lib/server/interaction-log.ts';
-import { SAFETY_BOUNDARY_REPLY } from '../lib/server/chat-route-policy.ts';
+import {
+  CLARIFY_REPLY,
+  SAFETY_BOUNDARY_REPLY,
+} from '../lib/server/chat-route-policy.ts';
 
 test('loadPreviousRouteAnchor preserves a routed follow-up as the current anchor', async () => {
   const queries: string[] = [];
@@ -20,6 +23,8 @@ test('loadPreviousRouteAnchor preserves a routed follow-up as the current anchor
           route_reason_code: 'anaphoric_project_followup',
           topic_kind: 'project',
           topic_ref: 'digital-morse',
+          question: '数字 Morse 为什么这样设计？',
+          legacy_clarification_eligible: false,
         }],
       };
     },
@@ -37,8 +42,43 @@ test('loadPreviousRouteAnchor preserves a routed follow-up as the current anchor
     reasonCode: 'anaphoric_project_followup',
     topicKind: 'project',
     topicRef: 'digital-morse',
+    question: '数字 Morse 为什么这样设计？',
   });
   assert.match(queries[0] ?? '', /route_reason_code/u);
+  assert.match(queries[0] ?? '', /previous\.question/u);
+  assert.match(queries[0] ?? '', /previous\.status = 'completed'/u);
+  assert.match(queries[0] ?? '', /previous\.answer = \$3/u);
+  assert.match(queries[0] ?? '', /INTERVAL '10 minutes'/u);
+});
+
+test('loadPreviousRouteAnchor exposes only a bounded completed legacy clarification', async () => {
+  const valuesSeen: unknown[][] = [];
+  const client = {
+    async query(_sql: string, values: unknown[]) {
+      valuesSeen.push(values);
+      return {
+        rows: [{
+          id: '11111111-1111-4111-8111-111111111111',
+          inherited_from_turn_id: null,
+          route_kind: 'clarify',
+          route_reason_code: 'personal_scope_ambiguous',
+          topic_kind: 'none',
+          topic_ref: null,
+          question: '你有多 Agent 系统经验吗？',
+          legacy_clarification_eligible: true,
+        }],
+      };
+    },
+  };
+
+  const anchor = await loadPreviousRouteAnchor(
+    client,
+    '22222222-2222-4222-8222-222222222222',
+    '33333333-3333-4333-8333-333333333333',
+  );
+
+  assert.equal(anchor?.legacyClarificationEligible, true);
+  assert.equal(valuesSeen[0]?.[2], CLARIFY_REPLY);
 });
 
 test('loadRecordedInteractionRoute preserves a recorded safety boundary reply', async () => {

@@ -1,6 +1,7 @@
 import type { ChatRouteDecision } from './chat-route-policy.ts';
 import { chatProjectReferences } from './chat-projects.ts';
 import {
+  assessCapability,
   assessCapabilities,
   type CapabilityAssessment,
   type CapabilityEvidenceRef,
@@ -154,7 +155,12 @@ export async function resolveChatEvidence(
         search: await input.search(),
       };
     case 'personal_fact': {
-      const capabilities = assessCapabilities(input.question, input.ledger);
+      const matchedCapabilities = assessCapabilities(input.question, input.ledger);
+      const capabilities = matchedCapabilities.length > 0
+        ? matchedCapabilities
+        : input.route.topicKind === 'capability' && input.route.topicRef
+          ? [assessCapability(input.route.topicRef, input.ledger)]
+          : [];
       const capability = capabilities[0] ?? null;
       const knowledge = new Map<string, KnowledgeSource>();
       for (const assessment of capabilities) {
