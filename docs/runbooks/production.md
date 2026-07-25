@@ -155,7 +155,7 @@ npm run production:worker
 
 ## 8. 当前生产状态与硬化余项
 
-首个生产实例在 `39849e1` 完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实对话 smoke 和公网 live/ready/release smoke。2026-07-25 当前应用 release 为 `7ea1de8`：`/opt/revolution/current`、Web 与 Worker 指向该冻结 release，Edge 保持 `b7e24f6`，DB 保持 `e5f9210`，Embedding 保持 `e56e457`。本次只重建 Web/Worker，没有执行 migration、grants、ingest、数据库备份恢复、生产配置修改、Provider 调用或私密简历操作。生产 migration 001–007、私有卷、文件型 Secret、runtime grants 与 PostgreSQL TLS 沿用已验收状态；公网 live/ready/release smoke、公开页面和未授权边界均通过。生产 BGE + pgvector 与 Lighthouse 数字仍属于历史验收证据，本轮未重跑。当前实例细节和发布证据以实例手册及 `docs/verify/release/chat-context-routing-production-closeout-2026-07-25.md` 为准。
+首个生产实例在 `39849e1` 完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实对话 smoke 和公网 live/ready/release smoke。2026-07-25 当前应用 release 为 `43cbcf6`：`/opt/revolution/current`、Web 与 Worker 指向该冻结 release，Edge 保持 `b7e24f6`，DB 保持 `e5f9210`，Embedding 保持 `e56e457`。本次只重建 Web/Worker，没有执行 migration、grants、ingest、数据库备份恢复、生产配置修改、Provider 调用或私密简历操作。生产 migration 001–007、私有卷、文件型 Secret、runtime grants 与 PostgreSQL TLS 沿用已验收状态；公网 live/ready/release smoke、公开页面和未授权边界均通过。生产 BGE + pgvector 与 Lighthouse 数字仍属于历史验收证据，本轮未重跑。当前实例细节和发布证据以实例手册及 `docs/verify/release/chat-multiturn-evidence-production-closeout-2026-07-25.md` 为准。
 
 以下事项完成前保持 `LIMITED_LAUNCH`，不标记完整 `ONLINE_READY`：
 

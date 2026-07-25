@@ -4,12 +4,12 @@
 
 ## 当前生产状态（2026-07-25）
 
-- 状态：`PRODUCTION_OBSERVED / CHAT_CONTEXT_ROUTING`，当前应用 release `7ea1de8`。
-- `/opt/revolution/current`、Web 与 Worker Compose working directory 指向 `/opt/revolution/releases/7ea1de8/revolution`。Edge 继续运行 `b7e24f6`，DB 继续运行 `e5f9210`，Embedding 继续运行 `e56e457`；后三者在本次无 migration、无 ingest 发布中未重建。
+- 状态：`PRODUCTION_OBSERVED / CHAT_MULTITURN_EVIDENCE`，当前应用 release `43cbcf6`。
+- `/opt/revolution/current`、Web 与 Worker Compose working directory 指向 `/opt/revolution/releases/43cbcf6/revolution`。Edge 继续运行 `b7e24f6`，DB 继续运行 `e5f9210`，Embedding 继续运行 `e56e457`；后三者在本次无 migration、无 ingest 发布中未重建。
 - Web、DB 与 Embedding 为 healthy，Worker 与 Edge 为 running；五个容器 restart count 均为 `0`。公网 live、ready、兼容 health、根页、作品页、`/admin` 与 `/admin/api` 均为 HTTP 200，未登录 Provider runtime、turn list、简历文件和简历授权接口均为 HTTP 401，`release:smoke` 返回 `{"ok":true}`。
-- 本次冻结归档为 19,106,795 bytes，SHA-256 `4e8c9898254104cbf93c625f226d84385586240657038d1e71da7f65048107b0`；本地与服务器上传哈希一致。只重建 Web/Worker，生产环境文件、Provider 路由、数据库、公开知识、Embedding、Edge 与私密简历密文卷均未修改。
+- 本次冻结归档为 19,111,958 bytes，SHA-256 `a709997884aa204f9e484f6ba2aa6a74f4c53ac6fd2fda8737a5baabae37c0cc`；本地与服务器上传哈希一致。只重建 Web/Worker，生产环境文件、Provider 路由、数据库、公开知识、Embedding、Edge 与私密简历密文卷均未修改。
 - 发布流程没有登录管理员，没有创建邀请码，没有调用 Chat、Embedding、Bocha 或 Feishu Provider。最近五分钟 Web、Worker、Edge 与 DB 的 `error|exception|panic|fatal` 关键词计数均为 `0`。
-- `revolution-web:rollback-1e34885` 与 `revolution-worker:rollback-1e34885` 保留为应用回滚镜像；回滚后仍需复验 live、ready、未授权边界和 release smoke。
+- `revolution-web:rollback-7ea1de8` 与 `revolution-worker:rollback-7ea1de8` 保留为应用回滚镜像；回滚后仍需复验 live、ready、未授权边界和 release smoke。
 
 ## 历史生产状态（2026-07-23）
 

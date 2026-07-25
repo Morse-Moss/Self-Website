@@ -4,10 +4,19 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**CHAT_CONTEXT_ROUTING_PRODUCTION_OBSERVED / USER_CONVERSATION_NOT_RERUN**
+**CHAT_MULTITURN_EVIDENCE_PRODUCTION_OBSERVED / USER_CONVERSATION_NOT_RERUN**
 
 ## next_allowed_pointer
-当前生产应用运行 `7ea1de8`。完整技术问题默认进入 `conversation`；只有缺失指代对象、无可继承受控主题且本轮 Provider 消息没有真实历史时才进入 `clarify`。普通对话追问使用实际消息历史，项目、JD 和能力追问继续使用受控 route anchor。公网 live/ready、release smoke、Web 健康和未登录权限边界已复验，Worker 正常运行；DB、Embedding、Edge 容器未重建。部署没有执行真实 Provider 对话，下一步由用户在网站进行多轮对话观察；不得把历史 attempt 归因于本次发布。
+当前生产应用运行 `43cbcf6`。旧固定澄清只允许紧邻、已完成、固定回答一致且十分钟内的精确选择继续；“具体经历”会恢复原问题的受控能力。多 Agent 映射到公开 `deep-research` 项目，明确命名项目使用对应项目证据，未知系统类别保持不可用。公网 live/ready、release smoke、Web 健康和未登录权限边界已复验，Worker 正常运行；DB、Embedding、Edge 容器未重建。部署没有执行真实 Provider 对话，下一步由用户在网站进行三轮原场景观察。
+
+## Chat v2 多轮个人事实与项目证据修正生产发布（2026-07-25）
+
+- 根因：旧 `personal_scope_ambiguous` 澄清缺少短时资格边界和原问题恢复，导致跨时段的“具体经历”仍被消费却拿不到能力主题；能力台账缺少多 Agent 到公开项目的受控映射，能力续问与项目实现追问又会掉回普通对话。明确公开项目的个人问法还会被通用个人事实分支提前截获。
+- 修正：旧澄清仅在紧邻上一轮、`completed`、回答精确一致且 10 分钟内时兼容；恢复并持久化能力 `topic_ref`。`multi-agent` 明确映射 `deep-research`，实现追问仅在唯一公开项目映射时转项目检索；明确公开项目进入精确项目证据，支付/医疗等未知系统保持 `unavailable`。
+- Verification：非数据库 Chat 边界测试 `175/175`，离线对抗评测 `90/90` 且 `externalCalls=0`，本地与生产镜像 `npm run build` 均通过并生成 30 routes，独立 review PASS，`git diff --check` 与敏感模式扫描 PASS。
+- Release：功能提交 `43cbcf6` 已进入 `origin/master`。冻结归档 19,111,958 bytes，SHA-256 `a709997884aa204f9e484f6ba2aa6a74f4c53ac6fd2fda8737a5baabae37c0cc`；本地与服务器复核一致。`/opt/revolution/current`、Web 与 Worker 指向 `/opt/revolution/releases/43cbcf6/revolution`；DB 保持 `e5f9210`，Embedding 保持 `e56e457`，Edge 保持 `b7e24f6`。
+- Observation：公网 live/ready/health/root/works/admin/admin-api 为 HTTP 200，未登录 Provider、runtime、turn、resume file/access API 为 HTTP 401，`release:smoke` 返回 `{"ok":true}`。五个容器 restart count 均为 0；Web、Worker、Edge、DB 最近十分钟错误关键词计数均为 0。
+- Boundary：本次只重建 Web/Worker，没有运行 migration、grants、ingest，没有修改生产环境、数据库、公开知识、活动模型参数或私密简历；没有登录管理员、创建邀请码、读取密钥/Session/问题/回答/Provider payload，也没有发起真实 Chat/Search/Embedding Provider 请求。
 
 ## Chat v2 context routing correction production release（2026-07-25）
 
