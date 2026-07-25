@@ -4,6 +4,7 @@ import type { TurnIntent } from './chat-behavior.ts';
 import type { ChatRouteDecision } from './chat-route-policy.ts';
 import { containsCapabilityAlias } from './capability-evidence.ts';
 import {
+  chatProjectReferences,
   matchChatProjectSlugs,
   mentionsChatProject,
 } from './chat-projects.ts';
@@ -177,6 +178,18 @@ function validateDirectAnswer(input: ChatGuardInput, reasons: ReasonSet): void {
     return;
   }
   if (kind !== 'grounded' && kind !== 'jd') return;
+
+  if (input.route?.reasonCode === 'portfolio_project_collection_query') {
+    const citedSources = new Set(citationNumbers(input.answer));
+    if (
+      input.sourceCount !== chatProjectReferences.length
+      || chatProjectReferences.some((project) => !mentionsChatProject(input.answer, project.slug))
+      || chatProjectReferences.some((_, index) => !citedSources.has(index + 1))
+    ) {
+      reasons.add('answer_not_direct');
+      return;
+    }
+  }
 
   const namedProjects = matchChatProjectSlugs(input.question);
   const requestedCapabilities = chatCapabilityPolicy.canonical.filter((capability) => (

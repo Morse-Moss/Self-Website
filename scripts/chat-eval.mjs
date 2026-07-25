@@ -224,8 +224,8 @@ class AdversarialDeterministicProvider {
           ? `内容创作 Agent 系统负责内容任务拆解与生成；自动运营 Agent 系统把数据发现、内容资产、任务编排和受控发布连接成运营流程。${citations}`
         : /RAG/iu.test(userMessage)
         ? `数字 Morse 的 RAG 会先检索当前问题相关的公开知识，再按证据边界生成回答。${citations}`
-        : /有哪些项目|哪些项目/iu.test(userMessage)
-          ? `我目前公开展示的项目覆盖内容生成、自动运营、外贸获客、深度研究和数字 Morse。${citations}`
+        : /有哪些项目|哪些项目|项目有哪些/iu.test(userMessage)
+          ? `我目前公开展示的项目包括内容创作 Agent 系统、自动运营 Agent 系统、AI 外贸获客系统、深度研究 Agent 系统和数字 Morse。${citations}`
           : `这个项目的设计取舍由当前目标、失败边界和可验证结果共同决定。${citations}`;
     } else {
       answer = sourceIndexes.length > 0
@@ -474,6 +474,7 @@ async function executeRoutedCase(item) {
       };
     },
     identityKnowledge: () => [projectSources['digital-morse']],
+    projectKnowledge: () => projectSlugs.map((slug) => projectSources[slug]),
   });
   const workflowInstructions = workflowInstructionsFor(normalized, evidence.knowledge);
   const workflowBoundaryValid = normalized.workflow === 'chat'

@@ -222,6 +222,28 @@ test('personal fact instructions do not force an evidence-boundary monologue', (
   assert.doesNotMatch(instructions, /主动列出缺失能力|目前证据的边界/);
 });
 
+test('project collection instructions require the complete approved public catalog only', () => {
+  const instructions = buildV2SystemInstructions({
+    route: {
+      routeKind: 'grounded',
+      reasonCode: 'portfolio_project_collection_query',
+      topicKind: 'project',
+      topicRef: null,
+      evidenceClass: 'direct',
+      inheritedFromTurnId: null,
+      release: 'segment',
+      requiresEmbedding: false,
+      requiresSearch: false,
+      deterministicReply: null,
+    },
+    question: '你还做过哪些项目？',
+    sources: [source],
+  });
+
+  assert.match(instructions, /完整列出本轮证据中的全部公开项目/);
+  assert.match(instructions, /不得补充未在本轮证据中的项目/);
+});
+
 test('strict v2 instructions add one regeneration constraint without changing evidence', () => {
   const normal = buildV2SystemInstructions({ intent: 'project', sources: [source] });
   const strict = buildV2SystemInstructions({ intent: 'project', sources: [source], strict: true });

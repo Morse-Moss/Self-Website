@@ -354,6 +354,97 @@ test('generic project questions reject meta-only evidence templates', () => {
   assert.ok(result.reasons.includes('answer_not_direct'));
 });
 
+test('project collection answers reject an old multi-agent topic continuation', () => {
+  const result = inspectChatAnswer({
+    answer: '我会在任务可拆分、工具权限不同且并行收益明确时，才从单 Agent 升级到多 Agent。[来源1]',
+    route: groundedRoute({
+      reasonCode: 'portfolio_project_collection_query',
+      topicKind: 'project',
+      topicRef: null,
+      requiresEmbedding: false,
+    }),
+    workflow: 'chat',
+    question: '你做过的其他项目有哪些',
+    sourceCount: 5,
+  });
+
+  assert.ok(result.reasons.includes('answer_not_direct'));
+});
+
+test('project collection answers must cover every public project', () => {
+  const route = groundedRoute({
+    reasonCode: 'portfolio_project_collection_query',
+    topicKind: 'project',
+    topicRef: null,
+    requiresEmbedding: false,
+  });
+  const incomplete = inspectChatAnswer({
+    answer: '我公开展示的项目包括数字摩斯，它把作品集、RAG 和三类对话流程连接起来。[来源5]',
+    route,
+    workflow: 'chat',
+    question: '你做过的其他项目有哪些',
+    sourceCount: 5,
+  });
+  const result = inspectChatAnswer({
+    answer: [
+      '我公开展示的项目有五个：',
+      '内容创作 Agent 系统用于多模态内容生产；[来源1]',
+      '自动运营 Agent 系统连接数据发现、内容生产与受控发布；[来源2]',
+      'AI 外贸获客系统覆盖线索、评分、协同和触达；[来源3]',
+      '深度研究 Agent 系统负责证据采集、质量审查与报告生成；[来源4]',
+      '数字摩斯则把作品集、RAG 和三类对话流程连接起来。[来源5]',
+    ].join('\n'),
+    route,
+    workflow: 'chat',
+    question: '你做过的其他项目有哪些',
+    sourceCount: 5,
+  });
+
+  assert.ok(incomplete.reasons.includes('answer_not_direct'));
+  assert.equal(result.ok, true);
+});
+
+test('project collection answers reject an incomplete project set and mismatched source count', () => {
+  const route = groundedRoute({
+    reasonCode: 'portfolio_project_collection_query',
+    topicKind: 'project',
+    topicRef: null,
+    requiresEmbedding: false,
+  });
+  const answer = [
+    '我公开展示的项目包括内容创作 Agent 系统、AI 外贸获客系统、深度研究 Agent 系统和数字摩斯。',
+    '[来源1] [来源2] [来源3] [来源4]',
+  ].join('\n');
+  const result = inspectChatAnswer({
+    answer,
+    route,
+    workflow: 'chat',
+    question: '你还做过哪些项目？',
+    sourceCount: 4,
+  });
+
+  assert.ok(result.reasons.includes('answer_not_direct'));
+});
+
+test('project collection answers must cite every admitted project source', () => {
+  const result = inspectChatAnswer({
+    answer: [
+      '内容创作 Agent 系统、自动运营 Agent 系统、AI 外贸获客系统、深度研究 Agent 系统和数字摩斯，分别覆盖内容生产、运营、获客、研究和数字分身。[来源1]',
+    ].join('\n'),
+    route: groundedRoute({
+      reasonCode: 'portfolio_project_collection_query',
+      topicKind: 'project',
+      topicRef: null,
+      requiresEmbedding: false,
+    }),
+    workflow: 'chat',
+    question: '你都做过哪些项目？',
+    sourceCount: 5,
+  });
+
+  assert.ok(result.reasons.includes('answer_not_direct'));
+});
+
 test('an inherited project follow-up may use a natural pronoun when the answer is substantive', () => {
   const result = inspectChatAnswer({
     answer: '这个项目的设计取舍由当前目标、失败边界和可验证结果共同决定。[来源1]',

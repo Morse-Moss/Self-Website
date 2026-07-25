@@ -119,6 +119,9 @@ function renderCapabilityAssessments(assessments: readonly CapabilityAssessment[
 }
 
 function answerObjective(route: ChatRouteDecision): string {
+  if (route.reasonCode === 'portfolio_project_collection_query') {
+    return '完整列出本轮证据中的全部公开项目（包括经审核脱敏展示的企业案例），并用一句话说明每个项目解决的问题；不得补充未在本轮证据中的项目。';
+  }
   switch (route.routeKind) {
     case 'conversation': return '第一段自然、直接地回答问题，不谈项目或资料。';
     case 'external_current': return '直接给出已核验的当前信息；无法核验时明确说明。';

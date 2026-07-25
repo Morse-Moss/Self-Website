@@ -1776,6 +1776,7 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
         question: effectiveQuery,
         ledger: capabilityLedger,
         identityKnowledge: () => [identityKnowledgeSource()],
+        projectKnowledge: () => approvedSafeKnowledge('project'),
         async embed(query) {
           try {
             const [embedding] = await input.provider.embed([query], input.signal);

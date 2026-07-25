@@ -127,6 +127,58 @@ test('a multi-project comparison stays grounded without narrowing to one project
   assert.equal(decision.requiresEmbedding, true);
 });
 
+test('a personal project collection question uses the public project catalog', () => {
+  for (const message of [
+    '你做过的其他项目有哪些',
+    '你还做过哪些项目？',
+    '你都做过哪些项目？',
+    '你一共做过哪些项目？',
+    'Morse 当前有哪些项目？',
+  ]) {
+    const decision = routeChatTurn({ request: request(message), ledger });
+
+    assert.equal(decision.routeKind, 'grounded', message);
+    assert.equal(decision.reasonCode, 'portfolio_project_collection_query', message);
+    assert.equal(decision.topicKind, 'project', message);
+    assert.equal(decision.topicRef, null, message);
+    assert.equal(decision.evidenceClass, 'direct', message);
+    assert.equal(decision.requiresEmbedding, false, message);
+  }
+});
+
+test('project catalog routing does not capture evidence, ranking, comparison, or named-project questions', () => {
+  const cases = [
+    ['哪些项目能证明你的 Agent 能力？', 'portfolio_evidence_query', true],
+    ['你做过的项目里哪个最好？', 'personal_history_query', false],
+    ['深度研究系统与数字摩斯分别解决什么问题？', 'project_fact_query', true],
+    ['你做过数字摩斯吗？', 'personal_named_project_query', true],
+  ] as const;
+
+  for (const [message, reasonCode, requiresEmbedding] of cases) {
+    const decision = routeChatTurn({ request: request(message), ledger });
+
+    assert.equal(decision.reasonCode, reasonCode, message);
+    assert.equal(decision.requiresEmbedding, requiresEmbedding, message);
+  }
+});
+
+test('an unsupported named project claim remains unavailable personal history', () => {
+  const decision = routeChatTurn({ request: request('你做过支付系统吗？'), ledger });
+
+  assert.equal(decision.routeKind, 'personal_fact');
+  assert.equal(decision.reasonCode, 'personal_history_query');
+  assert.equal(decision.evidenceClass, 'unavailable');
+  assert.equal(decision.requiresEmbedding, false);
+});
+
+test('project management experience is not mistaken for the public project catalog', () => {
+  const decision = routeChatTurn({ request: request('你有什么项目管理经验？'), ledger });
+
+  assert.equal(decision.routeKind, 'personal_fact');
+  assert.notEqual(decision.reasonCode, 'portfolio_project_collection_query');
+  assert.equal(decision.requiresEmbedding, false);
+});
+
 test('common short project names preserve both sides of a comparison', () => {
   const message = '内容创作和自动运营两个系统有什么关联与边界？';
   const decision = routeChatTurn({ request: request(message), ledger });

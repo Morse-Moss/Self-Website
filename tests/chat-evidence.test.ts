@@ -163,6 +163,37 @@ test('grounded retrieval admits only the current project topic', async () => {
   assert.deepEqual(calls.counts(), { embed: 1, retrieve: 1, search: 0 });
 });
 
+test('project collection evidence returns the full catalog without semantic dependencies', async () => {
+  const calls = input(route('grounded', {
+    reasonCode: 'portfolio_project_collection_query',
+    topicKind: 'project',
+    topicRef: null,
+    evidenceClass: 'direct',
+    requiresEmbedding: false,
+  }), '你做过的其他项目有哪些');
+  const projectKnowledge: KnowledgeSource[] = siteContent.projects.map((project) => ({
+    chunkId: `project:${project.slug}`,
+    documentId: `project-${project.slug}`,
+    title: project.name,
+    sourcePath: `content/site-content.json#projects.${project.slug}`,
+    href: `/works#${project.slug}`,
+    content: project.summary,
+    score: 1,
+    projectSlug: project.slug,
+    topicIds: [project.slug],
+  }));
+  const result = await resolveChatEvidence({
+    ...calls,
+    projectKnowledge: () => projectKnowledge,
+  });
+
+  assert.deepEqual(
+    result.knowledge.map((source) => source.projectSlug),
+    siteContent.projects.map((project) => project.slug),
+  );
+  assert.deepEqual(calls.counts(), { embed: 0, retrieve: 0, search: 0 });
+});
+
 test('an inherited project follow-up anchors the embedding query to the persisted project', async () => {
   const calls = input(route('grounded', {
     reasonCode: 'anaphoric_project_followup',

@@ -113,6 +113,14 @@ function isProjectFact(message: string): boolean {
   return /(?:morse|摩斯|你|你的).{0,24}(?:项目|作品|实现|架构|做法|成果|职责)|(?:有哪些|介绍).{0,12}(?:项目|作品)/iu.test(message);
 }
 
+function isProjectCollectionQuestion(message: string): boolean {
+  if (projectTopics(message).length > 0) return false;
+  if (isPortfolioEvidenceQuestion(message)) return false;
+  const hasPublicSubject = /(?:你|你的|morse|摩斯)/iu.test(message);
+  if (!hasPublicSubject) return false;
+  return /(?:有|做过|完成过|负责过|还做过)(?:的)?(?:哪些|哪一些|什么)(?:其他|别的)?(?:项目|作品)(?!管理|经验|能力|证据)|(?:其他|别的)(?:项目|作品).{0,6}(?:有哪些|是什么|呢)|(?:项目|作品).{0,6}(?:有哪些|有哪一些)|(?:介绍|说说|聊聊).{0,8}(?:你|你的|morse|摩斯).{0,8}(?:项目|作品)(?!管理|经验)/iu.test(message);
+}
+
 function isStableGeneralConversation(message: string): boolean {
   if (/^(?:你好|嗨|hello|hi|谢谢|多谢|再见)/iu.test(message)) return true;
   if (/(?:吃饭|吃什么|近况|最近忙|怎么看|什么是|是什么|如何|怎么|怎样|为什么|建议|职场|同事|分歧|兴趣|感受)/iu.test(message)) {
@@ -302,6 +310,15 @@ export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
       topicRef: projectTopic(message),
       evidenceClass: 'direct',
       requiresEmbedding: true,
+    });
+  }
+  if (isProjectCollectionQuestion(message)) {
+    return decision({
+      routeKind: 'grounded',
+      reasonCode: 'portfolio_project_collection_query',
+      topicKind: 'project',
+      topicRef: null,
+      evidenceClass: 'direct',
     });
   }
   if (isExplicitPersonalFact(message)) {

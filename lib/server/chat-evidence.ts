@@ -28,6 +28,7 @@ export interface ResolveChatEvidenceInput {
   retrieve(embedding: number[]): Promise<KnowledgeSource[]>;
   search(): Promise<SearchResponse | undefined>;
   identityKnowledge?: () => KnowledgeSource[];
+  projectKnowledge?: () => KnowledgeSource[];
 }
 
 function emptyEvidence(): ResolvedChatEvidence {
@@ -176,6 +177,13 @@ export async function resolveChatEvidence(
       };
     }
     case 'grounded': {
+      if (input.route.reasonCode === 'portfolio_project_collection_query') {
+        return {
+          capability: null,
+          knowledge: input.projectKnowledge?.() ?? [],
+          search: undefined,
+        };
+      }
       const embedding = await input.embed(retrievalQuery(input.route, input.question));
       const candidates = await input.retrieve(embedding);
       return {
