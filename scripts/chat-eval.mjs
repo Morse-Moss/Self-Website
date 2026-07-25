@@ -428,10 +428,14 @@ async function evaluateAnswer(item) {
 
 async function executeRoutedCase(item) {
   const normalized = normalizeChatRequest(requestFor(item));
+  const history = Array.isArray(item.history)
+    ? item.history.map((message) => ({ role: message.role, content: message.content }))
+    : [];
   const route = routeChatTurn({
     request: normalized,
     ledger: capabilityLedger,
     previous: previousAnchor(item),
+    hasUsableHistory: history.some((message) => message.content.trim().length > 0),
   });
   const calls = { chat: 0, embedding: 0, rag: 0, search: 0 };
   const evidence = await resolveChatEvidence({
@@ -483,7 +487,7 @@ async function executeRoutedCase(item) {
     ].filter(Boolean).join('\n\n'));
     for await (const event of provider.streamAnswer({
       instructions,
-      messages: [{ role: 'user', content: normalized.message }],
+      messages: [...history, { role: 'user', content: normalized.message }],
     })) {
       if (event.type === 'delta') answer += event.text;
     }

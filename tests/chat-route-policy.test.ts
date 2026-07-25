@@ -26,6 +26,16 @@ function projectAnchor(topicRef: string): RouteAnchor {
   };
 }
 
+function conversationAnchor(): RouteAnchor {
+  return {
+    turnId: '33333333-3333-4333-8333-333333333333',
+    routeKind: 'conversation',
+    reasonCode: 'stable_general_conversation',
+    topicKind: 'none',
+    topicRef: null,
+  };
+}
+
 function clarificationAnchor(): RouteAnchor {
   return {
     turnId: '22222222-2222-4222-8222-222222222222',
@@ -308,6 +318,88 @@ test('stable general advice recognizes 怎样 as conversation', () => {
 
   assert.equal(decision.routeKind, 'conversation');
   assert.equal(decision.requiresEmbedding, false);
+});
+
+test('complete technical questions default to conversation instead of clarification', () => {
+  for (const message of [
+    '什么情况下才会升级到多agent',
+    '多 Agent 的适用条件有哪些？',
+    '单 Agent 什么时候应该拆成多 Agent？',
+    '哪些场景适合多 Agent？',
+    '多 Agent 有什么缺点？',
+    '什么时候需要 RAG？',
+    '哪个模型更适合生产环境？',
+  ]) {
+    const decision = routeChatTurn({ request: request(message), ledger });
+
+    assert.equal(decision.routeKind, 'conversation', message);
+    assert.equal(decision.deterministicReply, null, message);
+  }
+});
+
+test('an unresolved reference uses actual history rather than the route anchor alone', () => {
+  const previous = conversationAnchor();
+  const withHistory = routeChatTurn({
+    request: request('那什么时候升级？'),
+    previous,
+    hasUsableHistory: true,
+    ledger,
+  });
+  const anchorOnly = routeChatTurn({
+    request: request('那什么时候升级？'),
+    previous,
+    hasUsableHistory: false,
+    ledger,
+  });
+  const noContext = routeChatTurn({ request: request('这个呢？'), ledger });
+
+  assert.equal(withHistory.routeKind, 'conversation');
+  assert.equal(withHistory.reasonCode, 'anaphoric_conversation_followup');
+  assert.equal(withHistory.inheritedFromTurnId, previous.turnId);
+  assert.equal(anchorOnly.routeKind, 'clarify');
+  assert.equal(anchorOnly.reasonCode, 'anaphoric_topic_unavailable');
+  assert.equal(noContext.routeKind, 'clarify');
+  assert.equal(noContext.reasonCode, 'anaphoric_topic_unavailable');
+  assert.match(noContext.deterministicReply ?? '', /指的是/u);
+});
+
+test('common omitted follow-ups inherit a controlled project topic', () => {
+  const previous = projectAnchor('digital-morse');
+
+  for (const message of [
+    '这个怎么做的？',
+    '为什么这样选？',
+    '这套方案呢？',
+    '这一点再展开讲讲。',
+  ]) {
+    const decision = routeChatTurn({
+      request: request(message),
+      previous,
+      hasUsableHistory: true,
+      ledger,
+    });
+
+    assert.equal(decision.routeKind, 'grounded', message);
+    assert.equal(decision.reasonCode, 'anaphoric_project_followup', message);
+    assert.equal(decision.topicRef, 'digital-morse', message);
+  }
+});
+
+test('omitted follow-ups without a topic or real history ask for the referent', () => {
+  for (const message of [
+    '这个怎么做的？',
+    '为什么这样选？',
+    '哪个最好？',
+    '那怎么做？',
+    '这套方案呢？',
+    '这一点再展开讲讲。',
+  ]) {
+    const decision = routeChatTurn({ request: request(message), ledger });
+
+    assert.equal(decision.routeKind, 'clarify', message);
+    assert.equal(decision.reasonCode, 'anaphoric_topic_unavailable', message);
+    assert.match(decision.deterministicReply ?? '', /指代对象/u, message);
+  }
 });
 
 test('unsafe or unverifiable requests get a direct provider-free boundary reply', () => {

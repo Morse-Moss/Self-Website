@@ -15,7 +15,7 @@ import {
 } from '../lib/server/ai-provider.ts';
 import { redeemInvite } from '../lib/server/access.ts';
 import { normalizeChatRequest } from '../lib/server/chat-core.ts';
-import { CLARIFY_REPLY, routeChatTurn } from '../lib/server/chat-route-policy.ts';
+import { routeChatTurn } from '../lib/server/chat-route-policy.ts';
 import { ChatServiceError, runChat, type ChatServiceEvent } from '../lib/server/chat-service.ts';
 import { compileCapabilityLedger } from '../lib/server/capability-evidence.ts';
 import { FailoverAiProvider } from '../lib/server/failover-ai-provider.ts';
@@ -534,6 +534,8 @@ interface InteractionSnapshot {
   model: string | null;
   completed_at: Date | null;
   delete_after: Date;
+  route_reason_code: string | null;
+  inherited_from_turn_id: string | null;
 }
 
 type CompensationDisconnectMode = 'commit_without_ack' | 'rollback_without_commit';
@@ -874,7 +876,8 @@ async function readInteraction(turnId: string): Promise<InteractionSnapshot> {
   const result = await pool!.query<InteractionSnapshot>(
     `SELECT conversation_id::text, question, answer, status, error_code,
             knowledge_sources, input_tokens, output_tokens,
-            estimated_cost_usd::text, provider, model, completed_at, delete_after
+            estimated_cost_usd::text, provider, model, completed_at, delete_after,
+            route_reason_code, inherited_from_turn_id::text
        FROM interaction_turns
       WHERE id = $1`,
     [turnId],
@@ -4950,7 +4953,7 @@ test('v2 JD inherits model reasoning and uses the concise evidence prompt', {
   }
 });
 
-test('v2 clarification completes deterministically without Provider calls or quota deduction', {
+test('v2 unresolved reference clarifies without Provider calls or quota deduction', {
   skip: !pool,
 }, async () => {
   const fixture = await createFailureFixture('chat-v2-clarify');
@@ -4978,9 +4981,9 @@ test('v2 clarification completes deterministically without Provider calls or quo
     assert.equal(aiProvider.embedCalls, 0);
     assert.equal(aiProvider.requests.length, 0);
     assert.equal(searchProvider.calls.length, 0);
-    assert.equal(
+    assert.match(
       events.filter((event) => event.type === 'delta').map((event) => event.text).join(''),
-      CLARIFY_REPLY,
+      /指的是/u,
     );
     const done = events.at(-1);
     assert.equal(done?.type, 'done');
@@ -4992,7 +4995,66 @@ test('v2 clarification completes deterministically without Provider calls or quo
     });
     const interaction = await readInteraction(turnId);
     assert.equal(interaction.status, 'completed');
-    assert.equal(interaction.answer, CLARIFY_REPLY);
+    assert.match(interaction.answer ?? '', /指的是/u);
+  } finally {
+    await cleanupFailureFixture(fixture);
+  }
+});
+
+test('v2 complete follow-up reaches Provider with the preceding conversation history', {
+  skip: !pool,
+}, async () => {
+  const testNow = new Date();
+  const fixture = await createFailureFixture('chat-v2-conversation-context', testNow);
+  const aiProvider = new SequencedAnswerProvider([
+    '单 Agent 更容易控制状态、一致性和故障恢复；只有复杂度带来可量化收益时才升级到多 Agent。',
+    '当职责边界清晰、并行收益可测且单 Agent 的工具选择稳定性明显下降时，再升级到多 Agent。',
+  ]);
+  const firstTurnId = randomUUID();
+  const secondTurnId = randomUUID();
+
+  try {
+    const first = await collectChat({
+      pool: pool!,
+      provider: aiProvider,
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        message: '为什么优先使用单 Agent？',
+        turnId: firstTurnId,
+      }),
+      config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
+      now: testNow,
+    });
+    const meta = first.find((event) => event.type === 'meta');
+    assert.equal(meta?.type, 'meta');
+    if (meta?.type !== 'meta') return;
+
+    const second = await collectChat({
+      pool: pool!,
+      provider: aiProvider,
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        message: '那什么时候升级？',
+        conversationId: meta.conversationId,
+        turnId: secondTurnId,
+      }),
+      config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
+      now: new Date(testNow.getTime() + 1_000),
+    });
+
+    assert.equal(second.at(-1)?.type, 'done');
+    assert.equal(aiProvider.requests.length, 2);
+    assert.deepEqual(aiProvider.requests[1].messages.map((message) => message.role), [
+      'user', 'assistant', 'user',
+    ]);
+    assert.match(aiProvider.requests[1].messages[1].content, /可量化收益/u);
+    assert.equal(
+      aiProvider.requests[1].messages.at(-1)?.content,
+      '那什么时候升级？',
+    );
+    const interaction = await readInteraction(secondTurnId);
+    assert.equal(interaction.route_reason_code, 'anaphoric_conversation_followup');
+    assert.equal(interaction.inherited_from_turn_id, firstTurnId);
   } finally {
     await cleanupFailureFixture(fixture);
   }

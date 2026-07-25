@@ -37,10 +37,12 @@ export interface RouteChatTurnInput {
   request: NormalizedChatRequest;
   ledger: CapabilityLedger;
   previous?: RouteAnchor | null;
+  hasUsableHistory?: boolean;
 }
 
 export const JD_INTAKE_REPLY = '请提供完整 JD（岗位职责与任职要求）；收到后我会基于公开项目证据整理匹配内容，并把需要面谈核实的部分单独标明。';
 export const CLARIFY_REPLY = '你是想了解这个问题的一般做法，还是想核实我本人做过的具体经历？';
+export const REFERENT_CLARIFY_REPLY = '你指的是前面哪一点或哪段内容？补充一下指代对象，我就能接着回答。';
 export const SAFETY_BOUNDARY_REPLY = '这类请求超出公开信息边界，我无法据此确认，也不会提供或编造未公开信息。';
 
 function normalize(value: string): string {
@@ -112,18 +114,18 @@ function isProjectFact(message: string): boolean {
 function isStableGeneralConversation(message: string): boolean {
   if (/^(?:你好|嗨|hello|hi|谢谢|多谢|再见)/iu.test(message)) return true;
   if (/(?:吃饭|吃什么|近况|最近忙|怎么看|什么是|是什么|如何|怎么|怎样|为什么|建议|职场|同事|分歧|兴趣|感受)/iu.test(message)) {
-    return !isAnaphoricFollowUp(message);
+    return !isUnresolvedReference(message);
   }
   return /^(?:请)?(?:解释|介绍|讨论).{1,80}$/iu.test(message);
 }
 
-function isAnaphoricFollowUp(message: string): boolean {
-  const trimmed = message.trim();
-  return trimmed.length <= 40
-    && (
-      /^(?:这个|那个|它|这(?:一)?点|那(?:一)?点|上述|前面|刚才|那结果|然后呢|还有呢)/iu.test(trimmed)
-      || /(?:哪个|哪一个|最(?:有)?代表性|最推荐|代表作|最能代表).*(?:呢|吗|[？?])?$/iu.test(trimmed)
-    );
+function isUnresolvedReference(message: string): boolean {
+  const trimmed = message.trim().replace(/[。！!？?]+$/gu, '');
+  if (trimmed.length > 40) return false;
+  return /^(?:这个|那个|它|这(?:一)?点|那(?:一)?点|上述|前面|刚才)(?:呢|怎么样|如何|为什么(?:这样|这么)?(?:设计|选)?|怎么(?:做|设计)?(?:的)?|有什么(?:优缺点|问题)?|是否(?:可以|需要)?|可以吗|(?:再)?(?:展开|详细)(?:讲讲|说说|解释一下))?$/iu.test(trimmed)
+    || /^(?:为什么(?:这样|这么)?(?:选|设计|做)(?:的)?|怎么(?:做|设计)(?:的)?|那结果|然后呢|还有呢|那(?:什么时候|什么情况下)(?:升级)?|那怎么做)(?:呢)?$/iu.test(trimmed)
+    || /^(?:(?:这|那)(?:套|个)?(?:方案|做法|设计|思路|架构))(?:呢|怎么样|如何)?$/iu.test(trimmed)
+    || /^(?:哪(?:一)?个(?:最好|更好|最合适)|最(?:有)?代表性的|最推荐哪个|哪个最能代表你|那代表作)(?:呢|吗)?$/iu.test(trimmed);
 }
 
 function isPendingPersonalScopeClarification(previous?: RouteAnchor | null): previous is RouteAnchor {
@@ -138,7 +140,7 @@ function personalScopeSelection(message: string): 'general' | 'personal' | null 
   return null;
 }
 
-function inheritRoute(previous: RouteAnchor, ledger: CapabilityLedger): ChatRouteDecision {
+function inheritRoute(previous: RouteAnchor, ledger: CapabilityLedger): ChatRouteDecision | null {
   if (previous.topicKind === 'project') {
     return decision({
       routeKind: 'grounded',
@@ -186,11 +188,7 @@ function inheritRoute(previous: RouteAnchor, ledger: CapabilityLedger): ChatRout
       requiresSearch: true,
     });
   }
-  return decision({
-    routeKind: 'clarify',
-    reasonCode: 'anaphoric_topic_unavailable',
-    deterministicReply: CLARIFY_REPLY,
-  });
+  return null;
 }
 
 export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
@@ -303,8 +301,23 @@ export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
       reasonCode: 'stable_general_conversation',
     });
   }
-  if (input.previous && isAnaphoricFollowUp(message)) {
-    return inheritRoute(input.previous, input.ledger);
+  if (isUnresolvedReference(message)) {
+    const inherited = input.previous
+      ? inheritRoute(input.previous, input.ledger)
+      : null;
+    if (inherited) return inherited;
+    if (input.hasUsableHistory) {
+      return decision({
+        routeKind: 'conversation',
+        reasonCode: 'anaphoric_conversation_followup',
+        inheritedFromTurnId: input.previous?.turnId ?? null,
+      });
+    }
+    return decision({
+      routeKind: 'clarify',
+      reasonCode: 'anaphoric_topic_unavailable',
+      deterministicReply: REFERENT_CLARIFY_REPLY,
+    });
   }
   if (isPendingPersonalScopeClarification(input.previous)) {
     return decision({
@@ -314,8 +327,7 @@ export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
     });
   }
   return decision({
-    routeKind: 'clarify',
-    reasonCode: 'personal_scope_ambiguous',
-    deterministicReply: CLARIFY_REPLY,
+    routeKind: 'conversation',
+    reasonCode: 'general_conversation_default',
   });
 }

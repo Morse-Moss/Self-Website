@@ -13,6 +13,8 @@ import { sanitizeTurnSources } from './turn-codec.ts';
 import {
   CLARIFY_REPLY,
   JD_INTAKE_REPLY,
+  REFERENT_CLARIFY_REPLY,
+  SAFETY_BOUNDARY_REPLY,
   type ChatRouteDecision,
   type RouteAnchor,
 } from './chat-route-policy.ts';
@@ -134,7 +136,11 @@ export async function loadRecordedInteractionRoute(
     deterministicReply: row.route_kind === 'jd_intake'
       ? JD_INTAKE_REPLY
       : row.route_kind === 'clarify'
-        ? CLARIFY_REPLY
+        ? row.route_reason_code === 'unsafe_or_unverifiable_request'
+          ? SAFETY_BOUNDARY_REPLY
+          : row.route_reason_code === 'anaphoric_topic_unavailable'
+            ? REFERENT_CLARIFY_REPLY
+            : CLARIFY_REPLY
         : null,
   };
 }

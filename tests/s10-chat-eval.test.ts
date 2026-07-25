@@ -51,11 +51,11 @@ function readDataset(): { version: number; cases: EvalCase[] } {
   };
 }
 
-test('S10 deterministic evaluation freezes 76 cases around the current routing contract', () => {
+test('S10 deterministic evaluation freezes 83 cases around the current routing contract', () => {
   const dataset = readDataset();
-  assert.ok(dataset.version >= 6, 'response reliability evaluation schema must be version 6 or newer');
-  assert.equal(dataset.cases.length, 76);
-  assert.equal(new Set(dataset.cases.map((item) => item.id)).size, 76);
+  assert.ok(dataset.version >= 7, 'multi-turn routing evaluation schema must be version 7 or newer');
+  assert.equal(dataset.cases.length, 83);
+  assert.equal(new Set(dataset.cases.map((item) => item.id)).size, 83);
   assert.ok(dataset.cases.every((item) => item.query.trim() && item.expectedBehavior.trim()));
 
   assert.deepEqual(
@@ -65,6 +65,8 @@ test('S10 deterministic evaluation freezes 76 cases around the current routing c
       .sort(),
     [
       '回答答非所问',
+      '完整技术问题被误澄清',
+      '普通对话追问丢失上下文',
       '回复像固定RAG模板',
       '未提供JD仍生成匹配',
       '自然身份问法被误澄清',
@@ -228,7 +230,7 @@ test('removing identity or recruitment instructions makes the matching cases fai
   }
 });
 
-test('S10 evaluation is offline, passes 76/76, and emits no prompt or answer text', () => {
+test('S10 evaluation is offline, passes 83/83, and emits no prompt or answer text', () => {
   const output = execFileSync(process.execPath, [runnerPath], {
     cwd: process.cwd(),
     encoding: 'utf8',
@@ -249,10 +251,10 @@ test('S10 evaluation is offline, passes 76/76, and emits no prompt or answer tex
 
   assert.equal(result.evidence, 'deterministic adversarial prompt/provider');
   assert.equal(result.externalCalls, 0);
-  assert.equal(result.total, 76);
-  assert.equal(result.passed, 76);
+  assert.equal(result.total, 83);
+  assert.equal(result.passed, 83);
   assert.equal(result.pass, true);
-  assert.equal(result.cases.length, 76);
+  assert.equal(result.cases.length, 83);
   for (const item of result.cases) {
     assert.deepEqual(Object.keys(item).sort(), ['category', 'id', 'pass']);
     assert.equal(item.pass, true);

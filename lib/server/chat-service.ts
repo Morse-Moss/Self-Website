@@ -1708,6 +1708,9 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
         v2Route = routeV2ChatTurn({
           request: input.request,
           previous,
+          hasUsableHistory: turn.messages
+            .slice(0, -1)
+            .some((message) => message.content.trim().length > 0),
           ledger: capabilityLedger,
         });
         await recordInteractionRoute(lockClient, turn.turnId, v2Route);

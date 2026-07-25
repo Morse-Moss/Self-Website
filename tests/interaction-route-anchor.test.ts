@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { loadPreviousRouteAnchor } from '../lib/server/interaction-log.ts';
+import {
+  loadPreviousRouteAnchor,
+  loadRecordedInteractionRoute,
+} from '../lib/server/interaction-log.ts';
+import { SAFETY_BOUNDARY_REPLY } from '../lib/server/chat-route-policy.ts';
 
 test('loadPreviousRouteAnchor preserves a routed follow-up as the current anchor', async () => {
   const queries: string[] = [];
@@ -35,4 +39,28 @@ test('loadPreviousRouteAnchor preserves a routed follow-up as the current anchor
     topicRef: 'digital-morse',
   });
   assert.match(queries[0] ?? '', /route_reason_code/u);
+});
+
+test('loadRecordedInteractionRoute preserves a recorded safety boundary reply', async () => {
+  const client = {
+    async query() {
+      return {
+        rows: [{
+          route_kind: 'clarify',
+          route_reason_code: 'unsafe_or_unverifiable_request',
+          topic_kind: 'none',
+          topic_ref: null,
+          evidence_class: 'none',
+          inherited_from_turn_id: null,
+        }],
+      };
+    },
+  };
+
+  const route = await loadRecordedInteractionRoute(
+    client,
+    '44444444-4444-4444-8444-444444444444',
+  );
+
+  assert.equal(route?.deterministicReply, SAFETY_BOUNDARY_REPLY);
 });
