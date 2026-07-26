@@ -900,6 +900,64 @@ test('admin sessions slide by 30 minutes and reject expired or unknown tokens', 
   assert.equal(await authenticateAdminSession(pool, 'unknown-admin-token', { now: baseTime }), null);
 });
 
+test('admin sessions expire at an absolute 12-hour lifetime even while active', async () => {
+  const result = await authenticateAdmin(pool, ...loginInput());
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+
+  const justBeforeCap = new Date(baseTime.getTime() + 12 * 60 * 60_000 - 60_000);
+  await pool.query(
+    'UPDATE admin_sessions SET last_seen_at = $2, expires_at = $3 WHERE id = $1',
+    [
+      result.sessionId,
+      new Date(justBeforeCap.getTime() - 60_000),
+      new Date(justBeforeCap.getTime() + 29 * 60_000),
+    ],
+  );
+
+  const nearCap = await authenticateAdminSession(pool, result.token, { now: justBeforeCap });
+  assert.equal(nearCap?.id, result.sessionId);
+  assert.equal(
+    nearCap?.expiresAt.toISOString(),
+    new Date(baseTime.getTime() + 12 * 60 * 60_000).toISOString(),
+    'sliding renewal must be clamped to the absolute lifetime',
+  );
+
+  const atCap = new Date(baseTime.getTime() + 12 * 60 * 60_000);
+  assert.equal(await authenticateAdminSession(pool, result.token, { now: atCap }), null);
+});
+
+test('the absolute admin session lifetime accepts an explicit override', async () => {
+  const result = await authenticateAdmin(pool, ...loginInput());
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+
+  const sessionMaxAgeMs = 60 * 60_000;
+  const stillActive = new Date(baseTime.getTime() + 59 * 60_000);
+  await pool.query(
+    'UPDATE admin_sessions SET last_seen_at = $2, expires_at = $3 WHERE id = $1',
+    [result.sessionId, stillActive, new Date(stillActive.getTime() + 30 * 60_000)],
+  );
+
+  const nearCap = await authenticateAdminSession(pool, result.token, {
+    now: stillActive,
+    sessionMaxAgeMs,
+  });
+  assert.equal(nearCap?.id, result.sessionId);
+  assert.equal(
+    nearCap?.expiresAt.toISOString(),
+    new Date(baseTime.getTime() + sessionMaxAgeMs).toISOString(),
+  );
+
+  assert.equal(
+    await authenticateAdminSession(pool, result.token, {
+      now: new Date(baseTime.getTime() + sessionMaxAgeMs),
+      sessionMaxAgeMs,
+    }),
+    null,
+  );
+});
+
 test('revoking an admin session invalidates its token without affecting other sessions', async () => {
   const first = await authenticateAdmin(pool, ...loginInput());
   const secondTime = new Date(baseTime.getTime() + 30_000);

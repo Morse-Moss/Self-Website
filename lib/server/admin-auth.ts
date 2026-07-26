@@ -23,6 +23,7 @@ const DEFAULT_TOTP_WINDOW = 1;
 const DEFAULT_MAX_FAILED_ATTEMPTS = 5;
 const DEFAULT_LOCKOUT_MS = 15 * 60_000;
 const DEFAULT_SESSION_TTL_MS = 30 * 60_000;
+const DEFAULT_SESSION_MAX_AGE_MS = 12 * 60 * 60_000;
 const DEFAULT_SECURITY_STATE_ID = 'admin-login';
 const ADMIN_AUTH_GATE_KEY = 'revolution:admin-auth:v1';
 const ADMIN_SECURITY_FINGERPRINT = createHash('sha256')
@@ -78,6 +79,7 @@ export interface AdminSession {
 export interface AdminSessionOptions {
   now?: Date;
   sessionTtlMs?: number;
+  sessionMaxAgeMs?: number;
 }
 
 export interface AdminTotpCredentials {
@@ -693,6 +695,13 @@ export async function authenticateAdminSession(
     1_000,
     24 * 60 * 60_000,
   );
+  const sessionMaxAgeMs = boundedInteger(
+    options.sessionMaxAgeMs,
+    DEFAULT_SESSION_MAX_AGE_MS,
+    'Admin session lifetime',
+    1_000,
+    24 * 60 * 60_000,
+  );
   const client = await pool.connect();
 
   try {
@@ -705,7 +714,14 @@ export async function authenticateAdminSession(
       [hashSessionToken(token)],
     );
     const session = result.rows[0];
-    if (!session || session.expires_at.getTime() <= now.getTime()) {
+    const absoluteExpiryMs = session
+      ? session.created_at.getTime() + sessionMaxAgeMs
+      : Number.NaN;
+    if (
+      !session
+      || session.expires_at.getTime() <= now.getTime()
+      || absoluteExpiryMs <= now.getTime()
+    ) {
       await client.query('COMMIT');
       return null;
     }
@@ -713,7 +729,7 @@ export async function authenticateAdminSession(
     const lastSeenAt = session.last_seen_at.getTime() > now.getTime()
       ? session.last_seen_at
       : now;
-    const expiresAt = new Date(lastSeenAt.getTime() + sessionTtlMs);
+    const expiresAt = new Date(Math.min(lastSeenAt.getTime() + sessionTtlMs, absoluteExpiryMs));
     await client.query(
       `UPDATE admin_sessions
           SET last_seen_at = $2,

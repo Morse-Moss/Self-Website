@@ -153,6 +153,7 @@ test('automatic replay uses only the narrow transient error set', () => {
     'ACCESS_REQUIRED',
     'SESSION_INVALID',
     'MESSAGE_LIMIT',
+    'CHAT_RATE_LIMITED',
     'BUDGET_EXHAUSTED',
     'CONVERSATION_INVALID',
     'CONVERSATION_MODE_MISMATCH',

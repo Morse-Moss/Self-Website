@@ -14,9 +14,12 @@
 - 数字人区域组件化:视频源为配置项,素材就绪仅替换资源文件
 
 ## 验证标准
+- **标准快速验证**:`npm run typecheck && npm run test:unit`(实测约 17s,2026-07-26);实现期用它做每轮回归,不必等 build
 - `npm run build` 必过;`npm run dev` 冒烟
+- `npm run test:integration` 仅在触及数据库/契约边界时跑;visual:* 冒烟按所改页面选跑
 - 1440 与 390 双宽各过一轮,控制台零报错
 - Lighthouse 性能 ≥ 90(上线前验收)
+- 已知债务:`npm run typecheck` 当前有存量报错(tests/ 下 TS1501 es2018 正则 flag、s10-chat-eval NODE_ENV 类型),修复前快速验证以 test:unit 通过 + typecheck 无「新增」报错为准
 
 ## 生产运行边界
 - `docs/runbooks/production.md` 是平台无关的生产合同,`docs/runbooks/tencent-lighthouse.md` 是当前腾讯云实例运行源;2026-07-20 已到 `PRODUCTION_OBSERVED / LIMITED_LAUNCH`,但不得写成已完成全部 `ONLINE_READY` 硬化

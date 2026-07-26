@@ -32,6 +32,7 @@ const runtimeEnv = {
   MORSE_ADMIN_ALLOWED_ORIGIN: 'https://morse.example',
   MORSE_ADMIN_PASSWORD_HASH: validAdminPasswordHash,
   MORSE_INVITE_FINGERPRINT_SECRET: 'invite-fingerprint-secret-32-bytes',
+  MORSE_INVITE_TRUSTED_PROXY_HOPS: '1',
   MORSE_PROVIDER_CONFIG_KEY_FILE: providerKeyFile,
   MORSE_PROVIDER_CONFIG_KEY_VERSION: '1',
   OPENAI_API_KEY: 'test-production-chat-key',

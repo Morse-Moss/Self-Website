@@ -75,6 +75,19 @@
 - BGE 只通过 Docker 内网访问。`MORSE_EMBEDDING_ALLOW_PRIVATE_HTTP=true` 只允许内部单标签主机名或 RFC1918 地址。
 - `MORSE_ALLOW_TEST_EMBEDDINGS=true`、`MORSE_LOCAL_RELEASE_SMOKE=true` 不能出现在生产角色环境。
 
+## 容器健康检查、资源限制与日志轮转
+
+仓库内 `compose.production.yaml` 已声明以下运维配置；它们随下一次经授权的冻结 release 部署生效，当前生产容器（release `b80a728`）尚未套用，不得据此宣称生产已重建：
+
+- Worker healthcheck：Worker 进程在每轮迭代开始把时间戳写入 `MORSE_WORKER_HEARTBEAT_FILE`（Compose 固定为 `/tmp/worker-heartbeat`），healthcheck 用 `find -mmin -3` 检查心跳 mtime 在 3 分钟内。阈值依据：正常轮询 5 秒一轮，基础设施退避上限 60 秒（`MORSE_WORKER_BACKOFF_MAX_MS`），3 分钟覆盖连续退避仍存活的场景，只有主循环真正停滞才判定 unhealthy。
+- Edge healthcheck：`nc -z 127.0.0.1 80 && nc -z 127.0.0.1 443`，只探测 Caddy 本地端口存活，不发起 TLS 请求、不产生访问日志。
+- 资源限制（宿主按 4GB 内存预算的保守分配，实例规格如有变化按本手册实测值调整）：db `768m / 1.0 cpu`（`shared_buffers=256MB` + 连接开销）、embedding `1g / 1.0 cpu`（CPU BGE 模型驻留内存最大头）、web `1g / 1.0 cpu`（Next.js 运行时）、worker `512m / 0.5 cpu`（轻量轮询进程）、edge `256m / 0.5 cpu`（Caddy）。常驻五服务上限合计约 3.5GB，为系统与一次性角色（migration/ingest/grants）留余量；一次性角色不设限制，只随命令短暂运行。
+- 日志轮转：全部服务统一 `json-file` driver，`max-size: 10m`、`max-file: 3`，单容器日志磁盘占用上限 30MB。
+- 邀请码防刷：Compose 给 Web 注入 `MORSE_INVITE_TRUSTED_PROXY_HOPS=1`，对应站点在 Caddy 单层反向代理后的拓扑；若未来在 Caddy 前增加新的代理层，需同步调整该值。生产预检对 web 角色强制该值 ≥1，缺失时以 `PRODUCTION_INVITE_PROXY_HOPS_REQUIRED` fail-closed。
+- Chat 窗口节流：下一次部署起默认生效「每会话 60 秒内最多 10 条用户消息」（`MORSE_CHAT_WINDOW_SECONDS` / `MORSE_CHAT_WINDOW_MAX_MESSAGES` 可调，1–3600 秒 / 1–100 条，无关闭档）。这是行为变更而非可选项；超限访客收到引导等待的提示且不扣减会话额度。
+
+限制值高于当前观察负载，OOM kill 或 CPU 饱和时先查异常原因，再考虑调档；不要用调大限制掩盖泄漏。healthcheck 判 unhealthy 仅是可观测信号（`docker compose ps` 可见），plain compose 不会据此自动重启容器。
+
 ## 首次初始化
 
 在服务器上创建 `/opt/revolution`，并准备 Docker、Git（或通过本机打包上传）和防火墙。证书和密钥只在服务器生成：

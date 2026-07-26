@@ -23,6 +23,10 @@
     "session:cleanup": "node scripts/cleanup-expired.mjs",
     "stats": "node scripts/collect-stats.mjs",
     "test": "node --env-file-if-exists=.env.local --test \"scripts/*.test.mjs\" \"tests/*.test.ts\"",
+    "test:unit": "node --env-file-if-exists=.env.local --test \"scripts/*.test.mjs\" \"tests/!(*integration*|postgres-test-utils|admin-auth|admin-api-contract|admin-provider-api-contract|feishu-alert|provider-attempt-log|provider-runtime|resume-api-contract|resume-admin-api-contract).test.ts\"",
+    "test:integration": "node --env-file-if-exists=.env.local --test \"tests/*integration*.test.ts\" \"tests/@(postgres-test-utils|admin-auth|admin-api-contract|admin-provider-api-contract|feishu-alert|provider-attempt-log|provider-runtime|resume-api-contract|resume-admin-api-contract).test.ts\"",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
     "visual:s3": "node scripts/s3-visual-smoke.mjs http://localhost:3000",
     "visual:s7": "node scripts/s7-visual-smoke.mjs http://127.0.0.1:3010",
     "visual:s6-restore": "node scripts/s6-restoration-smoke.mjs http://127.0.0.1:3010",
@@ -48,6 +52,8 @@
     "typescript": "^6.0.3"
   },
   "devDependencies": {
-    "@types/three": "^0.184.1"
+    "@types/three": "^0.184.1",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.2.12"
   }
 }

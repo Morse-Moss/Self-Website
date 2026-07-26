@@ -428,13 +428,16 @@ export function useMorseChat() {
     });
   }
 
-  function retry(retryAssistantId: string, requestSnapshot: ChatRequestSnapshot) {
-    void sendSnapshot(requestSnapshot, retryAssistantId);
-  }
+  const sendSnapshotRef = useRef(sendSnapshot);
+  sendSnapshotRef.current = sendSnapshot;
 
-  function stop() {
+  const retry = useCallback((retryAssistantId: string, requestSnapshot: ChatRequestSnapshot) => {
+    void sendSnapshotRef.current(requestSnapshot, retryAssistantId);
+  }, []);
+
+  const stop = useCallback(() => {
     abortControllerRef.current?.abort();
-  }
+  }, []);
 
   async function unlock() {
     setAccessError('');

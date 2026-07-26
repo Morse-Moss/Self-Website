@@ -55,6 +55,8 @@ export async function POST(request: NextRequest) {
       request: chatRequest,
       config: {
         maxMessagesPerSession: config.maxMessagesPerSession,
+        chatWindowSeconds: config.chatWindowSeconds,
+        chatWindowMaxMessages: config.chatWindowMaxMessages,
         historyMessageLimit: config.historyMessageLimit,
         retrievalLimit: config.retrievalLimit,
         interactionRetentionDays: config.interactionRetentionDays,

@@ -1,0 +1,5 @@
+# Python dependencies for scripts/*-visual-smoke.py
+# Run scripts with UTF-8 mode on Windows: py -X utf8 scripts/<name>.py
+# After `pip install -r scripts/requirements.txt`, install browsers once:
+#   py -X utf8 -m playwright install
+playwright

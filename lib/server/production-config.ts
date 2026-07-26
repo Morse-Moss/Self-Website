@@ -176,12 +176,16 @@ function validateWeb(env: Env): void {
   if (env.MORSE_SEARCH_ENABLED?.trim() === 'true' && !exactHttpsUrl(env.BOCHA_BASE_URL)) {
     fail('PRODUCTION_SEARCH_CONFIG_INVALID');
   }
+  let inviteAbuseConfig: ReturnType<typeof loadInviteAbuseConfig>;
   try {
     loadServerConfig(env);
     loadAdminConfig(env);
-    loadInviteAbuseConfig(env);
+    inviteAbuseConfig = loadInviteAbuseConfig(env);
   } catch {
     fail('PRODUCTION_RUNTIME_CONFIG_INVALID');
+  }
+  if (inviteAbuseConfig.trustedProxyHops < 1) {
+    fail('PRODUCTION_INVITE_PROXY_HOPS_REQUIRED');
   }
   let resumeConfig: ReturnType<typeof loadResumeConfig>;
   try {

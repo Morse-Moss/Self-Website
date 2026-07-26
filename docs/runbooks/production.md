@@ -123,6 +123,7 @@ npm run production:worker
 
 ## 5. Worker 行为
 
+- 设置 `MORSE_WORKER_HEARTBEAT_FILE` 时，Worker 在每轮迭代开始把当前时间戳写入该文件作为存活信号；写入失败只记录 `WORKER_HEARTBEAT_WRITE_FAILED`，不影响业务循环。部署平台可用该文件的 mtime 实现容器级 liveness 检查；未设置该变量时行为不变。
 - Outbox 默认每 5 秒轮询，单轮受 `MORSE_ALERT_DISPATCH_LIMIT` 限制。
 - 连续基础设施错误按 5、10、20、40、60 秒有界退避，成功后复位。
 - retention cleanup 在启动时执行，之后每小时执行。

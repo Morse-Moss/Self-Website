@@ -277,6 +277,13 @@ export function loadAdminConfig(env: Env = process.env) {
       1,
       30,
     ),
+    sessionMaxAgeHours: boundedPositiveInteger(
+      env,
+      'MORSE_ADMIN_SESSION_MAX_AGE_HOURS',
+      12,
+      1,
+      24,
+    ),
     maxFailedAttempts: boundedPositiveInteger(
       env,
       'MORSE_ADMIN_MAX_FAILED_ATTEMPTS',
@@ -361,6 +368,20 @@ export function loadServerConfig(env: Env = process.env) {
     80_000,
   );
   const chatTurnTimeoutMs = positiveNumber(env, 'MORSE_CHAT_TURN_TIMEOUT_MS', 90_000);
+  const chatWindowSeconds = boundedPositiveInteger(
+    env,
+    'MORSE_CHAT_WINDOW_SECONDS',
+    60,
+    1,
+    3_600,
+  );
+  const chatWindowMaxMessages = boundedPositiveInteger(
+    env,
+    'MORSE_CHAT_WINDOW_MAX_MESSAGES',
+    10,
+    1,
+    100,
+  );
   const providerMaxAttempts = positiveInteger(env, 'MORSE_PROVIDER_MAX_ATTEMPTS', 3);
 
   if (
@@ -401,6 +422,8 @@ export function loadServerConfig(env: Env = process.env) {
     providerModelTextTimeoutMs,
     providerStageTimeoutMs,
     chatTurnTimeoutMs,
+    chatWindowSeconds,
+    chatWindowMaxMessages,
     providerMaxAttempts,
     providerConcurrency: positiveInteger(env, 'MORSE_PROVIDER_CONCURRENCY', 4),
     maxOutputTokens: positiveNumber(env, 'MORSE_MAX_OUTPUT_TOKENS', 600),

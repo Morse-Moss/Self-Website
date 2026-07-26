@@ -69,6 +69,7 @@ export async function requireAdmin(request: NextRequest) {
   const pool = getPool(config.databaseUrl);
   const session = await authenticateAdminSession(pool, token, {
     sessionTtlMs: config.sessionMinutes * 60_000,
+    sessionMaxAgeMs: config.sessionMaxAgeHours * 60 * 60_000,
   });
   if (!session) return { ok: false as const, response: adminUnauthorized() };
   return { ok: true as const, config, pool, session, token };

@@ -1,9 +1,18 @@
 name: revolution
 
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   db:
     image: pgvector/pgvector:pg16
     restart: unless-stopped
+    mem_limit: 768m
+    cpus: 1.0
+    logging: *default-logging
     environment:
       POSTGRES_DB: revolution
       POSTGRES_USER: postgres
@@ -38,6 +47,9 @@ services:
       context: .
       dockerfile: deploy/embedding/Dockerfile
     restart: unless-stopped
+    mem_limit: 1g
+    cpus: 1.0
+    logging: *default-logging
     environment:
       MORSE_EMBEDDING_HOST: 0.0.0.0
       MORSE_EMBEDDING_PORT: 18091
@@ -61,6 +73,7 @@ services:
       dockerfile: Dockerfile
     user: "0:0"
     restart: "no"
+    logging: *default-logging
     volumes:
       - revolution_private_resume:/opt/revolution/shared/private/resume
     command: ["sh", "-eu", "-c", "chown 1001:1001 /opt/revolution/shared/private/resume && chmod 0700 /opt/revolution/shared/private/resume"]
@@ -70,6 +83,7 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: "no"
+    logging: *default-logging
     env_file:
       - .env.production
     environment:
@@ -89,6 +103,7 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: "no"
+    logging: *default-logging
     env_file:
       - .env.production
     environment:
@@ -113,11 +128,15 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
+    mem_limit: 1g
+    cpus: 1.0
+    logging: *default-logging
     env_file:
       - .env.production
     environment:
       NODE_ENV: production
       PORT: 3000
+      MORSE_INVITE_TRUSTED_PROXY_HOPS: '1'
       DATABASE_URL: ${DATABASE_URL_RUNTIME}
       MORSE_DATABASE_SSL_MODE: require
       MORSE_LOCAL_RELEASE_SMOKE: "false"
@@ -158,6 +177,9 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
+    mem_limit: 512m
+    cpus: 0.5
+    logging: *default-logging
     env_file:
       - .env.production
     environment:
@@ -167,6 +189,7 @@ services:
       MORSE_LOCAL_RELEASE_SMOKE: "false"
       MORSE_DATABASE_POOL_MAX: ${MORSE_WORKER_POOL_MAX:-3}
       MORSE_RESUME_STORAGE_DIR: /opt/revolution/shared/private/resume
+      MORSE_WORKER_HEARTBEAT_FILE: /tmp/worker-heartbeat
     depends_on:
       db:
         condition: service_healthy
@@ -176,12 +199,19 @@ services:
       - revolution_private_resume:/opt/revolution/shared/private/resume
     networks:
       - internal
+    healthcheck:
+      test: ["CMD-SHELL", "find /tmp/worker-heartbeat -mmin -3 | grep -q ."]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     command: ["node", "scripts/run-production.mjs", "worker"]
 
   grants:
     image: pgvector/pgvector:pg16
     profiles: ["ops"]
     restart: "no"
+    logging: *default-logging
     environment:
       PGPASSWORD_FILE: /run/secrets/db_admin_password
     secrets:
@@ -198,6 +228,9 @@ services:
   edge:
     image: caddy:2.10-alpine
     restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.5
+    logging: *default-logging
     depends_on:
       web:
         condition: service_healthy
@@ -210,6 +243,12 @@ services:
       - revolution_caddy_config:/config
     networks:
       - internal
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 80 && nc -z 127.0.0.1 443"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
 volumes:
   revolution_pgdata:

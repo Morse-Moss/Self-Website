@@ -369,6 +369,32 @@ test('visitor controls remain tokenized, at least 44px, and responsive at 390px'
   );
 });
 
+test('transcript message items are memoized so streaming deltas do not re-render history', () => {
+  const transcript = readChatSource('ChatTranscript.tsx');
+  const hook = readChatSource('useMorseChat.ts');
+  const workspace = readChatSource('ChatWorkspace.tsx');
+
+  assert.match(transcript, /memo\(/, 'message item component must be wrapped in React.memo');
+  assert.match(transcript, /<TranscriptMessage/, 'transcript must render a dedicated message item component');
+  assert.match(hook, /const stop = useCallback\(/, 'stop must be reference-stable for memoized items');
+  assert.match(hook, /const retry = useCallback\(/, 'retry must be reference-stable for memoized items');
+  assert.match(workspace, /onRetry=\{chat\.retry\}/, 'workspace must pass the stable retry callback directly');
+  assert.match(workspace, /onStop=\{chat\.stop\}/, 'workspace must pass the stable stop callback directly');
+  assert.doesNotMatch(
+    workspace,
+    /onRetry=\{\(assistantId, snapshot\)/,
+    'inline retry wrappers break message item memoization',
+  );
+});
+
+test('rate limited replies guide the visitor to wait before retrying', () => {
+  const errorsSource = readIfPresent(path.resolve('lib/client/chat-errors.ts'));
+
+  assert.match(errorsSource, /CHAT_RATE_LIMITED/);
+  assert.match(errorsSource, /稍等约一分钟/u, 'rate limit copy must tell the visitor how long to wait');
+  assert.match(errorsSource, /未扣减/u, 'rate limit copy must reassure quota was not consumed');
+});
+
 test('visitor chat exposes stable selectors for deterministic browser acceptance', () => {
   const component = fs.readFileSync(componentPath, 'utf8');
   const workspace = readChatSource('ChatWorkspace.tsx');

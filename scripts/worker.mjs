@@ -1,3 +1,4 @@
+import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -57,11 +58,19 @@ export async function runWorker({
   if (!pool) throw new Error('WORKER_POOL_REQUIRED');
   if (!signal) throw new Error('WORKER_SIGNAL_REQUIRED');
   const config = loadWorkerConfig(env);
+  const heartbeatFile = env.MORSE_WORKER_HEARTBEAT_FILE?.trim();
   let consecutiveFailures = 0;
   let nextCleanupAt = 0;
   logger.log('WORKER_STARTED');
   try {
     while (!signal.aborted) {
+      if (heartbeatFile) {
+        try {
+          await writeFile(heartbeatFile, `${clock()}\n`);
+        } catch {
+          logger.error('WORKER_HEARTBEAT_WRITE_FAILED');
+        }
+      }
       try {
         const iterationNow = clock();
         if (iterationNow >= nextCleanupAt) {

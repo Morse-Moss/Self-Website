@@ -131,6 +131,8 @@ export class ChatServiceError extends Error {
 
 export interface ChatServiceConfig {
   maxMessagesPerSession: number;
+  chatWindowSeconds?: number;
+  chatWindowMaxMessages?: number;
   historyMessageLimit: number;
   retrievalLimit: number;
   interactionRetentionDays: number;
@@ -754,6 +756,21 @@ async function reserveTurnInTransaction(input: {
 
   if (session.message_count >= input.config.maxMessagesPerSession) {
     throw new ChatServiceError('MESSAGE_LIMIT');
+  }
+
+  const windowSeconds = input.config.chatWindowSeconds ?? 60;
+  const windowMaxMessages = input.config.chatWindowMaxMessages ?? 10;
+  const windowUsage = await input.client.query<{ window_messages: number }>(
+    `SELECT count(*)::int AS window_messages
+       FROM conversation_messages AS message
+       JOIN conversations AS conversation ON conversation.id = message.conversation_id
+      WHERE conversation.access_session_id = $1
+        AND message.role = 'user'
+        AND message.created_at > $2`,
+    [input.accessSessionId, new Date(input.now.getTime() - windowSeconds * 1_000)],
+  );
+  if ((windowUsage.rows[0]?.window_messages ?? 0) >= windowMaxMessages) {
+    throw new ChatServiceError('CHAT_RATE_LIMITED');
   }
 
   let createdConversation = false;

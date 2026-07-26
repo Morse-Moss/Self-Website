@@ -50,6 +50,7 @@ test('chat contract keeps the current stable and service error allowlists exact'
     'ACCESS_REQUIRED',
     'SESSION_INVALID',
     'MESSAGE_LIMIT',
+    'CHAT_RATE_LIMITED',
     'BUDGET_EXHAUSTED',
     'RETRIEVAL_UNAVAILABLE',
     'PROVIDER_UNAVAILABLE',
@@ -62,6 +63,7 @@ test('chat contract keeps the current stable and service error allowlists exact'
   assert.deepEqual(CHAT_SERVICE_ERROR_CODES, [
     'SESSION_INVALID',
     'MESSAGE_LIMIT',
+    'CHAT_RATE_LIMITED',
     'CONVERSATION_INVALID',
     'CONVERSATION_MODE_MISMATCH',
     'CONVERSATION_BUSY',
@@ -74,6 +76,7 @@ test('chat contract keeps the current stable and service error allowlists exact'
     'PROVIDER_UNAVAILABLE',
     'PROVIDER_INCOMPLETE',
     'CONVERSATION_BUSY',
+    'CHAT_RATE_LIMITED',
     'CONVERSATION_INVALID',
     'CONVERSATION_MODE_MISMATCH',
     'CHAT_UNAVAILABLE',

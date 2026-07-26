@@ -38,6 +38,7 @@ const webEnv = {
   MORSE_ADMIN_ALLOWED_ORIGIN: 'https://morse.example',
   MORSE_ADMIN_PASSWORD_HASH: validAdminPasswordHash,
   MORSE_INVITE_FINGERPRINT_SECRET: 'invite-fingerprint-secret-32-bytes',
+  MORSE_INVITE_TRUSTED_PROXY_HOPS: '1',
   MORSE_PROVIDER_CONFIG_KEY_FILE: providerKeyFile,
   MORSE_PROVIDER_CONFIG_KEY_VERSION: '1',
   OPENAI_API_KEY: 'test-production-chat-key',
@@ -194,6 +195,51 @@ test('web production resume access requires a file key and exactly one trusted p
     await rm(directory, { force: true, recursive: true });
   }
   assert.equal(existsSync(directory), false);
+});
+
+test('web production requires at least one trusted proxy hop for invite IP attribution', () => {
+  for (const hops of [undefined, '', '0']) {
+    assert.throws(
+      () => validateProductionRole('web', {
+        ...webEnv,
+        MORSE_INVITE_TRUSTED_PROXY_HOPS: hops,
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof ProductionConfigError);
+        assert.equal(error.code, 'PRODUCTION_INVITE_PROXY_HOPS_REQUIRED');
+        assert.equal(error.message, 'PRODUCTION_INVITE_PROXY_HOPS_REQUIRED');
+        return true;
+      },
+      `hops=${String(hops)}`,
+    );
+  }
+
+  assert.throws(
+    () => validateProductionRole('web', {
+      ...webEnv,
+      MORSE_INVITE_TRUSTED_PROXY_HOPS: '6',
+    }),
+    (error: unknown) => (
+      error instanceof ProductionConfigError
+      && error.code === 'PRODUCTION_RUNTIME_CONFIG_INVALID'
+    ),
+  );
+
+  assert.deepEqual(validateProductionRole('web', {
+    ...webEnv,
+    MORSE_INVITE_TRUSTED_PROXY_HOPS: '2',
+  }), {
+    alertsEnabled: null,
+    role: 'web',
+  });
+
+  assert.deepEqual(validateProductionRole('worker', {
+    ...databaseEnv,
+    MORSE_ALERTS_ENABLED: 'false',
+  }), {
+    alertsEnabled: false,
+    role: 'worker',
+  });
 });
 
 test('production preflight permits only explicitly opted-in private HTTP embeddings', () => {

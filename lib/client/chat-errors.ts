@@ -16,6 +16,9 @@ const autoReplayChatErrorCodes = new Set<string>([
 
 export function publicErrorMessage(code?: string): string {
   if (code === 'MESSAGE_LIMIT') return '本次邀请码的对话额度已用完,请联系摩斯获取新码。';
+  if (code === 'CHAT_RATE_LIMITED') {
+    return '这一分钟内提问有点密集,本次未扣减对话次数。请稍等约一分钟再点「重试本次问题」。';
+  }
   if (code === 'BUDGET_EXHAUSTED') return '数字摩斯本月额度已用完,作品集仍可正常浏览。';
   if (code === 'SESSION_INVALID' || code === 'ACCESS_REQUIRED') {
     return '本次访问已过期,请重新输入有效邀请码。';

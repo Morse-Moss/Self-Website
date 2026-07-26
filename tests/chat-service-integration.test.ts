@@ -1281,6 +1281,121 @@ test('runChat rejects requests after the access-session message limit', { skip: 
   }, (error: unknown) => error instanceof ChatServiceError && error.code === 'MESSAGE_LIMIT');
 });
 
+test('runChat throttles per-session messages inside the time window with a stable code', {
+  skip: !pool,
+}, async () => {
+  const fixture = await createFailureFixture('chat-throttle-window');
+  const throttleProvider = new FakeProvider();
+  const throttleConfig = {
+    ...config,
+    maxMessagesPerSession: 30,
+    chatWindowSeconds: 60,
+    chatWindowMaxMessages: 2,
+  };
+  const request = (message: string) => ({
+    message,
+    mode: 'general' as const,
+    audienceIntent: 'general' as const,
+    conversationId: null,
+    turnId: null,
+  });
+  try {
+    await consumeChat({
+      pool: pool!,
+      provider: throttleProvider,
+      accessSessionId: fixture.accessSessionId,
+      request: request('窗口内第一问'),
+      config: throttleConfig,
+      now,
+    });
+    await consumeChat({
+      pool: pool!,
+      provider: throttleProvider,
+      accessSessionId: fixture.accessSessionId,
+      request: request('窗口内第二问'),
+      config: throttleConfig,
+      now: new Date(now.getTime() + 10_000),
+    });
+
+    const before = await readLifecycleSnapshot(fixture.accessSessionId);
+    await assert.rejects(consumeChat({
+      pool: pool!,
+      provider: throttleProvider,
+      accessSessionId: fixture.accessSessionId,
+      request: request('窗口内第三问'),
+      config: throttleConfig,
+      now: new Date(now.getTime() + 20_000),
+    }), (error: unknown) => (
+      error instanceof ChatServiceError && error.code === 'CHAT_RATE_LIMITED'
+    ));
+    assert.deepEqual(
+      await readLifecycleSnapshot(fixture.accessSessionId),
+      before,
+      'a throttled request must not consume quota or persist messages',
+    );
+
+    await consumeChat({
+      pool: pool!,
+      provider: throttleProvider,
+      accessSessionId: fixture.accessSessionId,
+      request: request('窗口过期后的提问'),
+      config: throttleConfig,
+      now: new Date(now.getTime() + 71_000),
+    });
+    const after = await readLifecycleSnapshot(fixture.accessSessionId);
+    assert.equal(after.messageCount, before.messageCount + 1);
+  } finally {
+    await cleanupFailureFixture(fixture);
+  }
+});
+
+test('runChat keeps the session total limit ahead of the window throttle', {
+  skip: !pool,
+}, async () => {
+  const fixture = await createFailureFixture('chat-throttle-total-limit');
+  const throttleProvider = new FakeProvider();
+  const throttleConfig = {
+    ...config,
+    maxMessagesPerSession: 1,
+    chatWindowSeconds: 60,
+    chatWindowMaxMessages: 1,
+  };
+  try {
+    await consumeChat({
+      pool: pool!,
+      provider: throttleProvider,
+      accessSessionId: fixture.accessSessionId,
+      request: {
+        message: '仅剩总额度的提问',
+        mode: 'general',
+        audienceIntent: 'general',
+        conversationId: null,
+        turnId: null,
+      },
+      config: throttleConfig,
+      now,
+    });
+    await assert.rejects(consumeChat({
+      pool: pool!,
+      provider: throttleProvider,
+      accessSessionId: fixture.accessSessionId,
+      request: {
+        message: '总额度耗尽后的提问',
+        mode: 'general',
+        audienceIntent: 'general',
+        conversationId: null,
+        turnId: null,
+      },
+      config: throttleConfig,
+      now: new Date(now.getTime() + 5_000),
+    }), (error: unknown) => (
+      error instanceof ChatServiceError && error.code === 'MESSAGE_LIMIT'
+    ));
+  } finally {
+    await cleanupFailureFixture(fixture);
+  }
+});
+
 test('runChat never performs the removed monthly budget aggregate', {
   skip: !pool,
 }, async () => {

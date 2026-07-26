@@ -1,4 +1,4 @@
-import type { RefObject, UIEvent } from 'react';
+import { memo, type RefObject, type UIEvent } from 'react';
 
 import ChatMessageContent from './ChatMessageContent';
 import ChatPendingState from './ChatPendingState';
@@ -6,6 +6,66 @@ import ChatSources from './ChatSources';
 import type { ChatMessage, ChatRequestSnapshot } from './useMorseChat';
 
 import styles from '../MorseChat.module.css';
+
+const TranscriptMessage = memo(function TranscriptMessage({
+  message,
+  onRetry,
+  onStop,
+  streaming,
+}: {
+  message: ChatMessage;
+  onRetry(assistantId: string, snapshot: ChatRequestSnapshot): void;
+  onStop(): void;
+  streaming: boolean;
+}) {
+  return (
+    <article
+      data-message-role={message.role}
+      className={message.role === 'user' ? styles.userMessage : styles.assistantMessage}
+      data-error={message.error || undefined}
+      data-stream-state={message.role === 'assistant'
+        ? (message.complete ? 'done' : message.error ? 'error' : message.stopped ? 'stopped' : 'pending')
+        : undefined}
+    >
+      <span className={styles.messageRole}>{message.role === 'user' ? '你' : '数字摩斯'}</span>
+      {message.role === 'user' && message.text ? <p>{message.text}</p> : null}
+      {message.role === 'assistant' && message.text ? (
+        <ChatMessageContent sources={message.sources} text={message.text} />
+      ) : null}
+      {message.role === 'assistant'
+        && !message.text
+        && !message.error
+        && !message.stopped ? (
+          <ChatPendingState
+            startedAtMs={message.startedAtMs ?? Date.now()}
+            phase={message.phase}
+            onStop={onStop}
+          />
+        ) : null}
+      {message.stopped ? <span className={styles.messageState}>已停止</span> : null}
+      {message.diagnosisStatus === 'handoff_pending' ? (
+        <span className={styles.messageState}>已进入转交队列</span>
+      ) : null}
+      {message.complete ? (
+        <ChatSources
+          answerText={message.text}
+          messageId={message.id}
+          sources={message.sources}
+        />
+      ) : null}
+      {message.retry ? (
+        <button
+          className={styles.retryButton}
+          type="button"
+          disabled={streaming}
+          onClick={() => onRetry(message.id, message.retry!)}
+        >
+          {message.stopped ? '重新生成' : '重试本次问题'}
+        </button>
+      ) : null}
+    </article>
+  );
+});
 
 export default function ChatTranscript({
   messages,
@@ -34,52 +94,13 @@ export default function ChatTranscript({
       {messages.length === 0 ? (
         <div className={styles.emptyState}>{empty}</div>
       ) : messages.map((message) => (
-        <article
+        <TranscriptMessage
           key={message.id}
-          data-message-role={message.role}
-          className={message.role === 'user' ? styles.userMessage : styles.assistantMessage}
-          data-error={message.error || undefined}
-          data-stream-state={message.role === 'assistant'
-            ? (message.complete ? 'done' : message.error ? 'error' : message.stopped ? 'stopped' : 'pending')
-            : undefined}
-        >
-          <span className={styles.messageRole}>{message.role === 'user' ? '你' : '数字摩斯'}</span>
-          {message.role === 'user' && message.text ? <p>{message.text}</p> : null}
-          {message.role === 'assistant' && message.text ? (
-            <ChatMessageContent sources={message.sources} text={message.text} />
-          ) : null}
-          {message.role === 'assistant'
-            && !message.text
-            && !message.error
-            && !message.stopped ? (
-              <ChatPendingState
-                startedAtMs={message.startedAtMs ?? Date.now()}
-                phase={message.phase}
-                onStop={onStop}
-              />
-            ) : null}
-          {message.stopped ? <span className={styles.messageState}>已停止</span> : null}
-          {message.diagnosisStatus === 'handoff_pending' ? (
-            <span className={styles.messageState}>已进入转交队列</span>
-          ) : null}
-          {message.complete ? (
-            <ChatSources
-              answerText={message.text}
-              messageId={message.id}
-              sources={message.sources}
-            />
-          ) : null}
-          {message.retry ? (
-            <button
-              className={styles.retryButton}
-              type="button"
-              disabled={streaming}
-              onClick={() => onRetry(message.id, message.retry!)}
-            >
-              {message.stopped ? '重新生成' : '重试本次问题'}
-            </button>
-          ) : null}
-        </article>
+          message={message}
+          onRetry={onRetry}
+          onStop={onStop}
+          streaming={streaming}
+        />
       ))}
     </div>
   );

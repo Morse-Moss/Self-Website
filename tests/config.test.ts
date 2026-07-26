@@ -302,6 +302,37 @@ test('.env.example keeps every chat v2 control disabled by default', () => {
   assert.match(example, /^MORSE_CHAT_SAFE_MODE=false$/m);
 });
 
+test('loadServerConfig parses chat rate-limit window settings with safe defaults', () => {
+  const defaults = loadServerConfig(completeEnv);
+  assert.equal(defaults.chatWindowSeconds, 60);
+  assert.equal(defaults.chatWindowMaxMessages, 10);
+
+  const custom = loadServerConfig({
+    ...completeEnv,
+    MORSE_CHAT_WINDOW_SECONDS: '120',
+    MORSE_CHAT_WINDOW_MAX_MESSAGES: '5',
+  });
+  assert.equal(custom.chatWindowSeconds, 120);
+  assert.equal(custom.chatWindowMaxMessages, 5);
+});
+
+test('loadServerConfig rejects unsafe chat rate-limit window settings', () => {
+  for (const [name, overrides] of [
+    ['non-integer window', { MORSE_CHAT_WINDOW_SECONDS: '1.5' }],
+    ['zero window', { MORSE_CHAT_WINDOW_SECONDS: '0' }],
+    ['window above one hour', { MORSE_CHAT_WINDOW_SECONDS: '3601' }],
+    ['non-integer max', { MORSE_CHAT_WINDOW_MAX_MESSAGES: '2.5' }],
+    ['zero max', { MORSE_CHAT_WINDOW_MAX_MESSAGES: '0' }],
+    ['max above one hundred', { MORSE_CHAT_WINDOW_MAX_MESSAGES: '101' }],
+  ] as const) {
+    assert.throws(
+      () => loadServerConfig({ ...completeEnv, ...overrides }),
+      /MORSE_CHAT_WINDOW/,
+      name,
+    );
+  }
+});
+
 test('loadServerConfig rejects interaction retention other than ten days', () => {
   for (const days of ['7', '14']) {
     assert.throws(
@@ -361,6 +392,7 @@ test('loadAdminConfig isolates the admin password hash, origin, cookie, and boun
     passwordHash: 'scrypt$test-only-hash',
     allowedOrigin: 'http://127.0.0.1:3010',
     sessionMinutes: 30,
+    sessionMaxAgeHours: 12,
     maxFailedAttempts: 5,
     lockMinutes: 15,
   });
