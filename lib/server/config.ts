@@ -260,7 +260,6 @@ export function loadAccessConfig(env: Env = process.env) {
   return {
     databaseUrl: required(env, 'DATABASE_URL'),
     cookieName: env.MORSE_ACCESS_COOKIE?.trim() || 'morse_access',
-    sessionHours: positiveNumber(env, 'MORSE_SESSION_HOURS', 12),
     maxMessagesPerSession: positiveNumber(env, 'MORSE_MAX_MESSAGES_PER_SESSION', 30),
   };
 }

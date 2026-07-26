@@ -42,6 +42,7 @@ async function runMigrations(connectionString: string): Promise<void> {
 
 async function createInvite(options: {
   code: string;
+  expiresAt?: Date;
   label: string;
   maxSessions?: number;
 }): Promise<string> {
@@ -54,7 +55,7 @@ async function createInvite(options: {
       inviteId,
       hashSecret(options.code),
       options.label,
-      inviteExpiry,
+      options.expiresAt ?? inviteExpiry,
       options.maxSessions ?? 3,
     ],
   );
@@ -75,9 +76,9 @@ after(async () => {
 test('redeemInvite stores only a token hash and authenticates the raw cookie token', async () => {
   const inviteCode = `access-hash-${randomUUID()}`;
   const inviteId = await createInvite({ code: inviteCode, label: 'hash-storage' });
-  const redeemed = await redeemInvite(pool, inviteCode, { now, sessionHours: 2 });
+  const redeemed = await redeemInvite(pool, inviteCode, { now });
 
-  assert.equal(redeemed.expiresAt.toISOString(), '2035-03-01T11:00:00.000Z');
+  assert.equal(redeemed.expiresAt.toISOString(), inviteExpiry.toISOString());
   assert.ok(redeemed.token.length >= 40);
 
   const stored = await pool.query<{ token_hash: string }>(
@@ -93,13 +94,23 @@ test('redeemInvite stores only a token hash and authenticates the raw cookie tok
   assert.equal(session?.messageCount, 0);
 });
 
+test('redeemInvite keeps the administrator-selected invite deadline as the session deadline', async () => {
+  const inviteCode = `access-admin-deadline-${randomUUID()}`;
+  const expiresAt = new Date(now.getTime() + 100 * 60 * 60 * 1000);
+  await createInvite({ code: inviteCode, expiresAt, label: 'admin-deadline' });
+
+  const redeemed = await redeemInvite(pool, inviteCode, { now });
+
+  assert.equal(redeemed.expiresAt.toISOString(), expiresAt.toISOString());
+});
+
 test('redeemInvite rejects a code after its allowed session count is consumed', async () => {
   const inviteCode = `access-limit-${randomUUID()}`;
   await createInvite({ code: inviteCode, label: 'session-limit', maxSessions: 1 });
-  await redeemInvite(pool, inviteCode, { now, sessionHours: 2 });
+  await redeemInvite(pool, inviteCode, { now });
 
   await assert.rejects(
-    () => redeemInvite(pool, inviteCode, { now, sessionHours: 2 }),
+    () => redeemInvite(pool, inviteCode, { now }),
     (error: unknown) => error instanceof AccessError && error.code === 'INVITE_UNAVAILABLE',
   );
 });
@@ -107,7 +118,7 @@ test('redeemInvite rejects a code after its allowed session count is consumed', 
 test('authenticateSession rejects an expired or unknown token', async () => {
   const inviteCode = `access-expiry-${randomUUID()}`;
   const inviteId = await createInvite({ code: inviteCode, label: 'session-expiry' });
-  const redeemed = await redeemInvite(pool, inviteCode, { now, sessionHours: 2 });
+  const redeemed = await redeemInvite(pool, inviteCode, { now });
 
   assert.equal(await authenticateSession(pool, 'unknown-token', now), null);
   await pool.query(
@@ -128,9 +139,9 @@ test('first invite use enqueues exactly one minimal alert across concurrent and 
   });
 
   const concurrentSessions = await Promise.all(Array.from({ length: 4 }, () => (
-    redeemInvite(pool, inviteCode, { now, sessionHours: 2 })
+    redeemInvite(pool, inviteCode, { now })
   )));
-  const repeatedSession = await redeemInvite(pool, inviteCode, { now, sessionHours: 2 });
+  const repeatedSession = await redeemInvite(pool, inviteCode, { now });
 
   const result = await pool.query<{
     dedupe_key: string;
@@ -178,7 +189,7 @@ test('a failed redemption rolls back the session, invite count, and first-use al
 
   try {
     await assert.rejects(
-      () => redeemInvite(pool, inviteCode, { now, sessionHours: 2 }),
+      () => redeemInvite(pool, inviteCode, { now }),
       /forced redemption rollback/,
     );
   } finally {

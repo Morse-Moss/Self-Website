@@ -133,7 +133,7 @@ npm run production:worker
 
 ## 6. 重建式灾备演练
 
-当前公开服务的恢复不承诺恢复 12 小时 Session 或 10 天 interaction analytics。私密简历启用后，恢复演练必须另行证明数据库行、加密卷和对应密钥版本一致；缺少其中任一项时只能由管理员重新上传最终 PDF：
+当前公开服务的恢复不承诺恢复管理员设定访问期内的 Session 或 10 天 interaction analytics。私密简历启用后，恢复演练必须另行证明数据库行、加密卷和对应密钥版本一致；缺少其中任一项时只能由管理员重新上传最终 PDF：
 
 1. 在隔离的新数据库上启用 pgvector。
 2. 执行全部 migration。

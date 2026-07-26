@@ -1047,18 +1047,28 @@ export async function getProviderRuntimeSummary(
   const databaseVersionIds = route?.targets.flatMap(
     (target) => target.databaseModelVersionId ?? [],
   ) ?? [];
-  const databaseHosts = databaseVersionIds.length > 0
-    ? await pool.query<{ base_url: string; model_version_id: string }>(
-        `SELECT model.id::text AS model_version_id, connection.base_url
+  const databaseRuntime = databaseVersionIds.length > 0
+    ? await pool.query<{
+        base_url: string;
+        max_output_tokens: number;
+        model_version_id: string;
+        reasoning_effort: OpenAIReasoningEffort | null;
+      }>(
+        `SELECT model.id::text AS model_version_id, connection.base_url,
+                model.max_output_tokens, model.reasoning_effort
            FROM ai_model_presets model
            JOIN ai_connections connection ON connection.id = model.connection_version_id
           WHERE model.id = ANY($1::uuid[])`,
         [databaseVersionIds],
       )
     : { rows: [] };
-  const databaseHostByVersion = new Map(databaseHosts.rows.map((row) => [
+  const databaseRuntimeByVersion = new Map(databaseRuntime.rows.map((row) => [
     row.model_version_id,
-    safeEndpointHost(row.base_url),
+    {
+      endpointHost: safeEndpointHost(row.base_url),
+      maxOutputTokens: row.max_output_tokens,
+      reasoningEffort: row.reasoning_effort,
+    },
   ]));
   const canRollback = route ? (await pool.query<{ can_rollback: boolean }>(
     `SELECT previous_active_revision_id IS NOT NULL AS can_rollback
@@ -1069,21 +1079,30 @@ export async function getProviderRuntimeSummary(
     activeRevision: route?.revisionNumber ?? 0,
     canRollback,
     routeRevisionId: route?.id ?? null,
-    targets: route?.targets.map((target) => ({
-      ...target,
-      endpointHost: target.environmentTargetKey
-        ? environmentHosts.get(target.environmentTargetKey) ?? null
-        : target.databaseModelVersionId
-          ? databaseHostByVersion.get(target.databaseModelVersionId) ?? null
-          : null,
-    })) ?? [],
+    targets: route?.targets.map((target) => {
+      const databaseTarget = target.databaseModelVersionId
+        ? databaseRuntimeByVersion.get(target.databaseModelVersionId)
+        : null;
+      return {
+        ...target,
+        endpointHost: target.environmentTargetKey
+          ? environmentHosts.get(target.environmentTargetKey) ?? null
+          : databaseTarget?.endpointHost ?? null,
+        maxOutputTokens: databaseTarget?.maxOutputTokens ?? options.runtimeConfig.maxOutputTokens,
+        reasoningEffort: databaseTarget
+          ? databaseTarget.reasoningEffort
+          : options.runtimeConfig.reasoningEffort ?? null,
+      };
+    }) ?? [],
     environmentTargets: configuredEnvironmentTargets.map((target) => ({
       configDigest: target.snapshot.configDigest,
       connectionDisplayName: target.snapshot.connectionDisplayName,
       endpointHost: safeEndpointHost(target.baseUrl),
       environmentTargetKey: target.key,
+      maxOutputTokens: options.runtimeConfig.maxOutputTokens,
       modelId: target.snapshot.modelId,
       protocol: target.snapshot.protocol,
+      reasoningEffort: options.runtimeConfig.reasoningEffort ?? null,
     })),
   };
 }

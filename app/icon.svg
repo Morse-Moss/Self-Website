@@ -1,7 +1,86 @@
-<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-  <!-- 站点图标:深空蓝圆角方块 + 居中两条青色短横线(摩斯电码 M = ——)
-       颜色为 tokens.css --bg / --accent 的字面值(SVG 资产例外,声明于修正任务) -->
-  <rect width="32" height="32" rx="7" fill="#0A0E1A"/>
-  <rect x="8" y="11" width="16" height="3" rx="1.5" fill="#5EE6D0"/>
-  <rect x="8" y="18" width="16" height="3" rx="1.5" fill="#5EE6D0"/>
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="v6-bg" x1="7" y1="4" x2="57" y2="60" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#10182A"/>
+      <stop offset="0.55" stop-color="#080D19"/>
+      <stop offset="1" stop-color="#03050C"/>
+    </linearGradient>
+    <linearGradient id="v6-facet-a" x1="19" y1="13" x2="34" y2="31" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#344666"/>
+      <stop offset="1" stop-color="#1B2740"/>
+    </linearGradient>
+    <linearGradient id="v6-facet-b" x1="32" y1="8" x2="47" y2="28" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#294766"/>
+      <stop offset="1" stop-color="#172A45"/>
+    </linearGradient>
+    <linearGradient id="v6-facet-c" x1="49" y1="18" x2="37" y2="55" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#12304C"/>
+      <stop offset="1" stop-color="#111A2D"/>
+    </linearGradient>
+    <linearGradient id="v6-wall" x1="24" y1="20" x2="43" y2="40" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8FB0FF" stop-opacity="0.22"/>
+      <stop offset="0.48" stop-color="#5EE6D0" stop-opacity="0.62"/>
+      <stop offset="1" stop-color="#2E5BFF" stop-opacity="0.25"/>
+    </linearGradient>
+    <filter id="v6-shadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="0.75"/>
+    </filter>
+  </defs>
+
+  <rect width="64" height="64" rx="15" fill="url(#v6-bg)"/>
+  <rect x="1" y="1" width="62" height="62" rx="14" fill="none" stroke="#141E33" stroke-width="1.5"/>
+
+  <g transform="rotate(6 32 32)">
+    <path d="M32 7L48 17L50 38L38 56L20 53L13 35L18 15Z" fill="#0B1220"/>
+
+    <path d="M32 7L35 29L18 15Z" fill="url(#v6-facet-a)"/>
+    <path d="M32 7L48 17L35 29Z" fill="url(#v6-facet-b)"/>
+    <path d="M48 17L50 38L35 29Z" fill="#102B47"/>
+    <path d="M50 38L38 56L35 29Z" fill="url(#v6-facet-c)"/>
+    <path d="M38 56L20 53L35 29Z" fill="#070E1A"/>
+    <path d="M20 53L13 35L35 29Z" fill="#0D1627"/>
+    <path d="M13 35L18 15L35 29Z" fill="#17233A"/>
+
+    <path d="M18 15L32 7L48 17" fill="none" stroke="#4A5E82" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M48 17L50 38L38 56" fill="none" stroke="#2B405F" stroke-width="1.15" stroke-linecap="round"/>
+    <path d="M38 56L20 53L13 35" fill="none" stroke="#18253B" stroke-width="1.15" stroke-linecap="round"/>
+    <path d="M13 35L18 15" fill="none" stroke="#30415F" stroke-width="1.25" stroke-linecap="round"/>
+
+    <path
+      d="M19.5 46L23.4 20.2L33.5 37.8L42.4 18.8L45.5 44"
+      fill="none"
+      stroke="#000208"
+      stroke-width="5.4"
+      stroke-linecap="butt"
+      stroke-linejoin="miter"
+      filter="url(#v6-shadow)"
+    />
+    <path
+      d="M19.5 46L23.4 20.2L33.5 37.8L42.4 18.8L45.5 44"
+      fill="none"
+      stroke="#02050C"
+      stroke-width="3.8"
+      stroke-linecap="butt"
+      stroke-linejoin="miter"
+    />
+
+    <path
+      d="M20.2 44.8L23.9 21.6L33.8 38.4L42.9 20.2L45.7 42.8"
+      fill="none"
+      stroke="#334766"
+      stroke-opacity="0.78"
+      stroke-width="0.9"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <path
+      d="M24 21.7L33.8 38.4L42.9 20.2"
+      fill="none"
+      stroke="url(#v6-wall)"
+      stroke-width="0.72"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <path d="M43 21.8L45.4 41.7" fill="none" stroke="#5EE6D0" stroke-opacity="0.24" stroke-width="0.65"/>
+  </g>
 </svg>

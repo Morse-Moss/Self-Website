@@ -52,6 +52,8 @@ test('API console exposes runtime truth before the catalog workbench', () => {
   assert.match(source, /endpointHost/u);
   assert.match(source, /data-testid=["']active-endpoint-host["']/u);
   assert.match(source, /data-testid=["']route-endpoint-host["']/u);
+  assert.match(source, /active\?\.reasoningEffort/u);
+  assert.match(source, /active\?\.maxOutputTokens/u);
   assert.match(source, /loading/u);
   assert.match(source, /empty/u);
   assert.match(source, /error/u);

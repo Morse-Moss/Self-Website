@@ -8,6 +8,7 @@ import pg from 'pg';
 import { createDatabaseClientConfig } from '../lib/server/db.ts';
 import {
   canonicalizeMigrationText,
+  legacyMigrationChecksums,
   migrationChecksum,
 } from '../lib/server/migration-checksum.ts';
 
@@ -160,6 +161,7 @@ async function readMigrations() {
         version: match[1],
         fileName: entry.name,
         checksum: migrationChecksum(bytes),
+        legacyChecksums: legacyMigrationChecksums(bytes),
         sql: canonicalizeMigrationText(bytes),
       };
     }));
@@ -304,13 +306,18 @@ async function loadAppliedMigrations(client) {
 
 function validateAppliedMigrations(applied, migrations) {
   const available = new Map(migrations.map((migration) => [migration.version, migration]));
+  const checksumUpgrades = [];
   for (const [version, checksum] of applied) {
     const migration = available.get(version);
     if (!migration) throw new Error(`Applied migration ${version} is missing from disk.`);
     if (migration.checksum !== checksum) {
-      throw new Error(`Checksum mismatch for migration ${version}.`);
+      if (!migration.legacyChecksums.has(checksum)) {
+        throw new Error(`Checksum mismatch for migration ${version}.`);
+      }
+      checksumUpgrades.push({ version, previousChecksum: checksum, checksum: migration.checksum });
     }
   }
+  return checksumUpgrades;
 }
 
 const client = new Client(createDatabaseClientConfig(connectionString, {
@@ -333,7 +340,27 @@ try {
   await bootstrapRegistry(client);
 
   let applied = await loadAppliedMigrations(client);
-  validateAppliedMigrations(applied, migrations);
+  const checksumUpgrades = validateAppliedMigrations(applied, migrations);
+  if (checksumUpgrades.length > 0) {
+    await inTransaction(client, async () => {
+      for (const upgrade of checksumUpgrades) {
+        const result = await client.query(
+          `UPDATE schema_migrations
+              SET checksum = $1
+            WHERE version = $2
+              AND checksum = $3`,
+          [upgrade.checksum, upgrade.version, upgrade.previousChecksum],
+        );
+        if (result.rowCount !== 1) {
+          throw new Error(`Migration checksum registry changed for ${upgrade.version}.`);
+        }
+      }
+    });
+    for (const upgrade of checksumUpgrades) {
+      applied.set(upgrade.version, upgrade.checksum);
+      console.log(`Migration checksum registry canonicalized for ${upgrade.version}.`);
+    }
+  }
   if (!applied.has('001')) {
     if (applied.size > 0) {
       throw new Error('Migration registry is incompatible: 001 is not registered first.');

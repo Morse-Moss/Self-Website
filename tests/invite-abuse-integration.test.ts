@@ -21,7 +21,6 @@ const migrationRunner = path.join(repoRoot, 'scripts', 'migrate-db.mjs');
 const now = new Date('2035-03-08T12:00:00.000Z');
 const fingerprintSecret = 'test-only-fingerprint-secret-at-least-32-characters';
 const policy = {
-  sessionHours: 12,
   fingerprintSecret,
   attemptWindowSeconds: 600,
   maxFailedAttempts: 5,

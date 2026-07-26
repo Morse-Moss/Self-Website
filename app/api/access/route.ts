@@ -25,7 +25,6 @@ export async function POST(request: NextRequest) {
     const config = loadAccessConfig();
     const abuse = loadInviteAbuseConfig();
     const session = await redeemInviteProtected(getPool(config.databaseUrl), code, {
-      sessionHours: config.sessionHours,
       source: trustedInviteSource(
         request.headers.get('x-forwarded-for'),
         abuse.trustedProxyHops,

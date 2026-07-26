@@ -20,7 +20,6 @@ export class AccessError extends Error {
 
 export interface RedeemOptions {
   now?: Date;
-  sessionHours: number;
 }
 
 export interface ProtectedRedeemOptions extends RedeemOptions {
@@ -218,8 +217,7 @@ async function redeemInviteInternal(
       throw new AccessError('INVITE_UNAVAILABLE');
     }
 
-    const requestedExpiry = new Date(now.getTime() + options.sessionHours * 60 * 60 * 1000);
-    const expiresAt = new Date(Math.min(requestedExpiry.getTime(), invite.expires_at.getTime()));
+    const expiresAt = invite.expires_at;
     const sessionId = randomUUID();
     const token = randomBytes(32).toString('base64url');
 

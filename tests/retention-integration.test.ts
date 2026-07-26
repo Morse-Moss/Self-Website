@@ -314,6 +314,17 @@ test('cleanup enforces the 12-hour and 10-day retention boundaries idempotently'
       );
     });
 
+    const migrationSnapshot = await withPostgresClient(
+      database.connectionString,
+      async (client) => (
+        await client.query<{ applied_at: string; checksum: string; version: string }>(
+          `SELECT version, checksum, applied_at::text AS applied_at
+             FROM schema_migrations
+            ORDER BY version`,
+        )
+      ).rows,
+    );
+
     const first = await runCleanup(
       database.connectionString,
       firstCleanupAt,
@@ -358,15 +369,12 @@ test('cleanup enforces the 12-hour and 10-day retention boundaries idempotently'
       assert.deepEqual(invite.rows, [{ active: false }]);
       assert.equal((await client.query('SELECT id FROM knowledge_documents WHERE id = $1', [documentId])).rowCount, 1);
       assert.deepEqual(
-        (await client.query<{ version: string }>('SELECT version FROM schema_migrations ORDER BY version')).rows,
-        [
-          { version: '001' },
-          { version: '002' },
-          { version: '003' },
-          { version: '004' },
-          { version: '005' },
-          { version: '006' },
-        ],
+        (await client.query<{ applied_at: string; checksum: string; version: string }>(
+          `SELECT version, checksum, applied_at::text AS applied_at
+             FROM schema_migrations
+            ORDER BY version`,
+        )).rows,
+        migrationSnapshot,
       );
       assert.equal((await client.query('SELECT id FROM admin_sessions')).rowCount, 0);
       assert.equal((await client.query('SELECT id FROM alert_outbox')).rowCount, 0);

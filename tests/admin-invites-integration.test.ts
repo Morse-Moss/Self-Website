@@ -311,7 +311,7 @@ test('deactivation blocks new redemption but preserves an already authenticated 
     pool,
     { label: 'existing visitor', durationHours: 72, maxSessions: 3 },
   );
-  const redeemed = await redeemInvite(pool, created.code, { sessionHours: 12 });
+  const redeemed = await redeemInvite(pool, created.code, {});
 
   const response = await itemRoute.PATCH(request(`/api/admin/invites/${created.invite.id}`, {
     method: 'PATCH',
@@ -324,7 +324,7 @@ test('deactivation blocks new redemption but preserves an already authenticated 
   assert.equal((await response.json() as { status: string }).status, 'inactive');
 
   await assert.rejects(
-    () => redeemInvite(pool, created.code, { sessionHours: 12 }),
+    () => redeemInvite(pool, created.code, {}),
     /INVITE_UNAVAILABLE/u,
   );
   assert.equal((await authenticateSession(pool, redeemed.token))?.id, redeemed.sessionId);

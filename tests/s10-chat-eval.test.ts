@@ -43,6 +43,8 @@ interface ReviewCase {
 const dataPath = path.join(process.cwd(), 'content', 'chat-eval.json');
 const reviewCasesPath = path.join(process.cwd(), 'content', 'chat-review-cases.json');
 const runnerPath = path.join(process.cwd(), 'scripts', 'chat-eval.mjs');
+const EXPECTED_DATASET_VERSION = 8;
+const EXPECTED_CASE_COUNT = 91;
 
 function readDataset(): { version: number; cases: EvalCase[] } {
   return JSON.parse(fs.readFileSync(dataPath, 'utf8')) as {
@@ -51,11 +53,11 @@ function readDataset(): { version: number; cases: EvalCase[] } {
   };
 }
 
-test('S10 deterministic evaluation freezes 83 cases around the current routing contract', () => {
+test(`S10 deterministic evaluation freezes ${EXPECTED_CASE_COUNT} cases around the current routing contract`, () => {
   const dataset = readDataset();
-  assert.ok(dataset.version >= 7, 'multi-turn routing evaluation schema must be version 7 or newer');
-  assert.equal(dataset.cases.length, 83);
-  assert.equal(new Set(dataset.cases.map((item) => item.id)).size, 83);
+  assert.equal(dataset.version, EXPECTED_DATASET_VERSION);
+  assert.equal(dataset.cases.length, EXPECTED_CASE_COUNT);
+  assert.equal(new Set(dataset.cases.map((item) => item.id)).size, EXPECTED_CASE_COUNT);
   assert.ok(dataset.cases.every((item) => item.query.trim() && item.expectedBehavior.trim()));
 
   assert.deepEqual(
@@ -65,14 +67,22 @@ test('S10 deterministic evaluation freezes 83 cases around the current routing c
       .sort(),
     [
       '回答答非所问',
+      '个人分支丢失原问题能力主题',
+      '公开多 Agent 经历被错误判为不可用',
       '完整技术问题被误澄清',
+      '实现追问开放式检索或丢失能力主题',
+      '明确公开项目被个人事实路由截获',
+      '明确公开项目被个人事实路由截获',
       '普通对话追问丢失上下文',
       '回复像固定RAG模板',
       '未提供JD仍生成匹配',
+      '未知系统借用相似项目证据',
+      '能力续问丢失主题',
       '自然身份问法被误澄清',
       '澄清选项无法完成',
       '重复固定澄清',
       '省略追问丢失项目上下文',
+      '项目集合问题被旧多 Agent 话题覆盖',
     ].sort(),
   );
 
@@ -230,7 +240,7 @@ test('removing identity or recruitment instructions makes the matching cases fai
   }
 });
 
-test('S10 evaluation is offline, passes 83/83, and emits no prompt or answer text', () => {
+test(`S10 evaluation is offline, passes ${EXPECTED_CASE_COUNT}/${EXPECTED_CASE_COUNT}, and emits no prompt or answer text`, () => {
   const output = execFileSync(process.execPath, [runnerPath], {
     cwd: process.cwd(),
     encoding: 'utf8',
@@ -251,10 +261,10 @@ test('S10 evaluation is offline, passes 83/83, and emits no prompt or answer tex
 
   assert.equal(result.evidence, 'deterministic adversarial prompt/provider');
   assert.equal(result.externalCalls, 0);
-  assert.equal(result.total, 83);
-  assert.equal(result.passed, 83);
+  assert.equal(result.total, EXPECTED_CASE_COUNT);
+  assert.equal(result.passed, EXPECTED_CASE_COUNT);
   assert.equal(result.pass, true);
-  assert.equal(result.cases.length, 83);
+  assert.equal(result.cases.length, EXPECTED_CASE_COUNT);
   for (const item of result.cases) {
     assert.deepEqual(Object.keys(item).sort(), ['category', 'id', 'pass']);
     assert.equal(item.pass, true);

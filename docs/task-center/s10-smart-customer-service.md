@@ -77,7 +77,7 @@ S10 Provider 与对话交互修正已在本地 `master` 真实验收并随本轮
 
 ## Fixed Controls
 
-- 访客邀请码最长 72 小时；access/session 上下文 12 小时。
+- 访客邀请码由管理员设置 1–720 小时的统一访问截止时间；邀请码与兑换后的 access session 同时到期，不再叠加隐藏会话时长。
 - 每 Session 30 条消息、5 次联网；同 Session/Conversation 单飞。
 - 默认 Provider 并发 4、Search 并发 2；由环境变量可收紧。
 - SSE heartbeat 15 秒；Embedding/Search/首字节/总时长有独立超时。

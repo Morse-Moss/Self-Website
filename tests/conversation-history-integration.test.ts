@@ -48,7 +48,6 @@ let otherSessionId = '';
 const config = {
   databaseUrl: connectionString,
   cookieName: 'morse_access',
-  sessionHours: 12,
   maxMessagesPerSession: 30,
 };
 
@@ -69,8 +68,8 @@ before(async () => {
       ($3, $4, 'history-other', true, $5, 1, 0)`,
     [ownerInviteId, hashSecret(ownerCode), otherInviteId, hashSecret(otherCode), future],
   );
-  const owner = await redeemInvite(pool, ownerCode, { now, sessionHours: 2 });
-  const other = await redeemInvite(pool, otherCode, { now, sessionHours: 2 });
+  const owner = await redeemInvite(pool, ownerCode, { now });
+  const other = await redeemInvite(pool, otherCode, { now });
   ownerToken = owner.token;
   ownerSessionId = owner.sessionId;
   otherToken = other.token;

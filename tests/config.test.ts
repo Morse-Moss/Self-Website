@@ -29,7 +29,6 @@ const completeEnv: Record<string, string> = {
   MORSE_PROVIDER_TOTAL_TIMEOUT_MS: '85000',
   MORSE_PROVIDER_CONCURRENCY: '3',
   MORSE_MAX_MESSAGES_PER_SESSION: '30',
-  MORSE_SESSION_HOURS: '12',
   MORSE_INPUT_USD_PER_MILLION: '1.25',
   MORSE_OUTPUT_USD_PER_MILLION: '10',
 };
@@ -39,7 +38,6 @@ test('loadServerConfig parses access, provider, lifecycle, and optional pricing 
 
   assert.equal(config.databaseUrl, 'postgresql://localhost/revolution');
   assert.equal(config.cookieName, 'morse_access');
-  assert.equal(config.sessionHours, 12);
   assert.equal(config.maxMessagesPerSession, 30);
   assert.equal(config.chatModel, 'test-chat');
   assert.equal(config.chatProtocol, 'chat_completions');
@@ -317,7 +315,6 @@ test('loadAccessConfig needs only database and access settings', () => {
   assert.deepEqual(loadAccessConfig({ DATABASE_URL: 'postgresql://localhost/revolution' }), {
     databaseUrl: 'postgresql://localhost/revolution',
     cookieName: 'morse_access',
-    sessionHours: 12,
     maxMessagesPerSession: 30,
   });
 });

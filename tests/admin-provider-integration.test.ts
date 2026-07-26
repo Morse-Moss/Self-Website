@@ -373,8 +373,25 @@ test('runtime summary identifies environment and database routes by safe endpoin
     assert.equal(runtime.targets[0].endpointHost, 'gateway.example:9443');
     assert.equal(runtime.targets[1].endpointHost, 'environment.example:8443');
     assert.deepEqual(
-      runtime.environmentTargets.map((target) => target.endpointHost),
-      ['environment.example:8443', 'fallback.example'],
+      runtime.targets.map((target) => ({
+        maxOutputTokens: target.maxOutputTokens,
+        reasoningEffort: target.reasoningEffort,
+      })),
+      [
+        { maxOutputTokens: 4096, reasoningEffort: 'high' },
+        { maxOutputTokens: 600, reasoningEffort: 'high' },
+      ],
+    );
+    assert.deepEqual(
+      runtime.environmentTargets.map((target) => ({
+        endpointHost: target.endpointHost,
+        maxOutputTokens: target.maxOutputTokens,
+        reasoningEffort: target.reasoningEffort,
+      })),
+      [
+        { endpointHost: 'environment.example:8443', maxOutputTokens: 600, reasoningEffort: 'high' },
+        { endpointHost: 'fallback.example', maxOutputTokens: 600, reasoningEffort: 'high' },
+      ],
     );
     assert.doesNotMatch(
       JSON.stringify(runtime),

@@ -717,7 +717,7 @@ async function createFailureFixture(
       new Date(fixtureNow.getTime() + 5 * 60 * 60 * 1000),
     ],
   );
-  const redeemed = await redeemInvite(pool!, code, { now: fixtureNow, sessionHours: 4 });
+  const redeemed = await redeemInvite(pool!, code, { now: fixtureNow });
   return { inviteId: fixtureInviteId, accessSessionId: redeemed.sessionId };
 }
 
@@ -1047,7 +1047,7 @@ before(async () => {
      VALUES ($1, $2, $3, true, $4, 1, 0)`,
     [inviteId, hashSecret(inviteCode), 'chat-service-test', new Date('2026-07-13T08:00:00.000Z')],
   );
-  const redeemed = await redeemInvite(pool, inviteCode, { now, sessionHours: 4 });
+  const redeemed = await redeemInvite(pool, inviteCode, { now });
   accessSessionId = redeemed.sessionId;
 });
 
@@ -1219,6 +1219,7 @@ test('route anchors preserve the latest meaningful topic across follow-ups', {
       reasonCode: 'project_fact_query',
       topicKind: 'project',
       topicRef: 'digital-morse',
+      question: '数字 Morse 怎么实现 RAG？',
     });
 
     const second = routeChatTurn({
@@ -1234,6 +1235,7 @@ test('route anchors preserve the latest meaningful topic across follow-ups', {
       reasonCode: 'anaphoric_project_followup',
       topicKind: 'project',
       topicRef: 'digital-morse',
+      question: '这个为什么这样设计？',
     });
 
     const stored = await pool!.query<{
@@ -5332,11 +5334,15 @@ test('a repeated long answer triggers one strict regeneration from conversation 
 }, async () => {
   const testNow = new Date();
   const fixture = await createFailureFixture('chat-v2-template-repetition', testNow);
-  const repeated = '我目前公开展示的项目包括内容创作 Agent 系统、自动运营 Agent 系统、AI 外贸获客系统、深度研究 Agent 系统和数字摩斯，分别覆盖内容生产、运营编排、获客、研究与可验证对话交付。[来源1]';
+  const repeated = '内容创作 Agent 系统处理内容生产。[来源1] '
+    + '自动运营 Agent 系统处理运营编排。[来源2] '
+    + 'AI 外贸获客系统处理获客流程。[来源3] '
+    + '深度研究 Agent 系统处理研究与证据链。[来源4] '
+    + '数字摩斯处理可验证的对话交付。[来源5]';
   const provider = new SequencedAnswerProvider([
     repeated,
     repeated,
-    '内容创作 Agent 系统在多模型接入与异步任务恢复上有直接证据。[来源1]',
+    '内容创作 Agent 的多模型接入和异步任务恢复采用可验证设计，适合岗位所需的技术交付。',
   ]);
 
   try {
@@ -5371,7 +5377,7 @@ test('a repeated long answer triggers one strict regeneration from conversation 
     assert.equal(provider.requests.length, 3);
     assert.equal(provider.requests[1].execution?.generationMode, 'normal');
     assert.equal(provider.requests[2].execution?.generationMode, 'strict');
-    assert.match(second.filter((event) => event.type === 'delta').map((event) => event.text).join(''), /内容创作 Agent 系统/u);
+    assert.match(second.filter((event) => event.type === 'delta').map((event) => event.text).join(''), /内容创作 Agent/u);
   } finally {
     await cleanupFailureFixture(fixture);
   }
@@ -5758,7 +5764,7 @@ test('one chat conversation can move from recruiter to social without mismatch',
 }, async () => {
   const fixture = await createFailureFixture('chat-v2-current-turn-intent');
   const aiProvider = new SequencedAnswerProvider([
-    '深度研究 Agent 系统用证据链和质量门证明 Agent 系统开发能力。[来源1]',
+    '深度研究采用证据链和质量门，支撑岗位所需的研究交付。',
     '不客气。',
   ]);
   const v2Config = {

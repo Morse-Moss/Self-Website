@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { test } from 'node:test';
 
+import { migrationChecksum } from '../lib/server/migration-checksum.ts';
 import {
   createDisposablePostgresDatabase,
   withPostgresClient,
@@ -378,6 +379,56 @@ test('migration runner accepts an equivalent CRLF and BOM checkout after registr
 
     const second = await runMigrations(database.connectionString, directory);
     assert.equal(second.code, 0, second.stderr);
+  } finally {
+    await fs.rm(directory, { force: true, recursive: true });
+    await database.dispose();
+  }
+});
+
+test('migration runner upgrades a legacy raw CRLF checksum without changing migration history', async () => {
+  const database = await createDisposablePostgresDatabase();
+  const directory = await copyMigrations();
+  try {
+    const first = await runMigrations(database.connectionString, directory);
+    assert.equal(first.code, 0, first.stderr);
+
+    const filePath = path.join(directory, '001_morse_rag.sql');
+    const canonicalSource = (await fs.readFile(filePath, 'utf8'))
+      .replace(/^\uFEFF/u, '')
+      .replace(/\r\n?/gu, '\n');
+    const legacyChecksum = createHash('sha256')
+      .update(canonicalSource.replace(/\n/gu, '\r\n'), 'utf8')
+      .digest('hex');
+    const canonicalChecksum = migrationChecksum(canonicalSource);
+    assert.notEqual(legacyChecksum, canonicalChecksum);
+
+    const before = await withPostgresClient(database.connectionString, async (client) => {
+      const result = await client.query<{ applied_at: string }>(
+        `UPDATE schema_migrations
+            SET checksum = $1
+          WHERE version = '001'
+        RETURNING applied_at::text AS applied_at`,
+        [legacyChecksum],
+      );
+      return result.rows[0];
+    });
+
+    const second = await runMigrations(database.connectionString, directory);
+    assert.equal(second.code, 0, second.stderr);
+    assert.match(second.stdout, /checksum registry canonicalized for 001/i);
+
+    const after = await withPostgresClient(database.connectionString, async (client) => {
+      const result = await client.query<{ applied_at: string; checksum: string }>(
+        `SELECT checksum, applied_at::text AS applied_at
+           FROM schema_migrations
+          WHERE version = '001'`,
+      );
+      return result.rows[0];
+    });
+    assert.deepEqual(after, {
+      applied_at: before.applied_at,
+      checksum: canonicalChecksum,
+    });
   } finally {
     await fs.rm(directory, { force: true, recursive: true });
     await database.dispose();

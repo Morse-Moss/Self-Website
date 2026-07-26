@@ -47,7 +47,7 @@ test('S10 freezes separate access and retention lifetimes', () => {
   assert.match(design, /运行态与分析态必须物理分离/);
   assert.match(design, /不使用级联外键/);
   assert.match(design, /10 天后删除原文/);
-  assert.match(taskCenter, /邀请码最长 72 小时；access\/session 上下文 12 小时/);
+  assert.match(taskCenter, /邀请码由管理员设置 1–720 小时的统一访问截止时间/);
 });
 
 test('S10 freezes Provider, search, admin and alert safety boundaries', () => {

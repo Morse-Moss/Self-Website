@@ -45,11 +45,13 @@ export interface RuntimeTarget {
   endpointHost: string | null;
   environmentTargetKey: 'primary' | 'fallback-1' | 'fallback-2' | null;
   inputUsdPerMillion: string | null;
+  maxOutputTokens: number;
   modelDisplayName: string;
   modelId: string;
   outputUsdPerMillion: string | null;
   position: number;
   protocol: ProviderProtocol;
+  reasoningEffort: ReasoningEffort;
   sourceType: 'database' | 'environment';
 }
 
@@ -58,8 +60,10 @@ export interface EnvironmentTarget {
   connectionDisplayName: string;
   endpointHost: string | null;
   environmentTargetKey: 'primary' | 'fallback-1' | 'fallback-2';
+  maxOutputTokens: number;
   modelId: string;
   protocol: ProviderProtocol;
+  reasoningEffort: ReasoningEffort;
 }
 
 export interface ProviderRuntimeSummary {

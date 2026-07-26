@@ -2,28 +2,19 @@ import type {
   ProjectDisclosure,
   ProjectSlug,
   SiteContent,
-} from '../site-content.ts';
+} from '../contracts/site-content.ts';
+import type {
+  CapabilityPolicy,
+  CapabilityPolicyEntry,
+  CapabilityTransferRule,
+} from '../contracts/capability.ts';
 
 export type CapabilityEvidenceClass = 'direct' | 'transferable' | 'none';
-
-export interface CapabilityPolicyEntry {
-  id: string;
-  label: string;
-  aliases: string[];
-  projectSlugs?: ProjectSlug[];
-}
-
-export interface CapabilityTransferRule {
-  target: string;
-  from: string[];
-  allowedWording: string;
-}
-
-export interface CapabilityPolicy {
-  version: 1;
-  canonical: CapabilityPolicyEntry[];
-  transferRules: CapabilityTransferRule[];
-}
+export type {
+  CapabilityPolicy,
+  CapabilityPolicyEntry,
+  CapabilityTransferRule,
+} from '../contracts/capability.ts';
 
 export interface CapabilityEvidenceRef {
   capabilityId: string;

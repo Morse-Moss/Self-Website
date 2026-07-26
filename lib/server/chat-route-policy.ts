@@ -1,29 +1,17 @@
+import type { ChatRouteKind, ChatTopicKind } from '../contracts/chat.ts';
 import type {
-  ChatEvidenceClass,
-  ChatRouteKind,
-  ChatTopicKind,
-} from '../contracts/chat.ts';
-import type { NormalizedChatRequest } from './chat-core.ts';
+  ChatRouteDecision,
+  NormalizedChatRequest,
+} from '../contracts/chat-runtime.ts';
 import {
   assessCapability,
   assessCapabilities,
   type CapabilityLedger,
 } from './capability-evidence.ts';
-import { looksLikeFullJobDescription } from './chat-behavior.ts';
+import { looksLikeFullJobDescription } from './chat-message-signals.ts';
 import { matchChatProjectSlugs } from './chat-projects.ts';
 
-export interface ChatRouteDecision {
-  routeKind: ChatRouteKind;
-  reasonCode: string;
-  topicKind: ChatTopicKind;
-  topicRef: string | null;
-  evidenceClass: ChatEvidenceClass;
-  inheritedFromTurnId: string | null;
-  release: 'segment' | 'complete';
-  requiresEmbedding: boolean;
-  requiresSearch: boolean;
-  deterministicReply: string | null;
-}
+export type { ChatRouteDecision } from '../contracts/chat-runtime.ts';
 
 export interface RouteAnchor {
   turnId: string;

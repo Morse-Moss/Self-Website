@@ -208,7 +208,7 @@
 
 - 自由对话、JD 匹配和需求初诊三类访客工作流已实现；公开作品无需邀请码，实时对话使用短期邀请码。
 - BGE Embeddings + PostgreSQL/pgvector 提供公开知识检索，回答展示服务端确认的站内或联网来源。
-- SSE 流式回答支持停止、原位重试、12 小时会话恢复、同一 Turn 幂等重放和失败补偿。
+- SSE 流式回答支持停止、原位重试、管理员设定访问期内的会话恢复、同一 Turn 幂等重放和失败补偿。
 - 私有管理后台支持筛选、详情、badcase 和 fresh-TOTP JSON/CSV 导出；Worker 负责告警投递与保留期清理。
 - 腾讯云生产拓扑已运行 Caddy、Next.js Web、Worker、PostgreSQL/pgvector 和 CPU BGE，受控真实 Chat Provider smoke 已完成。
 - 2026-07-19 紧凑展示模块通过 570/570 全量测试、19 页面生产构建及 1440/390 双视口浏览器验收。

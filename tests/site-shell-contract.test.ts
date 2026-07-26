@@ -18,6 +18,8 @@ const canvasPath = path.resolve('components/site/MorseSignalCanvas.tsx');
 const siteStylePath = path.resolve('components/site/SiteShell.module.css');
 const resumeStylePath = path.resolve('components/ResumeMode.module.css');
 const canvasStylePath = path.resolve('components/site/MorseSignalCanvas.module.css');
+const siteIconPath = path.resolve('app/icon.svg');
+const fallbackIconPath = path.resolve('app/favicon.ico');
 
 function readSource(filePath: string): string {
   assert.ok(fs.existsSync(filePath), `missing expected file: ${filePath}`);
@@ -34,6 +36,27 @@ function readRule(source: string, selector: string): string {
   assert.ok(rule, `missing expected CSS rule: ${selector}`);
   return rule;
 }
+
+test('browser tabs retain the designed Morse icon across SVG and ICO discovery paths', () => {
+  const siteIcon = readSource(siteIconPath);
+  assert.match(siteIcon, /<linearGradient id="v6-bg"/);
+  assert.match(siteIcon, /M32 7L48 17L50 38L38 56L20 53L13 35L18 15Z/);
+  assert.equal(count(siteIcon, /M19\.5 46L23\.4 20\.2L33\.5 37\.8L42\.4 18\.8L45\.5 44/g), 2);
+  assert.match(siteIcon, /stroke="#5EE6D0" stroke-opacity="0\.24"/);
+
+  assert.ok(fs.existsSync(fallbackIconPath), 'missing legacy /favicon.ico fallback');
+  const fallbackIcon = fs.readFileSync(fallbackIconPath);
+  assert.deepEqual([...fallbackIcon.subarray(0, 4)], [0, 0, 1, 0]);
+  const imageCount = fallbackIcon.readUInt16LE(4);
+  const sizes = new Set<number>();
+  for (let index = 0; index < imageCount; index += 1) {
+    const directoryOffset = 6 + index * 16;
+    const width = fallbackIcon[directoryOffset] || 256;
+    const height = fallbackIcon[directoryOffset + 1] || 256;
+    if (width === height) sizes.add(width);
+  }
+  assert.deepEqual([...sizes].sort((left, right) => left - right), [16, 32, 48]);
+});
 
 test('root layout owns only global document metadata and styles', () => {
   const layout = readSource(layoutPath);

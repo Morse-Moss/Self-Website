@@ -8,7 +8,10 @@ import {
   type DiagnosisFields,
   type DiagnosisStatus,
 } from '../contracts/chat.ts';
-import type { KnowledgeSource } from './rag.ts';
+import type {
+  KnowledgeSource,
+  NormalizedChatRequest,
+} from '../contracts/chat-runtime.ts';
 import type { SearchResponse } from './search-provider.ts';
 import {
   buildDiagnosisSummary,
@@ -18,18 +21,7 @@ import {
 import { normalizeJobDescription } from './workflows/jd-match.ts';
 
 export type { ChatAudienceIntent, ChatMode, ChatWorkflow } from '../contracts/chat.ts';
-
-export interface NormalizedChatRequest {
-  message: string;
-  workflow?: ChatWorkflow;
-  jobDescription?: string | null;
-  diagnosis?: DiagnosisFields | null;
-  diagnosisStatus?: Extract<DiagnosisStatus, 'collecting' | 'complete'> | null;
-  mode: ChatMode;
-  audienceIntent: ChatAudienceIntent;
-  conversationId: string | null;
-  turnId: string | null;
-}
+export type { NormalizedChatRequest } from '../contracts/chat-runtime.ts';
 
 const audienceInstructions: Record<ChatAudienceIntent, string> = {
   general: '来访目的未特别指定:先回答当前问题,不要擅自推断对方身份。',

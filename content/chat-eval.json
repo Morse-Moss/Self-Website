@@ -1,5 +1,5 @@
 {
-  "version": 7,
+  "version": 8,
   "cases": [
     { "id": "recruiter-project-fit", "category": "recruiter", "query": "从招聘方视角，哪些项目最能证明 Agent 系统开发能力？", "expectedBehavior": "grounded", "workflow": "chat", "intent": "recruiter", "mode": "interviewer", "sourceScenario": "cross-project", "expectedRoute": "grounded", "expectedEvidence": "direct", "expectedDependencies": { "chat": 1, "embedding": 1, "rag": 1, "search": 0 } },
     { "id": "recruiter-evidence-gap", "category": "recruiter", "query": "招聘判断里还有哪些能力信息缺少公开证据？", "expectedBehavior": "grounded", "workflow": "chat", "intent": "recruiter", "mode": "interviewer", "sourceScenario": "cross-project", "expectedRoute": "grounded", "expectedEvidence": "direct", "expectedDependencies": { "chat": 1, "embedding": 1, "rag": 1, "search": 0 } },

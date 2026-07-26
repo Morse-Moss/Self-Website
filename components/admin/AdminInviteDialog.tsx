@@ -289,7 +289,7 @@ export default function AdminInviteDialog({
                 <p className={styles.step}>01 / CREATE</p>
                 <h3 id="admin-invite-create-title">生成新邀请码</h3>
               </div>
-              <span>默认 72 小时</span>
+              <span>邀请码与会话同一截止时间</span>
             </div>
 
             <form className={styles.form} data-testid="admin-invite-form" onSubmit={createInvite}>
@@ -307,7 +307,7 @@ export default function AdminInviteDialog({
               </label>
               <div className={styles.fieldGrid}>
                 <label className={styles.field}>
-                  <span>有效时长（小时）</span>
+                  <span>访问有效期（小时）</span>
                   <input
                     name="durationHours"
                     type="number"
