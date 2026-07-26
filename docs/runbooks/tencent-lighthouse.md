@@ -2,7 +2,16 @@
 
 本文对应 `aimorse.tech` 的生产部署。当前实例为腾讯云 Lighthouse 首尔节点，公网地址为 `43.133.68.202`。境外节点不需要 ICP 备案；DNS 解析和 HTTPS 证书签发已完成，域名实名状态继续由腾讯云注册控制台维护。
 
-## 当前生产状态（2026-07-26）
+## 当前生产状态（2026-07-26，第二次发布）
+
+- 状态：`PRODUCTION_OBSERVED / OPS_HARDENING_APPLIED`，当前应用 release `95a85ea`。
+- `/opt/revolution/current` 指向 `/opt/revolution/releases/95a85ea/revolution`；冻结归档 19,170,813 bytes，SHA-256 `34693e1ce8f0451df0ff827ded3b3da1aedc9dd89f56b1f919c5551b3f01fa0f`，本地与服务器哈希一致。
+- 本节「容器健康检查、资源限制与日志轮转」声明的配置已随本次发布套用到生产：五容器全部 healthy（worker 心跳与 edge 端口探针生效）、web 实测 mem 1GiB / 1 cpu、日志 json-file 10m×3、web 注入 `MORSE_INVITE_TRUSTED_PROXY_HOPS=1`,chat 60s/10 条窗口节流默认生效。
+- 诚实边界：因 db/embedding 服务本次新增了资源限制与日志配置，`up -d web worker edge` 连带重建了 DB 与 Embedding 容器(数据卷 `revolution_pgdata` / `revolution_embedding_models` 保持不变，migration 001–007 checksum 与 41 documents / 48 chunks 公开知识经 ready 与 ingest 幂等复验通过,两者 restart count 均为 0)。这与「切换应用 release 不得隐式重建依赖容器」的边界不符,根因是配置变更本身作用于这两个服务;后续含 db/embedding 配置变更的发布应显式计划其重建窗口。
+- migration、ingest 幂等复验:`Database migrations current through 007`,ingest 0 更新、41 documents 跳过。公网 live/ready/根页/works/admin 均 200,未授权 resume file 为 401,`release:smoke` 返回 `{"ok":true}`。发布后十分钟窗口 web/worker/edge/db 错误关键词计数均为 0。
+- `revolution-web:rollback-b80a728` 与 `revolution-worker:rollback-b80a728` 保留为回滚镜像。本次发布无管理员登录、无邀请码创建、无真实 Chat/Bocha/Feishu 调用。
+
+## 历史生产状态（2026-07-26，第一次发布）
 
 - 状态：`PRODUCTION_OBSERVED / RUNTIME_SETTINGS_VISIBLE / MAX_OUTPUT_PENDING_ADMIN_ACTIVATION`，当前应用 release `b80a728`。
 - `/opt/revolution/current`、Web 与 Worker 指向 `/opt/revolution/releases/b80a728/revolution`。DB `74c365fb4f00...`、Embedding `1d156d6ffd16...` 与 Edge `df8eba464f76...` 在切换前后保持同一容器，本次只重建 Web/Worker；五个容器 restart count 均为 `0`。
@@ -77,7 +86,7 @@
 
 ## 容器健康检查、资源限制与日志轮转
 
-仓库内 `compose.production.yaml` 已声明以下运维配置；它们随下一次经授权的冻结 release 部署生效，当前生产容器（release `b80a728`）尚未套用，不得据此宣称生产已重建：
+仓库内 `compose.production.yaml` 声明以下运维配置；已随 release `95a85ea`（2026-07-26 第二次发布）套用到生产：
 
 - Worker healthcheck：Worker 进程在每轮迭代开始把时间戳写入 `MORSE_WORKER_HEARTBEAT_FILE`（Compose 固定为 `/tmp/worker-heartbeat`），healthcheck 用 `find -mmin -3` 检查心跳 mtime 在 3 分钟内。阈值依据：正常轮询 5 秒一轮，基础设施退避上限 60 秒（`MORSE_WORKER_BACKOFF_MAX_MS`），3 分钟覆盖连续退避仍存活的场景，只有主循环真正停滞才判定 unhealthy。
 - Edge healthcheck：`nc -z 127.0.0.1 80 && nc -z 127.0.0.1 443`，只探测 Caddy 本地端口存活，不发起 TLS 请求、不产生访问日志。
