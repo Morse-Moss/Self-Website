@@ -26,6 +26,8 @@ export type {
   TechStackGroup,
 } from "./contracts/site-content.ts";
 
+export const siteUrl = "https://aimorse.tech";
+
 export const siteContent = contentJson as SiteContent;
 export const chatCapabilityPolicy = capabilityPolicyJson as CapabilityPolicy;
 

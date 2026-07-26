@@ -240,6 +240,8 @@ test('normalizeAdminTurnFilters rejects unknown values and bounds pagination', (
   assert.throws(() => normalizeAdminTurnFilters({ status: 'unknown' }), /status/i);
   assert.throws(() => normalizeAdminTurnFilters({ usedSearch: 'yes' }), /usedSearch/i);
   assert.throws(() => normalizeAdminTurnFilters({ page: 0 }), /page/i);
+  assert.throws(() => normalizeAdminTurnFilters({ page: 501 }), /page/i);
+  assert.equal(normalizeAdminTurnFilters({ page: 500 }).page, 500);
   assert.throws(() => normalizeAdminTurnFilters({ limit: 101 }), /limit/i);
   assert.throws(
     () => normalizeAdminTurnFilters({ from: '2035-03-09', to: '2035-03-08' }),

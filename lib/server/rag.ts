@@ -83,6 +83,13 @@ export async function retrieveKnowledge(
   }
 
   const limit = Math.min(Math.max(Math.trunc(requestedLimit), 1), 10);
+  // Two-stage retrieval: the inner ANN scan orders by distance alone with a
+  // bounded LIMIT so PostgreSQL can serve it from the HNSW index; per-document
+  // dedup (DISTINCT ON) and final top-N ranking run over that candidate set.
+  // The inner LIMIT is pinned to 40 to match pgvector's default
+  // hnsw.ef_search: an index scan returns at most ef_search candidates, so a
+  // larger LIMIT would silently truncate. Raise both together if recall needs
+  // a deeper pool once the corpus grows.
   const result = await pool.query<KnowledgeRow>(
     `SELECT ranked.chunk_id,
             ranked.document_id,
@@ -94,18 +101,31 @@ export async function retrieveKnowledge(
             ranked.topic_ids,
             1 - ranked.distance AS score
        FROM (
-         SELECT DISTINCT ON (chunk.document_id)
-                chunk.id AS chunk_id,
-                chunk.document_id,
-                chunk.metadata->>'title' AS title,
-                chunk.metadata->>'sourcePath' AS source_path,
-                chunk.metadata->>'href' AS href,
-                chunk.content,
-                chunk.metadata->>'projectSlug' AS project_slug,
-                chunk.metadata->'topicIds' AS topic_ids,
-                chunk.embedding <=> $1::vector AS distance
-           FROM knowledge_chunks AS chunk
-          ORDER BY chunk.document_id, chunk.embedding <=> $1::vector, chunk.id
+         SELECT DISTINCT ON (candidate.document_id)
+                candidate.chunk_id,
+                candidate.document_id,
+                candidate.title,
+                candidate.source_path,
+                candidate.href,
+                candidate.content,
+                candidate.project_slug,
+                candidate.topic_ids,
+                candidate.distance
+           FROM (
+             SELECT chunk.id AS chunk_id,
+                    chunk.document_id,
+                    chunk.metadata->>'title' AS title,
+                    chunk.metadata->>'sourcePath' AS source_path,
+                    chunk.metadata->>'href' AS href,
+                    chunk.content,
+                    chunk.metadata->>'projectSlug' AS project_slug,
+                    chunk.metadata->'topicIds' AS topic_ids,
+                    chunk.embedding <=> $1::vector AS distance
+               FROM knowledge_chunks AS chunk
+              ORDER BY chunk.embedding <=> $1::vector
+              LIMIT 40
+           ) AS candidate
+          ORDER BY candidate.document_id, candidate.distance, candidate.chunk_id
        ) AS ranked
       ORDER BY ranked.distance, ranked.chunk_id
       LIMIT $2`,

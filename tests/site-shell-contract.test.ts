@@ -61,7 +61,7 @@ test('browser tabs retain the designed Morse icon across SVG and ICO discovery p
 test('root layout owns only global document metadata and styles', () => {
   const layout = readSource(layoutPath);
 
-  assert.match(layout, /import\s+\{\s*siteContent\s*\}\s+from\s+["']@\/lib\/site-content["']/);
+  assert.match(layout, /import\s+\{\s*siteContent,\s*siteUrl\s*\}\s+from\s+["']@\/lib\/site-content["']/);
   assert.match(layout, /title:\s*siteContent\.site\.name/);
   assert.match(layout, /description:\s*siteContent\.site\.description/);
   assert.match(layout, /import\s+["']\.\/globals\.css["']/);

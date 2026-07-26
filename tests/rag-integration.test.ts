@@ -10,6 +10,7 @@ import {
   retrieveKnowledge,
   type KnowledgeSource,
 } from '../lib/server/rag.ts';
+import { EMBEDDING_DIMENSIONS } from '../lib/server/embedding.ts';
 import type { ChatRouteDecision } from '../lib/server/chat-route-policy.ts';
 
 const { Pool } = pg;
@@ -115,6 +116,35 @@ test('an anaphoric project follow-up falls back to the persisted topic ref', () 
     admitKnowledgeForRoute(route, [adjacent, matching], '这个为什么这样设计？')
       .map((item) => item.projectSlug),
     ['digital-morse'],
+  );
+});
+
+test('retrieveKnowledge runs an HNSW-friendly two-stage query: ANN candidates first, dedup second', async () => {
+  let capturedSql = '';
+  const fakePool = {
+    async query(sql: string) {
+      capturedSql = sql;
+      return { rows: [] };
+    },
+  };
+
+  await retrieveKnowledge(
+    fakePool as unknown as Parameters<typeof retrieveKnowledge>[0],
+    Array.from({ length: EMBEDDING_DIMENSIONS }, (_, index) => (index === 0 ? 1 : 0)),
+    5,
+  );
+
+  // Inner stage must be a bare ANN scan (ORDER BY distance only + LIMIT) so the
+  // planner can use the HNSW index; per-document dedup must happen outside it.
+  assert.match(
+    capturedSql,
+    /ORDER BY chunk\.embedding <=> \$1::vector\s+LIMIT 40/,
+  );
+  assert.match(capturedSql, /DISTINCT ON \(candidate\.document_id\)/);
+  assert.doesNotMatch(
+    capturedSql,
+    /ORDER BY chunk\.document_id, chunk\.embedding/,
+    'the ANN scan must not be forced into a document_id-first sort that defeats HNSW',
   );
 });
 

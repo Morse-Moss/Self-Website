@@ -11,6 +11,7 @@ import { sanitizeTurnSources } from './turn-codec.ts';
 const WORKFLOWS = CHAT_WORKFLOWS;
 const STATUSES = ['running', 'completed', 'stopped', 'failed'] as const;
 const DEFAULT_PAGE = 1;
+const MAX_PAGE = 500;
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
 const MAX_ADMIN_NOTE_LENGTH = 2_000;
@@ -218,7 +219,7 @@ export function normalizeAdminTurnFilters(
     badcase: parseBoolean(input.badcase, 'badcase'),
     from,
     to,
-    page: parseInteger(input.page, 'page', DEFAULT_PAGE),
+    page: parseInteger(input.page, 'page', DEFAULT_PAGE, MAX_PAGE),
     limit: parseInteger(input.limit, 'limit', DEFAULT_LIMIT, MAX_LIMIT),
   };
 }

@@ -152,30 +152,41 @@ export function buildV2SystemInstructions(input: {
 }): string {
   if (!input.route && !input.intent) throw new TypeError('route or intent is required.');
   const route = input.route ?? legacyRoute(input.intent!);
-  const scopedContext: string[] = [];
 
+  // Stable blocks first: byte-identical across turns for a given route kind,
+  // so the OpenAI prompt-cache prefix survives per-turn changes below.
+  const usesEvidencePolicy = route.routeKind === 'external_current'
+    || route.routeKind === 'personal_fact'
+    || route.routeKind === 'grounded'
+    || route.routeKind === 'jd';
+  const stableBlocks = [
+    buildPersonaInstructions(route, input.identityProjectSlugs),
+    usesEvidencePolicy ? EVIDENCE_POLICY : '',
+    recruitmentPolicy(route, input.intent),
+  ];
+
+  // Per-turn blocks after the stable prefix: these change every turn.
+  const turnEvidence: string[] = [];
   if (route.routeKind === 'external_current') {
-    scopedContext.push(EVIDENCE_POLICY, renderWebEvidence(input.search));
+    turnEvidence.push(renderWebEvidence(input.search));
   } else if (route.routeKind === 'personal_fact') {
-    scopedContext.push(
-      EVIDENCE_POLICY,
+    turnEvidence.push(
       input.capabilities
         ? renderCapabilityAssessments(input.capabilities)
         : renderCapabilityAssessment(input.capability),
       renderLocalEvidence(input.sources),
     );
   } else if (route.routeKind === 'grounded' || route.routeKind === 'jd') {
-    scopedContext.push(EVIDENCE_POLICY, renderLocalEvidence(input.sources));
+    turnEvidence.push(renderLocalEvidence(input.sources));
   }
 
   return [
+    ...stableBlocks,
     responseContract(route),
-    buildPersonaInstructions(route, input.identityProjectSlugs),
     route.routeKind === 'conversation'
       ? realtimePersonalStateInstruction(input.question ?? '')
       : '',
-    ...scopedContext,
-    recruitmentPolicy(route, input.intent),
+    ...turnEvidence,
     input.strict ? STRICT_REGENERATION_POLICY : '',
     input.question ? `<current_question>${escapeEvidence(input.question)}</current_question>` : '',
     `<answer_objective>${escapeEvidence(input.answerObjective ?? answerObjective(route))}</answer_objective>`,

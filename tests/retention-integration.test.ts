@@ -35,7 +35,9 @@ interface CleanupCounts {
   deletedAiConfigEvents: number;
   deletedInteractionSearches: number;
   deletedInteractionTurns: number;
+  deletedServiceIncidents: number;
   deletedSessions: number;
+  deletedUsageEvents: number;
 }
 
 async function runScript(
@@ -89,6 +91,8 @@ const zeroCounts: CleanupCounts = {
   deletedAlertOutbox: 0,
   deletedAccessAttempts: 0,
   deletedAiConfigEvents: 0,
+  deletedUsageEvents: 0,
+  deletedServiceIncidents: 0,
   deletedResumeSessions: 0,
   disabledResumeInvites: 0,
   deletedResumeEvents: 0,
@@ -409,6 +413,75 @@ test('cleanup enforces the 12-hour and 10-day retention boundaries idempotently'
     });
     assert.deepEqual(
       await runCleanup(database.connectionString, tenDayCleanupAt, privateFixtures),
+      zeroCounts,
+    );
+  } finally {
+    await database.dispose();
+  }
+});
+
+test('cleanup removes usage events after 10 days and recovered incidents after 90 days', async () => {
+  const database = await createDisposablePostgresDatabase();
+  const cleanupAt = '2035-06-01T00:00:00.000Z';
+  const cleanupTime = new Date(cleanupAt).getTime();
+  const dayMs = 24 * 60 * 60 * 1000;
+
+  try {
+    const migration = await runScript(migrationRunner, {
+      DATABASE_URL: database.connectionString,
+    });
+    assert.equal(migration.code, 0, migration.stderr);
+
+    await withPostgresClient(database.connectionString, async (client) => {
+      await client.query(
+        `INSERT INTO usage_events (provider, model, input_tokens, output_tokens, estimated_cost_usd, created_at)
+         VALUES
+           ('openai-compatible', 'usage-old-fixture', 1, 1, 0, $1),
+           ('openai-compatible', 'usage-boundary-fixture', 1, 1, 0, $2),
+           ('openai-compatible', 'usage-young-fixture', 1, 1, 0, $3)`,
+        [
+          new Date(cleanupTime - 11 * dayMs),
+          new Date(cleanupTime - 10 * dayMs),
+          new Date(cleanupTime - 9 * dayMs),
+        ],
+      );
+      await client.query(
+        `INSERT INTO service_incidents
+          (id, dependency, fingerprint, status, failure_count,
+           window_started_at, last_failure_at, recovered_at, created_at, updated_at)
+         VALUES
+           ($1, 'provider', $4, 'recovered', 3, $6, $6, $6, $6, $6),
+           ($2, 'provider', $5, 'recovered', 3, $7, $7, $7, $7, $7),
+           ($3, 'provider', $5, 'observing', 1, $6, $6, NULL, $6, $6)`,
+        [
+          randomUUID(),
+          randomUUID(),
+          randomUUID(),
+          'a'.repeat(64),
+          'b'.repeat(64),
+          new Date(cleanupTime - 91 * dayMs),
+          new Date(cleanupTime - 89 * dayMs),
+        ],
+      );
+    });
+
+    const first = await runCleanup(database.connectionString, cleanupAt, []);
+    assert.equal(first.deletedUsageEvents, 2);
+    assert.equal(first.deletedServiceIncidents, 1);
+
+    await withPostgresClient(database.connectionString, async (client) => {
+      const usage = await client.query<{ model: string }>(
+        'SELECT model FROM usage_events ORDER BY model',
+      );
+      assert.deepEqual(usage.rows, [{ model: 'usage-young-fixture' }]);
+      const incidents = await client.query<{ status: string }>(
+        'SELECT status FROM service_incidents ORDER BY status',
+      );
+      assert.deepEqual(incidents.rows, [{ status: 'observing' }, { status: 'recovered' }]);
+    });
+
+    assert.deepEqual(
+      await runCleanup(database.connectionString, cleanupAt, []),
       zeroCounts,
     );
   } finally {

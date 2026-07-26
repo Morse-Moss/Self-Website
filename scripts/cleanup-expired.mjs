@@ -5,6 +5,9 @@ import { fileURLToPath } from 'node:url';
 import { createDatabasePool } from '../lib/server/db.ts';
 
 const CLEANUP_LOCK_NAME = 'revolution:retention-cleanup:v1';
+// Mirrors MORSE_INTERACTION_RETENTION_DAYS (frozen at 10 in lib/server/config.ts).
+const USAGE_EVENT_RETENTION_DAYS = 10;
+const RECOVERED_INCIDENT_RETENTION_DAYS = 90;
 
 function cleanupTimestamp(value, clock = () => new Date()) {
   const cleanupDate = value?.trim() ? new Date(value.trim()) : clock();
@@ -76,6 +79,17 @@ export async function cleanupExpired({
       'DELETE FROM ai_config_events WHERE delete_after <= $1::timestamptz',
       [cleanupNow],
     );
+    const usageEvents = await client.query(
+      `DELETE FROM usage_events
+        WHERE created_at <= $1::timestamptz - make_interval(days => $2)`,
+      [cleanupNow, USAGE_EVENT_RETENTION_DAYS],
+    );
+    const serviceIncidents = await client.query(
+      `DELETE FROM service_incidents
+        WHERE status = 'recovered'
+          AND recovered_at <= $1::timestamptz - make_interval(days => $2)`,
+      [cleanupNow, RECOVERED_INCIDENT_RETENTION_DAYS],
+    );
     await client.query(
       `INSERT INTO resume_access_events
         (event_type, result_code, invite_id, session_id, source_ip, user_agent, device_info, created_at, delete_after)
@@ -127,6 +141,8 @@ export async function cleanupExpired({
       deletedAlertOutbox: alertOutbox.rowCount ?? 0,
       deletedAccessAttempts: accessAttempts.rowCount ?? 0,
       deletedAiConfigEvents: aiConfigEvents.rowCount ?? 0,
+      deletedUsageEvents: usageEvents.rowCount ?? 0,
+      deletedServiceIncidents: serviceIncidents.rowCount ?? 0,
       deletedResumeSessions: resumeSessions.rowCount ?? 0,
       disabledResumeInvites: resumeInvites.rowCount ?? 0,
       deletedResumeEvents: resumeEvents.rowCount ?? 0,
