@@ -2,7 +2,17 @@
 
 本文对应 `aimorse.tech` 的生产部署。当前实例为腾讯云 Lighthouse 首尔节点，公网地址为 `43.133.68.202`。境外节点不需要 ICP 备案；DNS 解析和 HTTPS 证书签发已完成，域名实名状态继续由腾讯云注册控制台维护。
 
-## 当前生产状态（2026-07-26，第二次发布）
+## 当前生产状态（2026-07-26，第三次发布）
+
+- 状态：`PRODUCTION_OBSERVED / RETRIEVAL_AND_SEO_APPLIED`，当前应用 release `3ec952a`。
+- `/opt/revolution/current` 指向 `/opt/revolution/releases/3ec952a/revolution`；冻结归档 SHA-256 `5c431bac78313ef4ad7fc4802d9883ebe7d5447db2d56c232860576818b709f4`，本地与服务器哈希一致。
+- 本次生效：RAG 两段式检索（内层 ANN LIMIT 40 对齐 pgvector 默认 `hnsw.ef_search`，语料增长后可走 HNSW 索引；gold 集 46/46 top-3 复验通过）、系统提示词稳定前缀重排（人设/证据政策前置以命中 Provider prompt cache，文案零改动，chat-eval 91/91）、retention 补齐（usage_events 10 天、recovered service_incidents 90 天，由 worker cleanup 执行）、`/sitemap.xml` 与 `/robots.txt`（disallow /admin /api）上线并经公网实测、openGraph/twitter 元数据、admin 分页上限 500。
+- 无 schema 变更：本 release 的 migrations 仍为 001–007，`Database migrations current through 007`；ingest 幂等（0 更新、41 documents 跳过）。工作区中的 008/009 migration 均未进入本次冻结归档。
+- 诚实边界：DB 与 Embedding 容器再次被重建——尽管 compose 配置与上一 release 完全一致，但 db 服务的 postgresql.conf/init/TLS/secret 以 bind mount 挂自 release 目录，路径随 release 切换而变化，compose 视为配置变更强制重建。数据卷不变、restart count 0、migration 与 ingest 复验通过。**结构性事实：在当前 bind-mount 布局下，每次 release 切换都必然重建 db/embedding**，上一节「后续显式计划重建窗口」应按此理解；若要消除,需把这些 bind 源迁到 `/opt/revolution/shared/` 固定路径（属远端安全配置变更,需单独授权）。
+- 公网复验：live/ready `{"ok":true}`、根页/works/admin 200、未授权 resume file 401、`release:smoke` `{"ok":true}`、sitemap.xml 与 robots.txt 内容正确;发布后十分钟窗口 web/worker/edge/db 错误关键词计数均为 0;五容器 healthy。
+- `revolution-web:rollback-95a85ea` 与 `revolution-worker:rollback-95a85ea` 保留为回滚镜像。本次发布无管理员登录、无邀请码创建、无真实 Chat/Bocha/Feishu 调用。
+
+## 历史生产状态（2026-07-26，第二次发布）
 
 - 状态：`PRODUCTION_OBSERVED / OPS_HARDENING_APPLIED`，当前应用 release `95a85ea`。
 - `/opt/revolution/current` 指向 `/opt/revolution/releases/95a85ea/revolution`；冻结归档 19,170,813 bytes，SHA-256 `34693e1ce8f0451df0ff827ded3b3da1aedc9dd89f56b1f919c5551b3f01fa0f`，本地与服务器哈希一致。
