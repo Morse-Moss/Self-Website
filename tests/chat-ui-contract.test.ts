@@ -22,6 +22,7 @@ const requiredChatFiles = [
   'ChatWorkspace.tsx',
   'ChatTranscript.tsx',
   'ChatMessageContent.tsx',
+  'ChatPendingState.tsx',
   'ChatPhaseStatus.tsx',
   'ChatComposer.tsx',
   'ChatSources.tsx',

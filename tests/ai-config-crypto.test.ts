@@ -29,8 +29,8 @@ test('provider secret round-trips with random AES-256-GCM envelopes', () => {
   const first = encryptAiConfigSecret('super-secret', key, aad);
   const second = encryptAiConfigSecret('super-secret', key, aad);
 
-  assert.equal(first.iv.length, 12);
-  assert.equal(first.tag.length, 16);
+  assert.equal(first.iv?.length, 12);
+  assert.equal(first.tag?.length, 16);
   assert.notDeepEqual(first.iv, second.iv);
   assert.notDeepEqual(first.ciphertext, second.ciphertext);
   assert.equal(decryptAiConfigSecret(first, key, aad), 'super-secret');
@@ -46,9 +46,9 @@ test('provider secret envelope is bound to ciphertext, IV, tag, AAD, key, and ke
   };
 
   for (const candidate of [
-    { envelope: { ...envelope, ciphertext: corrupt(envelope.ciphertext) }, key, aad },
-    { envelope: { ...envelope, iv: corrupt(envelope.iv) }, key, aad },
-    { envelope: { ...envelope, tag: corrupt(envelope.tag) }, key, aad },
+    { envelope: { ...envelope, ciphertext: corrupt(envelope.ciphertext!) }, key, aad },
+    { envelope: { ...envelope, iv: corrupt(envelope.iv!) }, key, aad },
+    { envelope: { ...envelope, tag: corrupt(envelope.tag!) }, key, aad },
     { envelope, key: Buffer.alloc(32, 12), aad },
     { envelope, key, aad: { ...aad, connectionVersionId: randomUUID() } },
     { envelope, key, aad: { ...aad, seriesId: randomUUID() } },

@@ -234,6 +234,7 @@ class PartiallyObservedStoppedProvider extends TelemetryProvider {
       attemptNo: 1,
       providerAlias: 'primary',
       launchKind: 'primary',
+      generationMode: 'normal',
       startedAt: runtimeNow,
       startDelayMs: 0,
     });
@@ -252,6 +253,7 @@ class PartiallyObservedStoppedProvider extends TelemetryProvider {
       attemptNo: 2,
       providerAlias: 'fallback-1',
       launchKind: 'failover',
+      generationMode: 'normal',
       startedAt: new Date(runtimeNow.getTime() + 100),
       startDelayMs: 100,
     });
@@ -537,7 +539,7 @@ test('runChat persists routed attempts and per-attempt usage idempotently in one
       request: {
         message: 'Explain runtime routing.',
         mode: 'general' as const,
-        audienceIntent: 'general',
+        audienceIntent: 'general' as const,
         conversationId: null,
         turnId,
       },

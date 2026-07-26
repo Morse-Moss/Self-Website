@@ -417,7 +417,7 @@ test('OpenAIProvider rejects a Responses incomplete terminal event', async () =>
         };
       })(),
     },
-  }, {
+  } as unknown as ConstructorParameters<typeof OpenAIProvider>[0], {
     embeddings: { create: async () => ({ data: [] }) },
   }, providerConfig);
   const iterator = provider.streamAnswer({

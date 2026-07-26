@@ -5,6 +5,8 @@ import {
   loadPreviousRouteAnchor,
   loadRecordedInteractionRoute,
 } from '../lib/server/interaction-log.ts';
+
+type AnchorClient = Parameters<typeof loadPreviousRouteAnchor>[0];
 import {
   CLARIFY_REPLY,
   SAFETY_BOUNDARY_REPLY,
@@ -31,7 +33,7 @@ test('loadPreviousRouteAnchor preserves a routed follow-up as the current anchor
   };
 
   const anchor = await loadPreviousRouteAnchor(
-    client,
+    client as unknown as AnchorClient,
     '22222222-2222-4222-8222-222222222222',
     '33333333-3333-4333-8333-333333333333',
   );
@@ -72,7 +74,7 @@ test('loadPreviousRouteAnchor exposes only a bounded completed legacy clarificat
   };
 
   const anchor = await loadPreviousRouteAnchor(
-    client,
+    client as unknown as AnchorClient,
     '22222222-2222-4222-8222-222222222222',
     '33333333-3333-4333-8333-333333333333',
   );
@@ -98,7 +100,7 @@ test('loadRecordedInteractionRoute preserves a recorded safety boundary reply', 
   };
 
   const route = await loadRecordedInteractionRoute(
-    client,
+    client as unknown as AnchorClient,
     '44444444-4444-4444-8444-444444444444',
   );
 

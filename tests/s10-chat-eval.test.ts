@@ -224,6 +224,7 @@ test('removing identity or recruitment instructions makes the matching cases fai
       cwd: process.cwd(),
       encoding: 'utf8',
       env: {
+        NODE_ENV: process.env.NODE_ENV,
         PATH: process.env.PATH,
         SYSTEMROOT: process.env.SYSTEMROOT,
         MORSE_CHAT_EVAL_MUTATION: mutation,
@@ -245,6 +246,7 @@ test(`S10 evaluation is offline, passes ${EXPECTED_CASE_COUNT}/${EXPECTED_CASE_C
     cwd: process.cwd(),
     encoding: 'utf8',
     env: {
+      NODE_ENV: process.env.NODE_ENV,
       PATH: process.env.PATH,
       SYSTEMROOT: process.env.SYSTEMROOT,
     },

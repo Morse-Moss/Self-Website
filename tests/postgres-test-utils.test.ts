@@ -12,7 +12,7 @@ test('disposable database lets closing clients drain before forced cleanup', asy
   const database = await createDisposablePostgresDatabase();
   const client = new Client({ connectionString: database.connectionString });
   const errors: string[] = [];
-  client.on('error', (error) => errors.push(error.code ?? error.name));
+  client.on('error', (error) => errors.push((error as NodeJS.ErrnoException).code ?? error.name));
   let closeClient: Promise<void> | undefined;
   try {
     await client.connect();

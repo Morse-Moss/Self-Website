@@ -21,6 +21,11 @@ export interface ProviderNode {
   snapshot: ProviderTargetSnapshot;
 }
 
+export type ProviderNodeInput =
+  | AiProvider
+  | ProviderAnswerTarget
+  | (Omit<ProviderNode, 'snapshot'> & { snapshot?: ProviderTargetSnapshot });
+
 function addUsage(current: TokenUsage | null, next: TokenUsage | null): TokenUsage | null {
   if (!next) return current;
   if (!current) return next;
@@ -49,7 +54,7 @@ export class FailoverAiProvider implements AiProvider {
 
   constructor(
     embeddingProvider: AiProvider,
-    answerProviders: Array<AiProvider | ProviderAnswerTarget | ProviderNode>,
+    answerProviders: ProviderNodeInput[],
     totalTimeoutMs: number,
     health = new ProviderHealthRegistry(),
   ) {
@@ -64,7 +69,7 @@ export class FailoverAiProvider implements AiProvider {
         return {
           alias: 'alias' in entry ? entry.alias : alias,
           provider: entry.provider,
-          snapshot: 'snapshot' in entry ? entry.snapshot : legacySnapshot(index),
+          snapshot: 'snapshot' in entry && entry.snapshot ? entry.snapshot : legacySnapshot(index),
         };
       }
       return { alias, provider: entry, snapshot: legacySnapshot(index) };

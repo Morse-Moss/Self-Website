@@ -177,7 +177,7 @@ before(async () => {
   );
 
   process.env.DATABASE_URL = database.connectionString;
-  process.env.NODE_ENV = 'test';
+  Reflect.set(process.env, 'NODE_ENV', 'test');
   process.env.MORSE_PUBLIC_ORIGIN = publicOrigin;
   process.env.MORSE_RESUME_ENABLED = 'true';
   process.env.MORSE_RESUME_COOKIE = cookieName;
@@ -204,7 +204,7 @@ after(async () => {
   for (const key of envKeys) {
     const value = originalEnv.get(key);
     if (value === undefined) delete process.env[key];
-    else process.env[key] = value;
+    else Reflect.set(process.env, key, value);
   }
 });
 

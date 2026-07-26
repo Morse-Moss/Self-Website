@@ -71,7 +71,7 @@ after(async () => {
   const globalDb = globalThis as typeof globalThis & { morseDatabasePool?: InstanceType<typeof Pool> };
   await globalDb.morseDatabasePool?.end(); delete globalDb.morseDatabasePool;
   await pool?.end(); await database?.dispose(); await rm(storageDir, { recursive: true, force: true });
-  for (const name of envNames) { const value = originals.get(name); if (value === undefined) delete process.env[name]; else process.env[name] = value; }
+  for (const name of envNames) { const value = originals.get(name); if (value === undefined) delete process.env[name]; else Reflect.set(process.env, name, value); }
 });
 
 test('admin resume writes require Cookie, exact Origin, and password reauthentication', async () => {

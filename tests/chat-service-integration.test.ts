@@ -3018,7 +3018,7 @@ test('runChat persists routed attempts, winner attribution, and per-attempt cost
     request: {
       message: 'Persist routed provider attempts.',
       mode: 'general' as const,
-      audienceIntent: 'general',
+      audienceIntent: 'general' as const,
       conversationId: null,
       turnId,
     },
@@ -4787,7 +4787,7 @@ test('runChat records search down after three failures and recovers after one co
     request: {
       message: 'What changed in the latest OpenAI API?',
       mode: 'general' as const,
-      audienceIntent: 'general',
+      audienceIntent: 'general' as const,
       conversationId: null,
       turnId: randomUUID(),
     },
@@ -5541,7 +5541,7 @@ test('provider exhaustion fails without a local project-summary answer', {
         WHERE interaction_turn_id = $1`,
       [turnId],
     );
-    assert.ok(attempts.rowCount >= 1);
+    assert.ok((attempts.rowCount ?? 0) >= 1);
     assert.ok(attempts.rows.every((attempt) => attempt.status === 'failed'));
   } finally {
     await cleanupFailureFixture(fixture);
