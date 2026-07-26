@@ -2,7 +2,17 @@
 
 本文对应 `aimorse.tech` 的生产部署。当前实例为腾讯云 Lighthouse 首尔节点，公网地址为 `43.133.68.202`。境外节点不需要 ICP 备案；DNS 解析和 HTTPS 证书签发已完成，域名实名状态继续由腾讯云注册控制台维护。
 
-## 当前生产状态（2026-07-25）
+## 当前生产状态（2026-07-26）
+
+- 状态：`PRODUCTION_OBSERVED / RUNTIME_SETTINGS_VISIBLE / MAX_OUTPUT_PENDING_ADMIN_ACTIVATION`，当前应用 release `b80a728`。
+- `/opt/revolution/current`、Web 与 Worker 指向 `/opt/revolution/releases/b80a728/revolution`。DB `74c365fb4f00...`、Embedding `1d156d6ffd16...` 与 Edge `df8eba464f76...` 在切换前后保持同一容器，本次只重建 Web/Worker；五个容器 restart count 均为 `0`。
+- migration `001–007`、grants、AI runtime 权限门禁和两轮 ingest 均通过；生产公开知识为 41 documents / 48 chunks，48/48 chunks 均带 `projectSlug` 与 `topicIds`，两轮 ingest 都是 0 更新、41 documents 跳过。
+- 公网 live、ready、兼容 health、根页、作品页、`/admin` 与 `/admin/api` 均为 HTTP 200；未登录 Provider runtime、turn list、简历文件和简历授权接口均为 HTTP 401；`release:smoke` 返回 `{"ok":true}`。公网 ICO 的 SHA-256 与 commit 文件一致，公网 SVG 的 Git blob 与 `b80a728:app/icon.svg` 一致。
+- 生产 Web 环境为 `OPENAI_REASONING_EFFORT=high`、`MORSE_MAX_OUTPUT_TOKENS=1200`、Chat v2 enabled、canary 100%，hedging 与 safe mode 关闭。但活动数据库主线路仍优先使用不可变模型版本中的 `high / 30000`；因此 `1200` 尚未成为主线路实际值，必须由管理员创建并真实测试新模型版本后再激活，不能绕过测试门禁直接修改历史版本。
+- 冻结归档为 19,123,456 bytes，SHA-256 `db4eaf79129008b5698427e396b7ef41e8fdfc927fec40d6d93f437ce845c8ae`；本地与服务器上传哈希一致。发布没有管理员登录、邀请码创建或真实 Chat/Bocha/Feishu 调用，最近十分钟 Web、Worker、Edge 与 DB 的错误关键词计数均为 `0`。
+- `revolution-web:rollback-11ce329` 与 `revolution-worker:rollback-11ce329` 保留为本次应用回滚镜像；回滚后仍需复验 live、ready、未授权边界和 release smoke。
+
+## 历史生产状态（2026-07-25）
 
 - 状态：`PRODUCTION_OBSERVED / CHAT_PROJECT_COLLECTION / USER_CONVERSATION_NOT_RERUN`，当前应用 release `11ce329`。
 - `/opt/revolution/current`、Web 与 Worker Compose working directory 指向 `/opt/revolution/releases/11ce329/revolution`。Edge、DB 与 Embedding 延续既有容器；三者的完整容器 ID 在切换前后保持不变，本次未重建。
