@@ -104,6 +104,7 @@ export function adminProviderServiceOptions(
     configKey: loadAiConfigKey(),
     outboundPolicy,
     runtimeConfig,
+    runtimeConfigLoader: loadServerConfig,
     transport: createAdminProviderTransport(runtimeConfig, { policy: outboundPolicy }),
   };
 }

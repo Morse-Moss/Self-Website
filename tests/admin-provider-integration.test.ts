@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { createHmac, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
 import path from 'node:path';
@@ -8,6 +9,7 @@ import { test } from 'node:test';
 import pg from 'pg';
 
 import { AiConfigError, createRuntimeConfigDigest } from '../lib/server/ai-config.ts';
+import { decryptAiConfigSecret } from '../lib/server/ai-config-crypto.ts';
 import {
   activateProviderRoute,
   createAdminProviderTransport,
@@ -24,6 +26,7 @@ import {
   updateProviderModel,
   type AdminProviderServiceOptions,
 } from '../lib/server/admin-provider-config.ts';
+import { takeoverEnvironmentProvider } from '../lib/server/environment-provider-takeover.ts';
 import { createProviderOutboundPolicy } from '../lib/server/provider-outbound.ts';
 import { createDisposablePostgresDatabase } from './postgres-test-utils.ts';
 
@@ -127,6 +130,52 @@ function loseFirstCommitAcknowledgement(
       };
     },
   } as unknown as InstanceType<typeof Pool>;
+}
+
+async function environmentTakeoverCounts(pool: InstanceType<typeof Pool>) {
+  const counts = await pool.query<{
+    connections: number;
+    events: number;
+    models: number;
+    takeovers: number;
+  }>(`SELECT
+    (SELECT count(*) FROM ai_connections)::integer AS connections,
+    (SELECT count(*) FROM ai_model_presets)::integer AS models,
+    (SELECT count(*) FROM ai_environment_takeovers)::integer AS takeovers,
+    (SELECT count(*) FROM ai_config_events)::integer AS events`);
+  return counts.rows[0];
+}
+
+async function serializedAiConfigEvents(pool: InstanceType<typeof Pool>): Promise<string> {
+  const events = await pool.query<{ raw: string }>(
+    `SELECT COALESCE(json_agg(event ORDER BY id), '[]'::json)::text AS raw
+       FROM ai_config_events event`,
+  );
+  return events.rows[0].raw;
+}
+
+function assertSecretsRedacted(value: unknown, secrets: string[]): void {
+  const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+  for (const secret of secrets) {
+    assert.equal(serialized.includes(secret), false);
+    assert.equal(serialized.includes(secret.slice(-4)), false);
+  }
+}
+
+async function waitForAdvisoryLockWaiter(pool: InstanceType<typeof Pool>): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const waiting = await pool.query<{ count: number }>(
+      `SELECT count(*)::integer AS count
+         FROM pg_stat_activity
+        WHERE datname = current_database()
+          AND pid <> pg_backend_pid()
+          AND wait_event = 'advisory'
+          AND query LIKE 'SELECT pg_advisory_xact_lock%'`,
+    );
+    if (waiting.rows[0].count > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.fail('takeover did not wait on the target advisory lock');
 }
 
 async function listenOnLoopback(server: ReturnType<typeof createServer>): Promise<string> {
@@ -471,6 +520,471 @@ test('runtime summary redacts configured URLs and reuses the canonical Environme
     assert.doesNotMatch(
       JSON.stringify(runtime),
       /primary-digest-secret|fallback-digest-secret|fallback-private\.example\/v1\/private/iu,
+    );
+  });
+});
+
+test('environment takeover creates one encrypted draft without a Provider call', async () => {
+  await withDatabase(async (pool) => {
+    const baseOptions = options();
+    const primarySecret = 'primary-private-key-4712';
+    let providerCalls = 0;
+    const serviceOptions = options({
+      runtimeConfig: {
+        ...baseOptions.runtimeConfig,
+        openaiApiKey: primarySecret,
+      },
+      transport: {
+        async discover() { providerCalls += 1; return []; },
+        async test() {
+          providerCalls += 1;
+          return { latencyMs: 1, usage: null };
+        },
+      },
+    });
+    const environment = (await getProviderRuntimeSummary(pool, serviceOptions))
+      .environmentTargets.find((target) => target.environmentTargetKey === 'primary');
+    assert.ok(environment);
+
+    const result = await takeoverEnvironmentProvider(pool, 'primary', {
+      apiKey: null,
+      baseUrl: null,
+      expectedConfigDigest: environment.configDigest,
+      firstModel: model,
+      name: 'Editable primary',
+      requestId: randomUUID(),
+      reuseKeyAcrossOrigin: false,
+      userAgent: environment.userAgent,
+    }, serviceOptions);
+
+    assert.equal(providerCalls, 0);
+    assert.deepEqual(await environmentTakeoverCounts(pool), {
+      connections: 1,
+      events: 1,
+      models: 1,
+      takeovers: 1,
+    });
+    assert.match(result.connectionSeriesId, /^[0-9a-f-]{36}$/u);
+    assert.equal(result.connectionVersion, 1);
+    assert.match(result.modelSeriesId, /^[0-9a-f-]{36}$/u);
+    assert.equal(result.modelVersion, 1);
+    assert.match(result.takeoverId, /^[0-9a-f-]{36}$/u);
+    assertSecretsRedacted(
+      { events: await serializedAiConfigEvents(pool), result },
+      [primarySecret],
+    );
+  });
+});
+
+test('fallback-1 environment takeover creates an independent encrypted draft with zero Provider calls', async () => {
+  await withDatabase(async (pool) => {
+    const baseOptions = options();
+    const primarySecret = 'primary-private-key-4712';
+    const fallbackSecret = 'fallback-private-key-8396';
+    const primaryUrl = 'https://primary-private.example/v1';
+    const fallbackUrl = 'https://fallback-private.example/v1';
+    let providerCalls = 0;
+    const serviceOptions = options({
+      runtimeConfig: {
+        ...baseOptions.runtimeConfig,
+        openaiApiKey: primarySecret,
+        openaiBaseUrl: primaryUrl,
+        openaiFallbacks: [{ apiKey: fallbackSecret, baseUrl: fallbackUrl }],
+      },
+      transport: {
+        async discover() { providerCalls += 1; return []; },
+        async test() {
+          providerCalls += 1;
+          return { latencyMs: 1, usage: null };
+        },
+      },
+    });
+    const environmentTargets = (await getProviderRuntimeSummary(pool, serviceOptions)).environmentTargets;
+    const primary = environmentTargets.find((target) => target.environmentTargetKey === 'primary');
+    const fallback = environmentTargets.find((target) => target.environmentTargetKey === 'fallback-1');
+    assert.ok(primary);
+    assert.ok(fallback);
+
+    const result = await takeoverEnvironmentProvider(pool, 'fallback-1', {
+      apiKey: null,
+      baseUrl: null,
+      expectedConfigDigest: fallback.configDigest,
+      firstModel: model,
+      name: 'Editable fallback',
+      requestId: randomUUID(),
+      reuseKeyAcrossOrigin: false,
+      userAgent: fallback.userAgent,
+    }, serviceOptions);
+
+    const stored = await pool.query<{
+      api_key_ciphertext: Buffer;
+      api_key_iv: Buffer;
+      api_key_tag: Buffer;
+      base_url: string;
+      connection_config_digest: string;
+      connection_id: string;
+      connection_series_id: string;
+      connection_version: number;
+      initial_connection_version_id: string;
+      initial_model_version_id: string;
+      key_version: number;
+      model_config_digest: string;
+      model_id: string;
+      model_series_id: string;
+      model_version: number;
+      source_config_digest: string;
+      takeover_id: string;
+      user_agent: string | null;
+    }>(`SELECT
+          takeover.id::text AS takeover_id,
+          takeover.source_config_digest,
+          takeover.initial_connection_version_id::text AS initial_connection_version_id,
+          takeover.initial_model_version_id::text AS initial_model_version_id,
+          connection.id::text AS connection_id,
+          connection.series_id::text AS connection_series_id,
+          connection.version AS connection_version,
+          connection.base_url,
+          connection.user_agent,
+          connection.config_digest AS connection_config_digest,
+          connection.api_key_ciphertext,
+          connection.api_key_iv,
+          connection.api_key_tag,
+          connection.key_version,
+          model.id::text AS model_id,
+          model.series_id::text AS model_series_id,
+          model.version AS model_version,
+          model.config_digest AS model_config_digest
+        FROM ai_environment_takeovers takeover
+        JOIN ai_connections connection
+          ON connection.id = takeover.initial_connection_version_id
+        JOIN ai_model_presets model
+          ON model.id = takeover.initial_model_version_id`);
+    assert.equal(stored.rowCount, 1);
+    const row = stored.rows[0];
+    const decrypted = decryptAiConfigSecret({
+      ciphertext: row.api_key_ciphertext,
+      iv: row.api_key_iv,
+      tag: row.api_key_tag,
+    }, serviceOptions.configKey.key, {
+      connectionVersionId: row.connection_id,
+      keyVersion: row.key_version,
+      seriesId: row.connection_series_id,
+    });
+    const expectedConnectionDigest = createHmac('sha256', serviceOptions.configKey.key)
+      .update(JSON.stringify({
+        apiKey: fallbackSecret,
+        baseUrl: fallbackUrl,
+        userAgent: fallback.userAgent,
+      }), 'utf8')
+      .digest('hex');
+    const expectedModelDigest = createRuntimeConfigDigest({
+      apiKey: fallbackSecret,
+      baseUrl: fallbackUrl,
+      maxOutputTokens: model.maxOutputTokens,
+      modelId: model.modelId,
+      protocol: model.protocol,
+      reasoningEffort: model.reasoningEffort,
+      userAgent: fallback.userAgent,
+    }, serviceOptions.configKey.key);
+
+    assert.equal(providerCalls, 0);
+    assert.equal(decrypted, fallbackSecret);
+    assert.notEqual(decrypted, primarySecret);
+    assert.equal(row.base_url, fallbackUrl);
+    assert.notEqual(row.base_url, primaryUrl);
+    assert.equal(row.source_config_digest, fallback.configDigest);
+    assert.notEqual(row.source_config_digest, primary.configDigest);
+    assert.equal(row.connection_config_digest, expectedConnectionDigest);
+    assert.equal(row.model_config_digest, expectedModelDigest);
+    assert.equal(row.initial_connection_version_id, row.connection_id);
+    assert.equal(row.initial_model_version_id, row.model_id);
+    assert.equal(row.connection_series_id, result.connectionSeriesId);
+    assert.equal(row.connection_version, result.connectionVersion);
+    assert.equal(row.model_series_id, result.modelSeriesId);
+    assert.equal(row.model_version, result.modelVersion);
+    assert.equal(row.takeover_id, result.takeoverId);
+    assert.equal(row.connection_version, 1);
+    assert.equal(row.model_version, 1);
+    assert.deepEqual(await environmentTakeoverCounts(pool), {
+      connections: 1,
+      events: 1,
+      models: 1,
+      takeovers: 1,
+    });
+    assertSecretsRedacted(
+      { events: await serializedAiConfigEvents(pool), result },
+      [primarySecret, fallbackSecret],
+    );
+  });
+});
+
+test('environment takeover rolls back connection and model rows when relation insertion fails', async () => {
+  await withDatabase(async (pool) => {
+    const baseOptions = options();
+    const primarySecret = 'rollback-private-key-6147';
+    let providerCalls = 0;
+    const serviceOptions = options({
+      runtimeConfig: { ...baseOptions.runtimeConfig, openaiApiKey: primarySecret },
+      transport: {
+        async discover() { providerCalls += 1; return []; },
+        async test() {
+          providerCalls += 1;
+          return { latencyMs: 1, usage: null };
+        },
+      },
+    });
+    const environment = (await getProviderRuntimeSummary(pool, serviceOptions))
+      .environmentTargets.find((target) => target.environmentTargetKey === 'primary');
+    assert.ok(environment);
+    await pool.query(`CREATE FUNCTION test_reject_environment_takeover() RETURNS trigger
+      LANGUAGE plpgsql AS $$
+      BEGIN
+        RAISE EXCEPTION 'FORCED_RELATION_INSERT_FAILURE';
+      END;
+      $$`);
+    await pool.query(`CREATE TRIGGER test_reject_environment_takeover_insert
+      BEFORE INSERT ON ai_environment_takeovers
+      FOR EACH ROW EXECUTE FUNCTION test_reject_environment_takeover()`);
+
+    await assert.rejects(
+      takeoverEnvironmentProvider(pool, 'primary', {
+        apiKey: null,
+        baseUrl: null,
+        expectedConfigDigest: environment.configDigest,
+        firstModel: model,
+        name: 'Rollback primary',
+        requestId: randomUUID(),
+        reuseKeyAcrossOrigin: false,
+        userAgent: environment.userAgent,
+      }, serviceOptions),
+      /FORCED_RELATION_INSERT_FAILURE/u,
+    );
+
+    assert.equal(providerCalls, 0);
+    assert.deepEqual(await environmentTakeoverCounts(pool), {
+      connections: 0,
+      events: 0,
+      models: 0,
+      takeovers: 0,
+    });
+    assertSecretsRedacted(await serializedAiConfigEvents(pool), [primarySecret]);
+  });
+});
+
+test('environment takeover replays the same requestId after a lost commit acknowledgement', async () => {
+  await withDatabase(async (pool) => {
+    const baseOptions = options();
+    const primarySecret = 'replay-private-key-5824';
+    let providerCalls = 0;
+    const serviceOptions = options({
+      runtimeConfig: { ...baseOptions.runtimeConfig, openaiApiKey: primarySecret },
+      transport: {
+        async discover() { providerCalls += 1; return []; },
+        async test() {
+          providerCalls += 1;
+          return { latencyMs: 1, usage: null };
+        },
+      },
+    });
+    const environment = (await getProviderRuntimeSummary(pool, serviceOptions))
+      .environmentTargets.find((target) => target.environmentTargetKey === 'primary');
+    assert.ok(environment);
+    const requestId = randomUUID();
+    const input = {
+      apiKey: null,
+      baseUrl: null,
+      expectedConfigDigest: environment.configDigest,
+      firstModel: model,
+      name: 'Replay primary',
+      requestId,
+      reuseKeyAcrossOrigin: false,
+      userAgent: environment.userAgent,
+    };
+
+    await assert.rejects(
+      takeoverEnvironmentProvider(loseFirstCommitAcknowledgement(pool), 'primary', input, serviceOptions),
+      /COMMIT_ACK_LOST/u,
+    );
+    const replayed = await takeoverEnvironmentProvider(pool, 'primary', input, serviceOptions);
+    const events = await pool.query<{ event_type: string; status: string }>(
+      `SELECT event_type, status FROM ai_config_events ORDER BY id`,
+    );
+
+    assert.equal(providerCalls, 0);
+    assert.deepEqual(await environmentTakeoverCounts(pool), {
+      connections: 1,
+      events: 1,
+      models: 1,
+      takeovers: 1,
+    });
+    assert.deepEqual(events.rows, [{
+      event_type: 'environment_takeover_created',
+      status: 'succeeded',
+    }]);
+    assert.equal(replayed.connectionVersion, 1);
+    assert.equal(replayed.modelVersion, 1);
+    assertSecretsRedacted(
+      { events: await serializedAiConfigEvents(pool), replayed },
+      [primarySecret],
+    );
+  });
+});
+
+test('environment takeover records one redacted conflict for a different requestId', async () => {
+  await withDatabase(async (pool) => {
+    const baseOptions = options();
+    const primarySecret = 'conflict-private-key-9265';
+    let providerCalls = 0;
+    const serviceOptions = options({
+      runtimeConfig: { ...baseOptions.runtimeConfig, openaiApiKey: primarySecret },
+      transport: {
+        async discover() { providerCalls += 1; return []; },
+        async test() {
+          providerCalls += 1;
+          return { latencyMs: 1, usage: null };
+        },
+      },
+    });
+    const environment = (await getProviderRuntimeSummary(pool, serviceOptions))
+      .environmentTargets.find((target) => target.environmentTargetKey === 'primary');
+    assert.ok(environment);
+    const input = {
+      apiKey: null,
+      baseUrl: null,
+      expectedConfigDigest: environment.configDigest,
+      firstModel: model,
+      name: 'Conflict primary',
+      reuseKeyAcrossOrigin: false,
+      userAgent: environment.userAgent,
+    };
+    const created = await takeoverEnvironmentProvider(pool, 'primary', {
+      ...input,
+      requestId: randomUUID(),
+    }, serviceOptions);
+
+    await assert.rejects(
+      takeoverEnvironmentProvider(pool, 'primary', {
+        ...input,
+        requestId: randomUUID(),
+      }, serviceOptions),
+      (error: unknown) => error instanceof AiConfigError && error.code === 'AI_CONFIG_TAKEOVER_EXISTS',
+    );
+    const events = await pool.query<{
+      event_type: string;
+      result_code: string;
+      status: string;
+    }>(`SELECT event_type, result_code, status FROM ai_config_events ORDER BY id`);
+
+    assert.equal(providerCalls, 0);
+    assert.deepEqual(await environmentTakeoverCounts(pool), {
+      connections: 1,
+      events: 2,
+      models: 1,
+      takeovers: 1,
+    });
+    assert.deepEqual(events.rows, [
+      {
+        event_type: 'environment_takeover_created',
+        result_code: 'AI_CONFIG_CREATED',
+        status: 'succeeded',
+      },
+      {
+        event_type: 'environment_takeover_conflict',
+        result_code: 'AI_CONFIG_TAKEOVER_EXISTS',
+        status: 'denied',
+      },
+    ]);
+    assertSecretsRedacted(
+      { created, events: await serializedAiConfigEvents(pool) },
+      [primarySecret],
+    );
+  });
+});
+
+test('environment takeover re-reads runtime configuration after acquiring the advisory lock', async () => {
+  await withDatabase(async (pool) => {
+    const baseOptions = options();
+    const originalSecret = 'advisory-original-key-3581';
+    const changedSecret = 'advisory-changed-key-7649';
+    const originalConfig = {
+      ...baseOptions.runtimeConfig,
+      openaiApiKey: originalSecret,
+    };
+    let currentConfig = originalConfig;
+    let loaderCalls = 0;
+    let providerCalls = 0;
+    const serviceOptions = options({
+      runtimeConfig: originalConfig,
+      runtimeConfigLoader: () => {
+        loaderCalls += 1;
+        return currentConfig;
+      },
+      transport: {
+        async discover() { providerCalls += 1; return []; },
+        async test() {
+          providerCalls += 1;
+          return { latencyMs: 1, usage: null };
+        },
+      },
+    });
+    const environment = (await getProviderRuntimeSummary(pool, serviceOptions))
+      .environmentTargets.find((target) => target.environmentTargetKey === 'primary');
+    assert.ok(environment);
+
+    const blocker = await pool.connect();
+    let blockerInTransaction = false;
+    await blocker.query('BEGIN');
+    blockerInTransaction = true;
+    await blocker.query(
+      'SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))',
+      ['revolution:environment-provider-takeover:primary'],
+    );
+    const outcomePromise = takeoverEnvironmentProvider(pool, 'primary', {
+      apiKey: null,
+      baseUrl: null,
+      expectedConfigDigest: environment.configDigest,
+      firstModel: model,
+      name: 'Locked primary',
+      requestId: randomUUID(),
+      reuseKeyAcrossOrigin: false,
+      userAgent: environment.userAgent,
+    }, serviceOptions).then(
+      (result) => ({ error: null as unknown, result }),
+      (error: unknown) => ({ error, result: null }),
+    );
+
+    let waitError: unknown = null;
+    let loaderWasDeferred = false;
+    try {
+      await waitForAdvisoryLockWaiter(pool);
+      loaderWasDeferred = loaderCalls === 0;
+      currentConfig = { ...originalConfig, openaiApiKey: changedSecret };
+      await blocker.query('COMMIT');
+      blockerInTransaction = false;
+    } catch (error) {
+      waitError = error;
+    } finally {
+      if (blockerInTransaction) await blocker.query('ROLLBACK');
+      blocker.release();
+    }
+    const outcome = await outcomePromise;
+    if (waitError) throw waitError;
+
+    assert.equal(loaderWasDeferred, true);
+    assert.equal(loaderCalls, 1);
+    assert.equal(providerCalls, 0);
+    assert.equal(outcome.result, null);
+    assert.ok(outcome.error instanceof AiConfigError);
+    assert.equal(outcome.error.code, 'AI_CONFIG_ENVIRONMENT_CHANGED');
+    assert.deepEqual(await environmentTakeoverCounts(pool), {
+      connections: 0,
+      events: 0,
+      models: 0,
+      takeovers: 0,
+    });
+    assertSecretsRedacted(
+      { error: String(outcome.error), events: await serializedAiConfigEvents(pool) },
+      [originalSecret, changedSecret],
     );
   });
 });

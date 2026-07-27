@@ -68,6 +68,7 @@ export interface AdminProviderServiceOptions {
   outboundPolicy?: ProviderOutboundPolicy;
   resolver?: ProviderAddressResolver;
   runtimeConfig: ProviderRuntimeConfig;
+  runtimeConfigLoader?: () => ProviderRuntimeConfig;
   transport: AdminProviderTransport;
 }
 
