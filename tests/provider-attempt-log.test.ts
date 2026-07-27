@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import pg from 'pg';
 
 import type { ProviderAttempt } from '../lib/server/ai-provider.ts';
+import type { GenerationRequestIntegrity } from '../lib/contracts/chat-context.ts';
 import { replaceProviderAttempts } from '../lib/server/interaction-log.ts';
 import {
   recordProviderAttemptEvent,
@@ -19,6 +20,20 @@ const { Pool } = pg;
 const repoRoot = path.resolve('.');
 const migrationRunner = path.join(repoRoot, 'scripts', 'migrate-db.mjs');
 const DAY_MS = 24 * 60 * 60 * 1_000;
+
+function requestIntegrity(
+  generationMode: 'normal' | 'strict',
+  requestDigest: string,
+  packetDigest = 'a'.repeat(64),
+): GenerationRequestIntegrity {
+  return {
+    contextBuilderVersion: 'context-packet-builder-v1',
+    packetHmacKeyId: '2026-07-v1',
+    packetHmacSha256: packetDigest,
+    generationOverlayVersion: generationMode === 'strict' ? 'strict-overlay-v1' : null,
+    generationRequestHmacSha256: requestDigest,
+  };
+}
 
 async function runMigrations(connectionString: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
@@ -262,6 +277,219 @@ test('terminal reconciliation copies generation and three latency milestones', a
       first_protocol_event_ms: 120,
       first_model_text_ms: 2_400,
       first_user_visible_ms: 2_650,
+    });
+  } finally {
+    await pool.end();
+    await database.dispose();
+  }
+});
+
+test('started attempts persist integrity and reject packet or same-mode request drift', async () => {
+  const database = await createDisposablePostgresDatabase();
+  const pool = new Pool({ connectionString: database.connectionString });
+  try {
+    await runMigrations(database.connectionString);
+    const interactionTurnId = await insertTurn(pool);
+    const executionId = randomUUID();
+    const startedAt = new Date('2026-07-22T03:00:00.000Z');
+    const deleteAfter = new Date(startedAt.getTime() + 10 * DAY_MS);
+    const normal = requestIntegrity('normal', 'b'.repeat(64));
+    const strict = requestIntegrity('strict', 'c'.repeat(64));
+    const client = await pool.connect();
+    try {
+      await recordProviderAttemptEvent(client, { interactionTurnId, executionId }, {
+        type: 'started',
+        attemptNo: 1,
+        providerAlias: 'primary',
+        launchKind: 'primary',
+        startedAt,
+        startDelayMs: 0,
+        generationMode: 'normal',
+      }, deleteAfter, normal);
+      await recordProviderAttemptEvent(client, { interactionTurnId, executionId }, {
+        type: 'started',
+        attemptNo: 2,
+        providerAlias: 'fallback-1',
+        launchKind: 'failover',
+        startedAt: new Date(startedAt.getTime() + 1),
+        startDelayMs: 0,
+        generationMode: 'normal',
+      }, deleteAfter, normal);
+
+      await assert.rejects(
+        recordProviderAttemptEvent(client, { interactionTurnId, executionId }, {
+          type: 'started',
+          attemptNo: 3,
+          providerAlias: 'fallback-2',
+          launchKind: 'failover',
+          startedAt: new Date(startedAt.getTime() + 2),
+          startDelayMs: 0,
+          generationMode: 'normal',
+        }, deleteAfter, requestIntegrity('normal', 'd'.repeat(64))),
+        /PROVIDER_ATTEMPT_INTEGRITY_MISMATCH/,
+      );
+      await assert.rejects(
+        recordProviderAttemptEvent(client, { interactionTurnId, executionId }, {
+          type: 'started',
+          attemptNo: 4,
+          providerAlias: 'fallback-3',
+          launchKind: 'failover',
+          startedAt: new Date(startedAt.getTime() + 3),
+          startDelayMs: 0,
+          generationMode: 'normal',
+        }, deleteAfter, requestIntegrity('normal', 'b'.repeat(64), 'e'.repeat(64))),
+        /PROVIDER_ATTEMPT_INTEGRITY_MISMATCH/,
+      );
+
+      const strictExecutionId = randomUUID();
+      await recordProviderAttemptEvent(client, { interactionTurnId, executionId: strictExecutionId }, {
+        type: 'started',
+        attemptNo: 1,
+        providerAlias: 'primary',
+        launchKind: 'primary',
+        startedAt: new Date(startedAt.getTime() + 4),
+        startDelayMs: 0,
+        generationMode: 'strict',
+      }, deleteAfter, strict);
+      await assert.rejects(
+        recordProviderAttemptEvent(client, { interactionTurnId, executionId: randomUUID() }, {
+          type: 'started',
+          attemptNo: 1,
+          providerAlias: 'primary',
+          launchKind: 'primary',
+          startedAt: new Date(startedAt.getTime() + 5),
+          startDelayMs: 0,
+          generationMode: 'normal',
+        }, deleteAfter, normal),
+        /PROVIDER_ATTEMPT_INTEGRITY_MISMATCH/,
+      );
+    } finally {
+      client.release();
+    }
+
+    const stored = await pool.query(
+      `SELECT generation_mode, context_builder_version, packet_hmac_key_id,
+              packet_hmac_sha256, generation_overlay_version,
+              generation_request_hmac_sha256
+         FROM chat_provider_attempts
+        WHERE interaction_turn_id = $1
+        ORDER BY started_at`,
+      [interactionTurnId],
+    );
+    assert.deepEqual(stored.rows, [
+      {
+        generation_mode: 'normal',
+        context_builder_version: normal.contextBuilderVersion,
+        packet_hmac_key_id: normal.packetHmacKeyId,
+        packet_hmac_sha256: normal.packetHmacSha256,
+        generation_overlay_version: null,
+        generation_request_hmac_sha256: normal.generationRequestHmacSha256,
+      },
+      {
+        generation_mode: 'normal',
+        context_builder_version: normal.contextBuilderVersion,
+        packet_hmac_key_id: normal.packetHmacKeyId,
+        packet_hmac_sha256: normal.packetHmacSha256,
+        generation_overlay_version: null,
+        generation_request_hmac_sha256: normal.generationRequestHmacSha256,
+      },
+      {
+        generation_mode: 'strict',
+        context_builder_version: strict.contextBuilderVersion,
+        packet_hmac_key_id: strict.packetHmacKeyId,
+        packet_hmac_sha256: strict.packetHmacSha256,
+        generation_overlay_version: 'strict-overlay-v1',
+        generation_request_hmac_sha256: strict.generationRequestHmacSha256,
+      },
+    ]);
+  } finally {
+    await pool.end();
+    await database.dispose();
+  }
+});
+
+test('terminal attempt projection copies integrity from the realtime authority row', async () => {
+  const database = await createDisposablePostgresDatabase();
+  const pool = new Pool({ connectionString: database.connectionString });
+  try {
+    await runMigrations(database.connectionString);
+    const turnId = await insertTurn(pool);
+    const executionId = randomUUID();
+    const startedAt = new Date('2026-07-22T04:00:00.000Z');
+    const deleteAfter = new Date(startedAt.getTime() + 10 * DAY_MS);
+    const integrity = requestIntegrity('normal', 'f'.repeat(64));
+    const client = await pool.connect();
+    try {
+      await recordProviderAttemptEvent(client, { interactionTurnId: turnId, executionId }, {
+        type: 'started',
+        attemptNo: 1,
+        providerAlias: 'primary',
+        launchKind: 'primary',
+        startedAt,
+        startDelayMs: 0,
+        generationMode: 'normal',
+      }, deleteAfter, integrity);
+      await recordProviderAttemptEvent(client, { interactionTurnId: turnId, executionId }, {
+        type: 'completed',
+        attemptNo: 1,
+        providerAlias: 'primary',
+        durationMs: 10,
+        winner: true,
+        errorCode: null,
+        usage: null,
+      }, deleteAfter);
+      await replaceProviderAttempts(client, turnId, [{
+        ...({
+          attemptIndex: 0,
+          completedAt: new Date(startedAt.getTime() + 10),
+          configDigest: 'a'.repeat(64),
+          connectionDisplayName: 'Primary',
+          connectionVersionId: null,
+          costComplete: false,
+          errorCode: null,
+          firstByteLatencyMs: null,
+          firstModelTextMs: null,
+          firstProtocolEventMs: null,
+          firstUserVisibleMs: null,
+          generationMode: 'normal',
+          inputUsdPerMillion: null,
+          knownCostUsd: null,
+          launchKind: 'primary',
+          modelDisplayName: 'Model',
+          modelId: 'model',
+          modelVersionId: null,
+          outputUsdPerMillion: null,
+          position: 0,
+          protocol: 'responses',
+          routeRevisionId: null,
+          sourceType: 'environment',
+          startedAt,
+          status: 'completed',
+          totalLatencyMs: 10,
+          usage: null,
+          usageComplete: false,
+        } satisfies ProviderAttempt),
+        executionId,
+        attemptNo: 1,
+        integrity,
+      }]);
+    } finally {
+      client.release();
+    }
+
+    const mirrored = await pool.query(
+      `SELECT context_builder_version, packet_hmac_key_id, packet_hmac_sha256,
+              generation_overlay_version, generation_request_hmac_sha256
+         FROM interaction_provider_attempts
+        WHERE interaction_turn_id = $1`,
+      [turnId],
+    );
+    assert.deepEqual(mirrored.rows[0], {
+      context_builder_version: integrity.contextBuilderVersion,
+      packet_hmac_key_id: integrity.packetHmacKeyId,
+      packet_hmac_sha256: integrity.packetHmacSha256,
+      generation_overlay_version: null,
+      generation_request_hmac_sha256: integrity.generationRequestHmacSha256,
     });
   } finally {
     await pool.end();

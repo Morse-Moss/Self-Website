@@ -303,6 +303,78 @@ test('.env.example keeps every chat v2 control disabled by default', () => {
   assert.match(example, /^MORSE_CHAT_SAFE_MODE=false$/m);
 });
 
+test('loadServerConfig parses independent context packet rollout, budgets, and digest configuration', () => {
+  const digestKey = Buffer.alloc(32, 17).toString('base64');
+  const inviteId = '33333333-3333-4333-8333-333333333333';
+  const disabled = loadServerConfig(completeEnv);
+  assert.equal(disabled.contextPacketEnabled, false);
+  assert.equal(disabled.contextCanaryPercent, 0);
+  assert.deepEqual([...disabled.contextCanaryInviteIds], []);
+  assert.equal(disabled.contextTokenBudget, 12_000);
+  assert.equal(disabled.jdContextTokenBudget, 24_000);
+  assert.equal(disabled.contextPacketDigest, null);
+
+  const enabled = loadServerConfig({
+    ...completeEnv,
+    NODE_ENV: 'test',
+    MORSE_CHAT_CONTEXT_PACKET_ENABLED: 'true',
+    MORSE_CHAT_CONTEXT_CANARY_PERCENT: '0',
+    MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS: inviteId,
+    MORSE_CHAT_CONTEXT_TOKEN_BUDGET: '12000',
+    MORSE_JD_CONTEXT_TOKEN_BUDGET: '24000',
+    MORSE_CONTEXT_PACKET_DIGEST_KEY: digestKey,
+    MORSE_CONTEXT_PACKET_DIGEST_KEY_ID: 'context-key-v1',
+  });
+  assert.equal(enabled.contextPacketEnabled, true);
+  assert.deepEqual([...enabled.contextCanaryInviteIds], [inviteId]);
+  assert.equal(enabled.contextPacketDigest?.key.equals(Buffer.alloc(32, 17)), true);
+  assert.equal(enabled.contextPacketDigest?.keyId, 'context-key-v1');
+});
+
+test('context packet config fails closed for invalid rollout, budget, or digest values', () => {
+  const validKey = Buffer.alloc(32, 18).toString('base64');
+  const base = {
+    ...completeEnv,
+    NODE_ENV: 'test',
+    MORSE_CHAT_CONTEXT_PACKET_ENABLED: 'true',
+    MORSE_CONTEXT_PACKET_DIGEST_KEY: validKey,
+    MORSE_CONTEXT_PACKET_DIGEST_KEY_ID: 'context-key-v1',
+  };
+  for (const overrides of [
+    { MORSE_CHAT_CONTEXT_PACKET_ENABLED: 'maybe' },
+    { MORSE_CHAT_CONTEXT_CANARY_PERCENT: '101' },
+    { MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS: 'not-a-uuid' },
+    { MORSE_CHAT_CONTEXT_TOKEN_BUDGET: '999' },
+    { MORSE_JD_CONTEXT_TOKEN_BUDGET: '11999' },
+    { MORSE_CONTEXT_PACKET_DIGEST_KEY: Buffer.alloc(31).toString('base64') },
+    { MORSE_CONTEXT_PACKET_DIGEST_KEY_ID: 'INVALID KEY ID' },
+  ]) {
+    assert.throws(() => loadServerConfig({ ...base, ...overrides }), /MORSE_CHAT_CONTEXT|MORSE_JD_CONTEXT|CONTEXT_PACKET_DIGEST/u);
+  }
+  assert.throws(
+    () => loadServerConfig({
+      ...completeEnv,
+      MORSE_CHAT_CONTEXT_PACKET_ENABLED: 'true',
+    }),
+    /CONTEXT_PACKET_DIGEST_CONFIG_INVALID/u,
+  );
+});
+
+test('.env.example keeps context packet disabled and documents non-secret controls', () => {
+  const example = readFileSync(new URL('../.env.example', import.meta.url), 'utf8');
+  for (const line of [
+    'MORSE_CHAT_CONTEXT_PACKET_ENABLED=false',
+    'MORSE_CHAT_CONTEXT_CANARY_PERCENT=0',
+    'MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS=',
+    'MORSE_CHAT_CONTEXT_TOKEN_BUDGET=12000',
+    'MORSE_JD_CONTEXT_TOKEN_BUDGET=24000',
+    'MORSE_CONTEXT_PACKET_DIGEST_KEY_ID=',
+  ]) {
+    assert.match(example, new RegExp(`^${line}$`, 'm'));
+  }
+  assert.doesNotMatch(example, /^MORSE_CONTEXT_PACKET_DIGEST_KEY=\S+/m);
+});
+
 test('loadServerConfig parses chat rate-limit window settings with safe defaults', () => {
   const defaults = loadServerConfig(completeEnv);
   assert.equal(defaults.chatWindowSeconds, 60);

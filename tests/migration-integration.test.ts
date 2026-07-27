@@ -847,9 +847,13 @@ test('chat v2 migration adds stable assignment and metadata-only provider attemp
       const rawTextColumns = await client.query<{ column_name: string }>(
         `SELECT column_name
            FROM information_schema.columns
-          WHERE table_schema = 'public'
-            AND table_name = 'chat_provider_attempts'
-            AND column_name ~ '(question|answer|prompt|jd|url|key|payload|content|request|response)'`,
+           WHERE table_schema = 'public'
+             AND table_name = 'chat_provider_attempts'
+             AND column_name ~ '(question|answer|prompt|jd|url|key|payload|content|request|response)'
+             AND column_name NOT IN (
+               'packet_hmac_key_id',
+               'generation_request_hmac_sha256'
+             )`,
       );
 
       assert.deepEqual(behaviorColumn.rows, [{ data_type: 'text', is_nullable: 'YES' }]);

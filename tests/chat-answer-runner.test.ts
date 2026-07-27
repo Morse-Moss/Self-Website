@@ -74,6 +74,7 @@ test('only output guard rejection starts strict generation', async () => {
   const events = await collect(runGuardedChatAnswer({
     budget: budget(),
     now: () => 1_000,
+    releasePolicy: 'complete',
     generate(input) {
       calls.push(input);
       return input.strict
@@ -106,6 +107,7 @@ test('network and timeout errors do not start strict generation', async () => {
       await collect(runGuardedChatAnswer({
         budget: budget(),
         now: () => 1_000,
+        releasePolicy: 'segment',
         generate(input) {
           calls.push(input.strict);
           return (async function* failed(): AsyncGenerator<AnswerEvent> { throw error; })();
@@ -123,6 +125,7 @@ test('a second guard rejection fails without a local safe answer', async () => {
     await collect(runGuardedChatAnswer({
       budget: budget(),
       now: () => 1_000,
+      releasePolicy: 'complete',
       generate() {
         calls += 1;
         return stream({ type: 'delta', text: 'rejected answer' });
@@ -139,6 +142,7 @@ test('a rejected later segment resets provisional text before strict regeneratio
   const events = await collect(runGuardedChatAnswer({
     budget: budget(),
     now: () => 1_000,
+    releasePolicy: 'segment',
     generate(input) {
       return input.strict
         ? stream({ type: 'delta', text: 'strict answer.' }, { type: 'done', usage: null })
@@ -159,12 +163,43 @@ test('a rejected later segment resets provisional text before strict regeneratio
   ]);
 });
 
+test('complete release exposes no rejected normal delta and emits no reset before strict success', async () => {
+  const events = await collect(runGuardedChatAnswer({
+    budget: budget(),
+    now: () => 1_000,
+    releasePolicy: 'complete',
+    generate(input) {
+      return input.strict
+        ? stream(
+            { type: 'delta', text: 'strict accepted answer' },
+            { type: 'done', usage: null },
+          )
+        : stream(
+            { type: 'delta', text: 'normal rejected answer' },
+            { type: 'done', usage: null },
+          );
+    },
+    inspect: (answer, complete) => ({
+      ok: !(complete && answer.includes('normal rejected')),
+      reasons: [],
+    }),
+  }));
+
+  assert.deepEqual(events.filter((event) => (
+    event.type === 'delta' || event.type === 'reset'
+  )), [
+    { type: 'delta', text: 'strict accepted answer' },
+  ]);
+  assert.doesNotMatch(JSON.stringify(events), /normal rejected answer/);
+});
+
 test('provider attempts are forwarded and reindexed across strict generation', async () => {
   const first = attempt(0, 'failed');
   const second = attempt(0, 'completed');
   const events = await collect(runGuardedChatAnswer({
     budget: budget(),
     now: () => 1_000,
+    releasePolicy: 'complete',
     generate(input) {
       return input.strict
         ? stream(
@@ -193,6 +228,7 @@ test('serial provider switching is forwarded without resetting visible text', as
   const events = await collect(runGuardedChatAnswer({
     budget: budget(),
     now: () => 1_000,
+    releasePolicy: 'segment',
     generate: () => stream(
       { type: 'switching' },
       { type: 'delta', text: 'fallback answer' },
@@ -214,6 +250,7 @@ test('unknown execution errors propagate without regeneration', async () => {
     await collect(runGuardedChatAnswer({
       budget: budget(),
       now: () => 1_000,
+      releasePolicy: 'segment',
       generate() {
         calls += 1;
         return (async function* broken(): AsyncGenerator<AnswerEvent> { throw original; })();

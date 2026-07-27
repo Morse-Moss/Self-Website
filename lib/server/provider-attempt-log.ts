@@ -1,5 +1,6 @@
 import type { PoolClient } from 'pg';
 
+import type { GenerationRequestIntegrity } from '../contracts/chat-context.ts';
 import type { TokenUsage } from './budget.ts';
 
 export type ProviderAttemptLaunchKind = 'primary' | 'hedge' | 'failover';
@@ -68,8 +69,63 @@ interface RollingHedgeCounts {
   hedged_attempts: number;
 }
 
+interface AttemptIntegrityRow {
+  context_builder_version: string | null;
+  generation_mode: 'normal' | 'strict' | null;
+  generation_overlay_version: 'strict-overlay-v1' | null;
+  generation_request_hmac_sha256: string | null;
+  packet_hmac_key_id: string | null;
+  packet_hmac_sha256: string | null;
+}
+
 const HEDGE_BUDGET_LOCK = 'revolution:chat-v2:rolling-hedge-budget:v1';
 const ROLLING_WINDOW_MS = 24 * 60 * 60 * 1_000;
+
+function integrityMismatch(): never {
+  throw new Error('PROVIDER_ATTEMPT_INTEGRITY_MISMATCH');
+}
+
+function validateIntegrity(
+  generationMode: 'normal' | 'strict',
+  integrity: GenerationRequestIntegrity,
+): void {
+  if (!/^[a-z0-9][a-z0-9._-]{0,63}$/u.test(integrity.contextBuilderVersion)
+    || !/^[a-z0-9][a-z0-9._-]{0,31}$/u.test(integrity.packetHmacKeyId)
+    || !/^[0-9a-f]{64}$/u.test(integrity.packetHmacSha256)
+    || !/^[0-9a-f]{64}$/u.test(integrity.generationRequestHmacSha256)
+    || integrity.generationOverlayVersion !== (
+      generationMode === 'strict' ? 'strict-overlay-v1' : null
+    )) integrityMismatch();
+}
+
+function assertIntegrityCompatible(
+  rows: AttemptIntegrityRow[],
+  generationMode: 'normal' | 'strict',
+  integrity: GenerationRequestIntegrity | null,
+): void {
+  if (integrity) validateIntegrity(generationMode, integrity);
+  for (const row of rows) {
+    const hasIntegrity = row.context_builder_version !== null
+      || row.packet_hmac_key_id !== null
+      || row.packet_hmac_sha256 !== null
+      || row.generation_overlay_version !== null
+      || row.generation_request_hmac_sha256 !== null;
+    if (hasIntegrity !== Boolean(integrity)) integrityMismatch();
+    if (!integrity) continue;
+    if (row.context_builder_version !== integrity.contextBuilderVersion
+      || row.packet_hmac_key_id !== integrity.packetHmacKeyId
+      || row.packet_hmac_sha256 !== integrity.packetHmacSha256
+      || row.generation_mode === null
+      || (row.generation_mode === 'strict' && generationMode === 'normal')) {
+      integrityMismatch();
+    }
+    if (row.generation_mode === generationMode
+      && (row.generation_overlay_version !== integrity.generationOverlayVersion
+        || row.generation_request_hmac_sha256 !== integrity.generationRequestHmacSha256)) {
+      integrityMismatch();
+    }
+  }
+}
 
 function validateProviderAlias(providerAlias: string): void {
   if (!/^[a-z0-9][a-z0-9_-]{0,31}$/u.test(providerAlias)) {
@@ -95,16 +151,41 @@ async function recordStartedEvent(
   key: ProviderAttemptKey,
   event: Extract<ProviderAttemptEvent, { type: 'started' }>,
   deleteAfter: Date,
+  integrity: GenerationRequestIntegrity | null,
 ): Promise<void> {
+  const generationMode = event.generationMode ?? 'normal';
   await client.query(
+    'SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))',
+    [`revolution:provider-attempt-integrity:v1:${key.interactionTurnId}`],
+  );
+  const existing = await client.query<AttemptIntegrityRow>(
+    `SELECT generation_mode, context_builder_version, packet_hmac_key_id,
+            packet_hmac_sha256, generation_overlay_version,
+            generation_request_hmac_sha256
+       FROM chat_provider_attempts
+      WHERE interaction_turn_id = $1
+      FOR UPDATE`,
+    [key.interactionTurnId],
+  );
+  assertIntegrityCompatible(existing.rows, generationMode, integrity);
+  const result = await client.query(
     `INSERT INTO chat_provider_attempts
       (interaction_turn_id, execution_id, attempt_no, provider_alias, launch_kind,
-       generation_mode, status, winner, start_delay_ms, started_at, delete_after)
-     VALUES ($1, $2, $3, $4, $5, $6, 'started', false, $7, $8, $9)
+       generation_mode, context_builder_version, packet_hmac_key_id,
+       packet_hmac_sha256, generation_overlay_version,
+       generation_request_hmac_sha256, status, winner, start_delay_ms,
+       started_at, delete_after)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+             'started', false, $12, $13, $14)
      ON CONFLICT (interaction_turn_id, execution_id, attempt_no) DO UPDATE
        SET provider_alias = EXCLUDED.provider_alias,
            launch_kind = EXCLUDED.launch_kind,
            generation_mode = EXCLUDED.generation_mode,
+           context_builder_version = EXCLUDED.context_builder_version,
+           packet_hmac_key_id = EXCLUDED.packet_hmac_key_id,
+           packet_hmac_sha256 = EXCLUDED.packet_hmac_sha256,
+           generation_overlay_version = EXCLUDED.generation_overlay_version,
+           generation_request_hmac_sha256 = EXCLUDED.generation_request_hmac_sha256,
            start_delay_ms = EXCLUDED.start_delay_ms,
            started_at = EXCLUDED.started_at,
            delete_after = EXCLUDED.delete_after
@@ -115,12 +196,20 @@ async function recordStartedEvent(
       event.attemptNo,
       event.providerAlias,
       event.launchKind,
-      event.generationMode ?? 'normal',
+      generationMode,
+      integrity?.contextBuilderVersion ?? null,
+      integrity?.packetHmacKeyId ?? null,
+      integrity?.packetHmacSha256 ?? null,
+      integrity?.generationOverlayVersion ?? null,
+      integrity?.generationRequestHmacSha256 ?? null,
       event.startDelayMs,
       event.startedAt,
       deleteAfter,
     ],
   );
+  if (result.rowCount !== 1) {
+    throw new Error('Provider attempt start conflicts with a terminal attempt.');
+  }
 }
 
 async function recordFirstByteEvent(
@@ -231,10 +320,17 @@ export async function recordProviderAttemptEvent(
   key: ProviderAttemptKey,
   event: ProviderAttemptEvent,
   deleteAfter: Date,
+  integrity: GenerationRequestIntegrity | null = null,
 ): Promise<void> {
   validateAttemptIdentity(key, event);
   if (event.type === 'started') {
-    await recordStartedEvent(client, key, event, deleteAfter);
+    await inTransaction(client, () => recordStartedEvent(
+      client,
+      key,
+      event,
+      deleteAfter,
+      integrity,
+    ));
     return;
   }
   if (event.type === 'first_byte') {
@@ -343,6 +439,7 @@ export async function reserveHedgedProviderAttempt(
   deleteAfter: Date,
   now: Date,
   maximumRatio = 0.15,
+  integrity: GenerationRequestIntegrity | null = null,
 ): Promise<boolean> {
   if (started.launchKind !== 'hedge') {
     throw new Error('Only hedge attempts consume the rolling hedge budget.');
@@ -358,7 +455,7 @@ export async function reserveHedgedProviderAttempt(
     const allowed = (counts.hedgedAttempts + 1)
       / Math.max(counts.completedTurns + 1, 1) <= maximumRatio;
     if (!allowed) return false;
-    await recordProviderAttemptEvent(client, key, started, deleteAfter);
+    await recordStartedEvent(client, key, started, deleteAfter, integrity);
     return true;
   });
 }

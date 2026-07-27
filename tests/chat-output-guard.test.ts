@@ -382,6 +382,39 @@ test('JD answers may focus on matched capabilities without volunteering a comple
   assert.equal(complete.ok, true);
 });
 
+test('controlled project fit applies recruitment and admitted-evidence guards in ordinary chat', () => {
+  const input = {
+    route: groundedRoute({
+      reasonCode: 'recruitment_project_fit',
+      topicKind: 'project',
+      evidenceClass: 'mixed',
+      release: 'complete',
+    }),
+    semanticIntent: 'project_fit' as const,
+    approvedProjectSlugs: ['digital-morse', 'deep-research'],
+    workflow: 'chat' as const,
+    question: '你有什么相关项目经验吗？',
+    sourceCount: 2,
+  };
+
+  assert.ok(inspectChatAnswer({
+    ...input,
+    answer: '数字摩斯与岗位匹配度 95%。[来源1]',
+  }).reasons.includes('match_percentage'));
+  assert.ok(inspectChatAnswer({
+    ...input,
+    answer: '数字摩斯目前没有可核验资料。[来源1]',
+  }).reasons.includes('unsupported_evidence_upgrade'));
+  assert.ok(inspectChatAnswer({
+    ...input,
+    answer: '自动运营 Agent 系统最相关。[来源1]',
+  }).reasons.includes('unsupported_evidence_upgrade'));
+  assert.equal(inspectChatAnswer({
+    ...input,
+    answer: '数字摩斯展示了 RAG 产品设计与评测交付能力。[来源1]',
+  }).ok, true);
+});
+
 test('generic project questions reject meta-only evidence templates', () => {
   const result = inspectChatAnswer({
     answer: '我会根据公开资料保持诚实表达，并保留可核验来源。',

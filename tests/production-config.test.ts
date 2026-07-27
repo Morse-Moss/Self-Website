@@ -30,6 +30,8 @@ const validAdminPasswordHash = [
 const providerKeyDirectory = mkdtempSync(path.join(os.tmpdir(), 'revolution-provider-key-'));
 const providerKeyFile = path.join(providerKeyDirectory, 'provider.key');
 writeFileSync(providerKeyFile, `${Buffer.alloc(32, 13).toString('base64')}\n`, 'utf8');
+const contextPacketKeyFile = path.join(providerKeyDirectory, 'context-packet.key');
+writeFileSync(contextPacketKeyFile, `${Buffer.alloc(32, 19).toString('base64')}\n`, 'utf8');
 after(() => rmSync(providerKeyDirectory, { force: true, recursive: true }));
 
 const webEnv = {
@@ -298,6 +300,39 @@ test('production preflight accepts disabled-first and safe-mode-first Chat v2 ro
       alertsEnabled: null,
       role: 'web',
     });
+  }
+});
+
+test('web production accepts context packet only with a Web-owned key file', () => {
+  const enabled = {
+    ...webEnv,
+    MORSE_CHAT_CONTEXT_PACKET_ENABLED: 'true',
+    MORSE_CHAT_CONTEXT_CANARY_PERCENT: '0',
+    MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS: chatV2CanaryInviteId,
+    MORSE_CHAT_CONTEXT_TOKEN_BUDGET: '12000',
+    MORSE_JD_CONTEXT_TOKEN_BUDGET: '24000',
+    MORSE_CONTEXT_PACKET_DIGEST_KEY_FILE: contextPacketKeyFile,
+    MORSE_CONTEXT_PACKET_DIGEST_KEY_ID: 'context-key-v1',
+  };
+  assert.deepEqual(validateProductionRole('web', enabled), {
+    alertsEnabled: null,
+    role: 'web',
+  });
+
+  for (const unsafe of [
+    {
+      MORSE_CONTEXT_PACKET_DIGEST_KEY_FILE: undefined,
+      MORSE_CONTEXT_PACKET_DIGEST_KEY: Buffer.alloc(32, 19).toString('base64'),
+    },
+    {
+      MORSE_CONTEXT_PACKET_DIGEST_KEY_FILE: path.join(providerKeyDirectory, 'missing-context-key'),
+    },
+  ]) {
+    assert.throws(
+      () => validateProductionRole('web', { ...enabled, ...unsafe }),
+      (error: unknown) => error instanceof ProductionConfigError
+        && error.code === 'PRODUCTION_RUNTIME_CONFIG_INVALID',
+    );
   }
 });
 

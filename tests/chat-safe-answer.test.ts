@@ -42,8 +42,16 @@ test('safe project answer summarizes at most two approved sources with valid cit
   assert.doesNotMatch(answer?.text ?? '', /项目 three/);
 });
 
-test('safe answer returns null for an unparsed JD or missing grounded evidence', () => {
-  assert.equal(buildSafeChatAnswer({ intent: 'jd', sources: [source('one', '证据')], operatorSafeMode: true }), null);
+test('safe answer returns bounded public evidence for a JD and rejects missing evidence', () => {
+  const answer = buildSafeChatAnswer({
+    intent: 'jd',
+    sources: [source('one', '证据'), source('two', '证据'), source('three', '证据')],
+    operatorSafeMode: true,
+  });
+
+  assert.equal(answer?.sources.length, 2);
+  assert.match(answer?.text ?? '', /\[来源1\]/u);
+  assert.match(answer?.text ?? '', /\[来源2\]/u);
   assert.equal(buildSafeChatAnswer({ intent: 'project', sources: [], operatorSafeMode: true }), null);
 });
 

@@ -9,6 +9,10 @@ import type {
 } from '../contracts/chat.ts';
 import type { TokenUsage } from './budget.ts';
 import type { ProviderAttempt, ProviderWinner } from './ai-provider.ts';
+import type {
+  ContextExecutionPipeline,
+  GenerationRequestIntegrity,
+} from '../contracts/chat-context.ts';
 import { sanitizeTurnSources } from './turn-codec.ts';
 import {
   CLARIFY_REPLY,
@@ -77,6 +81,7 @@ export async function loadPreviousRouteAnchor(
           WHERE conversation_id = current.conversation_id
             AND id <> current.id
             AND created_at < current.created_at
+            AND execution_pipeline IS DISTINCT FROM 'context_packet_v22'
           ORDER BY created_at DESC, id DESC
           LIMIT 1
        ) AS previous ON true
@@ -218,6 +223,7 @@ export interface InteractionTurn {
   errorCode: string | null;
   sources: ChatSource[];
   usedSearch: boolean;
+  executionPipeline: ContextExecutionPipeline | null;
 }
 
 interface InteractionRow {
@@ -232,6 +238,7 @@ interface InteractionRow {
   error_code: string | null;
   knowledge_sources: unknown;
   used_search: boolean;
+  execution_pipeline: ContextExecutionPipeline | null;
 }
 
 function toInteraction(row: InteractionRow): InteractionTurn {
@@ -247,12 +254,13 @@ function toInteraction(row: InteractionRow): InteractionTurn {
     errorCode: row.error_code,
     sources: sanitizeTurnSources(row.knowledge_sources) ?? [],
     usedSearch: row.used_search,
+    executionPipeline: row.execution_pipeline,
   };
 }
 
 const interactionColumns = `id::text, access_session_id::text,
   conversation_id::text, workflow, audience_intent, question, answer,
-  status, error_code, knowledge_sources, used_search`;
+  status, error_code, knowledge_sources, used_search, execution_pipeline`;
 
 export async function loadInteractionForUpdate(
   client: PoolClient,
@@ -303,14 +311,15 @@ export async function insertRunningInteraction(input: {
   workflow: InteractionTurn['workflow'];
   audienceIntent: ChatAudienceIntent;
   question: string;
+  executionPipeline?: ContextExecutionPipeline;
   now: Date;
   deleteAfter: Date;
 }): Promise<void> {
   await input.client.query(
     `INSERT INTO interaction_turns
       (id, access_session_id, invite_label, conversation_id, workflow, audience_intent,
-       question, status, created_at, delete_after)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, 'running', $8, $9)`,
+       question, execution_pipeline, status, created_at, delete_after)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'running', $9, $10)`,
     [
       input.turnId,
       input.accessSessionId,
@@ -319,6 +328,7 @@ export async function insertRunningInteraction(input: {
       input.workflow,
       input.audienceIntent,
       input.question,
+      input.executionPipeline ?? 'legacy_v1',
       input.now,
       input.deleteAfter,
     ],
@@ -328,6 +338,7 @@ export async function insertRunningInteraction(input: {
 export async function restartInteraction(input: {
   client: PoolClient;
   turnId: string;
+  executionPipeline?: ContextExecutionPipeline;
 }): Promise<void> {
   await input.client.query('DELETE FROM usage_events WHERE interaction_turn_id = $1', [input.turnId]);
   await input.client.query(
@@ -352,12 +363,102 @@ export async function restartInteraction(input: {
             known_cost_usd = NULL,
             usage_complete = false,
             cost_complete = false,
+            execution_pipeline = $2,
+            semantic_intent = NULL,
+            discourse_action = NULL,
+            task_action = NULL,
+            context_scope_id = NULL,
+            context_manifest = NULL,
             latency_ms = NULL,
             completed_at = NULL
       WHERE id = $1 AND status IN ('stopped', 'failed')`,
-    [input.turnId],
+    [input.turnId, input.executionPipeline ?? 'legacy_v1'],
   );
   if (result.rowCount !== 1) throw new Error('Interaction turn cannot be restarted.');
+}
+
+interface AuthorityAttemptIntegrityRow {
+  context_builder_version: string | null;
+  generation_mode: ProviderAttempt['generationMode'] | null;
+  generation_overlay_version: 'strict-overlay-v1' | null;
+  generation_request_hmac_sha256: string | null;
+  packet_hmac_key_id: string | null;
+  packet_hmac_sha256: string | null;
+  status: string;
+}
+
+function authorityIntegrity(
+  row: AuthorityAttemptIntegrityRow,
+): GenerationRequestIntegrity | null {
+  const values = [
+    row.context_builder_version,
+    row.packet_hmac_key_id,
+    row.packet_hmac_sha256,
+    row.generation_overlay_version,
+    row.generation_request_hmac_sha256,
+  ];
+  if (values.every((value) => value === null)) return null;
+  if (!row.context_builder_version
+    || !row.packet_hmac_key_id
+    || !row.packet_hmac_sha256
+    || !row.generation_request_hmac_sha256
+    || row.generation_mode === null
+    || row.generation_overlay_version !== (
+      row.generation_mode === 'strict' ? 'strict-overlay-v1' : null
+    )) throw new Error('PROVIDER_ATTEMPT_INTEGRITY_MISMATCH');
+  return {
+    contextBuilderVersion: row.context_builder_version,
+    packetHmacKeyId: row.packet_hmac_key_id,
+    packetHmacSha256: row.packet_hmac_sha256,
+    generationOverlayVersion: row.generation_overlay_version,
+    generationRequestHmacSha256: row.generation_request_hmac_sha256,
+  } as GenerationRequestIntegrity;
+}
+
+function integrityMatches(
+  left: GenerationRequestIntegrity | null,
+  right: GenerationRequestIntegrity | null,
+): boolean {
+  if (!left || !right) return left === right;
+  return left.contextBuilderVersion === right.contextBuilderVersion
+    && left.packetHmacKeyId === right.packetHmacKeyId
+    && left.packetHmacSha256 === right.packetHmacSha256
+    && left.generationOverlayVersion === right.generationOverlayVersion
+    && left.generationRequestHmacSha256 === right.generationRequestHmacSha256;
+}
+
+async function loadAuthorityAttemptIntegrity(
+  client: PoolClient,
+  turnId: string,
+  attempt: ProviderAttempt,
+): Promise<GenerationRequestIntegrity | null> {
+  if (!attempt.executionId && attempt.attemptNo === undefined) {
+    if (attempt.integrity) throw new Error('PROVIDER_ATTEMPT_INTEGRITY_MISMATCH');
+    return null;
+  }
+  if (!attempt.executionId || !attempt.attemptNo) {
+    throw new Error('PROVIDER_ATTEMPT_INTEGRITY_MISMATCH');
+  }
+  const result = await client.query<AuthorityAttemptIntegrityRow>(
+    `SELECT generation_mode, context_builder_version, packet_hmac_key_id,
+            packet_hmac_sha256, generation_overlay_version,
+            generation_request_hmac_sha256, status
+       FROM chat_provider_attempts
+      WHERE interaction_turn_id = $1
+        AND execution_id = $2
+        AND attempt_no = $3`,
+    [turnId, attempt.executionId, attempt.attemptNo],
+  );
+  const row = result.rows[0];
+  if (!row || !['completed', 'failed', 'aborted'].includes(row.status)
+    || row.generation_mode !== attempt.generationMode) {
+    throw new Error('PROVIDER_ATTEMPT_INTEGRITY_MISMATCH');
+  }
+  const authority = authorityIntegrity(row);
+  if (!integrityMatches(authority, attempt.integrity ?? null)) {
+    throw new Error('PROVIDER_ATTEMPT_INTEGRITY_MISMATCH');
+  }
+  return authority;
 }
 
 export async function replaceProviderAttempts(
@@ -376,6 +477,7 @@ export async function replaceProviderAttempts(
     [turnId],
   );
   for (const attempt of attempts) {
+    const integrity = await loadAuthorityAttemptIntegrity(client, turnId, attempt);
     const deleteAfter = new Date(attempt.startedAt.getTime() + 10 * 24 * 60 * 60 * 1000);
     await client.query(
       `INSERT INTO interaction_provider_attempts
@@ -386,9 +488,12 @@ export async function replaceProviderAttempts(
          first_byte_latency_ms, first_protocol_event_ms, first_model_text_ms,
          first_user_visible_ms, total_latency_ms,
          input_tokens, output_tokens, usage_complete, known_cost_usd, cost_complete,
-         created_at, completed_at, delete_after)
+         created_at, completed_at, delete_after,
+         context_builder_version, packet_hmac_key_id, packet_hmac_sha256,
+         generation_overlay_version, generation_request_hmac_sha256)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,
-               $17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)`,
+               $17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,
+               $30,$31,$32,$33,$34)`,
       [
         turnId,
         attempt.attemptIndex,
@@ -419,6 +524,11 @@ export async function replaceProviderAttempts(
         attempt.startedAt,
         attempt.completedAt,
         deleteAfter,
+        integrity?.contextBuilderVersion ?? null,
+        integrity?.packetHmacKeyId ?? null,
+        integrity?.packetHmacSha256 ?? null,
+        integrity?.generationOverlayVersion ?? null,
+        integrity?.generationRequestHmacSha256 ?? null,
       ],
     );
   }
@@ -442,6 +552,11 @@ export async function providerAttemptsMatch(
     first_model_text_ms: number | null;
     first_user_visible_ms: number | null;
     generation_mode: ProviderAttempt['generationMode'];
+    context_builder_version: string | null;
+    packet_hmac_key_id: string | null;
+    packet_hmac_sha256: string | null;
+    generation_overlay_version: 'strict-overlay-v1' | null;
+    generation_request_hmac_sha256: string | null;
     input_tokens: number | null;
     known_cost_usd: string | null;
     launch_kind: ProviderAttempt['launchKind'];
@@ -462,6 +577,8 @@ export async function providerAttemptsMatch(
             connection_version_id::text, model_version_id::text,
             connection_display_name, model_display_name, model_id, protocol,
             config_digest, launch_kind, generation_mode, status, error_code,
+            context_builder_version, packet_hmac_key_id, packet_hmac_sha256,
+            generation_overlay_version, generation_request_hmac_sha256,
             first_byte_latency_ms, first_protocol_event_ms, first_model_text_ms,
             first_user_visible_ms, total_latency_ms,
             input_tokens, output_tokens, usage_complete, known_cost_usd::text,
@@ -491,6 +608,12 @@ export async function providerAttemptsMatch(
       && row.config_digest === attempt.configDigest
       && row.launch_kind === attempt.launchKind
       && row.generation_mode === attempt.generationMode
+      && row.context_builder_version === (attempt.integrity?.contextBuilderVersion ?? null)
+      && row.packet_hmac_key_id === (attempt.integrity?.packetHmacKeyId ?? null)
+      && row.packet_hmac_sha256 === (attempt.integrity?.packetHmacSha256 ?? null)
+      && row.generation_overlay_version === (attempt.integrity?.generationOverlayVersion ?? null)
+      && row.generation_request_hmac_sha256
+        === (attempt.integrity?.generationRequestHmacSha256 ?? null)
       && row.status === attempt.status
       && row.error_code === attempt.errorCode
       && row.first_byte_latency_ms === attempt.firstByteLatencyMs

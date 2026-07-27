@@ -12,6 +12,19 @@ import type {
   ChatWorkflow,
   TokenUsage,
 } from '../contracts/chat.ts';
+import {
+  CONTEXT_BUILDER_VERSION,
+  CONTEXT_PIPELINE_VERSION,
+  CONTEXT_PROJECTION_VERSION,
+  LEGACY_BRIDGE_VERSION,
+  type CandidateConversationTaskFrameV22,
+  type ContextExecutionPipeline,
+  type ContextPacketManifest,
+  type ContextPipelineAssignment,
+  type ContextProjection,
+  type ConversationTaskFrameV22,
+  type ResolvedChatTurn,
+} from '../contracts/chat-context.ts';
 import { chatCapabilityPolicy, siteContent } from '../site-content.ts';
 import {
   AnswerExecutionError,
@@ -40,10 +53,23 @@ import { createChatExecutionBudget } from './chat-execution-budget.ts';
 import {
   routeChatTurn as routeLegacyChatTurn,
   selectChatBehavior,
+  stableChatCanaryBucket,
   type ChatBehavior,
   type TurnIntent,
   type TurnRoute,
 } from './chat-behavior.ts';
+import {
+  buildContextPacket,
+  ContextPacketBuildError,
+  type BuiltContextPacket,
+  type ContextPacketDigestConfig,
+} from './chat-context-packet.ts';
+import { projectFinalContext } from './chat-context-projection.ts';
+import { planChatEvidence, type PlannedChatEvidence } from './chat-evidence-planner.ts';
+import {
+  resolveChatSemanticTurn,
+  type ChatSemanticResolution,
+} from './chat-semantic-resolver.ts';
 import {
   routeChatTurn as routeV2ChatTurn,
   type ChatRouteDecision,
@@ -56,6 +82,18 @@ import {
   taskStateRequiresWrite,
   type ConversationTaskState,
 } from './conversation-task-state.ts';
+import {
+  captureLegacyContextBridge,
+  LegacyBridgeValidationError,
+  loadAdjacentCompletedContextTurn,
+  loadCapturedLegacyContextBridge,
+  loadCompletedContextHistory,
+  loadContextTaskFrame,
+  lockContextPipelineAfterLegacySuccess,
+  persistContextSuccessState,
+  persistContextTerminalManifest,
+  type UpsertContextTaskFrameInput,
+} from './conversation-context-state.ts';
 import {
   compileCapabilityLedger,
   type CapabilityAssessment,
@@ -152,6 +190,12 @@ export interface ChatServiceConfig {
   chatV2Enabled: boolean;
   chatV2CanaryPercent: number;
   chatV2CanaryInviteIds: ReadonlySet<string>;
+  contextPacketEnabled?: boolean;
+  contextCanaryPercent?: number;
+  contextCanaryInviteIds?: ReadonlySet<string>;
+  contextTokenBudget?: number;
+  jdContextTokenBudget?: number;
+  contextPacketDigest?: ContextPacketDigestConfig | null;
   hedgedFailoverEnabled: boolean;
   chatSafeMode: boolean;
   providerTotalTimeoutMs: number;
@@ -186,6 +230,9 @@ interface TurnContext {
   searchAlreadyClaimed: boolean;
   diagnosis: TurnDiagnosis | null;
   behavior: ChatBehavior;
+  contextAssignment: ContextPipelineAssignment;
+  executionPipeline: ContextExecutionPipeline;
+  legacyBridgeCaptureStatus?: 'not_eligible' | 'invalid';
 }
 
 interface TurnDiagnosis {
@@ -208,6 +255,20 @@ interface ConversationRow {
   mode: ChatMode;
   workflow: ChatWorkflow;
   audience_intent: ChatAudienceIntent;
+  context_pipeline_assignment: ContextPipelineAssignment;
+}
+
+interface PreparedContextTurn {
+  builtPacket: BuiltContextPacket | null;
+  candidateFrame: CandidateConversationTaskFrameV22 | null;
+  contextScopeId: string;
+  currentFrame: ConversationTaskFrameV22 | null;
+  legacyBridgeResolution: 'consumed' | 'invalidated' | null;
+  manifest: ContextPacketManifest;
+  plannedEvidence: PlannedChatEvidence;
+  projection: ContextProjection;
+  resolution: ChatSemanticResolution;
+  search: SearchResponse | undefined;
 }
 
 interface ConversationMessageRow {
@@ -253,6 +314,140 @@ class RuntimePhaseError extends Error {
 
 const NORMAL_BUDGET_LEVEL: BudgetLevel = 'normal';
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
+const CONTEXT_LAYERS = [
+  'current_input',
+  'discourse_context',
+  'task_frame',
+  'task_inputs',
+  'task_history',
+  'approved_evidence',
+] as const;
+
+interface ContextTerminalState {
+  contextScopeId: string | null;
+  manifest: ContextPacketManifest;
+  resolved: ResolvedChatTurn | null;
+}
+
+class ContextPreparationError extends Error {
+  readonly terminal: ContextTerminalState;
+  readonly original: unknown;
+
+  constructor(original: unknown, terminal: ContextTerminalState) {
+    super('CONTEXT_PREPARATION_FAILED');
+    this.name = 'ContextPreparationError';
+    this.original = original;
+    this.terminal = terminal;
+  }
+}
+
+function legacyExecutionPipeline(behavior: ChatBehavior): ContextExecutionPipeline {
+  if (behavior === 'safe') return 'safe';
+  return behavior === 'v2' ? 'legacy_v2' : 'legacy_v1';
+}
+
+function contextCanarySelected(input: {
+  accessSessionId: string;
+  inviteCodeId: string;
+  config: ChatServiceConfig;
+}): boolean {
+  const canaryPercent = input.config.contextCanaryPercent ?? 0;
+  if (!Number.isSafeInteger(canaryPercent)
+    || canaryPercent < 0
+    || canaryPercent > 100) {
+    throw new RangeError('contextCanaryPercent must be an integer between 0 and 100.');
+  }
+  if (input.config.contextCanaryInviteIds?.has(input.inviteCodeId.toLowerCase())) return true;
+  return stableChatCanaryBucket(input.accessSessionId) < canaryPercent;
+}
+
+function selectExecutionPipeline(input: {
+  accessSessionId: string;
+  assignment: ContextPipelineAssignment;
+  behavior: ChatBehavior;
+  inviteCodeId: string;
+  request: NormalizedChatRequest;
+  config: ChatServiceConfig;
+}): ContextExecutionPipeline {
+  const legacy = legacyExecutionPipeline(input.behavior);
+  if (input.assignment === 'legacy_locked_after_v22'
+    || input.behavior !== 'v2'
+    || requestWorkflow(input.request) === 'diagnosis'
+    || input.config.contextPacketEnabled !== true) return legacy;
+
+  const selected = input.assignment === 'context_packet_v22'
+    || contextCanarySelected(input);
+  if (!selected) return legacy;
+  if (!input.config.contextPacketDigest) {
+    throw new Error('CONTEXT_PACKET_DIGEST_CONFIG_INVALID');
+  }
+  return 'context_packet_v22';
+}
+
+function contextManifest(input: {
+  resolved: ResolvedChatTurn | null;
+  contextScopeId: string;
+  projection?: ContextProjection | null;
+  bridgeStatus?: ContextPacketManifest['legacy_bridge_status'];
+  bridgeTurnIds?: readonly string[];
+  buildStatus: ContextPacketManifest['context_build_status'];
+  errorCode?: string | null;
+}): ContextPacketManifest {
+  const projection = input.projection ?? null;
+  const resolved = input.resolved;
+  const bridgeTurnIds = input.bridgeTurnIds?.slice(0, 6) ?? [];
+  return {
+    pipeline_version: CONTEXT_PIPELINE_VERSION,
+    semantic_intent: resolved?.semantic.intent ?? 'clarify',
+    discourse_action: resolved?.semantic.discourseAction ?? 'one_shot',
+    task_action: resolved?.semantic.taskAction ?? 'temporary',
+    task_id: input.contextScopeId,
+    task_state_version: projection?.frame?.taskStateVersion ?? 0,
+    context_builder_version: CONTEXT_BUILDER_VERSION,
+    projection_policy_version: CONTEXT_PROJECTION_VERSION,
+    release_policy: resolved?.legacyRoute.deterministicReply
+      ? 'not_required'
+      : resolved?.legacyRoute.release ?? 'not_required',
+    context_build_status: input.buildStatus,
+    context_build_error_code: input.errorCode ?? null,
+    discourse_source_turn_ids: projection?.discourse ? [projection.discourse.turnId] : [],
+    legacy_bridge_policy_version: bridgeTurnIds.length > 0 ? LEGACY_BRIDGE_VERSION : null,
+    legacy_bridge_source_turn_ids: [...bridgeTurnIds],
+    legacy_bridge_status: input.bridgeStatus ?? 'not_eligible',
+    included_layers: projection?.includedLayers ?? [],
+    excluded_layers: projection?.excludedLayers ?? [...CONTEXT_LAYERS],
+    projected_slot_kinds: [...new Set(projection?.slots.map((slot) => slot.slot) ?? [])],
+    evicted_layers: [],
+    projection_reason_codes: projection?.reasonCodes ?? ['context_build_failed_before_projection'],
+    eviction_reason_codes: [],
+    token_estimate_by_layer: {},
+    evidence_ids: [],
+    retrieval_scores: [],
+    degraded_reason: null,
+    packet_hmac_key_id: null,
+    packet_hmac_sha256: null,
+  };
+}
+
+function stableContextBuildError(error: unknown): {
+  code: string;
+  status: ContextPacketManifest['context_build_status'];
+} {
+  if (error instanceof ContextPacketBuildError) {
+    return {
+      code: error.code,
+      status: error.code === 'CONTEXT_PACKET_OVER_BUDGET' ? 'over_budget' : 'failed',
+    };
+  }
+  if (error instanceof RuntimePhaseError) {
+    return { code: error.logCode, status: 'failed' };
+  }
+  const code = dependencyErrorCode(error);
+  return {
+    code: code && /^[A-Z0-9_]{1,80}$/u.test(code) ? code : 'CONTEXT_BUILD_FAILED',
+    status: 'failed',
+  };
+}
 
 function requestWorkflow(request: NormalizedChatRequest): ChatWorkflow {
   return request.workflow ?? 'chat';
@@ -503,6 +698,218 @@ function workflowRoutingQuestion(
     : request.message;
 }
 
+function controlledSearchEvidence(
+  response: SearchResponse | undefined,
+  observedAt: Date,
+): KnowledgeSource[] {
+  if (response?.status !== 'completed') return [];
+  return response.results.map((result, index) => ({
+    chunkId: result.id,
+    documentId: result.id,
+    title: result.title,
+    sourcePath: `controlled-search/${result.id}`,
+    href: result.href,
+    content: [
+      `外部来源类型：${result.kind}`,
+      `外部来源域名：${result.domain}`,
+      `检索时间边界：${observedAt.toISOString()}`,
+      result.snippet,
+    ].join('\n'),
+    score: Math.max(0, 1 - index / 100),
+    projectSlug: null,
+    topicIds: ['external-current'],
+    evidenceLevel: 'direct',
+  }));
+}
+
+async function prepareContextTurn(input: {
+  pool: Pool;
+  client: PoolClient;
+  provider: AiProvider;
+  searchProvider?: SearchProvider | null;
+  accessSessionId: string;
+  request: NormalizedChatRequest;
+  turn: TurnContext;
+  config: ChatServiceConfig;
+  now: Date;
+  signal?: AbortSignal;
+}): Promise<PreparedContextTurn> {
+  if (input.turn.userMessageId === null) {
+    throw new Error('CONTEXT_USER_MESSAGE_MISSING');
+  }
+  let resolved: ResolvedChatTurn | null = null;
+  let contextScopeId = input.turn.turnId;
+  let projection: ContextProjection | null = null;
+  let bridgeStatus: ContextPacketManifest['legacy_bridge_status'] = input.turn.legacyBridgeCaptureStatus
+    ?? 'not_eligible';
+  let bridgeTurnIds: string[] = [];
+
+  try {
+    if (input.turn.legacyBridgeCaptureStatus === 'invalid') {
+      throw new RuntimePhaseError('CONVERSATION_INVALID', 'LEGACY_BRIDGE_INVALID');
+    }
+    const currentFrame = await loadContextTaskFrame(input.client, input.turn.conversationId);
+    const discourse = await loadAdjacentCompletedContextTurn(input.client, input.turn.conversationId);
+    const legacyBridge = await loadCapturedLegacyContextBridge(
+      input.client,
+      input.turn.conversationId,
+    );
+    bridgeTurnIds = legacyBridge.map((turn) => turn.turnId);
+    const resolution = resolveChatSemanticTurn({
+      request: input.request,
+      ledger: capabilityLedger,
+      conversationId: input.turn.conversationId,
+      currentUserMessageId: input.turn.userMessageId,
+      currentFrame,
+      discourseContext: discourse,
+      legacyBridge,
+    });
+    resolved = resolution.resolved;
+    bridgeStatus = resolution.legacyBridgeStatus;
+    contextScopeId = resolution.candidateFrame?.taskId
+      ?? currentFrame?.taskId
+      ?? input.turn.turnId;
+    const history = resolution.candidateFrame || currentFrame
+      ? await loadCompletedContextHistory(
+          input.client,
+          input.turn.conversationId,
+          contextScopeId,
+          { tokenBudget: 2_500 },
+        )
+      : [];
+    const plannedEvidence: PlannedChatEvidence = resolved.legacyRoute.deterministicReply
+      ? { knowledge: [], admissions: [], retrievalScores: [], degradedReason: null }
+      : await planChatEvidence({
+          resolved,
+          currentInput: input.request.message,
+          frame: resolution.candidateFrame ?? currentFrame,
+          ledger: capabilityLedger,
+          async embed(query) {
+            const [embedding] = await input.provider.embed([query], input.signal);
+            if (!embedding) throw new Error('EMBEDDING_UNAVAILABLE');
+            return embedding;
+          },
+           retrieve: (embedding, limit) => retrieveKnowledge(input.client, embedding, limit),
+         });
+    const search = resolved.semantic.intent === 'external_current'
+      ? await resolveSearch({
+          pool: input.pool,
+          client: input.client,
+          provider: input.searchProvider,
+          accessSessionId: input.accessSessionId,
+          turn: input.turn,
+          routingQuestion: input.request.message,
+          searchQuery: input.request.message,
+          localEvidenceSufficient: false,
+          config: input.config,
+          now: input.now,
+          signal: input.signal,
+        })
+      : undefined;
+    const projectedEvidence = [
+      ...plannedEvidence.knowledge,
+      ...controlledSearchEvidence(search, input.now),
+    ];
+    projection = projectFinalContext({
+      resolved,
+      currentUserMessageId: input.turn.userMessageId,
+      discourse,
+      frame: resolution.candidateFrame ?? currentFrame,
+      history,
+      approvedEvidence: projectedEvidence,
+    });
+    const legacyBridgeResolution = bridgeTurnIds.length === 0
+      ? null
+      : resolution.legacyBridgeStatus === 'used'
+        ? 'consumed'
+        : resolved.semantic.taskAction === 'switch'
+          || resolved.semantic.discourseAction === 'new_task'
+          ? 'invalidated'
+          : null;
+    if (resolved.legacyRoute.deterministicReply) {
+      return {
+        builtPacket: null,
+        candidateFrame: resolution.candidateFrame,
+        contextScopeId,
+        currentFrame,
+        legacyBridgeResolution,
+        manifest: contextManifest({
+          resolved,
+          contextScopeId,
+          projection,
+          bridgeStatus,
+          bridgeTurnIds,
+          buildStatus: 'not_required',
+        }),
+         plannedEvidence,
+         projection,
+         resolution,
+         search,
+       };
+    }
+
+    const digest = input.config.contextPacketDigest;
+    if (!digest) throw new Error('CONTEXT_PACKET_DIGEST_CONFIG_INVALID');
+    const packetFrame = resolution.candidateFrame ?? currentFrame;
+    const usesJdBudget = resolved.semantic.intent === 'jd_match'
+      || packetFrame?.slots.some((slot) => slot.slot === 'job_description') === true;
+    const builtPacket = buildContextPacket({
+      resolved,
+      currentInput: input.request.message,
+      currentUserMessageId: input.turn.userMessageId,
+      projection,
+      tokenBudget: usesJdBudget
+        ? input.config.jdContextTokenBudget ?? 24_000
+        : input.config.contextTokenBudget ?? 12_000,
+      digestKey: digest.key,
+      digestKeyId: digest.keyId,
+      reasoningEffort: adaptV2Route(resolved.legacyRoute).reasoningEffort ?? null,
+      contextScopeId,
+      legacyBridge: bridgeTurnIds.length > 0 ? {
+        policyVersion: LEGACY_BRIDGE_VERSION,
+        sourceTurnIds: bridgeTurnIds,
+        status: bridgeStatus,
+      } : null,
+      degradedReason: plannedEvidence.degradedReason,
+    });
+    return {
+      builtPacket,
+      candidateFrame: resolution.candidateFrame,
+      contextScopeId,
+      currentFrame,
+      legacyBridgeResolution,
+      manifest: builtPacket.manifest,
+       plannedEvidence,
+       projection,
+       resolution,
+       search,
+     };
+  } catch (error) {
+    const failure = stableContextBuildError(error);
+    throw new ContextPreparationError(error, {
+      contextScopeId,
+      resolved,
+      manifest: contextManifest({
+        resolved,
+        contextScopeId,
+        projection,
+        bridgeStatus,
+        bridgeTurnIds,
+        buildStatus: failure.status,
+        errorCode: failure.code,
+      }),
+    });
+  }
+}
+
+function contextSuccessManifest(prepared: PreparedContextTurn): ContextPacketManifest {
+  return {
+    ...prepared.manifest,
+    legacy_bridge_status: prepared.legacyBridgeResolution
+      ?? prepared.manifest.legacy_bridge_status,
+  };
+}
+
 export async function loadCompletedHistory(
   client: PoolClient,
   conversationId: string,
@@ -518,6 +925,7 @@ export async function loadCompletedHistory(
        FROM interaction_turns
       WHERE conversation_id = $1
         AND status = 'completed'
+        AND execution_pipeline IS DISTINCT FROM 'context_packet_v22'
         AND (
           ($2::uuid IS NOT NULL AND task_id = $2)
           OR ($2::uuid IS NULL AND $3::boolean AND task_id IS NULL AND route_kind = 'conversation')
@@ -590,6 +998,7 @@ async function loadLegacyCompletedHistory(
        FROM interaction_turns
       WHERE conversation_id = $1
         AND status = 'completed'
+        AND execution_pipeline IS DISTINCT FROM 'context_packet_v22'
       ORDER BY created_at, id`,
     [conversationId],
   );
@@ -662,6 +1071,8 @@ async function recoverRunningTurn(input: {
   searchAlreadyClaimed: boolean;
   diagnosis: TurnDiagnosis | null;
   behavior: ChatBehavior;
+  contextAssignment: ContextPipelineAssignment;
+  executionPipeline: ContextExecutionPipeline;
 }): Promise<TurnContext> {
   const result = await input.client.query<ConversationMessageRow>(
     `SELECT id::text AS id, role, content
@@ -698,6 +1109,8 @@ async function recoverRunningTurn(input: {
     searchAlreadyClaimed: input.searchAlreadyClaimed,
     diagnosis: input.diagnosis,
     behavior: input.behavior,
+    contextAssignment: input.contextAssignment,
+    executionPipeline: input.executionPipeline,
   };
 }
 
@@ -779,12 +1192,24 @@ async function reserveTurnInTransaction(input: {
   if (!conversationId) throw new ChatServiceError('CONVERSATION_INVALID');
 
   const conversationResult = await input.client.query<ConversationRow>(
-    `SELECT mode, workflow, audience_intent
+    `SELECT mode, workflow, audience_intent, context_pipeline_assignment
        FROM conversations
       WHERE id = $1 AND access_session_id = $2 AND expires_at > $3`,
     [conversationId, input.accessSessionId, input.now],
   );
   const conversation = conversationResult.rows[0];
+  const contextAssignment = conversation?.context_pipeline_assignment ?? 'legacy';
+  const selectedExecutionPipeline = interaction?.status === 'running'
+    && interaction.executionPipeline
+    ? interaction.executionPipeline
+    : selectExecutionPipeline({
+        accessSessionId: input.accessSessionId,
+        assignment: contextAssignment,
+        behavior,
+        inviteCodeId: session.invite_code_id,
+        request: input.request,
+        config: input.config,
+      });
 
   if (interaction?.status === 'completed') {
     if (!conversation || interaction.answer === null) {
@@ -802,6 +1227,8 @@ async function reserveTurnInTransaction(input: {
       searchAlreadyClaimed: interaction.usedSearch,
       diagnosis: null,
       behavior,
+      contextAssignment,
+      executionPipeline: interaction.executionPipeline ?? selectedExecutionPipeline,
     };
   }
 
@@ -819,6 +1246,8 @@ async function reserveTurnInTransaction(input: {
       searchAlreadyClaimed: interaction.usedSearch,
       diagnosis: null,
       behavior,
+      contextAssignment,
+      executionPipeline: interaction.executionPipeline ?? selectedExecutionPipeline,
     };
   }
 
@@ -842,6 +1271,8 @@ async function reserveTurnInTransaction(input: {
       searchAlreadyClaimed: interaction.usedSearch,
       diagnosis,
       behavior,
+      contextAssignment,
+      executionPipeline: selectedExecutionPipeline,
     });
   }
 
@@ -920,6 +1351,7 @@ async function reserveTurnInTransaction(input: {
     await restartInteraction({
       client: input.client,
       turnId: input.turnId,
+      executionPipeline: selectedExecutionPipeline,
     });
   } else {
     const deleteAfter = new Date(
@@ -934,9 +1366,25 @@ async function reserveTurnInTransaction(input: {
       workflow: requestWorkflow(input.request),
       audienceIntent: input.request.audienceIntent,
       question: input.request.message,
+      executionPipeline: selectedExecutionPipeline,
       now: input.now,
       deleteAfter,
     });
+  }
+
+  let legacyBridgeCaptureStatus: TurnContext['legacyBridgeCaptureStatus'] = 'not_eligible';
+  if (selectedExecutionPipeline === 'context_packet_v22'
+    && contextAssignment === 'legacy') {
+    try {
+      await captureLegacyContextBridge(input.client, {
+        conversationId,
+        beforeMessageId: userMessageId,
+        capturedAt: input.now,
+      });
+    } catch (error) {
+      if (!(error instanceof LegacyBridgeValidationError)) throw error;
+      legacyBridgeCaptureStatus = 'invalid';
+    }
   }
 
   return {
@@ -950,6 +1398,9 @@ async function reserveTurnInTransaction(input: {
     searchAlreadyClaimed: interaction?.usedSearch ?? false,
     diagnosis,
     behavior,
+    contextAssignment,
+    executionPipeline: selectedExecutionPipeline,
+    legacyBridgeCaptureStatus,
   };
 }
 
@@ -1110,6 +1561,7 @@ async function completeTurn(input: {
   startedAt: Date;
   completedAt: Date;
   route?: ChatRouteDecision | null;
+  context?: PreparedContextTurn | null;
   signal?: AbortSignal;
 }): Promise<TokenUsage | null> {
   const provider = input.config.providerName ?? 'openai';
@@ -1117,6 +1569,7 @@ async function completeTurn(input: {
   const routed = input.attempts.length > 0;
   let commitAttempted = false;
   let taskStateWriteRequired = false;
+  let contextStateWriteRequired = false;
   let usage = input.usage;
 
   try {
@@ -1153,15 +1606,17 @@ async function completeTurn(input: {
         currentCost,
       );
     }
-    await input.client.query(
+    const assistantMessage = await input.client.query<{ id: string }>(
       `INSERT INTO conversation_messages (conversation_id, role, content, created_at)
-       VALUES ($1, 'assistant', $2, $3)`,
+       VALUES ($1, 'assistant', $2, $3)
+       RETURNING id::text AS id`,
       [
         input.turn.conversationId,
         encodeTurnMessage(input.turn.turnId, input.answer, input.sources),
         input.completedAt,
       ],
     );
+    const assistantMessageId = assistantMessage.rows[0].id;
     if (routed) {
       await replaceProviderAttempts(input.client, input.turn.turnId, input.attempts);
     }
@@ -1230,7 +1685,29 @@ async function completeTurn(input: {
       turn: input.turn,
       completedAt: input.completedAt,
     });
-    if (input.turn.behavior === 'v2' && input.route) {
+    if (input.context) {
+      if (input.turn.userMessageId === null) throw new Error('CONTEXT_USER_MESSAGE_MISSING');
+      contextStateWriteRequired = true;
+      const candidate = input.context.candidateFrame;
+      const frame: UpsertContextTaskFrameInput | null = candidate ? {
+        ...candidate,
+        lastSuccessfulMessageId: assistantMessageId,
+        updatedByMessageId: input.turn.userMessageId,
+        now: input.completedAt,
+      } : null;
+      await persistContextSuccessState(input.client, {
+        interactionTurnId: input.turn.turnId,
+        conversationId: input.turn.conversationId,
+        contextScopeId: input.context.contextScopeId,
+        userMessageId: input.turn.userMessageId,
+        assistantMessageId,
+        resolved: input.context.resolution.resolved,
+        frame,
+        manifest: contextSuccessManifest(input.context),
+        completedAt: input.completedAt,
+        bridgeResolution: input.context.legacyBridgeResolution,
+      });
+    } else if (input.turn.behavior === 'v2' && input.route) {
       const currentTaskState = await loadTaskState(input.client, input.turn.conversationId, {
         forUpdate: true,
       });
@@ -1249,6 +1726,16 @@ async function completeTurn(input: {
           throw new ChatServiceError('CONVERSATION_INVALID');
         }
       }
+    }
+    if (!input.context
+      && input.turn.contextAssignment === 'context_packet_v22'
+      && input.turn.userMessageId !== null) {
+      await lockContextPipelineAfterLegacySuccess(input.client, {
+        conversationId: input.turn.conversationId,
+        userMessageId: input.turn.userMessageId,
+        interactionTurnId: input.turn.turnId,
+        completedAt: input.completedAt,
+      });
     }
     await input.client.query(
       'UPDATE conversations SET updated_at = $2 WHERE id = $1',
@@ -1269,7 +1756,18 @@ async function completeTurn(input: {
       const taskStateOk = !taskStateWriteRequired
         || await taskStateAppliedByTurn(input.pool, input.turn.conversationId, input.turn.turnId)
           .catch(() => false);
-      if (attemptsMatch && taskStateOk) return usage;
+      const contextStateOk = !contextStateWriteRequired
+        || (await input.pool.query<{ applied: boolean }>(
+          `SELECT EXISTS (
+             SELECT 1 FROM conversation_context_completed_turns
+              WHERE conversation_id = $1 AND turn_id = $2
+           ) AND EXISTS (
+             SELECT 1 FROM interaction_turns
+              WHERE id = $2 AND context_manifest IS NOT NULL
+           ) AS applied`,
+          [input.turn.conversationId, input.turn.turnId],
+        ).catch(() => ({ rows: [{ applied: false }] }))).rows[0]?.applied === true;
+      if (attemptsMatch && taskStateOk && contextStateOk) return usage;
     }
     await input.client.query('ROLLBACK').catch(() => undefined);
     throw error;
@@ -1285,22 +1783,26 @@ async function completeDeterministicTurn(input: {
   startedAt: Date;
   completedAt: Date;
   route?: ChatRouteDecision | null;
+  context?: PreparedContextTurn | null;
   signal?: AbortSignal;
 }): Promise<void> {
   let commitAttempted = false;
   let taskStateWriteRequired = false;
+  let contextStateWriteRequired = false;
   try {
     throwIfAborted(input.signal);
     await input.client.query('BEGIN');
-    await input.client.query(
+    const assistantMessage = await input.client.query<{ id: string }>(
       `INSERT INTO conversation_messages (conversation_id, role, content, created_at)
-       VALUES ($1, 'assistant', $2, $3)`,
+       VALUES ($1, 'assistant', $2, $3)
+       RETURNING id::text AS id`,
       [
         input.turn.conversationId,
         encodeTurnMessage(input.turn.turnId, input.answer, []),
         input.completedAt,
       ],
     );
+    const assistantMessageId = assistantMessage.rows[0].id;
     await completeInteraction({
       client: input.client,
       turnId: input.turn.turnId,
@@ -1323,7 +1825,29 @@ async function completeDeterministicTurn(input: {
         WHERE id = $1`,
       [input.accessSessionId],
     );
-    if (input.turn.behavior === 'v2' && input.route) {
+    if (input.context) {
+      if (input.turn.userMessageId === null) throw new Error('CONTEXT_USER_MESSAGE_MISSING');
+      contextStateWriteRequired = true;
+      const candidate = input.context.candidateFrame;
+      const frame: UpsertContextTaskFrameInput | null = candidate ? {
+        ...candidate,
+        lastSuccessfulMessageId: assistantMessageId,
+        updatedByMessageId: input.turn.userMessageId,
+        now: input.completedAt,
+      } : null;
+      await persistContextSuccessState(input.client, {
+        interactionTurnId: input.turn.turnId,
+        conversationId: input.turn.conversationId,
+        contextScopeId: input.context.contextScopeId,
+        userMessageId: input.turn.userMessageId,
+        assistantMessageId,
+        resolved: input.context.resolution.resolved,
+        frame,
+        manifest: contextSuccessManifest(input.context),
+        completedAt: input.completedAt,
+        bridgeResolution: input.context.legacyBridgeResolution,
+      });
+    } else if (input.turn.behavior === 'v2' && input.route) {
       const currentTaskState = await loadTaskState(input.client, input.turn.conversationId, {
         forUpdate: true,
       });
@@ -1343,6 +1867,16 @@ async function completeDeterministicTurn(input: {
         }
       }
     }
+    if (!input.context
+      && input.turn.contextAssignment === 'context_packet_v22'
+      && input.turn.userMessageId !== null) {
+      await lockContextPipelineAfterLegacySuccess(input.client, {
+        conversationId: input.turn.conversationId,
+        userMessageId: input.turn.userMessageId,
+        interactionTurnId: input.turn.turnId,
+        completedAt: input.completedAt,
+      });
+    }
     await input.client.query(
       'UPDATE conversations SET updated_at = $2 WHERE id = $1',
       [input.turn.conversationId, input.completedAt],
@@ -1357,7 +1891,15 @@ async function completeDeterministicTurn(input: {
       const taskStateOk = !taskStateWriteRequired
         || await taskStateAppliedByTurn(input.pool, input.turn.conversationId, input.turn.turnId)
           .catch(() => false);
-      if (completed?.answer === input.answer && taskStateOk) return;
+      const contextStateOk = !contextStateWriteRequired
+        || (await input.pool.query<{ applied: boolean }>(
+          `SELECT EXISTS (
+             SELECT 1 FROM conversation_context_completed_turns
+              WHERE conversation_id = $1 AND turn_id = $2
+           ) AS applied`,
+          [input.turn.conversationId, input.turn.turnId],
+        ).catch(() => ({ rows: [{ applied: false }] }))).rows[0]?.applied === true;
+      if (completed?.answer === input.answer && taskStateOk && contextStateOk) return;
     }
     await input.client.query('ROLLBACK').catch(() => undefined);
     throw error;
@@ -1378,6 +1920,7 @@ interface CompensationInput {
   config: ChatServiceConfig;
   startedAt: Date;
   completedAt: Date;
+  contextTerminal?: ContextTerminalState | null;
 }
 
 type CompensationResult = 'completed' | 'expected_terminal' | 'other_terminal';
@@ -1485,8 +2028,17 @@ async function compensateTurnOnce(input: CompensationInput): Promise<Compensatio
       latencyMs: elapsedMilliseconds(input.startedAt, input.completedAt),
       completedAt: input.completedAt,
     });
+    if (input.contextTerminal) {
+      await persistContextTerminalManifest(input.client, {
+        interactionTurnId: input.turn.turnId,
+        conversationId: input.turn.conversationId,
+        contextScopeId: input.contextTerminal.contextScopeId,
+        resolved: input.contextTerminal.resolved,
+        manifest: input.contextTerminal.manifest,
+      });
+    }
 
-    if (input.turn.createdConversation) {
+    if (input.turn.createdConversation && !input.contextTerminal) {
       await input.client.query(
         `DELETE FROM conversations AS conversation
           WHERE conversation.id = $1
@@ -1793,6 +2345,8 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
   let providerAttempts: ProviderAttempt[] = [];
   let providerWinner: ProviderWinner | null = null;
   let failure: TerminalFailure | null = null;
+  let preparedContext: PreparedContextTurn | null = null;
+  let contextTerminal: ContextTerminalState | null = null;
 
   try {
     if (!await tryAdvisoryLock(lockClient, `turn:${turnId}`)) {
@@ -1852,7 +2406,37 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
     };
     let v2Route: ChatRouteDecision | null = null;
     let v2TaskState: ConversationTaskState | null = null;
-    if (turn.behavior === 'v2') {
+    if (turn.executionPipeline === 'context_packet_v22') {
+      try {
+        preparedContext = await prepareContextTurn({
+          pool: input.pool,
+          client: lockClient,
+          provider: input.provider,
+          searchProvider: input.searchProvider,
+          accessSessionId: input.accessSessionId,
+          request: input.request,
+          turn,
+          config: input.config,
+          now: clock(),
+          signal: input.signal,
+        });
+      } catch (error) {
+        if (error instanceof ContextPreparationError) {
+          contextTerminal = error.terminal;
+          throw error.original;
+        }
+        throw error;
+      }
+      v2Route = preparedContext.resolution.resolved.legacyRoute;
+      await recordInteractionRoute(lockClient, turn.turnId, v2Route);
+      contextTerminal = {
+        contextScopeId: preparedContext.contextScopeId,
+        resolved: preparedContext.resolution.resolved,
+        manifest: preparedContext.manifest,
+      };
+      turn.messages = preparedContext.builtPacket?.normal.request.messages
+        ?? [{ role: 'user', content: input.request.message }];
+    } else if (turn.behavior === 'v2') {
       v2TaskState = await loadTaskState(lockClient, turn.conversationId);
       v2Route = await loadRecordedInteractionRoute(lockClient, turn.turnId);
       if (!v2Route) {
@@ -1914,7 +2498,27 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
     let search: SearchResponse | undefined;
     let capability: CapabilityAssessment | null = null;
     let capabilities: CapabilityAssessment[] = [];
-    if (turn.behavior === 'safe') {
+    if (preparedContext) {
+      const admittedEvidenceIds = new Set(preparedContext.manifest.evidence_ids);
+      knowledge = preparedContext.plannedEvidence.knowledge.filter(
+        (source) => admittedEvidenceIds.has(source.chunkId),
+      );
+      search = preparedContext.search?.status === 'completed'
+        ? {
+            ...preparedContext.search,
+            results: preparedContext.search.results.filter(
+              (result) => admittedEvidenceIds.has(result.id),
+            ),
+          }
+        : preparedContext.search;
+      if (preparedContext.plannedEvidence.degradedReason) {
+        console.error(JSON.stringify({
+          event: 'morse_evidence_degraded',
+          layer: preparedContext.plannedEvidence.degradedReason,
+          reasonCode: preparedContext.resolution.resolved.semantic.reasonCodes[0],
+        }));
+      }
+    } else if (turn.behavior === 'safe') {
       knowledge = approvedSafeKnowledge(route.intent);
     } else if (turn.behavior === 'v1') {
       let queryEmbedding: number[];
@@ -2052,6 +2656,7 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
         startedAt,
         completedAt: clock(),
         route: v2Route,
+        context: preparedContext,
         signal: input.signal,
       });
       completed = true;
@@ -2072,7 +2677,9 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
     }
     yield { type: 'status', stage: 'answering' };
 
-    const instructions = [
+    const instructions = preparedContext?.builtPacket
+      ? preparedContext.builtPacket.normal.request.baseInstructions
+      : [
       turn.behavior === 'v1'
         ? buildSystemInstructions(
             input.request.mode,
@@ -2287,17 +2894,22 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
       return;
     }
 
-    const messages = buildWorkflowMessages(
-      input.request,
-      turn.messages,
-      knowledge,
-      turn.diagnosis,
-    );
+    const messages = preparedContext?.builtPacket
+      ? preparedContext.builtPacket.normal.request.messages
+      : buildWorkflowMessages(
+          input.request,
+          turn.messages,
+          knowledge,
+          turn.diagnosis,
+        );
     const deleteAfter = new Date(
       startedAt.getTime() + input.config.interactionRetentionDays * MILLISECONDS_PER_DAY,
     );
     const currentTurn = turn;
     let answerSources = sources;
+    const approvedProjectSlugs = preparedContext?.builtPacket?.packet.approvedEvidence
+      .map((source) => source.projectSlug)
+      .filter((slug): slug is string => typeof slug === 'string') ?? [];
     const providerStartedAtMs = Date.now();
     const executionBudget = createChatExecutionBudget({
       turnStartedAtMs: executionStartedAtMs,
@@ -2312,7 +2924,9 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
     const inspectCandidate = (candidate: string, complete: boolean) => {
       const guard = (complete ? inspectChatAnswer : inspectChatAnswerPrefix)({
         answer: candidate,
+        approvedProjectSlugs,
         route: v2Route ?? undefined,
+        semanticIntent: preparedContext?.resolution.resolved.semantic.intent,
         intent: v2Route ? undefined : route.intent,
         workflow: requestWorkflow(input.request),
         question: routingQuestion,
@@ -2328,15 +2942,28 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
     answerIterator = runGuardedChatAnswer({
       budget: executionBudget,
       now: () => Date.now(),
+      releasePolicy: route.release,
       generate({ strict, generationMode, remainingProviderMs }) {
         const executionId = randomUUID();
-        const requestInstructions = strict
-          ? strictRegenerationInstructions(instructions)
-          : instructions;
+        const contextRequest = preparedContext?.builtPacket
+          ? generationMode === 'strict'
+            ? preparedContext.builtPacket.strict
+            : preparedContext.builtPacket.normal
+          : null;
+        const requestInstructions = contextRequest
+          ? [
+              contextRequest.request.baseInstructions,
+              contextRequest.request.overlay?.content,
+            ].filter(Boolean).join('\n\n')
+          : strict
+            ? strictRegenerationInstructions(instructions)
+            : instructions;
         return input.provider.streamAnswer({
           instructions: requestInstructions,
-          reasoningEffort: route.reasoningEffort,
-          messages,
+          reasoningEffort: contextRequest
+            ? contextRequest.request.reasoningEffort ?? undefined
+            : route.reasoningEffort,
+          messages: contextRequest?.request.messages ?? messages,
           execution: currentTurn.behavior === 'v2'
             ? {
                 executionId,
@@ -2345,6 +2972,7 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
                 totalTimeoutMs: remainingProviderMs,
                 budget: executionBudget,
                 generationMode,
+                integrity: contextRequest?.integrity,
                 protocolEventTimeoutMs: input.config.providerProtocolEventTimeoutMs,
                 modelTextTimeoutMs: input.config.providerModelTextTimeoutMs,
                 hedgingEnabled: false,
@@ -2360,6 +2988,8 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
                       event,
                       deleteAfter,
                       clock(),
+                      0.15,
+                      contextRequest?.integrity ?? null,
                     );
                   } catch (error) {
                     throw new RuntimePhaseError(
@@ -2377,6 +3007,7 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
                       { interactionTurnId: currentTurn.turnId, executionId },
                       event,
                       deleteAfter,
+                      contextRequest?.integrity ?? null,
                     );
                   } catch (error) {
                     throw new RuntimePhaseError(
@@ -2505,6 +3136,7 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
           startedAt,
           completedAt,
           route: v2Route,
+          context: preparedContext,
           signal: input.signal,
         });
       } catch (error) {
@@ -2579,6 +3211,7 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
           config: input.config,
           startedAt,
           completedAt: clock(),
+          contextTerminal,
         });
         if (!compensated) {
           console.error(JSON.stringify({

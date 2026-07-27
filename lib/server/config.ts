@@ -1,6 +1,12 @@
+import { readFileSync } from 'node:fs';
+
 import { EMBEDDING_DIMENSIONS } from './embedding.ts';
 import type { TokenRates } from './budget.ts';
 import type { AnswerReasoningEffort } from './ai-provider.ts';
+import {
+  parseContextPacketDigestConfig,
+  type ContextPacketDigestConfig,
+} from './chat-context-packet.ts';
 
 export type OpenAIReasoningEffort = AnswerReasoningEffort;
 
@@ -107,6 +113,35 @@ function uuidList(env: Env, name: string): ReadonlySet<string> {
     unique.add(normalized);
   }
   return unique;
+}
+
+function contextPacketDigest(
+  env: Env,
+  enabled: boolean,
+): ContextPacketDigestConfig | null {
+  if (!enabled) return null;
+  const direct = env.MORSE_CONTEXT_PACKET_DIGEST_KEY;
+  const filePath = env.MORSE_CONTEXT_PACKET_DIGEST_KEY_FILE?.trim();
+  const directPresent = Boolean(direct?.length);
+  const directAllowed = env.NODE_ENV === 'development' || env.NODE_ENV === 'test';
+  if ((directPresent && filePath) || (directPresent && !directAllowed)) {
+    throw new Error('CONTEXT_PACKET_DIGEST_CONFIG_INVALID');
+  }
+  let encoded: string | undefined;
+  if (filePath) {
+    try {
+      encoded = readFileSync(filePath, 'utf8').trim();
+    } catch {
+      throw new Error('CONTEXT_PACKET_DIGEST_CONFIG_INVALID');
+    }
+  } else if (directPresent) {
+    encoded = direct;
+  }
+  return parseContextPacketDigestConfig({
+    enabled,
+    digestKey: encoded,
+    digestKeyId: env.MORSE_CONTEXT_PACKET_DIGEST_KEY_ID,
+  });
 }
 
 function tokenRates(env: Env): TokenRates | null {
@@ -352,6 +387,36 @@ export function loadServerConfig(env: Env = process.env) {
     100,
   );
   const chatV2CanaryInviteIds = uuidList(env, 'MORSE_CHAT_V2_CANARY_INVITE_IDS');
+  const contextPacketEnabled = booleanSetting(
+    env,
+    'MORSE_CHAT_CONTEXT_PACKET_ENABLED',
+    false,
+  );
+  const contextCanaryPercent = boundedNonNegativeInteger(
+    env,
+    'MORSE_CHAT_CONTEXT_CANARY_PERCENT',
+    0,
+    100,
+  );
+  const contextCanaryInviteIds = uuidList(env, 'MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS');
+  const contextTokenBudget = boundedPositiveInteger(
+    env,
+    'MORSE_CHAT_CONTEXT_TOKEN_BUDGET',
+    12_000,
+    1_000,
+    100_000,
+  );
+  const jdContextTokenBudget = boundedPositiveInteger(
+    env,
+    'MORSE_JD_CONTEXT_TOKEN_BUDGET',
+    24_000,
+    12_000,
+    200_000,
+  );
+  if (jdContextTokenBudget < contextTokenBudget) {
+    throw new Error('MORSE_JD_CONTEXT_TOKEN_BUDGET must be at least MORSE_CHAT_CONTEXT_TOKEN_BUDGET.');
+  }
+  const contextPacketDigestConfig = contextPacketDigest(env, contextPacketEnabled);
   const providerProtocolEventTimeoutMs = positiveNumber(
     env,
     'MORSE_PROVIDER_PROTOCOL_EVENT_TIMEOUT_MS',
@@ -433,6 +498,12 @@ export function loadServerConfig(env: Env = process.env) {
     chatV2Enabled: booleanSetting(env, 'MORSE_CHAT_V2_ENABLED', false),
     chatV2CanaryPercent,
     chatV2CanaryInviteIds,
+    contextPacketEnabled,
+    contextCanaryPercent,
+    contextCanaryInviteIds,
+    contextTokenBudget,
+    jdContextTokenBudget,
+    contextPacketDigest: contextPacketDigestConfig,
     hedgedFailoverEnabled: booleanSetting(env, 'MORSE_CHAT_HEDGED_FAILOVER_ENABLED', false),
     chatSafeMode: booleanSetting(env, 'MORSE_CHAT_SAFE_MODE', false),
     sseHeartbeatMs: positiveInteger(env, 'MORSE_SSE_HEARTBEAT_MS', 15_000),

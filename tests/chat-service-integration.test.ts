@@ -5421,7 +5421,10 @@ test('two guard failures persist only attempt metadata and return an explicit fa
     assert.equal(attempts.rowCount, 2);
     for (const { row } of attempts.rows) {
       assert.deepEqual(
-        Object.keys(row).filter((key) => /question|job|answer|url|key|prompt|instruction/iu.test(key)),
+        Object.keys(row).filter((key) => (
+          key !== 'packet_hmac_key_id'
+          && /question|job|answer|url|key|prompt|instruction/iu.test(key)
+        )),
         [],
       );
       assert.doesNotMatch(

@@ -6,6 +6,12 @@ import { test } from 'node:test';
 
 const read = (relativePath) => fs.readFileSync(path.resolve(relativePath), 'utf8');
 
+function composeService(source, name) {
+  const match = new RegExp(`^  ${name}:\\r?\\n[\\s\\S]*?(?=^  [a-z][a-z0-9-]*:\\r?$|^volumes:|^secrets:|^networks:)`, 'm').exec(source);
+  assert.ok(match, `missing compose service ${name}`);
+  return match[0];
+}
+
 test('Git checkout preserves LF for executable shell scripts', () => {
   const attributes = read('.gitattributes');
   const initScript = fs.readFileSync(path.resolve('deploy/postgres/init/01-roles.sh'));
@@ -119,6 +125,17 @@ test('production topology keeps stateful services private and preserves SSE stre
   assert.doesNotMatch(compose, /ports:\s*\n\s*- ["']?18091:/);
 });
 
+test('context packet digest secret is mounted only into the web service', () => {
+  const compose = read('compose.production.yaml');
+  const web = composeService(compose, 'web');
+  assert.match(web, /MORSE_CONTEXT_PACKET_DIGEST_KEY_FILE: \/run\/secrets\/context_packet_digest_key/);
+  assert.match(web, /- context_packet_digest_key/);
+  assert.match(compose, /^  context_packet_digest_key:\r?\n    file: \.\/deploy\/secrets\/context_packet_digest_key$/m);
+  for (const service of ['migration', 'ingest', 'worker']) {
+    assert.doesNotMatch(composeService(compose, service), /context_packet_digest_key/);
+  }
+});
+
 test('Next production responses use the frozen baseline headers with an explicit CSP', () => {
   const source = read('next.config.mjs');
   assert.match(source, /poweredByHeader:\s*false/);
@@ -159,6 +176,12 @@ test('production environment contract exposes controls but no committed credenti
     'MORSE_CHAT_V2_ENABLED',
     'MORSE_CHAT_V2_CANARY_PERCENT',
     'MORSE_CHAT_V2_CANARY_INVITE_IDS',
+    'MORSE_CHAT_CONTEXT_PACKET_ENABLED',
+    'MORSE_CHAT_CONTEXT_CANARY_PERCENT',
+    'MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS',
+    'MORSE_CHAT_CONTEXT_TOKEN_BUDGET',
+    'MORSE_JD_CONTEXT_TOKEN_BUDGET',
+    'MORSE_CONTEXT_PACKET_DIGEST_KEY_ID',
     'MORSE_CHAT_HEDGED_FAILOVER_ENABLED',
     'MORSE_CHAT_SAFE_MODE',
   ]) {

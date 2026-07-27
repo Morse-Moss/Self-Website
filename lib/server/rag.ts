@@ -82,7 +82,7 @@ export async function retrieveKnowledge(
     throw new RangeError(`Query embedding must have ${EMBEDDING_DIMENSIONS} dimensions.`);
   }
 
-  const limit = Math.min(Math.max(Math.trunc(requestedLimit), 1), 10);
+  const limit = Math.min(Math.max(Math.trunc(requestedLimit), 1), 15);
   // Two-stage retrieval: the inner ANN scan orders by distance alone with a
   // bounded LIMIT so PostgreSQL can serve it from the HNSW index; per-document
   // dedup (DISTINCT ON) and final top-N ranking run over that candidate set.

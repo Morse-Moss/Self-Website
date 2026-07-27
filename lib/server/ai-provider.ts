@@ -1,5 +1,6 @@
 import type { TokenUsage } from './budget.ts';
 import type { ChatExecutionBudget } from './chat-execution-budget.ts';
+import type { GenerationRequestIntegrity } from '../contracts/chat-context.ts';
 
 export interface AiMessage {
   role: 'user' | 'assistant';
@@ -34,6 +35,7 @@ export interface AnswerExecutionOptions {
   totalTimeoutMs: number;
   budget: ChatExecutionBudget;
   generationMode: 'normal' | 'strict';
+  integrity?: GenerationRequestIntegrity;
   protocolEventTimeoutMs: number;
   modelTextTimeoutMs: number;
   hedgingEnabled: boolean;
@@ -88,6 +90,9 @@ export interface ProviderAttempt extends ProviderTargetSnapshot {
   totalLatencyMs: number;
   usage: TokenUsage | null;
   usageComplete: boolean;
+  executionId?: string;
+  attemptNo?: number;
+  integrity?: GenerationRequestIntegrity | null;
 }
 
 export interface ProviderWinner extends ProviderTargetSnapshot {

@@ -293,6 +293,9 @@ export class FailoverAiProvider implements AiProvider {
             errorCode,
             generationMode: execution.generationMode,
             launchKind,
+            executionId: execution.executionId,
+            attemptNo,
+            integrity: execution.integrity ?? null,
           });
           await execution.onAttempt({
             type: status === 'completed' ? 'completed' : status === 'stopped' ? 'aborted' : 'failed',
@@ -460,6 +463,9 @@ function createAttempt(input: {
   errorCode: string | null;
   generationMode?: ProviderAttempt['generationMode'];
   launchKind?: ProviderAttempt['launchKind'];
+  executionId?: string;
+  attemptNo?: number;
+  integrity?: ProviderAttempt['integrity'];
 }): ProviderAttempt {
   const completedAt = new Date();
   const inputRate = input.snapshot.inputUsdPerMillion === null
@@ -502,6 +508,9 @@ function createAttempt(input: {
     totalLatencyMs: Math.max(0, completedAt.getTime() - input.startedAt.getTime()),
     usage: input.usage,
     usageComplete: input.usage !== null,
+    ...(input.executionId ? { executionId: input.executionId } : {}),
+    ...(input.attemptNo ? { attemptNo: input.attemptNo } : {}),
+    ...(input.integrity !== undefined ? { integrity: input.integrity } : {}),
   };
 }
 

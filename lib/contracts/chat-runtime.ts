@@ -44,4 +44,5 @@ export interface KnowledgeSource {
   score: number;
   projectSlug?: string | null;
   topicIds?: string[];
+  evidenceLevel?: 'direct' | 'transferable';
 }

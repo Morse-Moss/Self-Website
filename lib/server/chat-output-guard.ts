@@ -1,4 +1,5 @@
 import type { ChatWorkflow } from '../contracts/chat.ts';
+import type { SemanticIntent } from '../contracts/chat-context.ts';
 import { chatCapabilityPolicy } from '../site-content.ts';
 import type { TurnIntent } from './chat-behavior.ts';
 import type { ChatRouteDecision } from './chat-route-policy.ts';
@@ -35,8 +36,10 @@ export interface ChatGuardResult {
 
 export interface ChatGuardInput {
   answer: string;
+  approvedProjectSlugs?: readonly string[];
   intent?: TurnIntent;
   route?: ChatRouteDecision;
+  semanticIntent?: SemanticIntent;
   workflow: ChatWorkflow;
   question: string;
   sourceCount: number;
@@ -73,7 +76,8 @@ function validateCitations(input: ChatGuardInput, reasons: ReasonSet, complete: 
 function isRecruitment(input: ChatGuardInput): boolean {
   return routeKind(input) === 'jd'
     || input.intent === 'recruitment'
-    || input.workflow === 'jd_match';
+    || input.workflow === 'jd_match'
+    || ['project_fit', 'jd_match', 'recruitment_intake'].includes(input.semanticIntent ?? '');
 }
 
 function validateRecruitmentLanguage(input: ChatGuardInput, reasons: ReasonSet): void {
@@ -323,6 +327,22 @@ function validatePersonalFact(input: ChatGuardInput, reasons: ReasonSet, complet
   if (!preservesBoundary && !directExperience) reasons.add('answer_not_direct');
 }
 
+function validateControlledProjectEvidence(
+  input: ChatGuardInput,
+  reasons: ReasonSet,
+  complete: boolean,
+): void {
+  if (!complete || !['project_fit', 'jd_match'].includes(input.semanticIntent ?? '')) return;
+  const approved = new Set(input.approvedProjectSlugs ?? []);
+  if (approved.size === 0) return;
+  const mentioned = matchChatProjectSlugs(input.answer);
+  if (!mentioned.some((slug) => approved.has(slug))) reasons.add('answer_not_direct');
+  if (mentioned.some((slug) => !approved.has(slug))) reasons.add('unsupported_evidence_upgrade');
+  if (/(?:没有|暂无|不存在)(?:任何|相关)?(?:可核验|公开)?(?:的)?(?:项目)?(?:资料|证据)|(?:无法|不能)(?:核验|确认)(?:任何|相关)?(?:项目|项目经验|资料|证据)/iu.test(input.answer)) {
+    reasons.add('unsupported_evidence_upgrade');
+  }
+}
+
 function inspect(input: ChatGuardInput, complete: boolean): ChatGuardResult {
   if (!input.route && !input.intent) throw new TypeError('route or intent is required.');
   const reasons: ReasonSet = new Set();
@@ -335,6 +355,7 @@ function inspect(input: ChatGuardInput, complete: boolean): ChatGuardResult {
   validateRealtimePersonalState(input, reasons, complete);
   if (complete) validateDirectAnswer(input, reasons);
   validatePersonalFact(input, reasons, complete);
+  validateControlledProjectEvidence(input, reasons, complete);
   return { ok: reasons.size === 0, reasons: [...reasons] };
 }
 

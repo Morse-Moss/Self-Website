@@ -37,6 +37,7 @@ export interface GenerateChatAnswerInput {
 export interface ChatAnswerRunnerInput {
   budget: ChatExecutionBudget;
   now(): number;
+  releasePolicy: 'segment' | 'complete';
   generate(input: GenerateChatAnswerInput): AsyncIterable<AnswerEvent>;
   inspect(answer: string, complete: boolean): ChatGuardResult;
 }
@@ -80,8 +81,10 @@ export async function* runGuardedChatAnswer(
             throw new AnswerExecutionError('OUTPUT_GUARD_REJECTED');
           }
           answer = nextAnswer;
-          emitted = true;
-          yield event;
+          if (input.releasePolicy === 'segment') {
+            emitted = true;
+            yield event;
+          }
           continue;
         }
         if (event.type === 'attempt') {
@@ -102,6 +105,10 @@ export async function* runGuardedChatAnswer(
         if (!answer.trim()) throw new AnswerExecutionError('PROVIDER_INCOMPLETE');
         if (!input.inspect(answer, true).ok) {
           throw new AnswerExecutionError('OUTPUT_GUARD_REJECTED');
+        }
+        if (input.releasePolicy === 'complete') {
+          emitted = true;
+          yield { type: 'delta', text: answer };
         }
         const completedAttempts = (event.attempts ?? []).map((attempt) => {
           maximumLocalAttemptIndex = Math.max(
