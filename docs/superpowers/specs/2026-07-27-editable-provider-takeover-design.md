@@ -66,7 +66,12 @@ Environment Provider 卡片新增“编辑”操作。首次点击时打开“�
 - `max_output_tokens`；
 - 已有价格元数据，若环境来源没有价格则保持空值。
 
-若未显式设置 `OPENAI_BASE_URL`，表单中的 Base URL 预填 OpenAI SDK 实际使用的规范默认值 `https://api.openai.com/v1`，不得以空字符串展示或保存。该规范化只用于接管草稿字段，不追溯改写既有 Environment 路由快照。
+运行状态接口继续只公开 `endpointHost`，不得把已配置 Environment URL 的完整值、path、query 或 hash 返回浏览器。Base URL 表单使用以下脱敏合同：
+
+- 未显式设置 `OPENAI_BASE_URL` 时，返回 `baseUrlMode: 'public_default'` 和公开默认值 `baseUrlPrefill: 'https://api.openai.com/v1'`；该规范化只用于接管草稿字段，不追溯改写既有 Environment 路由快照；
+- 已配置且可安全沿用的 URL 返回 `baseUrlMode: 'server_reusable'`、`baseUrlPrefill: null`，输入框保持空白并显示“将安全沿用当前服务器 URL”；
+- 已配置值含 userinfo、query、hash 或不能作为数据库 Provider 安全 URL 时，返回 `baseUrlMode: 'replacement_required'`、`baseUrlPrefill: null`，界面必须要求管理员填写新 URL，不得沿用旧值；
+- 接管请求中的 `baseUrl: null` 表示由服务端沿用当前安全 URL；管理员填写字符串时才替换。无论哪种模式，服务端都要在事务锁内重新解析并执行出站策略校验。
 
 API Key 输入框为空且显示“将安全沿用当前服务器 Key”。管理员输入新 Key 时，新 Key 取代环境 Key。任何情况下都不显示原 Key 或其尾号。
 
@@ -137,6 +142,7 @@ API Key 输入框为空且显示“将安全沿用当前服务器 Key”。管�
 - 已接管时返回脱敏的数据库 connection/model series ID；
 - 返回接管时摘要与当前环境摘要是否一致；
 - 数据库模型返回由服务端按摘要计算的 `eligibility`、`successExpiresAt` 和 `latestTest`；
+- Environment 目标只返回 `endpointHost`、`baseUrlMode` 和只可能是公开默认值的 `baseUrlPrefill`，不得回显已配置 URL；
 - 不返回环境 API Key、密文、认证标签或 Key 尾号。
 
 ### 7.2 创建接管草稿
@@ -150,12 +156,12 @@ API Key 输入框为空且显示“将安全沿用当前服务器 Key”。管�
 - 管理员密码复验；
 - 客户端生成的 `requestId`；
 - `expectedConfigDigest`；
-- 连接表单字段；
+- 连接表单字段，其中 `baseUrl` 为 `string | null`，`null` 表示安全沿用服务器值；
 - 模型表单字段；
 - 可选新 API Key；
 - 跨 origin 沿用环境 Key 的显式确认。
 
-服务端必须在取得该 target 的事务级 advisory lock 后重新读取目标，并以当前环境 Key 为 HMAC key 重算摘要，再比对 `expectedConfigDigest`。环境配置已变化时返回稳定冲突，不使用页面中的旧快照创建 Provider。
+服务端必须在取得该 target 的事务级 advisory lock 后重新读取目标，并且只复用现有 `createRuntimeConfigDigest` 算法：HMAC key 为从 `MORSE_PROVIDER_CONFIG_KEY`（或其受支持 key file）加载的当前 `AiConfigKey.key`，规范输入必须包含锁内重读的 Environment API Key、`digestBaseUrl`、模型、协议、推理强度、输出上限和 User-Agent。`digestBaseUrl` 对未配置 primary 保持空字符串，对已配置 primary/fallback 使用服务器原始值；不得改用 Environment API Key 作为 HMAC key，也不得另造第二套摘要算法。重算结果再与 `expectedConfigDigest` 比对，环境配置已变化时返回稳定冲突，不使用页面旧快照创建 Provider。
 
 同一 `requestId` 的重放返回之前已经提交的成功结果，解决数据库 COMMIT 成功但 HTTP 回执丢失的问题；只有新的 `requestId` 遇到已有有效接管关系时才返回 `AI_CONFIG_TAKEOVER_EXISTS`。冲突审计必须在回滚事务之外单独写入，不能因为业务事务回滚而丢失。
 
@@ -177,10 +183,10 @@ API Key 输入框为空且显示“将安全沿用当前服务器 Key”。管�
 接管请求依次完成：
 
 1. 验证管理员 Session、Origin、密码复验、`requestId` 和请求格式；
-2. 验证 Base URL 出站策略和跨 origin Key 规则；
+2. 解析 nullable Base URL；显式新值执行出站策略，`null` 仅在当前 Environment URL 可安全沿用时解析为服务器值，并验证跨 origin Key 规则；
 3. 开启事务并为 Environment target 获取事务级 advisory lock；
 4. 先按 `requestId` 查询：若找到已提交记录，返回其既有脱敏成功结果；
-5. 在锁内重新读取 Environment 目标，以当前环境 Key 重算 HMAC 摘要并比对 `expectedConfigDigest`；
+5. 在锁内重新读取 Environment 目标，以当前 `AiConfigKey.key` 对包含当前环境 Key 和 `digestBaseUrl` 的既有规范输入重算 HMAC 摘要，并比对 `expectedConfigDigest`；
 6. 若新的 `requestId` 遇到有效接管关系，回滚业务事务，随后在独立事务写入脱敏冲突审计并返回冲突；
 7. 选择管理员提交的新 Key，或读取当前环境 Key；
 8. 使用现有 AES-256-GCM 配置密钥加密 API Key；
@@ -198,6 +204,7 @@ API Key 输入框为空且显示“将安全沿用当前服务器 Key”。管�
 - API Key 不写入应用日志、错误详情、审计 metadata 或 Provider 错误正文。
 - 新 Key 为空表示在首次接管时沿用环境 Key，在后续数据库编辑时沿用当前加密 Key。
 - Base URL origin 变化时，沿用旧 Key 必须显式确认；输入新 Key 不需要该确认。
+- 已配置 Environment URL 只在服务端参与摘要、沿用判断和加密草稿创建；HTTP 响应、表单状态和浏览器日志均不得出现其完整值。
 - 接管后的数据库密文继续受 `MORSE_PROVIDER_CONFIG_KEY` 或 key file 保护。
 - 配置密钥不可用、摘要不一致或解密失败时，禁止测试和激活，不静默降级到环境线路。
 
@@ -205,6 +212,7 @@ API Key 输入框为空且显示“将安全沿用当前服务器 Key”。管�
 
 - 重复点击接管：同一 `requestId` 幂等返回已有成功结果；不同 `requestId` 由事务级互斥和唯一约束保证最多创建一条有效接管关系，并返回 `AI_CONFIG_TAKEOVER_EXISTS`。
 - Environment 配置在表单打开后变化：摘要冲突，要求刷新后重新编辑。
+- Environment URL 不可安全沿用且请求 `baseUrl` 为 `null`：复用 `AI_CONFIG_INVALID` 拒绝，要求管理员填写新的安全 URL。
 - 接管失败：不留下连接、模型或接管关系，当前路由不变。
 - 测试失败：保留草稿并允许继续手动测试。
 - 激活失败：重新读取 `ai_runtime_state`，只按服务端确认结果更新页面。
@@ -256,15 +264,17 @@ API Key 输入框为空且显示“将安全沿用当前服务器 Key”。管�
 ### 13.1 单元测试
 
 - Environment 预填字段和 target key 校验；
+- 已配置完整 URL 不进入 runtime JSON；公开默认值、可安全沿用和必须替换三种 Base URL 模式正确；
 - 空 Key 沿用环境 Key、新 Key 替换和跨 origin 显式确认；
-- 环境摘要变化检测；
+- 摘要严格复用 `createRuntimeConfigDigest`，锁内当前 Environment Key 与 `digestBaseUrl` 任一变化都会触发环境摘要冲突；
 - 服务端测试状态、数据库时间计算的 30 分钟成功门和配置修改后的过期状态；
 - 手动重复测试与频率限制的状态区分；
-- “替换并激活”保持原位置和其他路由目标不变。
+- “替换并激活”保持原位置和其他路由目标不变；任意拖动、上下移动、删除或加入操作都不能改变 locked 项索引。
 
 ### 13.2 数据库集成测试
 
 - 连接、模型、接管关系和审计事件原子写入；
+- `primary` 与 `fallback-1` 分别证明独立 URL、Key、摘要、接管关系和首版历史，且保存过程 Provider 调用数均为零；
 - 任一步失败时完整回滚；
 - 并发接管只产生一条有效关系；
 - COMMIT 回执丢失后使用同一 `requestId` 重放只返回原成功结果，不重复创建版本；
@@ -275,7 +285,7 @@ API Key 输入框为空且显示“将安全沿用当前服务器 Key”。管�
 ### 13.3 API 合同测试
 
 - Session、Origin、密码复验和 `no-store`；
-- 不返回 API Key、密文、认证标签或 Key 尾号；
+- 不返回已配置完整 URL、API Key、密文、认证标签或 Key 尾号；
 - 稳定错误码和 HTTP 状态；
 - 重复提交、摘要冲突和活动路由并发冲突；
 - 测试失败后可以再次请求测试。
@@ -288,6 +298,7 @@ API Key 输入框为空且显示“将安全沿用当前服务器 Key”。管�
 - 测试失败后按钮仍可操作；
 - 接管后普通列表不再出现不可编辑的重复 Environment 卡片；
 - 接管后若 Environment 仍在线路中，当前线路保留只读项，而“可加入线路”不再重复显示它；
+- locked 当前线路项本身不可操作，其他项也不能通过拖动、移动、删除或加入跨过它，其索引始终不变；
 - 手动 Provider 的创建、编辑、删除、路由排序和回退不回归；
 - `npx tsc --noEmit`、相关测试、`npm test` 和 `npm run build` 通过；
 - 本地数据库迁移从当前已提交基线和全新数据库两条路径通过。
@@ -304,6 +315,7 @@ API Key 输入框为空且显示“将安全沿用当前服务器 Key”。管�
 - 未测试、测试过期或配置摘要不匹配的版本不能激活。
 - 接管和激活失败时，原线路继续可用。
 - API Key 不出现在浏览器响应、日志或审计中。
+- 已配置 Environment URL 的完整值不出现在浏览器响应或前端状态中；管理员仍可留空安全沿用，或输入新 URL 完成替换。
 - 接管后的 Provider 与手动创建 Provider 具有一致的编辑、测试、激活、回退和删除能力。
 - 桌面端和移动端均不存在被遮挡、不可点击或文本溢出问题。
 - 不影响 Chat 请求级路由快照、历史归因、Embedding 和 RAG。
