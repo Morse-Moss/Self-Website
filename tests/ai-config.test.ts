@@ -26,6 +26,9 @@ test('provider management exposes the complete stable public error code contract
     'AI_CONFIG_SECRET_UNAVAILABLE',
     'AI_CONFIG_TARGET_DELETED',
     'AI_CONFIG_RATE_LIMITED',
+    'AI_CONFIG_ENVIRONMENT_CHANGED',
+    'AI_CONFIG_ENVIRONMENT_UNAVAILABLE',
+    'AI_CONFIG_TAKEOVER_EXISTS',
   ]);
 });
 

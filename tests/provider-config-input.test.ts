@@ -7,6 +7,7 @@ import {
   parseConnectionCreateInput,
   parseConnectionUpdateInput,
   parseDeleteInput,
+  parseEnvironmentTakeoverInput,
   parseEventQuery,
   parseModelInput,
   parseModelMutationInput,
@@ -126,6 +127,96 @@ test('model input enforces protocol, reasoning, token, decimal, and unknown-fiel
   });
   invalid(() => parseModelMutationInput(null));
   invalid(() => parseModelMutationInput({ ...model, password: 'admin-password', headers: {} }));
+});
+
+test('environment takeover input is strict and uses null as the only URL inheritance sentinel', () => {
+  const requestId = '11111111-1111-4111-8111-111111111111';
+  const expectedConfigDigest = 'a'.repeat(64);
+  assert.deepEqual(parseEnvironmentTakeoverInput({
+    apiKey: null,
+    baseUrl: null,
+    expectedConfigDigest,
+    firstModel: model,
+    name: ' Editable primary ',
+    password: 'admin-password',
+    requestId,
+    reuseKeyAcrossOrigin: false,
+    userAgent: ' Morse/1.0 ',
+  }), {
+    apiKey: null,
+    baseUrl: null,
+    expectedConfigDigest,
+    firstModel: model,
+    name: 'Editable primary',
+    password: 'admin-password',
+    requestId,
+    reuseKeyAcrossOrigin: false,
+    userAgent: 'Morse/1.0',
+  });
+
+  assert.deepEqual(parseEnvironmentTakeoverInput({
+    apiKey: 'replacement-secret',
+    baseUrl: 'https://replacement.example/v1/',
+    expectedConfigDigest,
+    firstModel: model,
+    name: 'Replacement',
+    password: 'admin-password',
+    requestId,
+    reuseKeyAcrossOrigin: true,
+    userAgent: null,
+  }), {
+    apiKey: 'replacement-secret',
+    baseUrl: 'https://replacement.example/v1',
+    expectedConfigDigest,
+    firstModel: model,
+    name: 'Replacement',
+    password: 'admin-password',
+    requestId,
+    reuseKeyAcrossOrigin: true,
+    userAgent: null,
+  });
+
+  for (const invalidInput of [
+    { apiKey: '', baseUrl: null, requestId, expectedConfigDigest, reuseKeyAcrossOrigin: false },
+    { baseUrl: '', requestId, expectedConfigDigest, reuseKeyAcrossOrigin: false },
+    { baseUrl: 42, requestId, expectedConfigDigest, reuseKeyAcrossOrigin: false },
+    { baseUrl: null, requestId: 'not-a-uuid', expectedConfigDigest, reuseKeyAcrossOrigin: false },
+    { baseUrl: null, requestId, expectedConfigDigest: 'A'.repeat(64), reuseKeyAcrossOrigin: false },
+    { baseUrl: null, requestId, expectedConfigDigest, reuseKeyAcrossOrigin: 'false' },
+  ]) {
+    invalid(() => parseEnvironmentTakeoverInput({
+      apiKey: null,
+      firstModel: model,
+      name: 'Invalid takeover',
+      password: 'admin-password',
+      userAgent: null,
+      ...invalidInput,
+    }));
+  }
+
+  invalid(() => parseEnvironmentTakeoverInput({
+    baseUrl: null,
+    expectedConfigDigest,
+    firstModel: model,
+    name: 'Missing API Key sentinel',
+    password: 'admin-password',
+    requestId,
+    reuseKeyAcrossOrigin: false,
+    userAgent: null,
+  }));
+
+  invalid(() => parseEnvironmentTakeoverInput({
+    apiKey: null,
+    baseUrl: null,
+    expectedConfigDigest,
+    firstModel: model,
+    name: 'Invalid takeover',
+    password: 'admin-password',
+    requestId,
+    reuseKeyAcrossOrigin: false,
+    userAgent: null,
+    headers: { authorization: 'secret' },
+  }));
 });
 
 test('activation input accepts one to six typed unique targets and rejects ambiguous shapes', () => {

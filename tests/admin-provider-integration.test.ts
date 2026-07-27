@@ -7,7 +7,7 @@ import { test } from 'node:test';
 
 import pg from 'pg';
 
-import { AiConfigError } from '../lib/server/ai-config.ts';
+import { AiConfigError, createRuntimeConfigDigest } from '../lib/server/ai-config.ts';
 import {
   activateProviderRoute,
   createAdminProviderTransport,
@@ -384,18 +384,93 @@ test('runtime summary identifies environment and database routes by safe endpoin
     );
     assert.deepEqual(
       runtime.environmentTargets.map((target) => ({
+        baseUrlMode: target.baseUrlMode,
+        baseUrlPrefill: target.baseUrlPrefill,
         endpointHost: target.endpointHost,
         maxOutputTokens: target.maxOutputTokens,
         reasoningEffort: target.reasoningEffort,
       })),
       [
-        { endpointHost: 'environment.example:8443', maxOutputTokens: 600, reasoningEffort: 'high' },
-        { endpointHost: 'fallback.example', maxOutputTokens: 600, reasoningEffort: 'high' },
+        {
+          baseUrlMode: 'replacement_required',
+          baseUrlPrefill: null,
+          endpointHost: 'environment.example:8443',
+          maxOutputTokens: 600,
+          reasoningEffort: 'high',
+        },
+        {
+          baseUrlMode: 'replacement_required',
+          baseUrlPrefill: null,
+          endpointHost: 'fallback.example',
+          maxOutputTokens: 600,
+          reasoningEffort: 'high',
+        },
       ],
     );
     assert.doesNotMatch(
       JSON.stringify(runtime),
       /top-secret-key|environment-query-secret|fallback-query-secret|\/v1\/private|moved\.example/iu,
+    );
+  });
+});
+
+test('runtime summary redacts configured URLs and reuses the canonical Environment digest', async () => {
+  await withDatabase(async (pool) => {
+    const baseOptions = options();
+    const serviceOptions = options({
+      runtimeConfig: {
+        ...baseOptions.runtimeConfig,
+        openaiApiKey: 'primary-digest-secret',
+        openaiBaseUrl: undefined,
+        openaiFallbacks: [{
+          apiKey: 'fallback-digest-secret',
+          baseUrl: 'https://fallback-private.example/v1/private',
+        }],
+      },
+    });
+
+    const runtime = await getProviderRuntimeSummary(pool, serviceOptions);
+    assert.deepEqual(runtime.environmentTargets.map((target) => ({
+      baseUrlMode: target.baseUrlMode,
+      baseUrlPrefill: target.baseUrlPrefill,
+      endpointHost: target.endpointHost,
+      environmentTargetKey: target.environmentTargetKey,
+    })), [
+      {
+        baseUrlMode: 'public_default',
+        baseUrlPrefill: 'https://api.openai.com/v1',
+        endpointHost: 'api.openai.com',
+        environmentTargetKey: 'primary',
+      },
+      {
+        baseUrlMode: 'server_reusable',
+        baseUrlPrefill: null,
+        endpointHost: 'fallback-private.example',
+        environmentTargetKey: 'fallback-1',
+      },
+    ]);
+
+    const digestInput = {
+      maxOutputTokens: serviceOptions.runtimeConfig.maxOutputTokens,
+      modelId: serviceOptions.runtimeConfig.chatModel,
+      protocol: serviceOptions.runtimeConfig.chatProtocol,
+      reasoningEffort: serviceOptions.runtimeConfig.reasoningEffort ?? null,
+      userAgent: serviceOptions.runtimeConfig.openaiUserAgent ?? null,
+    };
+    assert.equal(runtime.environmentTargets[0].configDigest, createRuntimeConfigDigest({
+      ...digestInput,
+      apiKey: 'primary-digest-secret',
+      baseUrl: '',
+    }, serviceOptions.configKey.key));
+    assert.equal(runtime.environmentTargets[1].configDigest, createRuntimeConfigDigest({
+      ...digestInput,
+      apiKey: 'fallback-digest-secret',
+      baseUrl: 'https://fallback-private.example/v1/private',
+    }, serviceOptions.configKey.key));
+
+    assert.doesNotMatch(
+      JSON.stringify(runtime),
+      /primary-digest-secret|fallback-digest-secret|fallback-private\.example\/v1\/private/iu,
     );
   });
 });

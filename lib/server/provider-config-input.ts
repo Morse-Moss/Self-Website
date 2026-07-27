@@ -5,6 +5,7 @@ import {
 } from './provider-outbound.ts';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const CONFIG_DIGEST = /^[0-9a-f]{64}$/u;
 const DECIMAL = /^(?:0|[1-9][0-9]{0,5})(?:\.[0-9]{1,6})?$/u;
 const REASONING = new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh']);
 const PROTOCOLS = new Set<AiChatProtocol>(['responses', 'chat_completions']);
@@ -77,6 +78,19 @@ function baseUrl(input: unknown): string {
   } catch {
     invalid();
   }
+}
+
+function configDigest(input: unknown): string {
+  const value = stringValue(input, 64, 64);
+  if (!CONFIG_DIGEST.test(value)) invalid();
+  return value;
+}
+
+function optionalApiKey(input: unknown): string | null {
+  if (input === null) return null;
+  return typeof input === 'string' && input.length >= 1 && input.length <= 8192
+    ? input
+    : invalid();
 }
 
 function password(input: unknown): string {
@@ -181,6 +195,43 @@ export function parseConnectionUpdateInput(input: unknown): ParsedConnectionUpda
     apiKey,
     reuseKeyAcrossOrigin: booleanValue(body.reuseKeyAcrossOrigin),
     password: password(body.password),
+  };
+}
+
+export interface ParsedEnvironmentTakeoverInput {
+  apiKey: string | null;
+  baseUrl: string | null;
+  expectedConfigDigest: string;
+  firstModel: ParsedModelInput;
+  name: string;
+  password: string;
+  requestId: string;
+  reuseKeyAcrossOrigin: boolean;
+  userAgent: string | null;
+}
+
+export function parseEnvironmentTakeoverInput(input: unknown): ParsedEnvironmentTakeoverInput {
+  const body = record(input, [
+    'apiKey',
+    'baseUrl',
+    'expectedConfigDigest',
+    'firstModel',
+    'name',
+    'password',
+    'requestId',
+    'reuseKeyAcrossOrigin',
+    'userAgent',
+  ]);
+  return {
+    apiKey: optionalApiKey(body.apiKey),
+    baseUrl: body.baseUrl === null ? null : baseUrl(body.baseUrl),
+    expectedConfigDigest: configDigest(body.expectedConfigDigest),
+    firstModel: parseModelInput(body.firstModel),
+    name: stringValue(body.name, 1, 80),
+    password: password(body.password),
+    requestId: uuid(body.requestId),
+    reuseKeyAcrossOrigin: booleanValue(body.reuseKeyAcrossOrigin),
+    userAgent: nullableString(body.userAgent, 256),
   };
 }
 

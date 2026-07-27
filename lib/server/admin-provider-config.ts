@@ -5,7 +5,6 @@ import type pg from 'pg';
 
 import {
   AiConfigError,
-  createRuntimeConfigDigest,
   type AiChatProtocol,
   type AiConfigKey,
   type AiProviderTestSummary,
@@ -25,6 +24,7 @@ import {
   type ModelInput,
 } from './ai-config-store.ts';
 import type { OpenAIReasoningEffort } from './config.ts';
+import { listAdminEnvironmentTargets } from './environment-provider-target.ts';
 import { OpenAIProvider } from './openai-provider.ts';
 import {
   createPinnedProviderFetch,
@@ -377,53 +377,12 @@ export async function getProviderCatalog(
   };
 }
 
-function environmentTargets(options: AdminProviderServiceOptions): Array<{
-  apiKey: string;
-  baseUrl: string;
-  key: 'primary' | 'fallback-1' | 'fallback-2';
-  snapshot: AiRouteTargetSnapshot;
-  userAgent: string | null;
-}> {
-  const config = options.runtimeConfig;
-  const nodes = [
-    { apiKey: config.openaiApiKey, baseUrl: config.openaiBaseUrl ?? '', key: 'primary' as const, name: 'Environment primary' },
-    ...config.openaiFallbacks.slice(0, 2).map((target, index) => ({
-      ...target,
-      key: `fallback-${index + 1}` as 'fallback-1' | 'fallback-2',
-      name: `Environment fallback ${index + 1}`,
-    })),
-  ];
-  return nodes.map((target, position) => {
-    const digest = createRuntimeConfigDigest({
-      apiKey: target.apiKey,
-      baseUrl: target.baseUrl,
-      maxOutputTokens: config.maxOutputTokens,
-      modelId: config.chatModel,
-      protocol: config.chatProtocol,
-      reasoningEffort: config.reasoningEffort ?? null,
-      userAgent: config.openaiUserAgent ?? null,
-    }, options.configKey.key);
-    return {
-      apiKey: target.apiKey,
-      baseUrl: target.baseUrl,
-      key: target.key,
-      userAgent: config.openaiUserAgent ?? null,
-      snapshot: {
-        configDigest: digest,
-        connectionDisplayName: target.name,
-        databaseModelSeriesId: null,
-        databaseModelVersionId: null,
-        environmentTargetKey: target.key,
-        inputUsdPerMillion: config.tokenRates?.inputUsdPerMillion.toString() ?? null,
-        modelDisplayName: config.chatModel,
-        modelId: config.chatModel,
-        outputUsdPerMillion: config.tokenRates?.outputUsdPerMillion.toString() ?? null,
-        position,
-        protocol: config.chatProtocol,
-        sourceType: 'environment',
-      },
-    };
-  });
+function environmentTargets(options: AdminProviderServiceOptions) {
+  return listAdminEnvironmentTargets(
+    options.runtimeConfig,
+    options.configKey,
+    options.outboundPolicy ?? createProviderOutboundPolicy(),
+  );
 }
 
 function safeEndpointHost(baseUrl: string): string | null {
@@ -596,7 +555,7 @@ export async function testEnvironmentProviderTarget(
   if (!target) throw new AiConfigError('AI_CONFIG_INVALID');
   return recordTest(pool, {
     apiKey: target.apiKey,
-    baseUrl: target.baseUrl,
+    baseUrl: target.effectiveBaseUrl,
     maxOutputTokens: Math.min(options.runtimeConfig.maxOutputTokens, 16),
     modelId: options.runtimeConfig.chatModel,
     protocol: options.runtimeConfig.chatProtocol,
@@ -1042,7 +1001,7 @@ export async function getProviderRuntimeSummary(
   const configuredEnvironmentTargets = environmentTargets(options);
   const environmentHosts = new Map(configuredEnvironmentTargets.map((target) => [
     target.key,
-    safeEndpointHost(target.baseUrl),
+    safeEndpointHost(target.effectiveBaseUrl),
   ]));
   const databaseVersionIds = route?.targets.flatMap(
     (target) => target.databaseModelVersionId ?? [],
@@ -1095,14 +1054,20 @@ export async function getProviderRuntimeSummary(
       };
     }) ?? [],
     environmentTargets: configuredEnvironmentTargets.map((target) => ({
+      baseUrlMode: target.baseUrlMode,
+      baseUrlPrefill: target.baseUrlPrefill,
       configDigest: target.snapshot.configDigest,
       connectionDisplayName: target.snapshot.connectionDisplayName,
-      endpointHost: safeEndpointHost(target.baseUrl),
+      endpointHost: safeEndpointHost(target.effectiveBaseUrl),
       environmentTargetKey: target.key,
-      maxOutputTokens: options.runtimeConfig.maxOutputTokens,
+      inputUsdPerMillion: target.snapshot.inputUsdPerMillion,
+      maxOutputTokens: target.maxOutputTokens,
+      modelDisplayName: target.snapshot.modelDisplayName,
       modelId: target.snapshot.modelId,
+      outputUsdPerMillion: target.snapshot.outputUsdPerMillion,
       protocol: target.snapshot.protocol,
-      reasoningEffort: options.runtimeConfig.reasoningEffort ?? null,
+      reasoningEffort: target.reasoningEffort,
+      userAgent: target.userAgent,
     })),
   };
 }
