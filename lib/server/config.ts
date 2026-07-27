@@ -382,7 +382,7 @@ export function loadServerConfig(env: Env = process.env) {
     1,
     100,
   );
-  const providerMaxAttempts = positiveInteger(env, 'MORSE_PROVIDER_MAX_ATTEMPTS', 3);
+  const providerMaxAttempts = positiveInteger(env, 'MORSE_PROVIDER_MAX_ATTEMPTS', 2);
 
   if (
     providerProtocolEventTimeoutMs >= providerModelTextTimeoutMs
@@ -393,8 +393,8 @@ export function loadServerConfig(env: Env = process.env) {
       'MORSE_PROVIDER timing must satisfy protocol event < model text <= provider stage < chat turn.',
     );
   }
-  if (providerMaxAttempts !== 3) {
-    throw new Error('MORSE_PROVIDER_MAX_ATTEMPTS must be exactly 3.');
+  if (providerMaxAttempts !== 2) {
+    throw new Error('MORSE_PROVIDER_MAX_ATTEMPTS must be exactly 2.');
   }
 
   return {
@@ -426,7 +426,7 @@ export function loadServerConfig(env: Env = process.env) {
     chatWindowMaxMessages,
     providerMaxAttempts,
     providerConcurrency: positiveInteger(env, 'MORSE_PROVIDER_CONCURRENCY', 4),
-    maxOutputTokens: positiveNumber(env, 'MORSE_MAX_OUTPUT_TOKENS', 600),
+    maxOutputTokens: positiveNumber(env, 'MORSE_MAX_OUTPUT_TOKENS', 1200),
     historyMessageLimit: positiveNumber(env, 'MORSE_HISTORY_MESSAGE_LIMIT', 12),
     retrievalLimit: positiveNumber(env, 'MORSE_RETRIEVAL_LIMIT', 5),
     chatEnabled: booleanSetting(env, 'MORSE_CHAT_ENABLED', true),

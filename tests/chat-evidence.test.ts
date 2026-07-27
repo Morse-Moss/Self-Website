@@ -163,6 +163,35 @@ test('grounded retrieval admits only the current project topic', async () => {
   assert.deepEqual(calls.counts(), { embed: 1, retrieve: 1, search: 0 });
 });
 
+test('grounded retrieval falls back to structured project evidence when semantic results miss the routed topic', async () => {
+  const calls = input(route('grounded', {
+    topicKind: 'project',
+    topicRef: 'content-agent',
+    evidenceClass: 'direct',
+    requiresEmbedding: true,
+  }), 'Content Agent architecture?');
+  const structured: KnowledgeSource[] = [{
+    chunkId: 'project:content-agent',
+    documentId: 'project-content-agent',
+    title: 'Content Agent',
+    sourcePath: 'content/site-content.json#projects.content-agent',
+    href: '/works#content-agent',
+    content: 'Public structured project evidence.',
+    score: 1,
+    projectSlug: 'content-agent',
+    topicIds: ['content-agent'],
+  }];
+
+  const result = await resolveChatEvidence({
+    ...calls,
+    projectKnowledge: () => structured,
+  });
+
+  assert.deepEqual(result.knowledge, structured);
+  assert.equal(result.evidenceDegraded, undefined);
+  assert.deepEqual(calls.counts(), { embed: 1, retrieve: 1, search: 0 });
+});
+
 test('project collection evidence returns the full catalog without semantic dependencies', async () => {
   const calls = input(route('grounded', {
     reasonCode: 'portfolio_project_collection_query',
@@ -238,4 +267,53 @@ test('JD evidence supplements semantic retrieval with ledger-backed capability p
   assert.match(digitalMorse.content, /PostgreSQL/);
   assert.match(digitalMorse.content, /RAG/);
   assert.match(result.knowledge.map((source) => source.content).join('\n'), /不能据此确认 Kubernetes/);
+});
+
+test('grounded project evidence degrades to structured public project data when embedding fails', async () => {
+  const calls = input(route('grounded', {
+    topicKind: 'project',
+    topicRef: 'digital-morse',
+    evidenceClass: 'direct',
+    requiresEmbedding: true,
+  }), '数字摩斯怎么实现 RAG？');
+  const structured: KnowledgeSource[] = [{
+    chunkId: 'project:digital-morse',
+    documentId: 'project-digital-morse',
+    title: '数字摩斯',
+    sourcePath: 'content/site-content.json#projects.digital-morse',
+    href: '/works#digital-morse',
+    content: '数字摩斯使用公开作品集证据增强回答。',
+    score: 1,
+    projectSlug: 'digital-morse',
+    topicIds: ['digital-morse', 'rag'],
+  }];
+
+  const result = await resolveChatEvidence({
+    ...calls,
+    projectKnowledge: () => structured,
+    embed: async () => { throw Object.assign(new Error('embedding down'), { code: 'EMBEDDING_UNAVAILABLE' }); },
+  });
+
+  assert.deepEqual(result.knowledge, structured);
+  assert.equal(result.evidenceDegraded, 'embedding');
+  assert.deepEqual(calls.counts(), { embed: 0, retrieve: 0, search: 0 });
+});
+
+test('JD evidence degrades to the public capability ledger when pgvector retrieval fails', async () => {
+  const calls = input(route('jd', {
+    topicKind: 'jd',
+    topicRef: 'jd',
+    evidenceClass: 'mixed',
+    release: 'complete',
+    requiresEmbedding: true,
+  }), '设计 RAG，熟悉 PostgreSQL、Docker Compose。');
+
+  const result = await resolveChatEvidence({
+    ...calls,
+    retrieve: async () => { throw Object.assign(new Error('pgvector down'), { code: 'RETRIEVAL_UNAVAILABLE' }); },
+  });
+
+  assert.equal(result.evidenceDegraded, 'retrieval');
+  assert.ok(result.knowledge.some((source) => source.projectSlug === 'digital-morse'));
+  assert.match(result.knowledge.map((source) => source.content).join('\n'), /PostgreSQL|RAG/);
 });

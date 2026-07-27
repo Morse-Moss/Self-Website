@@ -26,6 +26,15 @@ export type ProviderNodeInput =
   | ProviderAnswerTarget
   | (Omit<ProviderNode, 'snapshot'> & { snapshot?: ProviderTargetSnapshot });
 
+function hasOpenFencedCode(text: string): boolean {
+  return (text.match(/```/gu)?.length ?? 0) % 2 === 1;
+}
+
+function hasCompleteSemanticBoundary(text: string): boolean {
+  return !hasOpenFencedCode(text)
+    && /[.!?\n\u3002\uFF01\uFF1F]\s*$/u.test(text);
+}
+
 function addUsage(current: TokenUsage | null, next: TokenUsage | null): TokenUsage | null {
   if (!next) return current;
   if (!current) return next;
@@ -338,7 +347,7 @@ export class FailoverAiProvider implements AiProvider {
               if (!event.text) continue;
               await recordModelText(Date.now());
               text += event.text;
-              const completeSegment = /[.!?\n\u3002\uFF01\uFF1F]\s*$/u.test(text);
+              const completeSegment = hasCompleteSemanticBoundary(text);
               if (execution.releasePolicy === 'segment'
                 && completeSegment
                 && text.length >= execution.minimumBufferCharacters) {
@@ -357,9 +366,10 @@ export class FailoverAiProvider implements AiProvider {
             if (!execution.acceptCandidate(text, true)) {
               throw new AnswerExecutionError('OUTPUT_GUARD_REJECTED');
             }
-            if (execution.releasePolicy === 'complete' || releasedLength === 0) {
+            if (releasedLength < text.length) {
               await recordUserVisible(Date.now());
               yield { type: 'delta', text: text.slice(releasedLength) };
+              releasedLength = text.length;
             }
             const recorded = await recordTerminal('completed', null, event.usage);
             yield { type: 'attempt', attempt: recorded };

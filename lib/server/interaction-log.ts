@@ -59,6 +59,7 @@ export async function loadPreviousRouteAnchor(
     topic_ref: string | null;
     question: string;
     legacy_clarification_eligible: boolean;
+    previous_turn_completed: boolean;
   }>(
     `SELECT previous.id::text, previous.route_kind, previous.route_reason_code,
             previous.topic_kind, previous.topic_ref, previous.inherited_from_turn_id::text,
@@ -66,7 +67,8 @@ export async function loadPreviousRouteAnchor(
             (previous.status = 'completed'
               AND previous.answer = $3
               AND previous.created_at >= current.created_at - INTERVAL '10 minutes'
-              AND previous.created_at <= current.created_at) AS legacy_clarification_eligible
+              AND previous.created_at <= current.created_at) AS legacy_clarification_eligible,
+            (previous.status = 'completed') AS previous_turn_completed
        FROM interaction_turns AS current
        JOIN LATERAL (
          SELECT id, route_kind, route_reason_code, topic_kind, topic_ref, inherited_from_turn_id,
@@ -102,6 +104,9 @@ export async function loadPreviousRouteAnchor(
     ...(typeof row.question === 'string' ? { question: row.question } : {}),
     ...(row.legacy_clarification_eligible === true
       ? { legacyClarificationEligible: true }
+      : {}),
+    ...(row.previous_turn_completed === false
+      ? { previousTurnCompleted: false }
       : {}),
   };
 }

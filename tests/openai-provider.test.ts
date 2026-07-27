@@ -35,7 +35,7 @@ test('Responses metadata is protocol activity but not model text', async () => {
     providerStartedAtMs: now,
     turnTimeoutMs: 90_000,
     providerTimeoutMs: 80_000,
-    maxAttempts: 3,
+    maxAttempts: 2,
   });
 
   const events = [];

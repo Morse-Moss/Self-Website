@@ -3,19 +3,18 @@ import { test } from 'node:test';
 
 import { createChatExecutionBudget } from '../lib/server/chat-execution-budget.ts';
 
-test('normal, strict and failover share three attempts and one absolute deadline', () => {
+test('normal generation and one recovery share two attempts and one absolute deadline', () => {
   const budget = createChatExecutionBudget({
     turnStartedAtMs: 1_000,
     providerStartedAtMs: 1_000,
     turnTimeoutMs: 90_000,
     providerTimeoutMs: 80_000,
-    maxAttempts: 3,
+    maxAttempts: 2,
   });
 
   assert.equal(budget.reserveAttempt(1_000), true);
   assert.equal(budget.reserveAttempt(2_000), true);
-  assert.equal(budget.reserveAttempt(3_000), true);
-  assert.equal(budget.reserveAttempt(4_000), false);
+  assert.equal(budget.reserveAttempt(3_000), false);
   assert.equal(budget.remainingAttempts(), 0);
   assert.equal(budget.remainingMs(40_000), 41_000);
 });
@@ -26,7 +25,7 @@ test('the 90 second turn deadline caps routing and the provider remainder', () =
     providerStartedAtMs: 15_000,
     turnTimeoutMs: 90_000,
     providerTimeoutMs: 80_000,
-    maxAttempts: 3,
+    maxAttempts: 2,
   });
 
   assert.equal(budget.providerDeadlineMs(), 90_000);
@@ -41,13 +40,13 @@ test('execution budget rejects invalid timing and attempt contracts', () => {
     providerStartedAtMs: -1,
     turnTimeoutMs: 90_000,
     providerTimeoutMs: 80_000,
-    maxAttempts: 3,
+    maxAttempts: 2,
   }), /providerStartedAtMs/);
   assert.throws(() => createChatExecutionBudget({
     turnStartedAtMs: 0,
     providerStartedAtMs: 0,
     turnTimeoutMs: 90_000,
     providerTimeoutMs: 80_000,
-    maxAttempts: 4,
+    maxAttempts: 3,
   }), /maxAttempts/);
 });

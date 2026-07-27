@@ -82,7 +82,7 @@ const chatServiceConfig: ChatServiceConfig = {
   providerModelTextTimeoutMs: 40_000,
   providerStageTimeoutMs: 80_000,
   chatTurnTimeoutMs: 90_000,
-  providerMaxAttempts: 3,
+  providerMaxAttempts: 2,
 };
 
 function providerAttempt(input: {

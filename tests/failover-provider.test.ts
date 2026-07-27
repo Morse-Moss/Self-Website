@@ -323,7 +323,7 @@ function v2Request(overrides: Partial<NonNullable<AnswerRequest['execution']>> =
         providerStartedAtMs: now,
         turnTimeoutMs: 90_000,
         providerTimeoutMs: 80_000,
-        maxAttempts: 3,
+        maxAttempts: 2,
       }),
       generationMode: 'normal',
       protocolEventTimeoutMs: 25,
@@ -449,16 +449,20 @@ test('coordinated v2 execution stays serial and switches only after failure', as
   });
   const fallbackOne = delayedProvider({
     delayMs: 4,
-    error: new OpenAIProviderError('PROVIDER_UNAVAILABLE'),
-    ...track('fallback-1'),
-  });
-  const fallbackTwo = delayedProvider({
-    delayMs: 4,
     events: [
       { type: 'delta', text: 'Recovered.' },
       { type: 'done', usage: { inputTokens: 12, outputTokens: 3 } },
     ],
-    ...track('fallback-2'),
+    ...track('fallback-1'),
+  });
+  let fallbackTwoStarted = false;
+  const fallbackTwo = delayedProvider({
+    delayMs: 4,
+    events: [
+      { type: 'delta', text: 'Must not run.' },
+      { type: 'done', usage: { inputTokens: 1, outputTokens: 1 } },
+    ],
+    onStart: () => { fallbackTwoStarted = true; },
   });
   const provider = new FailoverAiProvider(primary, [
     { alias: 'primary', provider: primary },
@@ -469,19 +473,20 @@ test('coordinated v2 execution stays serial and switches only after failure', as
   const events: AnswerEvent[] = [];
   for await (const event of provider.streamAnswer(v2Request())) events.push(event);
 
-  assert.deepEqual(started, ['primary', 'fallback-1', 'fallback-2']);
+  assert.deepEqual(started, ['primary', 'fallback-1']);
+  assert.equal(fallbackTwoStarted, false);
   assert.equal(maxInFlight, 1);
   assert.equal(events.filter((event) => event.type === 'delta').map((event) => event.text).join(''), 'Recovered.');
-  assert.equal(events.filter((event) => event.type === 'switching').length, 2);
+  assert.equal(events.filter((event) => event.type === 'switching').length, 1);
   const done = events.at(-1);
   assert.equal(done?.type, 'done');
   if (done?.type !== 'done') throw new Error('missing done event');
   assert.deepEqual(done.usage, { inputTokens: 12, outputTokens: 3 });
-  assert.equal(done.providerAlias, 'fallback-2');
-  assert.equal(done.winner?.attemptIndex, 2);
+  assert.equal(done.providerAlias, 'fallback-1');
+  assert.equal(done.winner?.attemptIndex, 1);
   assert.deepEqual(
     done.attempts?.map((attempt) => [attempt.attemptIndex, attempt.status]),
-    [[0, 'failed'], [1, 'failed'], [2, 'completed']],
+    [[0, 'failed'], [1, 'completed']],
   );
 });
 
@@ -751,6 +756,46 @@ test('segment winner stops when a later semantic segment fails the guard', async
     (error as { code?: string }).code === 'OUTPUT_GUARD_REJECTED'
   ));
   assert.deepEqual(visible, ['Good.']);
+});
+
+test('segment release waits for a complete sentence and flushes the final unpunctuated text', async () => {
+  const primary: AiProvider = {
+    async embed() { return [[0.1, 0.2]]; },
+    async *streamAnswer() {
+      yield { type: 'delta', text: '第一句' };
+      yield { type: 'delta', text: '。' };
+      yield { type: 'delta', text: '最后一段没有标点' };
+      yield { type: 'done', usage: null };
+    },
+  };
+  const provider = new FailoverAiProvider(primary, [{ alias: 'primary', provider: primary }], 1_000);
+  const visible: string[] = [];
+
+  for await (const event of provider.streamAnswer(v2Request())) {
+    if (event.type === 'delta') visible.push(event.text);
+  }
+
+  assert.deepEqual(visible, ['第一句。', '最后一段没有标点']);
+});
+
+test('segment release keeps a fenced code block hidden until the closing fence arrives', async () => {
+  const primary: AiProvider = {
+    async embed() { return [[0.1, 0.2]]; },
+    async *streamAnswer() {
+      yield { type: 'delta', text: '示例：\n```ts\n' };
+      yield { type: 'delta', text: 'const answer = 42;\n' };
+      yield { type: 'delta', text: '```\n' };
+      yield { type: 'done', usage: null };
+    },
+  };
+  const provider = new FailoverAiProvider(primary, [{ alias: 'primary', provider: primary }], 1_000);
+  const visible: string[] = [];
+
+  for await (const event of provider.streamAnswer(v2Request())) {
+    if (event.type === 'delta') visible.push(event.text);
+  }
+
+  assert.deepEqual(visible, ['示例：\n```ts\nconst answer = 42;\n```\n']);
 });
 
 test('coordinator skips an open node', async () => {

@@ -7,8 +7,9 @@ import { test } from 'node:test';
 interface EvalCase {
   id: string;
   category: string;
-  query: string;
+  query?: string;
   expectedBehavior: string;
+  turns?: Array<{ query: string }>;
   feedbackRegression?: string;
   workflow?: 'chat' | 'jd_match' | 'diagnosis';
   intent?: 'general' | 'recruiter' | 'collaboration' | 'peer';
@@ -44,7 +45,16 @@ const dataPath = path.join(process.cwd(), 'content', 'chat-eval.json');
 const reviewCasesPath = path.join(process.cwd(), 'content', 'chat-review-cases.json');
 const runnerPath = path.join(process.cwd(), 'scripts', 'chat-eval.mjs');
 const EXPECTED_DATASET_VERSION = 8;
-const EXPECTED_CASE_COUNT = 91;
+const EXPECTED_CASE_COUNT = 96;
+
+function hasValidEvalInput(item: EvalCase): boolean {
+  if (item.expectedBehavior === 'multi-turn-route') {
+    return Array.isArray(item.turns)
+      && item.turns.length > 0
+      && item.turns.every((turn) => turn.query.trim().length > 0);
+  }
+  return typeof item.query === 'string' && item.query.trim().length > 0;
+}
 
 function readDataset(): { version: number; cases: EvalCase[] } {
   return JSON.parse(fs.readFileSync(dataPath, 'utf8')) as {
@@ -58,7 +68,7 @@ test(`S10 deterministic evaluation freezes ${EXPECTED_CASE_COUNT} cases around t
   assert.equal(dataset.version, EXPECTED_DATASET_VERSION);
   assert.equal(dataset.cases.length, EXPECTED_CASE_COUNT);
   assert.equal(new Set(dataset.cases.map((item) => item.id)).size, EXPECTED_CASE_COUNT);
-  assert.ok(dataset.cases.every((item) => item.query.trim() && item.expectedBehavior.trim()));
+  assert.ok(dataset.cases.every((item) => hasValidEvalInput(item) && item.expectedBehavior.trim()));
 
   assert.deepEqual(
     dataset.cases
@@ -106,6 +116,7 @@ test(`S10 deterministic evaluation freezes ${EXPECTED_CASE_COUNT} cases around t
     'identity',
     'recruitment-positive',
     'route-policy',
+    'multi-turn',
   ]) {
     assert.ok(categories.has(category), `conversation v2 category is missing: ${category}`);
   }
@@ -129,6 +140,7 @@ test(`S10 deterministic evaluation freezes ${EXPECTED_CASE_COUNT} cases around t
     'identity',
     'recruitment',
     'route-policy',
+    'multi-turn-route',
   ]) {
     assert.ok(behaviors.has(behavior), `evaluation behavior is missing: ${behavior}`);
   }

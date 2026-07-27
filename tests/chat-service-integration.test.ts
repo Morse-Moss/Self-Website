@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { after, before, test } from 'node:test';
 
 import pg, { type Pool as PgPool } from 'pg';
@@ -16,7 +17,12 @@ import {
 import { redeemInvite } from '../lib/server/access.ts';
 import { normalizeChatRequest } from '../lib/server/chat-core.ts';
 import { routeChatTurn } from '../lib/server/chat-route-policy.ts';
-import { ChatServiceError, runChat, type ChatServiceEvent } from '../lib/server/chat-service.ts';
+import {
+  ChatServiceError,
+  loadCompletedHistory,
+  runChat,
+  type ChatServiceEvent,
+} from '../lib/server/chat-service.ts';
 import { compileCapabilityLedger } from '../lib/server/capability-evidence.ts';
 import { FailoverAiProvider } from '../lib/server/failover-ai-provider.ts';
 import { OpenAIProviderError } from '../lib/server/openai-provider.ts';
@@ -33,6 +39,82 @@ const { Pool } = pg;
 const connectionString = process.env.DATABASE_URL;
 const pool = connectionString ? new Pool({ connectionString }) : null;
 const inviteId = randomUUID();
+
+test('v2 routing has no Provider fallback judge or route-classifier prompt', async () => {
+  const source = await readFile(new URL('../lib/server/chat-service.ts', import.meta.url), 'utf8');
+
+  assert.doesNotMatch(source, /judgeDefaultRouteAgainstTaskState/u);
+  assert.doesNotMatch(source, /route classifier/u);
+  assert.doesNotMatch(source, /llmFallbackIntentPrompt/u);
+});
+
+test('v2 task history admits only completed turns with the same task_id', async () => {
+  const completedTurnId = randomUUID();
+  const failedTurnId = randomUUID();
+  const runningTurnId = randomUUID();
+  const taskId = randomUUID();
+  const queries: string[] = [];
+  const client = {
+    async query(sql: string) {
+      queries.push(sql);
+      if (queries.length === 1) return { rows: [{ id: completedTurnId }] };
+      return {
+        rows: [
+          { id: '1', role: 'user', content: `morse-turn-v1:${JSON.stringify({ turnId: completedTurnId, content: 'completed question' })}` },
+          { id: '2', role: 'assistant', content: `morse-turn-v1:${JSON.stringify({ turnId: completedTurnId, content: 'completed answer' })}` },
+          { id: '3', role: 'user', content: `morse-turn-v1:${JSON.stringify({ turnId: failedTurnId, content: 'failed pollution' })}` },
+          { id: '4', role: 'user', content: `morse-turn-v1:${JSON.stringify({ turnId: runningTurnId, content: 'running pollution' })}` },
+        ],
+      };
+    },
+  };
+
+  const history = await loadCompletedHistory(client as never, randomUUID(), {
+    taskId,
+    includeConversation: false,
+    tokenBudget: 500,
+  });
+
+  assert.match(queries[0], /status = 'completed'/u);
+  assert.match(queries[0], /task_id = \$2/u);
+  assert.deepEqual(history, [
+    { role: 'user', content: 'completed question' },
+    { role: 'assistant', content: 'completed answer' },
+  ]);
+  assert.doesNotMatch(JSON.stringify(history), /failed pollution|running pollution/u);
+});
+
+test('v2 completed history applies its budget to whole turns instead of splitting a user-assistant pair', async () => {
+  const olderTurnId = randomUUID();
+  const latestTurnId = randomUUID();
+  const taskId = randomUUID();
+  const client = {
+    async query(_sql: string) {
+      if (_sql.includes('FROM interaction_turns')) {
+        return { rows: [{ id: olderTurnId }, { id: latestTurnId }] };
+      }
+      return {
+        rows: [
+          { id: '1', role: 'user', content: `morse-turn-v1:${JSON.stringify({ turnId: olderTurnId, content: 'older question' })}` },
+          { id: '2', role: 'assistant', content: `morse-turn-v1:${JSON.stringify({ turnId: olderTurnId, content: 'older answer' })}` },
+          { id: '3', role: 'user', content: `morse-turn-v1:${JSON.stringify({ turnId: latestTurnId, content: 'latest question' })}` },
+          { id: '4', role: 'assistant', content: `morse-turn-v1:${JSON.stringify({ turnId: latestTurnId, content: 'latest answer' })}` },
+        ],
+      };
+    },
+  };
+
+  const history = await loadCompletedHistory(client as never, randomUUID(), {
+    taskId,
+    includeConversation: false,
+    tokenBudget: 8,
+  });
+
+  assert.deepEqual(history, [
+    { role: 'user', content: 'latest question' },
+    { role: 'assistant', content: 'latest answer' },
+  ]);
+});
 const inviteCode = 'm3-chat-service-invite';
 const now = new Date('2026-07-13T03:00:00.000Z');
 let accessSessionId = '';
@@ -108,6 +190,14 @@ class LowSimilarityProvider extends FakeProvider {
 class FailingEmbeddingProvider extends FakeProvider {
   override async embed(_inputs: string[]): Promise<number[][]> {
     throw new Error('embedding failed');
+  }
+}
+
+class FailingEmbeddingAnswerProvider extends FailingEmbeddingProvider {
+  override async *streamAnswer(request: AnswerRequest): AsyncIterable<AnswerEvent> {
+    this.requests.push(request);
+    yield { type: 'delta', text: '深度研究系统把证据链作为出厂闸门。[来源1]' };
+    yield { type: 'done', usage: { inputTokens: 100, outputTokens: 20 } };
   }
 }
 
@@ -486,7 +576,7 @@ const config = {
   providerModelTextTimeoutMs: 40_000,
   providerStageTimeoutMs: 80_000,
   chatTurnTimeoutMs: 90_000,
-  providerMaxAttempts: 3,
+  providerMaxAttempts: 2,
 };
 
 const searchConfig = {
@@ -535,6 +625,8 @@ interface InteractionSnapshot {
   completed_at: Date | null;
   delete_after: Date;
   route_reason_code: string | null;
+  topic_kind: string | null;
+  topic_ref: string | null;
   inherited_from_turn_id: string | null;
 }
 
@@ -877,7 +969,7 @@ async function readInteraction(turnId: string): Promise<InteractionSnapshot> {
     `SELECT conversation_id::text, question, answer, status, error_code,
             knowledge_sources, input_tokens, output_tokens,
             estimated_cost_usd::text, provider, model, completed_at, delete_after,
-            route_reason_code, inherited_from_turn_id::text
+            route_reason_code, topic_kind, topic_ref, inherited_from_turn_id::text
        FROM interaction_turns
       WHERE id = $1`,
     [turnId],
@@ -1050,7 +1142,6 @@ before(async () => {
   const redeemed = await redeemInvite(pool, inviteCode, { now });
   accessSessionId = redeemed.sessionId;
 });
-
 after(async () => {
   if (!pool) return;
   await pool.query('DELETE FROM alert_outbox WHERE dedupe_key = $1', [`invite-first-use:${inviteId}`]);
@@ -1182,7 +1273,6 @@ test('runChat Provider payload events and persisted history exclude the private 
     await cleanupFailureFixture(fixture);
   }
 });
-
 test('route anchors preserve the latest meaningful topic across follow-ups', {
   skip: !pool,
 }, async () => {
@@ -5807,12 +5897,12 @@ test('safe mode skips embedding and search and uses only approved public knowled
   }
 });
 
-test('v2 excludes low relevance local knowledge from prompt and metadata', {
+test('v2 excludes low relevance vector results but keeps routed structured project evidence', {
   skip: !pool,
 }, async () => {
   const fixture = await createFailureFixture('chat-v2-low-relevance-filter');
   const aiProvider = new LowSimilarityProvider(
-    'Deep Research 项目的 Agent 架构证据不足，不能据此给出具体设计结论。',
+    'Deep Research 项目的 Agent 架构以公开项目摘要为证据。[来源1]',
   );
 
   try {
@@ -5837,12 +5927,56 @@ test('v2 excludes low relevance local knowledge from prompt and metadata', {
     assert.equal(meta?.type, 'meta');
     if (meta?.type !== 'meta') return;
     assert.equal(aiProvider.embedCalls, 1);
-    assert.deepEqual(meta.sources, []);
-    assert.match(
+    assert.equal(meta.sources.length, 1);
+    assert.equal(meta.sources[0].href, '/works#deep-research');
+    assert.doesNotMatch(
       aiProvider.requests[0].instructions,
       /<approved_evidence>本轮没有可用的审核公开证据。<\/approved_evidence>/u,
     );
   } finally {
+    await cleanupFailureFixture(fixture);
+  }
+});
+
+test('v2 records privacy-limited evidence degradation while structured project evidence keeps the answer path alive', {
+  skip: !pool,
+}, async () => {
+  const fixture = await createFailureFixture('chat-v2-evidence-degraded');
+  const aiProvider = new FailingEmbeddingAnswerProvider();
+  const logs: string[] = [];
+  const originalError = console.error;
+  console.error = (...values: unknown[]) => { logs.push(values.map(String).join(' ')); };
+
+  try {
+    const events = await collectChat({
+      pool: pool!,
+      provider: aiProvider,
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        message: 'Deep Research 项目怎么保证证据？',
+        audienceIntent: 'general',
+        turnId: randomUUID(),
+      }),
+      config: {
+        ...config,
+        chatV2Enabled: true,
+        chatV2CanaryPercent: 100,
+      },
+      now,
+    });
+
+    assert.equal(events.at(-1)?.type, 'done');
+    assert.equal(aiProvider.requests.length, 1);
+    const telemetry = logs.map((line) => JSON.parse(line) as Record<string, unknown>)
+      .find((entry) => entry.event === 'morse_evidence_degraded');
+    assert.deepEqual(telemetry, {
+      event: 'morse_evidence_degraded',
+      layer: 'embedding',
+      reasonCode: 'project_fact_query',
+    });
+    assert.doesNotMatch(JSON.stringify(telemetry), /Deep Research|turn|question|answer/iu);
+  } finally {
+    console.error = originalError;
     await cleanupFailureFixture(fixture);
   }
 });
@@ -5996,6 +6130,393 @@ test('a session first assigned while v2 is disabled remains v1 after enablement'
       now: new Date(now.getTime() + 1_000),
     });
     assert.equal(enabledProvider.embedCalls, 1);
+  } finally {
+    await cleanupFailureFixture(fixture);
+  }
+});
+
+async function readTaskState(conversationId: string): Promise<{
+  task_id: string;
+  task_kind: string;
+  topic_kind: string;
+  topic_ref: string;
+  status: string;
+  waiting_for: string[];
+  task_started_turn_id: string | null;
+  last_successful_turn_id: string | null;
+  version: number;
+  updated_by_turn_id: string | null;
+} | null> {
+  const result = await pool!.query<{
+    task_id: string;
+    task_kind: string;
+    topic_kind: string;
+    topic_ref: string;
+    status: string;
+    waiting_for: string[];
+    task_started_turn_id: string | null;
+    last_successful_turn_id: string | null;
+    version: number;
+    updated_by_turn_id: string | null;
+  }>(
+    `SELECT task_id::text, task_kind, topic_kind, topic_ref, status, waiting_for,
+            task_started_turn_id::text, last_successful_turn_id::text,
+            version, updated_by_turn_id::text
+       FROM conversation_task_state
+      WHERE conversation_id = $1`,
+    [conversationId],
+  );
+  return result.rows[0] ?? null;
+}
+
+test('v2 topic switch commits conversation_task_state atomically with the completed turn', {
+  skip: !pool,
+}, async () => {
+  const testNow = new Date();
+  const fixture = await createFailureFixture('chat-v2-task-state-atomic-commit', testNow);
+  const aiProvider = new SequencedAnswerProvider([
+    '深度研究系统把证据链作为出厂闸门。[来源1]',
+  ]);
+  const turnId = randomUUID();
+  const v2Config = { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 };
+
+  try {
+    const events = await collectChat({
+      pool: pool!,
+      provider: aiProvider,
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        message: '深度研究系统怎么保证证据?',
+        turnId,
+      }),
+      config: v2Config,
+      now: testNow,
+    });
+    const meta = events.find((event) => event.type === 'meta');
+    assert.equal(meta?.type, 'meta');
+    if (meta?.type !== 'meta') return;
+
+    const interaction = await readInteraction(turnId);
+    assert.equal(interaction.status, 'completed');
+
+    const taskState = await readTaskState(meta.conversationId);
+    assert.match(taskState?.task_id ?? '', /^[0-9a-f-]{36}$/u);
+    assert.equal(taskState?.task_kind, 'project_discussion');
+    assert.equal(taskState?.topic_kind, 'project');
+    assert.equal(taskState?.topic_ref, 'deep-research');
+    assert.equal(taskState?.status, 'active');
+    assert.deepEqual(taskState?.waiting_for, []);
+    assert.equal(taskState?.task_started_turn_id, turnId);
+    assert.equal(taskState?.last_successful_turn_id, turnId);
+    assert.equal(taskState?.version, 1);
+    assert.equal(taskState?.updated_by_turn_id, turnId);
+  } finally {
+    await cleanupFailureFixture(fixture);
+  }
+});
+
+test('v2 failed turn after an earlier topic switch leaves conversation_task_state untouched', {
+  skip: !pool,
+}, async () => {
+  const testNow = new Date();
+  const fixture = await createFailureFixture('chat-v2-task-state-failed-turn', testNow);
+  const v2Config = { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 };
+  const secondTurnConfig = { ...v2Config, retrievalLimit: 10 };
+  const firstTurnId = randomUUID();
+  const secondTurnId = randomUUID();
+
+  try {
+    const first = await collectChat({
+      pool: pool!,
+      provider: new SequencedAnswerProvider([
+        '深度研究系统把证据链作为出厂闸门。[来源1]',
+      ]),
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        message: '深度研究系统怎么保证证据?',
+        turnId: firstTurnId,
+      }),
+      config: v2Config,
+      now: testNow,
+    });
+    const meta = first.find((event) => event.type === 'meta');
+    assert.equal(meta?.type, 'meta');
+    if (meta?.type !== 'meta') return;
+
+    const before = await readTaskState(meta.conversationId);
+    assert.equal(before?.task_kind, 'project_discussion');
+    assert.equal(before?.topic_kind, 'project');
+    assert.equal(before?.topic_ref, 'deep-research');
+    assert.equal(before?.version, 1);
+    assert.equal(before?.updated_by_turn_id, firstTurnId);
+
+    const { faultPool, wasInjected } = injectCompletionCommitFault('rollback_before_commit');
+    await assert.rejects(consumeChat({
+      pool: faultPool,
+      provider: new SequencedAnswerProvider([
+        '内容创作 Agent 系统处理内容生产。[来源1]',
+      ]),
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        message: '内容创作 Agent 怎么设计？',
+        conversationId: meta.conversationId,
+        turnId: secondTurnId,
+      }),
+      config: secondTurnConfig,
+      now: new Date(testNow.getTime() + 1_000),
+    }), /completion commit fault: rollback_before_commit/);
+    assert.equal(wasInjected(), true);
+
+    const secondInteraction = await readInteraction(secondTurnId);
+    assert.equal(secondInteraction.status, 'failed');
+    assert.equal(secondInteraction.error_code, 'PERSISTENCE_FAILED');
+
+    const after = await readTaskState(meta.conversationId);
+    assert.deepEqual(after, before, 'a failed turn must not mutate conversation_task_state');
+  } finally {
+    await cleanupFailureFixture(fixture);
+  }
+});
+
+test('v2 optimistic-lock conflict on conversation_task_state aborts the whole completion transaction', {
+  skip: !pool,
+}, async () => {
+  const testNow = new Date();
+  const fixture = await createFailureFixture('chat-v2-task-state-lock-conflict', testNow);
+  const v2Config = { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 };
+  const turnId = randomUUID();
+
+  // Establish the conversation with a prior, unrelated turn first so the
+  // racing turn below targets an existing conversation. Otherwise a rolled
+  // back first turn would delete its own (message-less) conversations row,
+  // cascading away the racing writer's conversation_task_state row too.
+  const setup = await collectChat({
+    pool: pool!,
+    provider: new FakeProvider(),
+    accessSessionId: fixture.accessSessionId,
+    request: normalizeChatRequest({
+      message: '你好',
+      turnId: randomUUID(),
+    }),
+    config: v2Config,
+    now: new Date(testNow.getTime() - 1_000),
+  });
+  const setupMeta = setup.find((event) => event.type === 'meta');
+  assert.equal(setupMeta?.type, 'meta');
+  if (setupMeta?.type !== 'meta') return;
+  const conversationId = setupMeta.conversationId;
+
+  // Race a competing conversation_task_state row into existence right after
+  // this turn's INSERT ... ON CONFLICT is issued with expectedVersion = 0
+  // (no prior row was visible at read time), but before it completes. A
+  // SELECT ... FOR UPDATE against zero matching rows takes no lock, so a
+  // second, independent connection can legitimately win the insert first —
+  // this turn's own INSERT then falls to the ON CONFLICT arm, whose
+  // `WHERE version = 0` guard no longer matches (actual version is now 1),
+  // so rowCount is 0 and applyTaskState's caller must abort the transaction.
+  let raced = false;
+  const raceyPool = new Proxy(pool!, {
+    get(target, property) {
+      if (property === 'connect') {
+        return async () => {
+          const client = await target.connect();
+          return new Proxy(client, {
+            get(clientTarget, clientProperty) {
+              if (clientProperty === 'query') {
+                return async (query: string, values?: unknown[]) => {
+                  if (
+                    !raced
+                    && query.includes('INSERT INTO conversation_task_state')
+                    && query.includes('ON CONFLICT')
+                  ) {
+                    raced = true;
+                    const racingTaskId = randomUUID();
+                    await target.query(
+                      `INSERT INTO conversation_task_state
+                        (conversation_id, task_id, task_kind, topic_kind, topic_ref,
+                         status, waiting_for, version, created_at, updated_at)
+                       VALUES ($1, $2, 'capability_verification', 'capability',
+                         'multi-agent', 'active', '{}', 1, now(), now())`,
+                      [conversationId, racingTaskId],
+                    );
+                  }
+                  return clientTarget.query(query, values);
+                };
+              }
+              const value = Reflect.get(clientTarget, clientProperty);
+              return typeof value === 'function' ? value.bind(clientTarget) : value;
+            },
+          });
+        };
+      }
+      const value = Reflect.get(target, property);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  }) as PgPool;
+
+  try {
+    await assert.rejects(consumeChat({
+      pool: raceyPool,
+      provider: new SequencedAnswerProvider([
+        '深度研究系统把证据链作为出厂闸门。[来源1]',
+      ]),
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        message: '深度研究系统怎么保证证据?',
+        conversationId,
+        turnId,
+      }),
+      config: v2Config,
+      now: testNow,
+    }), (error: unknown) => error instanceof ChatServiceError && error.code === 'CONVERSATION_INVALID');
+    assert.equal(raced, true);
+
+    const interaction = await readInteraction(turnId);
+    assert.equal(interaction.status, 'failed');
+    assert.equal(interaction.error_code, 'PERSISTENCE_FAILED');
+
+    const messageCount = await pool!.query(
+      'SELECT count(*)::int AS count FROM conversation_messages WHERE conversation_id = $1 AND role = $2',
+      [conversationId, 'assistant'],
+    );
+    assert.equal(messageCount.rows[0].count, 1,
+      'the completion transaction must roll back, including this turn\'s assistant message insert');
+
+    const after = await readTaskState(conversationId);
+    assert.equal(after?.task_kind, 'capability_verification');
+    assert.equal(after?.topic_kind, 'capability');
+    assert.equal(after?.topic_ref, 'multi-agent');
+    assert.equal(after?.status, 'active');
+    assert.equal(after?.version, 1);
+    assert.equal(after?.updated_by_turn_id, null,
+      'only the racing writer\'s row should remain; this turn must not have overwritten it');
+  } finally {
+    await pool!.query(
+      'DELETE FROM conversation_task_state WHERE conversation_id = $1',
+      [conversationId],
+    );
+    await cleanupFailureFixture(fixture);
+  }
+});
+
+test('v2 replay of an already-completed turn does not bump conversation_task_state version', {
+  skip: !pool,
+}, async () => {
+  const testNow = new Date();
+  const fixture = await createFailureFixture('chat-v2-task-state-replay', testNow);
+  const v2Config = { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 };
+  const turnId = randomUUID();
+  const request = normalizeChatRequest({
+    message: '深度研究系统怎么保证证据?',
+    turnId,
+  });
+
+  try {
+    const first = await collectChat({
+      pool: pool!,
+      provider: new SequencedAnswerProvider([
+        '深度研究系统把证据链作为出厂闸门。[来源1]',
+      ]),
+      accessSessionId: fixture.accessSessionId,
+      request,
+      config: v2Config,
+      now: testNow,
+    });
+    const meta = first.find((event) => event.type === 'meta');
+    assert.equal(meta?.type, 'meta');
+    if (meta?.type !== 'meta') return;
+
+    const afterFirst = await readTaskState(meta.conversationId);
+    assert.equal(afterFirst?.version, 1);
+
+    const replayEvents = await collectChat({
+      pool: pool!,
+      provider: new SequencedAnswerProvider([
+        'this text is unreachable because the turn already completed',
+      ]),
+      accessSessionId: fixture.accessSessionId,
+      request,
+      config: v2Config,
+      now: new Date(testNow.getTime() + 1_000),
+    });
+    const replayDone = replayEvents.at(-1);
+    assert.equal(replayDone?.type, 'done');
+    if (replayDone?.type === 'done') assert.equal(replayDone.consumed, false);
+
+    const afterReplay = await readTaskState(meta.conversationId);
+    assert.deepEqual(afterReplay, afterFirst, 'replaying a completed turn must not bump version');
+  } finally {
+    await cleanupFailureFixture(fixture);
+  }
+});
+
+test('v2 topic survives an intervening chit-chat turn via the task-state fallback', {
+  skip: !pool,
+}, async () => {
+  const testNow = new Date();
+  const fixture = await createFailureFixture('chat-v2-task-state-chitchat-fallback', testNow);
+  const v2Config = { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100, maxMessagesPerSession: 10 };
+  const firstTurnId = randomUUID();
+  const secondTurnId = randomUUID();
+  const thirdTurnId = randomUUID();
+
+  try {
+    const first = await collectChat({
+      pool: pool!,
+      provider: new SequencedAnswerProvider([
+        '深度研究系统把证据链作为出厂闸门。[来源1]',
+      ]),
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        message: '深度研究系统怎么保证证据?',
+        turnId: firstTurnId,
+      }),
+      config: v2Config,
+      now: testNow,
+    });
+    const meta = first.find((event) => event.type === 'meta');
+    assert.equal(meta?.type, 'meta');
+    if (meta?.type !== 'meta') return;
+
+    await collectChat({
+      pool: pool!,
+      provider: new FakeProvider(),
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        message: '你好',
+        conversationId: meta.conversationId,
+        turnId: secondTurnId,
+      }),
+      config: v2Config,
+      now: new Date(testNow.getTime() + 1_000),
+    });
+    const secondInteraction = await readInteraction(secondTurnId);
+    assert.equal(secondInteraction.route_reason_code, 'stable_general_conversation');
+
+    const taskStateAfterChitChat = await readTaskState(meta.conversationId);
+    assert.equal(taskStateAfterChitChat?.topic_kind, 'project');
+    assert.equal(taskStateAfterChitChat?.topic_ref, 'deep-research');
+
+    const third = await collectChat({
+      pool: pool!,
+      provider: new SequencedAnswerProvider([
+        '深度研究系统通过分块检索与引用约束保证证据可追溯。[来源1]',
+      ]),
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        message: '这个为什么这样设计？',
+        conversationId: meta.conversationId,
+        turnId: thirdTurnId,
+      }),
+      config: v2Config,
+      now: new Date(testNow.getTime() + 2_000),
+    });
+    const thirdDone = third.at(-1);
+    assert.equal(thirdDone?.type, 'done');
+
+    const thirdInteraction = await readInteraction(thirdTurnId);
+    assert.match(thirdInteraction.route_reason_code ?? '', /_task_state$/);
+    assert.equal(thirdInteraction.inherited_from_turn_id, firstTurnId);
   } finally {
     await cleanupFailureFixture(fixture);
   }

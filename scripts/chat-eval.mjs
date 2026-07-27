@@ -13,6 +13,10 @@ import { resolveChatEvidence } from '../lib/server/chat-evidence.ts';
 import { inspectChatAnswer } from '../lib/server/chat-output-guard.ts';
 import { buildV2SystemInstructions } from '../lib/server/chat-prompt.ts';
 import { routeChatTurn } from '../lib/server/chat-route-policy.ts';
+import {
+  deriveTaskStateTransition,
+  taskStateRequiresWrite,
+} from '../lib/server/conversation-task-state.ts';
 import { compileCapabilityLedger } from '../lib/server/capability-evidence.ts';
 import { publicKnowledgeHref } from '../lib/server/public-knowledge.ts';
 import { routeSearch } from '../lib/server/search-router.ts';
@@ -583,19 +587,62 @@ async function evaluateSearchDegradation(item) {
 
 function previousAnchor(item) {
   if (!item.previous) return null;
-  return {
+  return routeAnchorFromStep({
     turnId: '11111111-1111-4111-8111-111111111111',
     routeKind: item.previous.route,
     reasonCode: item.previous.reasonCode ?? 'project_fact_query',
     topicKind: item.previous.topicKind,
     topicRef: item.previous.topicRef ?? null,
-    ...(typeof item.previous.question === 'string'
-      ? { question: item.previous.question }
+    question: item.previous.question,
+    legacyClarificationEligible: item.previous.legacyClarificationEligible,
+    completed: item.previous.completed,
+  });
+}
+
+function routeAnchorFromStep(step) {
+  return {
+    turnId: step.turnId,
+    routeKind: step.routeKind,
+    reasonCode: step.reasonCode,
+    topicKind: step.topicKind,
+    topicRef: step.topicRef ?? null,
+    ...(typeof step.question === 'string'
+      ? { question: step.question }
       : {}),
-    ...(item.previous.legacyClarificationEligible === true
+    ...(step.legacyClarificationEligible === true
       ? { legacyClarificationEligible: true }
       : {}),
+    ...(step.completed === false
+      ? { previousTurnCompleted: false }
+      : {}),
   };
+}
+
+function taskStateForRouteInput(state) {
+  return state
+    ? {
+        topicKind: state.topicKind,
+        topicRef: state.topicRef,
+        status: state.status,
+        lastSuccessfulTurnId: state.lastSuccessfulTurnId,
+      }
+    : null;
+}
+
+function normalizeTaskStateForCompare(state) {
+  return state
+    ? {
+        taskKind: state.taskKind,
+        topicKind: state.topicKind,
+        topicRef: state.topicRef,
+        status: state.status,
+        waitingFor: state.waitingFor,
+        taskStartedTurnId: state.taskStartedTurnId,
+        lastSuccessfulTurnId: state.lastSuccessfulTurnId,
+        version: state.version,
+        updatedByTurnId: state.updatedByTurnId,
+      }
+    : null;
 }
 
 function validateRouteReliability({ answer, calls, evidence, item, normalized, route }) {
@@ -646,6 +693,81 @@ async function evaluateRoutePolicy(item) {
   const reliabilityValid = execution.workflowBoundaryValid
     && validateRouteReliability({ ...execution, item });
   return reliabilityValid;
+}
+
+function evaluateMultiTurnRoute(item) {
+  let taskState = null;
+  let previous = null;
+  let usableHistory = false;
+  let routeVersion = 0;
+  const actualSteps = [];
+
+  for (const [index, step] of item.turns.entries()) {
+    const turnId = step.turnId ?? `eval-turn-${index + 1}`;
+    const normalized = normalizeChatRequest(requestFor({
+      ...item,
+      query: step.query,
+      workflow: step.workflow ?? 'chat',
+      jobDescription: step.jobDescription,
+      mode: step.mode ?? item.mode,
+      intent: step.intent ?? item.intent,
+    }));
+    const route = routeChatTurn({
+      request: normalized,
+      ledger: capabilityLedger,
+      previous,
+      hasUsableHistory: usableHistory,
+      taskState: taskStateForRouteInput(taskState),
+    });
+    const transition = deriveTaskStateTransition(route, taskState);
+    const completed = step.completed !== false;
+    if (completed && taskStateRequiresWrite(taskState, transition)) {
+      routeVersion += 1;
+      taskState = {
+        ...transition.next,
+        taskStartedTurnId: transition.action === 'switch'
+          || transition.action === 'waiting_input' && transition.next.taskStartedTurnId === null
+          ? turnId
+          : transition.next.taskStartedTurnId,
+        lastSuccessfulTurnId: turnId,
+        version: routeVersion,
+        updatedByTurnId: turnId,
+      };
+    }
+    actualSteps.push({
+      routeKind: route.routeKind,
+      reasonCode: route.reasonCode,
+      topicKind: route.topicKind,
+      topicRef: route.topicRef,
+      inheritedFromTurnId: route.inheritedFromTurnId,
+      completed,
+      taskState: normalizeTaskStateForCompare(taskState),
+    });
+    previous = routeAnchorFromStep({
+      turnId,
+      routeKind: route.routeKind,
+      reasonCode: route.reasonCode,
+      topicKind: route.topicKind,
+      topicRef: route.topicRef,
+      question: normalized.message,
+      completed,
+    });
+    usableHistory = completed || usableHistory;
+  }
+
+  const expectedSteps = item.expectedSteps ?? [];
+  return expectedSteps.length === actualSteps.length
+    && expectedSteps.every((expected, index) => {
+      const actual = actualSteps[index];
+      return (!expected.routeKind || actual.routeKind === expected.routeKind)
+        && (!expected.reasonCode || actual.reasonCode === expected.reasonCode)
+        && (!expected.topicKind || actual.topicKind === expected.topicKind)
+        && (!Object.hasOwn(expected, 'topicRef') || actual.topicRef === expected.topicRef)
+        && (!Object.hasOwn(expected, 'inheritedFromTurnId')
+          || actual.inheritedFromTurnId === expected.inheritedFromTurnId)
+        && (!expected.taskState
+          || JSON.stringify(actual.taskState) === JSON.stringify(expected.taskState));
+    });
 }
 
 function evaluateRejectedRequest(item) {
@@ -741,6 +863,7 @@ async function evaluateCase(item) {
   if (item.expectedBehavior === 'reject-request') return evaluateRejectedRequest(item);
   if (item.expectedBehavior === 'dedupe-notification') return evaluateNotificationDedupe(item);
   if (item.expectedBehavior === 'route-policy') return evaluateRoutePolicy(item);
+  if (item.expectedBehavior === 'multi-turn-route') return evaluateMultiTurnRoute(item);
   return false;
 }
 

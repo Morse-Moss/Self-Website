@@ -54,6 +54,7 @@ test('loadServerConfig parses access, provider, lifecycle, and optional pricing 
   assert.equal(config.providerFirstByteTimeoutMs, 19000);
   assert.equal(config.providerTotalTimeoutMs, 85000);
   assert.equal(config.providerConcurrency, 3);
+  assert.equal(config.maxOutputTokens, 1200);
   assert.equal(config.chatEnabled, true);
   assert.equal(config.sseHeartbeatMs, 15_000);
   assert.equal(config.interactionRetentionDays, 10);
@@ -80,10 +81,10 @@ test('v2 timing defaults are bounded and ordered', () => {
   assert.equal(config.providerModelTextTimeoutMs, 40_000);
   assert.equal(config.providerStageTimeoutMs, 80_000);
   assert.equal(config.chatTurnTimeoutMs, 90_000);
-  assert.equal(config.providerMaxAttempts, 3);
+  assert.equal(config.providerMaxAttempts, 2);
 });
 
-test('v2 timing rejects unordered deadlines and an attempt limit other than three', () => {
+test('v2 timing rejects unordered deadlines and an attempt limit other than two', () => {
   for (const [name, overrides] of [
     ['protocol before model text', {
       MORSE_PROVIDER_PROTOCOL_EVENT_TIMEOUT_MS: '40000',
@@ -97,7 +98,7 @@ test('v2 timing rejects unordered deadlines and an attempt limit other than thre
       MORSE_PROVIDER_STAGE_TIMEOUT_MS: '90000',
       MORSE_CHAT_TURN_TIMEOUT_MS: '90000',
     }],
-    ['exactly three attempts', { MORSE_PROVIDER_MAX_ATTEMPTS: '4' }],
+    ['exactly two attempts', { MORSE_PROVIDER_MAX_ATTEMPTS: '3' }],
   ] as const) {
     assert.throws(
       () => loadServerConfig({ ...completeEnv, ...overrides }),

@@ -380,6 +380,27 @@ test('a capability implementation follow-up is grounded only to its unique publi
   assert.equal(decision.inheritedFromTurnId, capabilityAnchor().turnId);
 });
 
+test('failed previous capability anchors are not inherited by early follow-up branches', () => {
+  const previous = { ...capabilityAnchor(), previousTurnCompleted: false };
+  const explicit = routeChatTurn({
+    request: request('那你聊一下多agent系统吧'),
+    previous,
+    hasUsableHistory: true,
+    ledger,
+  });
+  const implementation = routeChatTurn({
+    request: request('具体怎么实现的？'),
+    previous,
+    hasUsableHistory: true,
+    ledger,
+  });
+
+  assert.notEqual(explicit.reasonCode, 'anaphoric_capability_followup');
+  assert.notEqual(explicit.inheritedFromTurnId, previous.turnId);
+  assert.notEqual(implementation.reasonCode, 'anaphoric_capability_project_followup');
+  assert.notEqual(implementation.inheritedFromTurnId, previous.turnId);
+});
+
 test('an unknown personal system claim remains unavailable', () => {
   for (const message of ['你做过支付系统吗？', '你做过医疗系统吗？', '你做过千万级系统吗？']) {
     const decision = routeChatTurn({ request: request(message), ledger });

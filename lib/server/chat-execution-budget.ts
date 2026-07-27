@@ -36,8 +36,8 @@ export function createChatExecutionBudget(
   if (input.providerStartedAtMs < input.turnStartedAtMs) {
     throw new Error('providerStartedAtMs must not precede turnStartedAtMs.');
   }
-  if (input.maxAttempts !== 3) {
-    throw new Error('maxAttempts must equal the Chat v2 contract of 3.');
+  if (input.maxAttempts !== 2) {
+    throw new Error('maxAttempts must equal the Chat v2 contract of 2.');
   }
 
   const deadlineMs = Math.min(

@@ -49,6 +49,14 @@ import {
   type ChatRouteDecision,
 } from './chat-route-policy.ts';
 import {
+  applyTaskState,
+  deriveTaskStateTransition,
+  loadTaskState,
+  taskStateAppliedByTurn,
+  taskStateRequiresWrite,
+  type ConversationTaskState,
+} from './conversation-task-state.ts';
+import {
   compileCapabilityLedger,
   type CapabilityAssessment,
 } from './capability-evidence.ts';
@@ -495,23 +503,106 @@ function workflowRoutingQuestion(
     : request.message;
 }
 
-async function loadRecentHistory(
+export async function loadCompletedHistory(
   client: PoolClient,
   conversationId: string,
-  limit: number,
+  options: {
+    taskId: string | null;
+    includeConversation: boolean;
+    tokenBudget: number;
+  },
 ): Promise<AiMessage[]> {
-  const history = await client.query<ConversationMessageRow>(
-    `SELECT id::text AS id, role, content FROM (
-       SELECT id, role, content
-         FROM conversation_messages
-        WHERE conversation_id = $1
-        ORDER BY id DESC
-        LIMIT $2
-     ) AS recent
-     ORDER BY id`,
-    [conversationId, limit],
+  if (!options.taskId && !options.includeConversation) return [];
+  const completed = await client.query<{ id: string }>(
+    `SELECT id::text AS id
+       FROM interaction_turns
+      WHERE conversation_id = $1
+        AND status = 'completed'
+        AND (
+          ($2::uuid IS NOT NULL AND task_id = $2)
+          OR ($2::uuid IS NULL AND $3::boolean AND task_id IS NULL AND route_kind = 'conversation')
+        )
+      ORDER BY created_at, id`,
+    [conversationId, options.taskId, options.includeConversation],
   );
-  return toHistoryMessages(history.rows);
+  const completedTurnIds = completed.rows.map((row) => row.id);
+  if (completedTurnIds.length === 0) return [];
+  const rows = await client.query<ConversationMessageRow>(
+    `SELECT id::text AS id, role, content
+       FROM conversation_messages
+      WHERE conversation_id = $1
+      ORDER BY id`,
+    [conversationId],
+  );
+  return selectCompletedTurnMessages(completedTurnIds, rows.rows, options.tokenBudget);
+}
+
+function estimateHistoryTokens(content: string): number {
+  const cjkCharacters = content.match(
+    /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu,
+  )?.length ?? 0;
+  const nonCjkCharacters = content.replace(
+    /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu,
+    '',
+  ).length;
+  return Math.max(1, cjkCharacters + Math.ceil(nonCjkCharacters / 4));
+}
+
+function selectCompletedTurnMessages(
+  completedTurnIds: string[],
+  rows: ConversationMessageRow[],
+  tokenBudget: number,
+): AiMessage[] {
+  const allowedTurnIds = new Set(completedTurnIds);
+  const messagesByTurn = new Map<string, AiMessage[]>();
+  for (const row of rows) {
+    const decoded = decodeTurnMessage(row.content);
+    if (!decoded.turnId || !allowedTurnIds.has(decoded.turnId)) continue;
+    const messages = messagesByTurn.get(decoded.turnId) ?? [];
+    messages.push({ role: row.role, content: decoded.content });
+    messagesByTurn.set(decoded.turnId, messages);
+  }
+  const completedTurns = completedTurnIds
+    .map((turnId) => messagesByTurn.get(turnId) ?? [])
+    .filter((messages) => messages.length > 0);
+  const selected: AiMessage[][] = [];
+  let used = 0;
+  for (let index = completedTurns.length - 1; index >= 0; index -= 1) {
+    const messages = completedTurns[index];
+    const turnSize = messages.reduce(
+      (total, message) => total + estimateHistoryTokens(message.content),
+      0,
+    );
+    if (selected.length > 0 && used + turnSize > tokenBudget) break;
+    selected.push(messages);
+    used += turnSize;
+  }
+  return selected.reverse().flat();
+}
+
+async function loadLegacyCompletedHistory(
+  client: PoolClient,
+  conversationId: string,
+  tokenBudget: number,
+): Promise<AiMessage[]> {
+  const completed = await client.query<{ id: string }>(
+    `SELECT id::text AS id
+       FROM interaction_turns
+      WHERE conversation_id = $1
+        AND status = 'completed'
+      ORDER BY created_at, id`,
+    [conversationId],
+  );
+  const completedTurnIds = completed.rows.map((row) => row.id);
+  if (completedTurnIds.length === 0) return [];
+  const rows = await client.query<ConversationMessageRow>(
+    `SELECT id::text AS id, role, content
+       FROM conversation_messages
+      WHERE conversation_id = $1
+      ORDER BY id`,
+    [conversationId],
+  );
+  return selectCompletedTurnMessages(completedTurnIds, rows.rows, tokenBudget);
 }
 
 async function loadTurnDiagnosis(input: {
@@ -600,7 +691,7 @@ async function recoverRunningTurn(input: {
     conversationId: input.conversationId,
     userMessageId: reservedUsers[0].id,
     turnId: input.turnId,
-    messages: toHistoryMessages(result.rows.slice(-input.historyMessageLimit)),
+    messages: [{ role: 'user', content: input.request.message }],
     replay: null,
     createdConversation: result.rows.length === 1,
     searchCount: input.searchCount,
@@ -852,11 +943,7 @@ async function reserveTurnInTransaction(input: {
     conversationId,
     userMessageId,
     turnId: input.turnId,
-    messages: await loadRecentHistory(
-      input.client,
-      conversationId,
-      input.config.historyMessageLimit,
-    ),
+    messages: [{ role: 'user', content: input.request.message }],
     replay: null,
     createdConversation,
     searchCount: session.search_count,
@@ -1022,12 +1109,14 @@ async function completeTurn(input: {
   config: ChatServiceConfig;
   startedAt: Date;
   completedAt: Date;
+  route?: ChatRouteDecision | null;
   signal?: AbortSignal;
 }): Promise<TokenUsage | null> {
   const provider = input.config.providerName ?? 'openai';
   const model = input.config.model ?? 'configured-model';
   const routed = input.attempts.length > 0;
   let commitAttempted = false;
+  let taskStateWriteRequired = false;
   let usage = input.usage;
 
   try {
@@ -1141,6 +1230,26 @@ async function completeTurn(input: {
       turn: input.turn,
       completedAt: input.completedAt,
     });
+    if (input.turn.behavior === 'v2' && input.route) {
+      const currentTaskState = await loadTaskState(input.client, input.turn.conversationId, {
+        forUpdate: true,
+      });
+      const transition = deriveTaskStateTransition(input.route, currentTaskState);
+      if (taskStateRequiresWrite(currentTaskState, transition)) {
+        taskStateWriteRequired = true;
+        const rowCount = await applyTaskState(
+          input.client,
+          input.turn.conversationId,
+          input.turn.turnId,
+          transition,
+          currentTaskState?.version ?? 0,
+          input.completedAt,
+        );
+        if (rowCount !== 1) {
+          throw new ChatServiceError('CONVERSATION_INVALID');
+        }
+      }
+    }
     await input.client.query(
       'UPDATE conversations SET updated_at = $2 WHERE id = $1',
       [input.turn.conversationId, input.completedAt],
@@ -1157,7 +1266,10 @@ async function completeTurn(input: {
         ? await providerAttemptsMatch(input.pool, input.turn.turnId, input.attempts)
             .catch(() => false)
         : false;
-      if (attemptsMatch) return usage;
+      const taskStateOk = !taskStateWriteRequired
+        || await taskStateAppliedByTurn(input.pool, input.turn.conversationId, input.turn.turnId)
+          .catch(() => false);
+      if (attemptsMatch && taskStateOk) return usage;
     }
     await input.client.query('ROLLBACK').catch(() => undefined);
     throw error;
@@ -1172,9 +1284,11 @@ async function completeDeterministicTurn(input: {
   answer: string;
   startedAt: Date;
   completedAt: Date;
+  route?: ChatRouteDecision | null;
   signal?: AbortSignal;
 }): Promise<void> {
   let commitAttempted = false;
+  let taskStateWriteRequired = false;
   try {
     throwIfAborted(input.signal);
     await input.client.query('BEGIN');
@@ -1209,6 +1323,26 @@ async function completeDeterministicTurn(input: {
         WHERE id = $1`,
       [input.accessSessionId],
     );
+    if (input.turn.behavior === 'v2' && input.route) {
+      const currentTaskState = await loadTaskState(input.client, input.turn.conversationId, {
+        forUpdate: true,
+      });
+      const transition = deriveTaskStateTransition(input.route, currentTaskState);
+      if (taskStateRequiresWrite(currentTaskState, transition)) {
+        taskStateWriteRequired = true;
+        const rowCount = await applyTaskState(
+          input.client,
+          input.turn.conversationId,
+          input.turn.turnId,
+          transition,
+          currentTaskState?.version ?? 0,
+          input.completedAt,
+        );
+        if (rowCount !== 1) {
+          throw new ChatServiceError('CONVERSATION_INVALID');
+        }
+      }
+    }
     await input.client.query(
       'UPDATE conversations SET updated_at = $2 WHERE id = $1',
       [input.turn.conversationId, input.completedAt],
@@ -1220,7 +1354,10 @@ async function completeDeterministicTurn(input: {
     if (commitAttempted) {
       const completed = await loadCompletedInteraction(input.pool, input.turn.turnId)
         .catch(() => null);
-      if (completed?.answer === input.answer) return;
+      const taskStateOk = !taskStateWriteRequired
+        || await taskStateAppliedByTurn(input.pool, input.turn.conversationId, input.turn.turnId)
+          .catch(() => false);
+      if (completed?.answer === input.answer && taskStateOk) return;
     }
     await input.client.query('ROLLBACK').catch(() => undefined);
     throw error;
@@ -1712,9 +1849,11 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
           profile: requestWorkflow(input.request) === 'jd_match' ? 'jd' : 'grounded',
           evidence: 'rag',
           release: requestWorkflow(input.request) === 'jd_match' ? 'complete' : 'segment',
-        };
+    };
     let v2Route: ChatRouteDecision | null = null;
+    let v2TaskState: ConversationTaskState | null = null;
     if (turn.behavior === 'v2') {
+      v2TaskState = await loadTaskState(lockClient, turn.conversationId);
       v2Route = await loadRecordedInteractionRoute(lockClient, turn.turnId);
       if (!v2Route) {
         const previous = await loadPreviousRouteAnchor(
@@ -1722,16 +1861,52 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
           turn.conversationId,
           turn.turnId,
         );
+        const routeTaskState = v2TaskState
+          ? {
+              topicKind: v2TaskState.topicKind,
+              topicRef: v2TaskState.topicRef,
+              status: v2TaskState.status,
+              lastSuccessfulTurnId: v2TaskState.lastSuccessfulTurnId,
+            }
+          : null;
         v2Route = routeV2ChatTurn({
           request: input.request,
           previous,
-          hasUsableHistory: turn.messages
-            .slice(0, -1)
-            .some((message) => message.content.trim().length > 0),
+          hasUsableHistory: previous !== null,
           ledger: capabilityLedger,
+          taskState: routeTaskState,
         });
         await recordInteractionRoute(lockClient, turn.turnId, v2Route);
       }
+      const continuingTaskId = v2TaskState !== null
+        && v2TaskState.status !== 'completed'
+        && v2Route.topicKind === v2TaskState.topicKind
+        && v2Route.topicRef === v2TaskState.topicRef
+        ? v2TaskState.taskId
+        : null;
+      const completedHistory = await loadCompletedHistory(
+        lockClient,
+        turn.conversationId,
+        {
+          taskId: continuingTaskId,
+          includeConversation: v2Route.routeKind === 'conversation',
+          tokenBudget: Math.max(256, input.config.historyMessageLimit * 128),
+        },
+      );
+      turn.messages = [
+        ...completedHistory,
+        { role: 'user', content: input.request.message },
+      ];
+    } else if (turn.behavior === 'v1') {
+      const completedHistory = await loadLegacyCompletedHistory(
+        lockClient,
+        turn.conversationId,
+        Math.max(256, input.config.historyMessageLimit * 128),
+      );
+      turn.messages = [
+        ...completedHistory,
+        { role: 'user', content: input.request.message },
+      ];
     }
     const route = v2Route ? adaptV2Route(v2Route) : legacyRoute;
 
@@ -1837,6 +2012,13 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
           signal: input.signal,
         }),
       });
+      if (resolved.evidenceDegraded) {
+        console.error(JSON.stringify({
+          event: 'morse_evidence_degraded',
+          layer: resolved.evidenceDegraded,
+          reasonCode: v2Route.reasonCode,
+        }));
+      }
       knowledge = resolved.knowledge;
       search = resolved.search;
       capability = resolved.capability;
@@ -1869,6 +2051,7 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
         answer: deterministicAnswer,
         startedAt,
         completedAt: clock(),
+        route: v2Route,
         signal: input.signal,
       });
       completed = true;
@@ -2015,6 +2198,7 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
             config: input.config,
             startedAt,
             completedAt,
+            route: v2Route,
             signal: input.signal,
           });
         } catch (error) {
@@ -2320,6 +2504,7 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
           config: input.config,
           startedAt,
           completedAt,
+          route: v2Route,
           signal: input.signal,
         });
       } catch (error) {

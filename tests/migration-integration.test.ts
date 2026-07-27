@@ -61,6 +61,23 @@ async function copyMigrations(): Promise<string> {
   return directory;
 }
 
+async function migrationVersions(directory = migrationSourceDirectory): Promise<string[]> {
+  const entries = await fs.readdir(directory, { withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isFile() && /^\d{3}_.+\.sql$/u.test(entry.name))
+    .map((entry) => entry.name.slice(0, 3))
+    .sort();
+}
+
+async function removeMigrationsAfter(directory: string, lastVersion: string): Promise<void> {
+  const entries = await fs.readdir(directory, { withFileTypes: true });
+  await Promise.all(entries
+    .filter((entry) => entry.isFile()
+      && /^\d{3}_.+\.sql$/u.test(entry.name)
+      && entry.name.slice(0, 3) > lastVersion)
+    .map((entry) => fs.rm(path.join(directory, entry.name), { force: true })));
+}
+
 test('migration runner bootstraps an empty database in order and is repeatable', async () => {
   const database = await createDisposablePostgresDatabase();
   try {
@@ -92,7 +109,7 @@ test('migration runner bootstraps an empty database in order and is repeatable',
     });
     assert.deepEqual(
       firstRows.migrations.map((row) => row.version),
-      ['001', '002', '003', '004', '005', '006', '007'],
+      await migrationVersions(),
     );
     assert.ok(firstRows.migrations.every((row) => /^[0-9a-f]{64}$/.test(row.checksum)));
     assert.deepEqual(firstRows.tables.map((row) => row.name), [
@@ -141,15 +158,10 @@ test('two migration runners serialize an empty database', async () => {
           GROUP BY version
           ORDER BY version`,
       );
-      assert.deepEqual(registrations.rows, [
-        { version: '001', count: 1 },
-        { version: '002', count: 1 },
-        { version: '003', count: 1 },
-        { version: '004', count: 1 },
-        { version: '005', count: 1 },
-        { version: '006', count: 1 },
-        { version: '007', count: 1 },
-      ]);
+      assert.deepEqual(registrations.rows, (await migrationVersions()).map((version) => ({
+        version,
+        count: 1,
+      })));
     });
   } finally {
     await fs.rm(directory, { force: true, recursive: true });
@@ -226,7 +238,7 @@ test('migration runner baselines a complete 001 database and preserves old data'
       );
       assert.deepEqual(
         migrations.rows.map((row) => row.version),
-        ['001', '002', '003', '004', '005', '006', '007'],
+        await migrationVersions(),
       );
       assert.equal(invite.rowCount, 1);
       assert.equal(document.rowCount, 1);
@@ -268,15 +280,10 @@ test('two migration runners serialize baseline registration on a complete 001 da
           GROUP BY version
           ORDER BY version`,
       );
-      assert.deepEqual(registrations.rows, [
-        { version: '001', count: 1 },
-        { version: '002', count: 1 },
-        { version: '003', count: 1 },
-        { version: '004', count: 1 },
-        { version: '005', count: 1 },
-        { version: '006', count: 1 },
-        { version: '007', count: 1 },
-      ]);
+      assert.deepEqual(registrations.rows, (await migrationVersions()).map((version) => ({
+        version,
+        count: 1,
+      })));
     });
   } finally {
     await fs.rm(directory, { force: true, recursive: true });
@@ -370,6 +377,7 @@ test('migration runner accepts an equivalent CRLF and BOM checkout after registr
       '005_chat_v2.sql',
       '006_interaction_invite_label.sql',
       '007_chat_response_reliability.sql',
+      '008_conversation_task_state.sql',
     ]) {
       const filePath = path.join(directory, fileName);
       const text = await fs.readFile(filePath, 'utf8');
@@ -477,30 +485,7 @@ test('migration runner rejects a partial 002 schema after 001 was registered', a
   const database = await createDisposablePostgresDatabase();
   const initialOnlyDirectory = await copyMigrations();
   try {
-    await fs.rm(
-      path.join(initialOnlyDirectory, '002_s10_customer_service.sql'),
-      { force: true },
-    );
-    await fs.rm(
-      path.join(initialOnlyDirectory, '003_private_resume.sql'),
-      { force: true },
-    );
-    await fs.rm(
-      path.join(initialOnlyDirectory, '004_admin_api_management.sql'),
-      { force: true },
-    );
-    await fs.rm(
-      path.join(initialOnlyDirectory, '005_chat_v2.sql'),
-      { force: true },
-    );
-    await fs.rm(
-      path.join(initialOnlyDirectory, '006_interaction_invite_label.sql'),
-      { force: true },
-    );
-    await fs.rm(
-      path.join(initialOnlyDirectory, '007_chat_response_reliability.sql'),
-      { force: true },
-    );
+    await removeMigrationsAfter(initialOnlyDirectory, '001');
     const initial = await runMigrations(database.connectionString, initialOnlyDirectory);
     assert.equal(initial.code, 0, initial.stderr);
     await withPostgresClient(database.connectionString, async (client) => {
@@ -585,10 +570,7 @@ test('migration 004 upgrades a populated 001-003 database without rewriting exis
   const turnId = randomUUID();
   const inviteId = randomUUID();
   try {
-    await fs.rm(path.join(through003, '004_admin_api_management.sql'), { force: true });
-    await fs.rm(path.join(through003, '005_chat_v2.sql'), { force: true });
-    await fs.rm(path.join(through003, '006_interaction_invite_label.sql'), { force: true });
-    await fs.rm(path.join(through003, '007_chat_response_reliability.sql'), { force: true });
+    await removeMigrationsAfter(through003, '003');
     const initial = await runMigrations(database.connectionString, through003);
     assert.equal(initial.code, 0, initial.stderr);
     await withPostgresClient(database.connectionString, async (client) => {
@@ -622,7 +604,7 @@ test('migration 004 upgrades a populated 001-003 database without rewriting exis
       );
       assert.deepEqual(
         versions.rows.map((row) => row.version),
-        ['001', '002', '003', '004', '005', '006', '007'],
+        await migrationVersions(),
       );
       assert.deepEqual(interaction.rows, [{ question: 'preserve interaction' }]);
       assert.deepEqual(invite.rows, [{ trusted_person_note: 'preserve invite' }]);
@@ -871,14 +853,7 @@ test('interaction attribution migration adds and backfills only an invite label 
   const sessionId = randomUUID();
   const turnId = randomUUID();
   try {
-    await fs.rm(
-      path.join(initialDirectory, '006_interaction_invite_label.sql'),
-      { force: true },
-    );
-    await fs.rm(
-      path.join(initialDirectory, '007_chat_response_reliability.sql'),
-      { force: true },
-    );
+    await removeMigrationsAfter(initialDirectory, '005');
     const initial = await runMigrations(database.connectionString, initialDirectory);
     assert.equal(initial.code, 0, initial.stderr);
     await withPostgresClient(database.connectionString, async (client) => {
@@ -1069,6 +1044,136 @@ test('chat response reliability migration applies auditable nullable contracts',
         (error: unknown) => typeof error === 'object' && error !== null
           && 'code' in error && error.code === '23514',
       );
+    });
+  } finally {
+    await database.dispose();
+  }
+});
+
+test('conversation task state migration defines the complete Task Frame and turn history key', async () => {
+  const sql = await fs.readFile(
+    path.join(migrationSourceDirectory, '008_conversation_task_state.sql'),
+    'utf8',
+  );
+
+  for (const column of [
+    'task_id',
+    'task_kind',
+    'topic_kind',
+    'topic_ref',
+    'status',
+    'waiting_for',
+    'task_started_turn_id',
+    'last_successful_turn_id',
+    'version',
+    'updated_by_turn_id',
+    'created_at',
+    'updated_at',
+  ]) {
+    assert.match(sql, new RegExp(`\\b${column}\\b`, 'u'), `missing ${column}`);
+  }
+  assert.match(sql, /ALTER TABLE interaction_turns[\s\S]+ADD COLUMN task_id uuid/iu);
+  assert.match(
+    sql,
+    /interaction_turns\s*\(conversation_id,\s*task_id,\s*status,\s*created_at\)/iu,
+  );
+  assert.doesNotMatch(sql, /REFERENCES conversation_task_state\s*\(task_id\)/iu);
+});
+
+test('conversation task state migration tracks version and clears updated_by_turn_id on turn deletion', async () => {
+  const database = await createDisposablePostgresDatabase();
+  try {
+    const result = await runMigrations(database.connectionString);
+    assert.equal(result.code, 0, result.stderr);
+    await withPostgresClient(database.connectionString, async (client) => {
+      const inviteId = randomUUID();
+      const sessionId = randomUUID();
+      const conversationId = randomUUID();
+      const turnId = randomUUID();
+      const taskId = randomUUID();
+
+      await client.query(
+        `INSERT INTO invite_codes
+          (id, code_hash, label, active, expires_at, max_sessions, session_count)
+         VALUES ($1, $2, 'task state fixture', true, now() + interval '1 day', 1, 1)`,
+        [inviteId, 'a'.repeat(64)],
+      );
+      await client.query(
+        `INSERT INTO access_sessions (id, invite_code_id, token_hash, expires_at)
+         VALUES ($1, $2, $3, now() + interval '12 hours')`,
+        [sessionId, inviteId, 'b'.repeat(64)],
+      );
+      await client.query(
+        `INSERT INTO conversations (id, access_session_id, mode, expires_at)
+         VALUES ($1, $2, 'general', now() + interval '12 hours')`,
+        [conversationId, sessionId],
+      );
+      await client.query(
+        `INSERT INTO interaction_turns
+          (id, access_session_id, conversation_id, workflow, audience_intent,
+           question, status, delete_after, task_id)
+         VALUES ($1, $2, $3, 'chat', 'general', 'task state fixture question',
+           'completed', now() + interval '10 days', $4)`,
+        [turnId, sessionId, conversationId, taskId],
+      );
+      await client.query(
+        `INSERT INTO conversation_task_state
+          (conversation_id, task_id, task_kind, topic_kind, topic_ref, status,
+           waiting_for, task_started_turn_id, last_successful_turn_id, version,
+           updated_by_turn_id, created_at, updated_at)
+         VALUES ($1, $2, 'project_discussion', 'project', 'digital-morse',
+           'active', '{}', $3, $3, 1, $3, now(), now())`,
+        [conversationId, taskId, turnId],
+      );
+
+      await assert.rejects(
+        client.query(
+          `UPDATE conversation_task_state
+              SET status = 'waiting_input', waiting_for = '{}'
+            WHERE conversation_id = $1`,
+          [conversationId],
+        ),
+        (error: unknown) => typeof error === 'object' && error !== null
+          && 'code' in error && error.code === '23514',
+      );
+
+      await client.query('DELETE FROM interaction_turns WHERE id = $1', [turnId]);
+      const afterTurnDelete = await client.query<{
+        task_id: string;
+        task_kind: string;
+        topic_kind: string;
+        topic_ref: string;
+        status: string;
+        version: number;
+        task_started_turn_id: string | null;
+        last_successful_turn_id: string | null;
+        updated_by_turn_id: string | null;
+      }>(
+        `SELECT task_id::text, task_kind, topic_kind, topic_ref, status, version,
+                task_started_turn_id::text, last_successful_turn_id::text,
+                updated_by_turn_id::text
+           FROM conversation_task_state
+          WHERE conversation_id = $1`,
+        [conversationId],
+      );
+      assert.deepEqual(afterTurnDelete.rows, [{
+        task_id: taskId,
+        task_kind: 'project_discussion',
+        topic_kind: 'project',
+        topic_ref: 'digital-morse',
+        status: 'active',
+        version: 1,
+        task_started_turn_id: null,
+        last_successful_turn_id: null,
+        updated_by_turn_id: null,
+      }]);
+
+      await client.query('DELETE FROM conversations WHERE id = $1', [conversationId]);
+      const afterConversationDelete = await client.query(
+        'SELECT 1 FROM conversation_task_state WHERE conversation_id = $1',
+        [conversationId],
+      );
+      assert.equal(afterConversationDelete.rowCount, 0);
     });
   } finally {
     await database.dispose();

@@ -21,6 +21,14 @@ export interface RouteAnchor {
   topicRef: string | null;
   question?: string;
   legacyClarificationEligible?: boolean;
+  previousTurnCompleted?: boolean;
+}
+
+export interface RouteChatTurnTaskState {
+  topicKind: Exclude<ChatTopicKind, 'none'>;
+  topicRef: string;
+  status: 'active' | 'waiting_input' | 'completed';
+  lastSuccessfulTurnId: string | null;
 }
 
 export interface RouteChatTurnInput {
@@ -28,6 +36,7 @@ export interface RouteChatTurnInput {
   ledger: CapabilityLedger;
   previous?: RouteAnchor | null;
   hasUsableHistory?: boolean;
+  taskState?: RouteChatTurnTaskState | null;
 }
 
 export const JD_INTAKE_REPLY = '请提供完整 JD（岗位职责与任职要求）；收到后我会基于公开项目证据整理匹配内容，并把需要面谈核实的部分单独标明。';
@@ -226,6 +235,29 @@ function inheritRoute(previous: RouteAnchor, ledger: CapabilityLedger): ChatRout
   return null;
 }
 
+function inheritFromTaskState(
+  taskState: RouteChatTurnTaskState | null | undefined,
+  previous: RouteAnchor | null | undefined,
+  ledger: CapabilityLedger,
+): ChatRouteDecision | null {
+  if (!taskState) return null;
+  if (taskState.status === 'completed') return null;
+  const anchor: RouteAnchor = {
+    turnId: taskState.lastSuccessfulTurnId ?? previous?.turnId ?? '',
+    routeKind: 'grounded',
+    reasonCode: 'task_state_topic',
+    topicKind: taskState.topicKind,
+    topicRef: taskState.topicRef,
+  };
+  const inherited = inheritRoute(anchor, ledger);
+  if (!inherited) return null;
+  return {
+    ...inherited,
+    reasonCode: `${inherited.reasonCode}_task_state`,
+    inheritedFromTurnId: anchor.turnId || null,
+  };
+}
+
 export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
   const message = input.request.message.trim();
   if (isUnsafeOrUnverifiableRequest(message)) {
@@ -359,14 +391,19 @@ export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
       requiresEmbedding: true,
     });
   }
-  if (isExplicitCapabilityContinuation(message, input.previous, input.ledger)) {
-    return inheritRoute(input.previous!, input.ledger)!;
+  const usablePrevious = input.previous?.previousTurnCompleted === false
+    ? null
+    : input.previous ?? null;
+  if (usablePrevious && isExplicitCapabilityContinuation(message, usablePrevious, input.ledger)) {
+    return inheritRoute(usablePrevious, input.ledger)!;
   }
-  const capabilityImplementation = capabilityProjectFollowup(
-    message,
-    input.previous,
-    input.ledger,
-  );
+  const capabilityImplementation = usablePrevious
+    ? capabilityProjectFollowup(
+        message,
+        usablePrevious,
+        input.ledger,
+      )
+    : null;
   if (capabilityImplementation) return capabilityImplementation;
   if (isStableGeneralConversation(message)) {
     return decision({
@@ -375,15 +412,21 @@ export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
     });
   }
   if (isUnresolvedReference(message)) {
-    const inherited = input.previous
-      ? inheritRoute(input.previous, input.ledger)
+    const inherited = usablePrevious
+      ? inheritRoute(usablePrevious, input.ledger)
       : null;
     if (inherited) return inherited;
+    const taskStateInherited = inheritFromTaskState(
+      input.taskState,
+      input.previous,
+      input.ledger,
+    );
+    if (taskStateInherited) return taskStateInherited;
     if (input.hasUsableHistory) {
       return decision({
         routeKind: 'conversation',
         reasonCode: 'anaphoric_conversation_followup',
-        inheritedFromTurnId: input.previous?.turnId ?? null,
+        inheritedFromTurnId: usablePrevious?.turnId ?? null,
       });
     }
     return decision({

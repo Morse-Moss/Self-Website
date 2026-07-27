@@ -16,6 +16,7 @@ import type { SearchResponse } from './search-provider.ts';
 export interface ResolvedChatEvidence {
   capability: CapabilityAssessment | null;
   capabilities?: CapabilityAssessment[];
+  evidenceDegraded?: 'embedding' | 'retrieval';
   knowledge: KnowledgeSource[];
   search: SearchResponse | undefined;
 }
@@ -135,6 +136,30 @@ function retrievalQuery(route: ChatRouteDecision, question: string): string {
   return projectName ? `${projectName}：${question}` : question;
 }
 
+async function semanticKnowledgeOrStructuredFallback(input: {
+  query: string;
+  structured: KnowledgeSource[];
+  embed(query: string): Promise<number[]>;
+  retrieve(embedding: number[]): Promise<KnowledgeSource[]>;
+}): Promise<{
+  candidates: KnowledgeSource[];
+  evidenceDegraded?: 'embedding' | 'retrieval';
+}> {
+  let embedding: number[];
+  try {
+    embedding = await input.embed(input.query);
+  } catch (error) {
+    if (input.structured.length === 0) throw error;
+    return { candidates: input.structured, evidenceDegraded: 'embedding' };
+  }
+  try {
+    return { candidates: await input.retrieve(embedding) };
+  } catch (error) {
+    if (input.structured.length === 0) throw error;
+    return { candidates: input.structured, evidenceDegraded: 'retrieval' };
+  }
+}
+
 export async function resolveChatEvidence(
   input: ResolveChatEvidenceInput,
 ): Promise<ResolvedChatEvidence> {
@@ -184,23 +209,46 @@ export async function resolveChatEvidence(
           search: undefined,
         };
       }
-      const embedding = await input.embed(retrievalQuery(input.route, input.question));
-      const candidates = await input.retrieve(embedding);
+      const structured = admitKnowledgeForRoute(
+        input.route,
+        input.projectKnowledge?.() ?? [],
+        input.question,
+      );
+      const resolved = await semanticKnowledgeOrStructuredFallback({
+        query: retrievalQuery(input.route, input.question),
+        structured,
+        embed: input.embed,
+        retrieve: input.retrieve,
+      });
+      const semantic = admitKnowledgeForRoute(
+        input.route,
+        resolved.candidates,
+        input.question,
+      );
       return {
         capability: null,
-        knowledge: admitKnowledgeForRoute(input.route, candidates, input.question),
+        evidenceDegraded: resolved.evidenceDegraded,
+        knowledge: semantic.length > 0 ? semantic : structured,
         search: undefined,
       };
     }
     case 'jd': {
-      const embedding = await input.embed(input.question);
-      const candidates = await input.retrieve(embedding);
-      const semantic = admitKnowledgeForRoute(input.route, candidates, input.question);
+      const capability = jdCapabilityKnowledge(input.question, input.ledger);
+      const resolved = await semanticKnowledgeOrStructuredFallback({
+        query: input.question,
+        structured: capability,
+        embed: input.embed,
+        retrieve: input.retrieve,
+      });
+      const semantic = resolved.evidenceDegraded
+        ? []
+        : admitKnowledgeForRoute(input.route, resolved.candidates, input.question);
       return {
         capability: null,
+        evidenceDegraded: resolved.evidenceDegraded,
         knowledge: mergeJdKnowledge(
           semantic,
-          jdCapabilityKnowledge(input.question, input.ledger),
+          capability,
         ),
         search: undefined,
       };

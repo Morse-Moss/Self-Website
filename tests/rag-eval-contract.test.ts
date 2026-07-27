@@ -166,14 +166,21 @@ test('S8 chat evaluation covers answer safety, runtime errors, and source naviga
     cases: Array<{
       id: string;
       category: string;
-      query: string;
+      query?: string;
       expectedBehavior: string;
       documentId?: string;
       expectedHref?: string;
+      turns?: Array<{ query: string }>;
     }>;
   };
   assert.ok(data.cases.length >= 20, 'chat evaluation must contain at least 20 cases');
-  assert.ok(data.cases.every((item) => item.query.trim() && item.expectedBehavior.trim()));
+  assert.ok(data.cases.every((item) => {
+    const hasInput = item.expectedBehavior === 'multi-turn-route'
+      ? Array.isArray(item.turns) && item.turns.length > 0
+        && item.turns.every((turn) => turn.query.trim().length > 0)
+      : typeof item.query === 'string' && item.query.trim().length > 0;
+    return hasInput && item.expectedBehavior.trim();
+  }));
   const categories = new Set(data.cases.map((item) => item.category));
   for (const category of [
     'recruiter',
