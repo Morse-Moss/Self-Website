@@ -104,17 +104,22 @@ export function projectFinalContext(input: FinalContextProjectionInput): Context
   }
 
   if (semantic.taskAction === 'temporary' || semantic.discourseAction === 'one_shot') {
+    const explicitReference = semantic.discourseAction === 'follow_up'
+      && semantic.reasonCodes.includes('explicit_discourse_reference');
     const evidence = ['identity_fact', 'project_catalog', 'named_project_fact', 'capability_fact', 'external_current']
       .includes(semantic.intent)
       ? [...input.approvedEvidence]
       : [];
     return finish({
-      discourse: null,
+      discourse: explicitReference ? input.discourse : null,
       frame: null,
       slots: [],
       history: [],
       evidence,
-      reasonCodes: ['projection_temporary_isolated'],
+      reasonCodes: [
+        'projection_temporary_isolated',
+        ...(explicitReference ? ['projection_explicit_discourse_reference'] : []),
+      ],
     });
   }
 

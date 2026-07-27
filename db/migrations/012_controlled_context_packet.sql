@@ -35,8 +35,14 @@ ALTER TABLE interaction_turns
       OR task_action IN ('create', 'continue', 'switch', 'temporary', 'wait', 'complete')
     ),
   ADD COLUMN context_scope_id uuid,
+  ADD COLUMN reserved_user_message_id bigint
+    CHECK (reserved_user_message_id IS NULL OR reserved_user_message_id > 0),
   ADD COLUMN context_manifest jsonb
     CHECK (context_manifest IS NULL OR jsonb_typeof(context_manifest) = 'object');
+
+CREATE UNIQUE INDEX interaction_turns_reserved_user_message_id_idx
+  ON interaction_turns (reserved_user_message_id)
+  WHERE reserved_user_message_id IS NOT NULL;
 
 CREATE INDEX interaction_turns_context_pipeline_status_created_idx
   ON interaction_turns (execution_pipeline, status, created_at DESC)

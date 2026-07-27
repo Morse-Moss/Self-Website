@@ -460,6 +460,9 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
     previous: previousAnchor(input.discourseContext),
     hasUsableHistory: Boolean(input.discourseContext),
   });
+  const explicitDiscourseReference = Boolean(input.discourseContext
+    && baseRoute.inheritedFromTurnId === input.discourseContext.turnId
+    && baseRoute.reasonCode === 'anaphoric_conversation_followup');
   const projectSlugs = matchChatProjectSlugs(message);
   const capabilities = assessCapabilities(message, input.ledger);
   const capability = capabilities.find((candidate) => candidate.evidenceClass !== 'none')
@@ -495,10 +498,6 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
   } else if (completing) {
     intent = currentFrame?.evidenceFocus.topicKind === 'jd' ? 'jd_match' : 'project_fit';
     reasonCode = 'recruitment_task_complete';
-  } else if (projectSlugs.length === 1 && isPersonalHistoryQuestion(message)) {
-    intent = 'named_project_fact';
-    reasonCode = 'personal_named_project_query';
-    referent = { kind: 'project', ref: projectSlugs[0] };
   } else if (isProjectCatalog(message)) {
     intent = 'project_catalog';
     reasonCode = 'portfolio_project_collection_query';
@@ -515,6 +514,13 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
       intent = 'project_fit';
       reasonCode = 'recruitment_project_fit';
     }
+  } else if (projectSlugs.length === 1
+    && baseRoute.routeKind === 'grounded'
+    && baseRoute.topicKind === 'project'
+    && baseRoute.topicRef === projectSlugs[0]) {
+    intent = 'named_project_fact';
+    reasonCode = baseRoute.reasonCode;
+    referent = { kind: 'project', ref: projectSlugs[0] };
   } else if (jdLike) {
     intent = 'jd_match';
     reasonCode = activeRecruitment ? 'contextual_jd_match' : 'short_jd_detected';
@@ -576,6 +582,8 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
     discourseAction = 'new_task';
   } else if (correction) {
     discourseAction = 'correction';
+  } else if (explicitDiscourseReference) {
+    discourseAction = 'follow_up';
   } else if (activeRecruitment && taskAction !== 'temporary') {
     discourseAction = 'follow_up';
   } else {
@@ -613,7 +621,10 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
     referent,
     evidencePlan: evidencePlanForIntent(intent),
     confidence: intent === 'clarify' ? 0.45 : 0.9,
-    reasonCodes: [reasonCode],
+    reasonCodes: [
+      reasonCode,
+      ...(explicitDiscourseReference ? ['explicit_discourse_reference'] : []),
+    ],
   });
   const legacyRoute = legacyRouteForSemantic({
     intent,

@@ -155,6 +155,58 @@ test('generation request contains current input once and current-message slots u
   assert.equal(packet.taskInputs[1].text, '负责 RAG 评测');
 });
 
+test('canonical packet preserves task and slot source ids inside the packet HMAC', () => {
+  const input = {
+    resolved: resolved(),
+    currentInput: '哪些项目相关？',
+    currentUserMessageId: '21',
+    projection: projection(),
+    tokenBudget: 12_000,
+    digestKey: KEY,
+    digestKeyId: KEY_ID,
+    reasoningEffort: null,
+  } as const;
+  const built = buildContextPacket(input);
+
+  assert.equal(built.packet.taskFrame?.taskId, '22222222-2222-4222-8222-222222222222');
+  assert.equal(built.packet.taskFrame?.taskStartedMessageId, '11');
+  assert.deepEqual(
+    built.packet.taskInputs.map((candidate) => candidate.sourceMessageId),
+    ['21', '11'],
+  );
+
+  const changedTaskId = buildContextPacket({
+    ...input,
+    projection: projection({
+      frame: {
+        ...projection().frame!,
+        taskId: '99999999-9999-4999-8999-999999999999',
+      },
+    }),
+  });
+  const changedStartedMessage = buildContextPacket({
+    ...input,
+    projection: projection({
+      frame: {
+        ...projection().frame!,
+        taskStartedMessageId: '12',
+      },
+    }),
+  });
+  const changedSlotSource = buildContextPacket({
+    ...input,
+    projection: projection({
+      slots: projection().slots.map((candidate, index) => (
+        index === 1 ? { ...candidate, sourceMessageId: '12' } : candidate
+      )),
+    }),
+  });
+
+  for (const changed of [changedTaskId, changedStartedMessage, changedSlotSource]) {
+    assert.notEqual(changed.packetHmacSha256, built.packetHmacSha256);
+  }
+});
+
 test('historical JD carried by discourse is referenced once instead of duplicated in task inputs', () => {
   const historicalJd = '岗'.repeat(12_000);
   const discourse: CompletedContextTurn = {

@@ -224,6 +224,8 @@ export interface InteractionTurn {
   sources: ChatSource[];
   usedSearch: boolean;
   executionPipeline: ContextExecutionPipeline | null;
+  taskId: string | null;
+  reservedUserMessageId: string | null;
 }
 
 interface InteractionRow {
@@ -239,6 +241,8 @@ interface InteractionRow {
   knowledge_sources: unknown;
   used_search: boolean;
   execution_pipeline: ContextExecutionPipeline | null;
+  task_id: string | null;
+  reserved_user_message_id: string | null;
 }
 
 function toInteraction(row: InteractionRow): InteractionTurn {
@@ -255,12 +259,15 @@ function toInteraction(row: InteractionRow): InteractionTurn {
     sources: sanitizeTurnSources(row.knowledge_sources) ?? [],
     usedSearch: row.used_search,
     executionPipeline: row.execution_pipeline,
+    taskId: row.task_id,
+    reservedUserMessageId: row.reserved_user_message_id,
   };
 }
 
 const interactionColumns = `id::text, access_session_id::text,
   conversation_id::text, workflow, audience_intent, question, answer,
-  status, error_code, knowledge_sources, used_search, execution_pipeline`;
+  status, error_code, knowledge_sources, used_search, execution_pipeline,
+  task_id::text, reserved_user_message_id::text`;
 
 export async function loadInteractionForUpdate(
   client: PoolClient,
@@ -312,14 +319,17 @@ export async function insertRunningInteraction(input: {
   audienceIntent: ChatAudienceIntent;
   question: string;
   executionPipeline?: ContextExecutionPipeline;
+  taskId?: string | null;
+  reservedUserMessageId?: string | null;
   now: Date;
   deleteAfter: Date;
 }): Promise<void> {
   await input.client.query(
     `INSERT INTO interaction_turns
       (id, access_session_id, invite_label, conversation_id, workflow, audience_intent,
-       question, execution_pipeline, status, created_at, delete_after)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'running', $9, $10)`,
+       question, execution_pipeline, task_id, reserved_user_message_id,
+       status, created_at, delete_after)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'running', $11, $12)`,
     [
       input.turnId,
       input.accessSessionId,
@@ -329,6 +339,8 @@ export async function insertRunningInteraction(input: {
       input.audienceIntent,
       input.question,
       input.executionPipeline ?? 'legacy_v1',
+      input.taskId ?? null,
+      input.reservedUserMessageId ?? null,
       input.now,
       input.deleteAfter,
     ],
@@ -339,6 +351,8 @@ export async function restartInteraction(input: {
   client: PoolClient;
   turnId: string;
   executionPipeline?: ContextExecutionPipeline;
+  taskId?: string | null;
+  reservedUserMessageId?: string | null;
 }): Promise<void> {
   await input.client.query('DELETE FROM usage_events WHERE interaction_turn_id = $1', [input.turnId]);
   await input.client.query(
@@ -364,6 +378,8 @@ export async function restartInteraction(input: {
             usage_complete = false,
             cost_complete = false,
             execution_pipeline = $2,
+            task_id = COALESCE(task_id, $3),
+            reserved_user_message_id = COALESCE(reserved_user_message_id, $4),
             semantic_intent = NULL,
             discourse_action = NULL,
             task_action = NULL,
@@ -372,7 +388,12 @@ export async function restartInteraction(input: {
             latency_ms = NULL,
             completed_at = NULL
       WHERE id = $1 AND status IN ('stopped', 'failed')`,
-    [input.turnId, input.executionPipeline ?? 'legacy_v1'],
+    [
+      input.turnId,
+      input.executionPipeline ?? 'legacy_v1',
+      input.taskId ?? null,
+      input.reservedUserMessageId ?? null,
+    ],
   );
   if (result.rowCount !== 1) throw new Error('Interaction turn cannot be restarted.');
 }

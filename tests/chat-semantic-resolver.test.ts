@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 
-import type { ConversationTaskFrameV22, ResolvedTaskSlotRef } from '../lib/contracts/chat-context.ts';
+import type {
+  CompletedContextTurn,
+  ConversationTaskFrameV22,
+  ResolvedTaskSlotRef,
+} from '../lib/contracts/chat-context.ts';
 import { normalizeChatRequest } from '../lib/server/chat-core.ts';
 import { compileCapabilityLedger } from '../lib/server/capability-evidence.ts';
 import { resolveChatSemanticTurn } from '../lib/server/chat-semantic-resolver.ts';
@@ -60,10 +64,22 @@ function activeFrame(overrides: Partial<ConversationTaskFrameV22> = {}): Convers
   };
 }
 
+function completedTurn(): CompletedContextTurn {
+  return {
+    conversationId: CONVERSATION_ID,
+    turnId: '44444444-4444-4444-8444-444444444444',
+    contextScopeId: '44444444-4444-4444-8444-444444444444',
+    user: { id: '41', role: 'user', text: '先解释一下这个设计。' },
+    assistant: { id: '42', role: 'assistant', text: '因为它能降低上下文污染。' },
+    completedAt: new Date('2026-07-27T00:00:00.000Z'),
+  };
+}
+
 function resolve(
   message: string,
   options: {
     currentFrame?: ConversationTaskFrameV22 | null;
+    discourseContext?: CompletedContextTurn | null;
     workflow?: 'chat' | 'jd_match';
     currentUserMessageId?: string;
   } = {},
@@ -77,7 +93,7 @@ function resolve(
     conversationId: CONVERSATION_ID,
     currentUserMessageId: options.currentUserMessageId ?? '21',
     currentFrame: options.currentFrame ?? null,
-    discourseContext: null,
+    discourseContext: options.discourseContext ?? null,
     legacyBridge: [],
     taskIdFactory: () => NEXT_TASK_ID,
   });
@@ -103,6 +119,35 @@ test('semantic resolver distinguishes catalog, fit, named project, capability, a
   assert.equal(resolve('你做过哪些项目？').resolved.semantic.evidencePlan[0], 'approved_project_catalog');
   assert.equal(resolve('你做过数字 Morse 项目吗？').resolved.semantic.referent?.ref, 'digital-morse');
   assert.equal(resolve('你熟悉 PostgreSQL 吗？').resolved.semantic.referent?.ref, 'postgresql');
+});
+
+test('explicit conversational follow-up keeps exactly the adjacent completed turn', () => {
+  const result = resolve('为什么这么说？', { discourseContext: completedTurn() });
+
+  assert.equal(result.resolved.semantic.intent, 'general_conversation');
+  assert.equal(result.resolved.semantic.taskAction, 'temporary');
+  assert.equal(result.resolved.semantic.discourseAction, 'follow_up');
+  assert.ok(result.resolved.semantic.reasonCodes.includes('explicit_discourse_reference'));
+});
+
+test('named project implementation question keeps named approved project evidence semantics', () => {
+  const result = resolve('数字摩斯怎么实现 RAG？');
+
+  assert.equal(result.resolved.semantic.intent, 'named_project_fact');
+  assert.equal(result.resolved.semantic.referent?.ref, 'digital-morse');
+  assert.deepEqual(result.resolved.semantic.evidencePlan, ['named_approved_project']);
+  assert.equal(result.resolved.legacyRoute.reasonCode, 'project_fact_query');
+});
+
+test('named project fit questions keep ranked project-fit semantics with or without an active frame', () => {
+  for (const frame of [null, activeFrame()] as const) {
+    const result = resolve('数字摩斯这个项目适合投 React 岗位吗？', { currentFrame: frame });
+
+    assert.equal(result.resolved.semantic.intent, 'project_fit');
+    assert.deepEqual(result.resolved.semantic.evidencePlan, ['ranked_project_fit']);
+    assert.equal(result.resolved.semantic.taskAction, frame ? 'continue' : 'create');
+    assert.equal(result.resolved.legacyRoute.reasonCode, 'recruitment_project_fit');
+  }
 });
 
 test('recruitment context makes related project experience a Morse project-fit question', () => {

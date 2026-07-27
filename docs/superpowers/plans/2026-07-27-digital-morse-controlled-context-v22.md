@@ -19,7 +19,7 @@ controls:
   execution: STAGED
   risk: CRITICAL
   delivery: DEPLOYED
-state: VERIFY
+state: CLOSEOUT
 scope:
   owned:
     - db/migrations/012_controlled_context_packet.sql
@@ -148,9 +148,9 @@ Verified 2026-07-27: projection, semantic bridge, and PostgreSQL context-state t
 - [x] Write RED tests proving catalog bypasses embedding, project fit selects stable top three unique project slugs after over-fetch 15, named project locks one slug, capability facts use the ledger, and structured fallback never turns available evidence into unavailable.
 - [x] Add direct/transferable/unavailable admissions and return only audited project IDs plus required content to Approved Evidence.
 - [x] Preserve the existing 46-case retrieval gate and add fixed failure-chain expected/forbidden project slugs.
-- [ ] Run evidence, RAG integration, and gold eval GREEN with zero external calls.
+- [x] Run evidence, RAG integration, and gold eval GREEN with zero external calls.
 
-Focused evidence/RAG tests passed `22` with `3` database-dependent skips; TypeScript passed. `npm run rag:eval` stopped before execution because this worktree has no `DATABASE_URL`; the real `46/46` gate remains open for Task 8.
+Stage-exit verification on 2026-07-28 used a disposable PostgreSQL database and local BGE: deterministic ingest produced 41 documents / 48 chunks; `npm run rag:eval` passed all 46 top-3 cases plus positive/negative thresholds with zero external calls.
 
 ### Task 5: Build, budget, serialize, and sign the Context Packet
 
@@ -192,14 +192,16 @@ Reverified after mainline integration on 2026-07-28: the controlled-context/migr
 
 - [x] Write the five-turn RED fixture with expected semantic intent, task ID continuity, project slugs, evidence levels, prompt/packet projection, offline quality evaluation, and final visible answer.
 - [x] Make the smallest production corrections required by the fixture, keeping them inside Tasks 2-7 ownership.
-- [ ] Run focused tests, `chat:eval` with `externalCalls=0`, `rag:eval` top-3 46/46, typecheck, full tests, build, diff check, and scoped secret scan.
-- [ ] Perform split compliance/spec and quality/safety review against this StagePacket; close admitted blockers within the CRITICAL correction budget.
+- [x] Run focused tests, `chat:eval` with `externalCalls=0`, `rag:eval` top-3 46/46, typecheck, full tests, build, diff check, and scoped secret scan.
+- [x] Perform split compliance/spec and quality/safety review against this StagePacket; close admitted blockers within the CRITICAL correction budget.
+
+Verified 2026-07-28: the complete isolated test set exited 0 with 1143 tests, zero failures and zero skips; Chat service integration passed `90/90`; `chat:eval` passed `96/96` with `externalCalls=0`; RAG passed `46/46` top-3 and both thresholds; typecheck, 33-route production build, changed-file ESLint, diff check and the 24-file production-sensitive scan passed. Full ESLint retains 20 pre-existing errors in untouched frontend files. Separate CRITICAL compliance/spec and quality/safety review returned PASS after the bounded corrections.
 
 ### Task 9: Close out, absorb, push, and freeze the release
 
 **Files:** implementation/tests plus impacted knowledge and the Morse rollout log.
 
-- [ ] Reconcile blueprint, runbook, environment contract, closeout evidence, and Resume Pointer; obtain a current `KnowledgeReceipt`.
+- [x] Reconcile blueprint, runbook, environment contract, closeout evidence, and Resume Pointer; obtain a current `KnowledgeReceipt`.
 - [ ] Stage only explicit owned files, inspect the full staged diff, create scoped commits, and verify `master` contains them without touching `.github/`.
 - [ ] Push the frozen commit, create and hash the release archive, and verify the local/remote SHA-256 before any production pointer change.
 
@@ -207,7 +209,7 @@ Reverified after mainline integration on 2026-07-28: the controlled-context/migr
 
 **Files:** production release and redacted evidence only; never commit secrets or production data.
 
-- [ ] Recheck live release, containers, schema registry, active Chat V2/safe mode, Provider route, RAG, long transactions, backup destination, and rollback-compatible prior release.
+- [x] Recheck live release, containers, schema registry, active Chat V2/safe mode, Provider route, RAG, long transactions, backup destination, and rollback-compatible prior release.
 - [ ] Enter controlled write quiescence, create/verify the database backup, run migrations 009-012, grants, runtime verification, and idempotent ingest with Context Packet disabled.
 - [ ] Configure a Web-only random digest key/key ID without echoing it; build/start the reviewed release; verify migration manifest, live/ready, mock failure-chain, containers, logs, and `release:smoke` before real Provider use.
 - [ ] Enable only the named test invite and issue at most five main answers. Reproduce the new-conversation failure chain and, when eligible, the legacy bridge; inspect user-visible output plus redacted manifest/attempt invariants.
@@ -216,8 +218,8 @@ Reverified after mainline integration on 2026-07-28: the controlled-context/migr
 
 ## Resume Pointer
 
-Current stage and state: `VERIFY / Task 8 stage-exit checks in progress`; the gold RAG eval, full suite, build, review, and sensitive scan remain open.
+Current stage and state: `CLOSEOUT / Task 9 knowledge reconciliation and scoped commit in progress`.
 
-Last completed verified step: merged normal-only/non-blocking semantics passed the affected `119/119` unit boundary, `5/5` Provider attempt PostgreSQL tests, and fully migrated, deterministically ingested Chat service regression `90/90` with zero skips.
+Last completed verified step: local stage exit passed 1143 tests with zero failures/skips, `chat:eval` 96/96 with zero external calls, RAG 46/46 top-3, typecheck, 33-route build, scoped lint/diff/sensitive scans, and split CRITICAL review; production read-only preflight confirmed release `d947cb7`, migration `001-011`, 41/48 RAG, route revision 2, Chat v2 100%, safe mode/hedging off, and Context Packet absent.
 
-Exact next action: run chat eval, real local BGE/pgvector gold RAG, full suite, build, diff/sensitive scans, then close split review findings before final knowledge reconciliation.
+Exact next action: finish the current KnowledgeReceipt, explicitly stage owned files, commit and absorb/push the frozen release without touching the main worktree `.github/` directory.

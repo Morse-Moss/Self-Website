@@ -115,6 +115,19 @@
 
 所有 Chat v2 变量都是服务端配置，禁止增加 `NEXT_PUBLIC_` 前缀。生产预检必须拒绝 canary 超界、非 UUID、备用节点缺 key 或缺 URL、未解析引用和尖括号占位值；预检不调用 Provider，也不回显灰度 UUID、Provider URL 或 key。
 
+## Controlled Context Packet V2.2 单邀请码 canary
+
+该发布使用独立 Context Packet 灰度，不修改当前 Chat v2 100% 状态、活动 Provider route revision 2、safe mode、hedging、RAG 或私密简历。腾讯云实例的受控顺序如下：
+
+1. 冻结并上传 Git commit 归档，核对本地/远端 SHA-256；切换前确认 `/opt/revolution/current`、五容器 identity/health/restart count、migration `001-011`、41 documents / 48 chunks、活动 Provider route、零长事务、PostgreSQL TLS 与回滚镜像。
+2. 停止 Web/Worker 后创建 `/opt/revolution/shared/backups/pre-<release>-<UTC>.dump`，要求非空、mode `0600` 且记录 SHA-256。使用 `--no-deps` 执行 migration `012`、grants 和 runtime 权限验证；migration 前向追加，不执行 down migration。
+3. 在 `/opt/revolution/shared/secrets/context_packet_digest_key` 生成独立 32-byte Secret，owner `1001:1001`、mode `0600`，只挂载给 Web。共享环境设置 `MORSE_CONTEXT_PACKET_DIGEST_KEY_ID`、12k/24k 预算、Context Packet enabled、canary percent `0` 与空白名单。
+4. 只构建/重建 Web、Worker，不运行 ingest，不重建 DB、Embedding、Edge。空白名单下先验证 ready、manifest `001-012`、grants、固定 Mock 失败链、公网 smoke、容器身份和错误日志。
+5. 创建一个 1 小时、最多 1 个 Session 的专用测试邀请码，只把其非敏感 UUID 写入 `MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS`，百分比始终保持 `0`，只重启 Web。最多发送 5 次真实 Provider 主回答，至少覆盖完整招聘失败链、“为什么这么说？”、“数字摩斯怎么实现 RAG？”和“数字摩斯这个项目适合投 React 岗位吗？”。
+6. 只记录脱敏 manifest、Task Frame 状态、来源 ID、attempt 状态/时延及同 turn packet/request HMAC 一致性，不记录原始问答、邀请码明文、Provider payload、Key 或 URL。完成后停用邀请码、清空白名单、保持 percent `0`，只重启 Web并复验全部健康与日志门禁。
+
+异常时只关闭 `MORSE_CHAT_CONTEXT_PACKET_ENABLED`、清空白名单并重启 Web；保留 migration `012`、Secret 和数据。回滚镜像必须识别 `001-012`，禁止使用当前 pre-012 的 `d947cb7` 镜像。未经新的当前授权，停止在单邀请码 canary，不进入 10% 或更高灰度。
+
 ## 发布边界
 
 - 只发布已冻结的 Git 提交，不从脏工作区复制文件。

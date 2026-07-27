@@ -609,6 +609,7 @@ export async function persistContextTerminalManifest(
             semantic_intent = $3,
             discourse_action = $4,
             task_action = $5,
+            task_id = $6,
             context_scope_id = $6,
             context_manifest = $7::jsonb
       WHERE id = $1 AND conversation_id = $2`,

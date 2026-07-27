@@ -226,6 +226,7 @@ interface TurnContext {
   behavior: ChatBehavior;
   contextAssignment: ContextPipelineAssignment;
   executionPipeline: ContextExecutionPipeline;
+  contextTaskId: string | null;
   legacyBridgeCaptureStatus?: 'not_eligible' | 'invalid';
 }
 
@@ -757,6 +758,7 @@ async function prepareContextTurn(input: {
       currentFrame,
       discourseContext: discourse,
       legacyBridge,
+      taskIdFactory: () => input.turn.contextTaskId ?? input.turn.turnId,
     });
     resolved = resolution.resolved;
     bridgeStatus = resolution.legacyBridgeStatus;
@@ -1067,6 +1069,9 @@ async function recoverRunningTurn(input: {
   behavior: ChatBehavior;
   contextAssignment: ContextPipelineAssignment;
   executionPipeline: ContextExecutionPipeline;
+  reservedUserMessageId: string | null;
+  contextTaskId: string | null;
+  now: Date;
 }): Promise<TurnContext> {
   const result = await input.client.query<ConversationMessageRow>(
     `SELECT id::text AS id, role, content
@@ -1088,9 +1093,20 @@ async function recoverRunningTurn(input: {
     matchingTurn.length !== 1
     || reservedUsers.length !== 1
     || matchingAssistants.length !== 0
+    || (input.reservedUserMessageId !== null
+      && reservedUsers[0].id !== input.reservedUserMessageId)
   ) {
     throw new ChatServiceError('CONVERSATION_INVALID');
   }
+
+  const legacyBridgeCaptureStatus = await captureLegacyBridgeForTurn({
+    client: input.client,
+    conversationId: input.conversationId,
+    userMessageId: reservedUsers[0].id,
+    capturedAt: input.now,
+    contextAssignment: input.contextAssignment,
+    executionPipeline: input.executionPipeline,
+  });
 
   return {
     conversationId: input.conversationId,
@@ -1105,7 +1121,33 @@ async function recoverRunningTurn(input: {
     behavior: input.behavior,
     contextAssignment: input.contextAssignment,
     executionPipeline: input.executionPipeline,
+    contextTaskId: input.contextTaskId
+      ?? (input.executionPipeline === 'context_packet_v22' ? input.turnId : null),
+    legacyBridgeCaptureStatus,
   };
+}
+
+async function captureLegacyBridgeForTurn(input: {
+  client: PoolClient;
+  conversationId: string;
+  userMessageId: string;
+  capturedAt: Date;
+  contextAssignment: ContextPipelineAssignment;
+  executionPipeline: ContextExecutionPipeline;
+}): Promise<NonNullable<TurnContext['legacyBridgeCaptureStatus']>> {
+  if (input.executionPipeline !== 'context_packet_v22'
+    || input.contextAssignment !== 'legacy') return 'not_eligible';
+  try {
+    await captureLegacyContextBridge(input.client, {
+      conversationId: input.conversationId,
+      beforeMessageId: input.userMessageId,
+      capturedAt: input.capturedAt,
+    });
+    return 'not_eligible';
+  } catch (error) {
+    if (!(error instanceof LegacyBridgeValidationError)) throw error;
+    return 'invalid';
+  }
 }
 
 async function reserveTurnInTransaction(input: {
@@ -1223,6 +1265,7 @@ async function reserveTurnInTransaction(input: {
       behavior,
       contextAssignment,
       executionPipeline: interaction.executionPipeline ?? selectedExecutionPipeline,
+      contextTaskId: interaction.taskId,
     };
   }
 
@@ -1242,6 +1285,7 @@ async function reserveTurnInTransaction(input: {
       behavior,
       contextAssignment,
       executionPipeline: interaction.executionPipeline ?? selectedExecutionPipeline,
+      contextTaskId: interaction.taskId,
     };
   }
 
@@ -1267,6 +1311,9 @@ async function reserveTurnInTransaction(input: {
       behavior,
       contextAssignment,
       executionPipeline: selectedExecutionPipeline,
+      reservedUserMessageId: interaction.reservedUserMessageId,
+      contextTaskId: interaction.taskId,
+      now: input.now,
     });
   }
 
@@ -1322,13 +1369,28 @@ async function reserveTurnInTransaction(input: {
     request: input.request,
   });
 
-  const insertedMessage = await input.client.query<{ id: string }>(
-    `INSERT INTO conversation_messages (conversation_id, role, content, created_at)
-     VALUES ($1, 'user', $2, $3)
-     RETURNING id::text AS id`,
-    [conversationId, encodeTurnMessage(input.turnId, input.request.message), input.now],
-  );
+  const insertedMessage = interaction?.reservedUserMessageId
+    ? await input.client.query<{ id: string }>(
+        `INSERT INTO conversation_messages (id, conversation_id, role, content, created_at)
+         VALUES ($1, $2, 'user', $3, $4)
+         RETURNING id::text AS id`,
+        [
+          interaction.reservedUserMessageId,
+          conversationId,
+          encodeTurnMessage(input.turnId, input.request.message),
+          input.now,
+        ],
+      )
+    : await input.client.query<{ id: string }>(
+        `INSERT INTO conversation_messages (conversation_id, role, content, created_at)
+         VALUES ($1, 'user', $2, $3)
+         RETURNING id::text AS id`,
+        [conversationId, encodeTurnMessage(input.turnId, input.request.message), input.now],
+      );
   const userMessageId = insertedMessage.rows[0].id;
+  const contextTaskId = selectedExecutionPipeline === 'context_packet_v22'
+    ? interaction?.taskId ?? input.turnId
+    : interaction?.taskId ?? null;
 
   await input.client.query(
     `UPDATE access_sessions
@@ -1346,6 +1408,8 @@ async function reserveTurnInTransaction(input: {
       client: input.client,
       turnId: input.turnId,
       executionPipeline: selectedExecutionPipeline,
+      taskId: contextTaskId,
+      reservedUserMessageId: userMessageId,
     });
   } else {
     const deleteAfter = new Date(
@@ -1361,25 +1425,21 @@ async function reserveTurnInTransaction(input: {
       audienceIntent: input.request.audienceIntent,
       question: input.request.message,
       executionPipeline: selectedExecutionPipeline,
+      taskId: contextTaskId,
+      reservedUserMessageId: userMessageId,
       now: input.now,
       deleteAfter,
     });
   }
 
-  let legacyBridgeCaptureStatus: TurnContext['legacyBridgeCaptureStatus'] = 'not_eligible';
-  if (selectedExecutionPipeline === 'context_packet_v22'
-    && contextAssignment === 'legacy') {
-    try {
-      await captureLegacyContextBridge(input.client, {
-        conversationId,
-        beforeMessageId: userMessageId,
-        capturedAt: input.now,
-      });
-    } catch (error) {
-      if (!(error instanceof LegacyBridgeValidationError)) throw error;
-      legacyBridgeCaptureStatus = 'invalid';
-    }
-  }
+  const legacyBridgeCaptureStatus = await captureLegacyBridgeForTurn({
+    client: input.client,
+    conversationId,
+    userMessageId,
+    capturedAt: input.now,
+    contextAssignment,
+    executionPipeline: selectedExecutionPipeline,
+  });
 
   return {
     conversationId,
@@ -1394,6 +1454,7 @@ async function reserveTurnInTransaction(input: {
     behavior,
     contextAssignment,
     executionPipeline: selectedExecutionPipeline,
+    contextTaskId,
     legacyBridgeCaptureStatus,
   };
 }

@@ -396,3 +396,11 @@
 - **质量检查定位**：输出质量规则只用于离线评测或不影响成功状态的非阻断观测；它们没有丢弃正文、触发重生成、清空前端、切换 Provider、记录 Provider incident 或返回 `PROVIDER_UNAVAILABLE` 的权限。
 - **重试与切换边界**：第二次 Provider 调用只允许发生在尚无用户可见正文的真实网络、协议、限流、超时、空完成或 incomplete 故障后。不得因内容质量执行 strict 重生成；一旦已有正文则继续沿用现有单 Provider 锁定规则。
 - **兼容边界**：历史 `generation_mode='strict'`、guard 错误和 attempt 记录继续可读，不做破坏性 migration；新运行时只生成 normal 请求。`chat-output-guard.ts` 可继续服务离线 `chat:eval`，但不得重新接回在线成功/失败状态机。
+
+## 26. 数字 Morse Controlled Context V2.2（2026-07-28）
+
+- **需求权威**：详细设计为 `docs/superpowers/specs/2026-07-27-digital-morse-controlled-context-design.md`，实施与发布状态由同名 V2.2 plan 和 release closeout 维护。本节覆盖 S10 中仅依赖 route-filtered history 的旧上下文实现，不改变十天分析保留和公开知识边界。
+- **上下文合同**：API 不发送无界“全部历史”。服务端以 Current Input、紧邻 completed discourse、结构化 Task Frame、同任务 completed-only history 和 Approved Evidence 组成有界 Context Packet；Final Projection 白名单决定每层是否准入，预算不足时按整轮淘汰，不切断消息。
+- **RAG 定位**：RAG 继续使用 BGE + pgvector，只为当前语义 intent 选择审核公开项目证据；Task Frame 管理任务连续性，RAG 不承担会话记忆。assistant 历史只帮助语言承接，不能升级为事实证据；项目目录、唯一项目锁定和项目适配使用独立证据计划。
+- **安全与完整性**：普通 Chat/JD 预算为 12k/24k；canonical packet 与 generation request 使用独立 Web-only HMAC。每个 Provider attempt 必须在网络调用前记录同 turn 一致的 builder/key/packet/request digest，manifest 只保留受约束 ID、枚举、计数和分数，不保留原始问答、JD、Provider payload 或 Secret。
+- **状态与发布**：migration `012` 为 additive、forward-only。上线先以 Context Packet percent `0` 和空白名单部署，再只对白名单中的一个测试邀请码运行最多 5 次真实主回答；完成后停用邀请码、清空白名单并保持 percent `0`。扩大灰度不属于本轮授权。

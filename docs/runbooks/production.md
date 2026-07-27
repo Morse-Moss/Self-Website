@@ -51,6 +51,8 @@ npm run production:worker
 - 三个 Chat 节点共享 `OPENAI_CHAT_MODEL`、`OPENAI_CHAT_PROTOCOL`、`OPENAI_REASONING_EFFORT` 和兼容 User-Agent。切换顺序固定为主节点、备用 1、备用 2，只在尚未输出正文时发生；已有部分回答或访客停止后不再切换。每个节点仍受单节点总超时约束，整次切换共享“单节点总超时 × 节点数”的上限。Embedding 继续使用独立配置。
 - 数据库 Provider 配置使用独立 32-byte 随机主密钥执行 AES-256-GCM 加密。生产只接受 `MORSE_PROVIDER_CONFIG_KEY_FILE` 和正整数 `MORSE_PROVIDER_CONFIG_KEY_VERSION`；直接值 `MORSE_PROVIDER_CONFIG_KEY`、mock origin 和私网 HTTP Provider override 均 fail closed。该 Secret 只挂载给 Web，Worker、Migration、Ingest 与 edge 不得读取。
 - Chat v2 灰度变量均为服务端配置，不得增加 `NEXT_PUBLIC_` 前缀。生产预检按运行时解析规则验证布尔值、0-100 整数 canary 和规范 UUID 列表；备用节点缺 key 或缺 URL、未解析引用和尖括号占位值均 fail closed，预检不调用 Provider，也不回显 UUID、Provider URL 或 key。
+- Controlled Context Packet 使用独立服务端开关 `MORSE_CHAT_CONTEXT_PACKET_ENABLED`、独立 `MORSE_CHAT_CONTEXT_CANARY_PERCENT` 和 UUID 白名单 `MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS`，不得复用 Chat v2 灰度变量。普通 Chat 与 JD 的输入预算分别固定为 `MORSE_CHAT_CONTEXT_TOKEN_BUDGET=12000` 和 `MORSE_JD_CONTEXT_TOKEN_BUDGET=24000`。
+- Context Packet HMAC 使用独立、解码后至少 32 bytes 的随机 Secret。生产只接受 Web 内的 `MORSE_CONTEXT_PACKET_DIGEST_KEY_FILE=/run/secrets/context_packet_digest_key` 和非敏感版本标识 `MORSE_CONTEXT_PACKET_DIGEST_KEY_ID`；不得使用直接值、复用 Provider/Admin/invite 密钥，Worker、Migration、Ingest 与 edge 均不得挂载该 Secret。
 - 私密简历默认使用 `MORSE_RESUME_ENABLED=false`。生产首次发布必须保持关闭，完成 migration `003`、私有卷初始化、最小 grants、健康检查和回滚检查后，才可在单独授权下启用。
 - 启用私密简历时，Web 还必须获得 `MORSE_RESUME_STORAGE_DIR`、`MORSE_RESUME_ENCRYPTION_KEY_FILE`、`MORSE_RESUME_KEY_VERSION`、`MORSE_RESUME_FINGERPRINT_SECRET`、`MORSE_RESUME_TRUSTED_PROXY_HOPS` 和独立 `MORSE_RESUME_COOKIE`。生产禁止使用直接值 `MORSE_RESUME_ENCRYPTION_KEY`；加密密钥只通过名为 `resume_encryption_key` 的部署 Secret 文件挂载给 Web。
 - Worker 只挂载简历密文卷用于保留期清理，不读取加密密钥。聊天、Embedding、Search、Ingest、Migration 和 edge 均不得获得简历文件或密钥。
@@ -105,7 +107,20 @@ npm run production:worker
 
 本节是未来发布合同，不改变“当前生产状态与硬化余项”中的历史事实；在部署 revision、运行配置和真实观察完成前，不得描述为 Chat v2 已上线。
 
-### 4.3 私密简历运维
+### 4.3 Controlled Context Packet disabled-first 灰度
+
+该灰度独立于 Chat v2。每次只变更 Context Packet 自身开关、百分比或 UUID 白名单，并只重启 Web；Chat v2、Provider route、safe mode、hedging、RAG 和私密简历状态不得被顺带修改。
+
+1. migration `012` 只做前向追加；先在受控停写窗口停止 Web/Worker、确认无长事务并创建可校验备份，再用 `docker compose run --rm --no-deps migration` 和 grants 应用。禁止 down migration、删除新表/列或伪造 registry。
+2. 生成独立 32-byte Web-only HMAC Secret，owner/mode 按部署平台固定为应用 UID/GID `1001:1001` 与 `0600`；设置 key ID、12k/24k 预算、`MORSE_CHAT_CONTEXT_PACKET_ENABLED=true`、`MORSE_CHAT_CONTEXT_CANARY_PERCENT=0` 和空白名单后构建并只重建 Web/Worker。
+3. 在 Context Packet 白名单为空且百分比为 `0` 时先验证 migration manifest、grants、live/ready、release smoke、容器身份、错误日志和无 Provider 的固定失败链。公开知识未变化时禁止为发布仪式重跑 ingest。
+4. 创建一个专用测试邀请码，只把其非敏感 invite UUID 写入 `MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS`，保持百分比始终为 `0`，只重启 Web。该 canary 最多发起 5 次真实 Provider 主回答，覆盖招聘多轮失败链、指代追问、数字 Morse RAG 实现和 React 岗位适配；不得额外开启百分比流量。
+5. 观察只保存 case ID、pipeline/semantic/task 状态、来源 ID、脱敏 manifest、attempt 数/状态/时延，以及同 turn 的 packet/request HMAC 一致性；不得保存邀请码明文、原始问答、Provider payload、Key、Base URL 或私密简历内容。
+6. canary 结束后停用邀请码、清空 Context Packet 白名单并保持百分比 `0`，只重启 Web，再复验 live/ready/release smoke、容器 identity/restart count 和新 Web 启动后的错误日志。未经新的当前授权，不进入 10% 或更高灰度。
+
+migration `012` 应用后，回滚只先设置 `MORSE_CHAT_CONTEXT_PACKET_ENABLED=false`、清空白名单并只重启 Web；保留 migration、HMAC Secret 和数据。任何回滚镜像都必须识别 migration manifest `001-012`，禁止切回 pre-012 镜像。
+
+### 4.4 私密简历运维
 
 - 公开入口只显示授权状态；真实 PDF 只通过 `GET /api/resume/file` 在有效简历 Session 下解密返回。响应必须保持 `Content-Type: application/pdf`、`Cache-Control: private, no-store`、`X-Content-Type-Options: nosniff` 和内联 disposition。
 - 管理员在 `/admin` 上传最终 PDF、创建一人一码的简历邀请或停用邀请。明文邀请码只在创建响应中出现一次；停用后关联简历 Session 下一次请求立即失效。聊天邀请码与简历邀请码互不升级权限。
@@ -151,6 +166,7 @@ npm run production:worker
 - 应用配置或行为异常且 schema 兼容时，将 Web/Worker 回滚到上一 digest，再执行 live/ready 和文本 smoke。
 - migration 只追加，不提供 down migration。若新版本已改变 schema 且旧镜像不兼容，禁止盲目回滚；停止发布并按对应 migration 的前向修复方案恢复。
 - migration `004` 应用后，回滚下限是仍能识别 `004` manifest、`ai_runtime_state` 单例和新增可空列的 Stage 1 兼容镜像；不得切回只认识 001-003 的二进制，也不得删除 Provider 配置表或伪造 migration registry。
+- migration `012` 应用后只允许关闭 Context Packet 开关并使用识别 `001-012` manifest 的镜像；不得 down migration 或切回 pre-012 镜像。
 - 私密简历异常时先设置 `MORSE_RESUME_ENABLED=false` 并只重启 Web/Worker；保留 migration `003`、密文卷和 Secret，不执行 down migration或删除数据。确认旧镜像忽略新增表后才可切回上一冻结版本。
 - 不从脏工作树构建或部署；发布必须指向已冻结 commit。
 

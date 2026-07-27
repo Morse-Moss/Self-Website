@@ -188,6 +188,33 @@ test('temporary and one-shot turns cannot project a saved recruitment frame or i
   assert.ok(projection.reasonCodes.includes('projection_temporary_isolated'));
 });
 
+test('explicit temporary follow-up projects only the adjacent discourse pair', () => {
+  const adjacent = turn('33333333-3333-4333-8333-333333333333');
+  const projection = projectFinalContext({
+    resolved: resolved({
+      intent: 'general_conversation',
+      taskAction: 'temporary',
+      discourseAction: 'follow_up',
+      reasonCodes: ['anaphoric_conversation_followup', 'explicit_discourse_reference'],
+    }),
+    currentUserMessageId: CURRENT_USER_ID,
+    discourse: adjacent,
+    frame: frame([
+      slot('company', '11', 'SENSITIVE_OLD_COMPANY'),
+      slot('job_description', '13', 'SENSITIVE_OLD_JD'),
+    ]),
+    history: [turn('44444444-4444-4444-8444-444444444444')],
+    approvedEvidence: [evidence('SENSITIVE_OLD_PROJECT')],
+  });
+
+  assert.equal(projection.discourse?.turnId, adjacent.turnId);
+  assert.equal(projection.frame, null);
+  assert.deepEqual(projection.slots, []);
+  assert.deepEqual(projection.history, []);
+  assert.deepEqual(projection.evidence, []);
+  assert.deepEqual(projection.includedLayers, ['current_input', 'discourse_context']);
+});
+
 test('deterministic clarification projects no provider context', () => {
   const projection = projectFinalContext({
     resolved: resolved({

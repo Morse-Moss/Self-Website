@@ -95,7 +95,8 @@ test('migration 012 creates isolated controlled-context persistence and attempt 
             (table_name = 'conversations' AND column_name = 'context_pipeline_assignment')
             OR (table_name = 'interaction_turns' AND column_name IN
               ('execution_pipeline', 'semantic_intent', 'discourse_action',
-               'task_action', 'context_scope_id', 'context_manifest'))
+               'task_action', 'context_scope_id', 'context_manifest',
+               'reserved_user_message_id'))
             OR (table_name IN ('chat_provider_attempts', 'interaction_provider_attempts')
               AND column_name IN
                 ('context_builder_version', 'packet_hmac_key_id',
@@ -104,7 +105,7 @@ test('migration 012 creates isolated controlled-context persistence and attempt 
           )
         ORDER BY table_name, column_name`,
     );
-    assert.equal(columns.rowCount, 17);
+    assert.equal(columns.rowCount, 18);
   } finally {
     await pool.end();
     await database.dispose();

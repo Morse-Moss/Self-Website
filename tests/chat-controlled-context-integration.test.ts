@@ -21,6 +21,7 @@ import {
 } from '../lib/server/chat-service.ts';
 import { EMBEDDING_DIMENSIONS } from '../lib/server/embedding.ts';
 import { FailoverAiProvider } from '../lib/server/failover-ai-provider.ts';
+import { insertRunningInteraction } from '../lib/server/interaction-log.ts';
 import { hashSecret } from '../lib/server/security.ts';
 import type { SearchProvider } from '../lib/server/search-provider.ts';
 import { siteContent } from '../lib/site-content.ts';
@@ -496,6 +497,176 @@ test('V2.2 failure compensation preserves only a redacted terminal manifest', as
     assert.equal(state.rows[0].completed_count, 0);
     assert.equal((state.rows[0].manifest as { context_build_status?: string }).context_build_status, 'built');
     assert.doesNotMatch(JSON.stringify(state.rows[0].manifest), new RegExp(marker, 'u'));
+  } finally {
+    await cleanupFixture(fixture);
+  }
+});
+
+test('V2.2 same-turn retry reuses the signed logical request across execution attempts', async () => {
+  const fixture = await createFixture('context-v22-same-turn-retry');
+  const turnId = randomUUID();
+  const request = jdRequest({ marker: 'SAME_TURN_RETRY_JD', turnId });
+  const failedProvider = new ControlledAnswerProvider({ fail: true });
+  const successfulProvider = new ControlledAnswerProvider();
+  try {
+    await assert.rejects(
+      collectChat({
+        pool,
+        provider: coordinatedProvider(failedProvider),
+        accessSessionId: fixture.accessSessionId,
+        request,
+        config: contextConfig(fixture),
+        now: fixtureNow,
+      }),
+      (error: unknown) => error instanceof ChatServiceError
+        && error.code === 'PROVIDER_UNAVAILABLE',
+    );
+
+    const firstIdentity = await pool.query<{
+      reserved_user_message_id: string;
+      task_id: string;
+    }>(
+      `SELECT reserved_user_message_id::text, task_id::text
+         FROM interaction_turns
+        WHERE id = $1`,
+      [turnId],
+    );
+
+    const retried = await collectChat({
+      pool,
+      provider: coordinatedProvider(successfulProvider),
+      accessSessionId: fixture.accessSessionId,
+      request,
+      config: contextConfig(fixture),
+      now: new Date(fixtureNow.getTime() + 1_000),
+    });
+    assert.equal(retried.at(-1)?.type, 'done');
+
+    const retriedIdentity = await pool.query<{
+      reserved_user_message_id: string;
+      task_id: string;
+      user_message_id: string;
+    }>(
+      `SELECT turn.reserved_user_message_id::text,
+              turn.task_id::text,
+              completed.user_message_id::text
+         FROM interaction_turns AS turn
+         JOIN conversation_context_completed_turns AS completed
+           ON completed.turn_id = turn.id
+        WHERE turn.id = $1`,
+      [turnId],
+    );
+    assert.deepEqual(retriedIdentity.rows[0], {
+      reserved_user_message_id: firstIdentity.rows[0].reserved_user_message_id,
+      task_id: firstIdentity.rows[0].task_id,
+      user_message_id: firstIdentity.rows[0].reserved_user_message_id,
+    });
+    assert.equal(
+      failedProvider.requests[0].execution?.integrity?.packetHmacSha256,
+      successfulProvider.requests[0].execution?.integrity?.packetHmacSha256,
+    );
+
+    const integrity = await pool.query<{
+      execution_count: number;
+      packet_hmac_count: number;
+      request_hmac_count: number;
+    }>(
+      `SELECT count(DISTINCT execution_id)::integer AS execution_count,
+              count(DISTINCT packet_hmac_sha256)::integer AS packet_hmac_count,
+              count(DISTINCT generation_request_hmac_sha256)::integer AS request_hmac_count
+         FROM chat_provider_attempts
+        WHERE interaction_turn_id = $1`,
+      [turnId],
+    );
+    assert.ok(integrity.rows[0].execution_count >= 2);
+    assert.equal(integrity.rows[0].packet_hmac_count, 1);
+    assert.equal(integrity.rows[0].request_hmac_count, 1);
+  } finally {
+    await cleanupFixture(fixture);
+  }
+});
+
+test('V2.2 explicit conversational follow-up sends only the adjacent completed pair', async () => {
+  const fixture = await createFixture('context-v22-explicit-follow-up');
+  const provider = new ControlledAnswerProvider();
+  try {
+    const first = await collectChat({
+      pool,
+      provider: coordinatedProvider(provider),
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        workflow: 'chat',
+        message: '先解释一下为什么受控上下文要限制历史。',
+        conversationId: null,
+        turnId: randomUUID(),
+      }),
+      config: contextConfig(fixture),
+      now: fixtureNow,
+    });
+    const firstMeta = first.find((event) => event.type === 'meta');
+    assert.equal(firstMeta?.type, 'meta');
+    if (firstMeta?.type !== 'meta') return;
+    const firstRequest = provider.requests[0];
+
+    await collectChat({
+      pool,
+      provider: coordinatedProvider(provider),
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        workflow: 'chat',
+        message: '为什么这么说？',
+        conversationId: firstMeta.conversationId,
+        turnId: randomUUID(),
+      }),
+      config: contextConfig(fixture),
+      now: new Date(fixtureNow.getTime() + 1_000),
+    });
+
+    assert.deepEqual(provider.requests[1].messages, [
+      { role: 'user', content: firstRequest.messages.at(-1)?.content ?? '' },
+      { role: 'assistant', content: 'For this AI Product Manager role, the available public evidence is insufficient.' },
+      { role: 'user', content: '为什么这么说？' },
+    ]);
+    assert.doesNotMatch(provider.requests[1].instructions, /SENSITIVE_OLD_COMPANY|SENSITIVE_OLD_JD/u);
+  } finally {
+    await cleanupFixture(fixture);
+  }
+});
+
+test('V2.2 named project implementation question includes the approved project evidence', async () => {
+  const fixture = await createFixture('context-v22-named-project-fact');
+  const provider = new ControlledAnswerProvider();
+  const turnId = randomUUID();
+  try {
+    const events = await collectChat({
+      pool,
+      provider: coordinatedProvider(provider),
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        workflow: 'chat',
+        message: '数字摩斯怎么实现 RAG？',
+        conversationId: null,
+        turnId,
+      }),
+      config: contextConfig(fixture),
+      now: fixtureNow,
+    });
+    assert.equal(events.at(-1)?.type, 'done');
+    const project = siteContent.projects.find((candidate) => candidate.slug === 'digital-morse');
+    assert.ok(project);
+    assert.match(provider.requests[0].instructions, new RegExp(project.name, 'u'));
+    const stored = await pool.query<{
+      evidence_ids: string[];
+      semantic_intent: string;
+    }>(
+      `SELECT context_manifest->'evidence_ids' AS evidence_ids,
+              semantic_intent
+         FROM interaction_turns
+        WHERE id = $1`,
+      [turnId],
+    );
+    assert.equal(stored.rows[0].semantic_intent, 'named_project_fact');
+    assert.deepEqual(stored.rows[0].evidence_ids, ['project:digital-morse']);
   } finally {
     await cleanupFixture(fixture);
   }
@@ -1023,6 +1194,129 @@ test('V2.2 compensates an invalid legacy bridge with a stable redacted terminal 
       JSON.stringify(stored.rows[0].context_manifest),
       /ORPHAN_LEGACY_BRIDGE_MARKER|历史示例/u,
     );
+  } finally {
+    await cleanupFixture(fixture);
+  }
+});
+
+test('V2.2 running-turn recovery revalidates an invalid legacy bridge after reserve commit', async () => {
+  const fixture = await createFixture('context-v22-invalid-bridge-running-recovery');
+  const legacyProvider = new ControlledAnswerProvider();
+  const legacyTurnId = randomUUID();
+  const orphanTurnId = randomUUID();
+  const currentTurnId = randomUUID();
+  const currentMessage = '你有什么相关的项目经验吗？';
+  let conversationId: string | null = null;
+  let providerCalls = 0;
+  const forbiddenProvider: AiProvider = {
+    async embed() {
+      providerCalls += 1;
+      throw new Error('invalid bridge recovery must fail before embedding');
+    },
+    async *streamAnswer() {
+      providerCalls += 1;
+      throw new Error('invalid bridge recovery must fail before Provider');
+    },
+  };
+  try {
+    const legacyEvents = await collectChat({
+      pool,
+      provider: coordinatedProvider(legacyProvider),
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        workflow: 'chat',
+        message: '公司：历史示例，岗位：AI 产品经理',
+        conversationId: null,
+        turnId: legacyTurnId,
+      }),
+      config: contextConfig(fixture, {
+        contextPacketEnabled: false,
+        contextPacketDigest: null,
+      }),
+      now: fixtureNow,
+    });
+    const meta = legacyEvents.find((event) => event.type === 'meta');
+    assert.equal(meta?.type, 'meta');
+    if (meta?.type !== 'meta') return;
+    conversationId = meta.conversationId;
+    await pool.query(
+      `INSERT INTO conversation_messages (conversation_id, role, content, created_at)
+       VALUES ($1,'user',$2,$3)`,
+      [
+        conversationId,
+        encodeTurnMessage(orphanTurnId, 'ORPHAN_RECOVERY_BRIDGE_MARKER'),
+        new Date(fixtureNow.getTime() + 1_000),
+      ],
+    );
+
+    const client = await pool.connect();
+    try {
+      const reservedAt = new Date(fixtureNow.getTime() + 2_000);
+      await client.query('BEGIN');
+      await client.query(
+        `INSERT INTO conversation_messages (conversation_id, role, content, created_at)
+         VALUES ($1,'user',$2,$3)`,
+        [conversationId, encodeTurnMessage(currentTurnId, currentMessage), reservedAt],
+      );
+      await client.query(
+        `UPDATE access_sessions
+            SET message_count = message_count + 1, last_seen_at = $2
+          WHERE id = $1`,
+        [fixture.accessSessionId, reservedAt],
+      );
+      await insertRunningInteraction({
+        client,
+        turnId: currentTurnId,
+        accessSessionId: fixture.accessSessionId,
+        inviteLabel: 'context-v22-invalid-bridge-running-recovery',
+        conversationId,
+        workflow: 'chat',
+        audienceIntent: 'general',
+        question: currentMessage,
+        executionPipeline: 'context_packet_v22',
+        now: reservedAt,
+        deleteAfter: new Date(reservedAt.getTime() + 10 * 24 * 60 * 60 * 1_000),
+      });
+      await client.query('COMMIT');
+    } finally {
+      client.release();
+    }
+
+    await assert.rejects(
+      collectChat({
+        pool,
+        provider: forbiddenProvider,
+        accessSessionId: fixture.accessSessionId,
+        request: normalizeChatRequest({
+          workflow: 'chat',
+          message: currentMessage,
+          conversationId,
+          turnId: currentTurnId,
+        }),
+        config: contextConfig(fixture),
+        now: new Date(fixtureNow.getTime() + 3_000),
+      }),
+      (error: unknown) => error instanceof ChatServiceError
+        && error.code === 'CONVERSATION_INVALID',
+    );
+    assert.equal(providerCalls, 0);
+    const stored = await pool.query<{
+      context_build_error_code: string;
+      legacy_bridge_status: string;
+      status: string;
+    }>(
+      `SELECT status,
+              context_manifest->>'context_build_error_code' AS context_build_error_code,
+              context_manifest->>'legacy_bridge_status' AS legacy_bridge_status
+         FROM interaction_turns
+        WHERE id = $1`,
+      [currentTurnId],
+    );
+    assert.deepEqual(stored.rows[0], {
+      status: 'failed',
+      context_build_error_code: 'LEGACY_BRIDGE_INVALID',
+      legacy_bridge_status: 'invalid',
+    });
   } finally {
     await cleanupFixture(fixture);
   }
