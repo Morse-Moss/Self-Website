@@ -16,6 +16,7 @@ REVOKE ALL PRIVILEGES ON TABLE
   ai_route_targets,
   ai_runtime_state,
   ai_config_events,
+  ai_environment_takeovers,
   interaction_provider_attempts
 FROM runtime;
 
@@ -30,6 +31,9 @@ GRANT SELECT, UPDATE
   TO runtime;
 GRANT SELECT, INSERT, DELETE
   ON TABLE ai_config_events
+  TO runtime;
+GRANT SELECT, INSERT, UPDATE
+  ON TABLE ai_environment_takeovers
   TO runtime;
 GRANT SELECT, INSERT, UPDATE, DELETE
   ON TABLE interaction_provider_attempts

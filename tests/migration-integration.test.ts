@@ -1179,3 +1179,140 @@ test('conversation task state migration tracks version and clears updated_by_tur
     await database.dispose();
   }
 });
+
+test('migration 010 adds immutable replayable environment takeover history', async () => {
+  const database = await createDisposablePostgresDatabase();
+  const directory = await copyMigrations();
+  await fs.rm(path.join(directory, '009_db_growth_indexes.sql'), { force: true });
+  try {
+    const migrated = await runMigrations(database.connectionString, directory);
+    assert.equal(migrated.code, 0, migrated.stderr);
+    await withPostgresClient(database.connectionString, async (client) => {
+      const table = await client.query<{ name: string | null }>(
+        "SELECT to_regclass('public.ai_environment_takeovers')::text AS name",
+      );
+      assert.equal(table.rows[0].name, 'ai_environment_takeovers');
+
+      const columns = await client.query<{ column_name: string }>(
+        `SELECT column_name
+           FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'ai_environment_takeovers'`,
+      );
+      for (const name of [
+        'request_id',
+        'environment_target_key',
+        'source_config_digest',
+        'initial_connection_version_id',
+        'initial_model_version_id',
+        'released_at',
+      ]) {
+        assert.ok(columns.rows.some((column) => column.column_name === name), name);
+      }
+
+      const constraints = await client.query<{ definition: string }>(
+        `SELECT pg_get_constraintdef(oid) AS definition
+           FROM pg_constraint
+          WHERE conrelid = 'public.ai_environment_takeovers'::regclass`,
+      );
+      assert.equal(
+        constraints.rows.filter((row) => /FOREIGN KEY/u.test(row.definition)
+          && /ON DELETE RESTRICT/u.test(row.definition)).length,
+        2,
+      );
+
+      const indexes = await client.query<{ indexdef: string }>(
+        `SELECT indexdef
+           FROM pg_indexes
+          WHERE schemaname = 'public'
+            AND tablename = 'ai_environment_takeovers'`,
+      );
+      assert.ok(indexes.rows.some((row) => (
+        /UNIQUE.+environment_target_key.+released_at IS NULL/iu.test(row.indexdef)
+      )));
+
+      const triggers = await client.query<{ name: string }>(
+        `SELECT tgname AS name
+           FROM pg_trigger
+          WHERE tgrelid = 'public.ai_environment_takeovers'::regclass
+            AND NOT tgisinternal`,
+      );
+      assert.deepEqual(triggers.rows.map((row) => row.name), [
+        'ai_environment_takeovers_immutable_update',
+      ]);
+
+      const connectionId = randomUUID();
+      const modelId = randomUUID();
+      const takeoverId = randomUUID();
+      await client.query(
+        `INSERT INTO ai_connections
+          (id, series_id, version, display_name, base_url, api_key_ciphertext,
+           api_key_iv, api_key_tag, key_version, config_digest)
+         VALUES ($1, $2, 1, 'Takeover fixture', 'https://provider.example/v1',
+           decode('aa', 'hex'), decode(repeat('01', 12), 'hex'),
+           decode(repeat('02', 16), 'hex'), 1, $3)`,
+        [connectionId, randomUUID(), 'a'.repeat(64)],
+      );
+      await client.query(
+        `INSERT INTO ai_model_presets
+          (id, series_id, version, connection_version_id, display_name, model_id,
+           protocol, reasoning_effort, max_output_tokens, config_digest)
+         VALUES ($1, $2, 1, $3, 'Takeover model', 'gpt-compatible',
+           'responses', 'high', 1200, $4)`,
+        [modelId, randomUUID(), connectionId, 'b'.repeat(64)],
+      );
+      await client.query(
+        `INSERT INTO ai_environment_takeovers
+          (id, request_id, environment_target_key, source_config_digest,
+           initial_connection_version_id, initial_model_version_id)
+         VALUES ($1, $2, 'primary', $3, $4, $5)`,
+        [takeoverId, randomUUID(), 'c'.repeat(64), connectionId, modelId],
+      );
+
+      const isConstraintViolation = (error: unknown) => (
+        typeof error === 'object'
+        && error !== null
+        && 'code' in error
+        && error.code === '23514'
+      );
+      await assert.rejects(
+        client.query(
+          `UPDATE ai_environment_takeovers
+              SET source_config_digest = $2
+            WHERE id = $1`,
+          [takeoverId, 'd'.repeat(64)],
+        ),
+        isConstraintViolation,
+      );
+
+      const released = await client.query<{ released_at: Date | null }>(
+        `UPDATE ai_environment_takeovers
+            SET released_at = created_at + interval '1 second'
+          WHERE id = $1
+        RETURNING released_at`,
+        [takeoverId],
+      );
+      assert.ok(released.rows[0].released_at instanceof Date);
+
+      await assert.rejects(
+        client.query(
+          'UPDATE ai_environment_takeovers SET released_at = NULL WHERE id = $1',
+          [takeoverId],
+        ),
+        isConstraintViolation,
+      );
+      await assert.rejects(
+        client.query(
+          `UPDATE ai_environment_takeovers
+              SET released_at = released_at + interval '1 second'
+            WHERE id = $1`,
+          [takeoverId],
+        ),
+        isConstraintViolation,
+      );
+    });
+  } finally {
+    await fs.rm(directory, { force: true, recursive: true });
+    await database.dispose();
+  }
+});

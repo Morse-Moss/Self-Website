@@ -75,6 +75,7 @@ function poolWith(options: {
           connections_readable: true,
           models_readable: true,
           routes_readable: true,
+          takeovers_readable: sql.includes('ai_environment_takeovers'),
           targets_readable: true,
         }] };
       }

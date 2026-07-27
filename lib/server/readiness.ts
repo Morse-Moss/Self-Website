@@ -116,6 +116,7 @@ export async function assertApplicationReady(input: ReadinessInput = {}): Promis
            (SELECT count(*) FROM ai_connections) >= 0 AS connections_readable,
            (SELECT count(*) FROM ai_model_presets) >= 0 AS models_readable,
            (SELECT count(*) FROM ai_route_revisions) >= 0 AS routes_readable,
+           (SELECT count(*) FROM ai_environment_takeovers) >= 0 AS takeovers_readable,
            (SELECT count(*) FROM ai_route_targets) >= 0 AS targets_readable`,
       );
       const row = configuration.rows[0] as Record<string, unknown> | undefined;

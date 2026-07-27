@@ -31,7 +31,7 @@ test('runtime privilege verification covers every provider configuration table a
   assert.equal(fs.existsSync(privilegePath), true);
   const sql = fs.readFileSync(privilegePath, 'utf8');
   for (const table of ['ai_connections', 'ai_model_presets', 'ai_route_revisions',
-    'ai_route_targets', 'ai_runtime_state', 'ai_config_events',
+    'ai_route_targets', 'ai_runtime_state', 'ai_config_events', 'ai_environment_takeovers',
     'interaction_provider_attempts']) assert.match(sql, new RegExp(`\\b${table}\\b`, 'u'));
   assert.match(sql, /ai_config_events_id_seq/u);
   assert.match(sql, /has_table_privilege/u);
@@ -57,4 +57,30 @@ test('grant script narrows provider tables after broad migration defaults', () =
     sql,
     /ALTER DEFAULT PRIVILEGES FOR ROLE migration[\s\S]*REVOKE ALL PRIVILEGES ON TABLES FROM runtime/iu,
   );
+});
+
+test('runtime can create and release environment takeovers but cannot delete history', () => {
+  const grants = fs.readFileSync(path.resolve('deploy/postgres/grant-runtime.sql'), 'utf8');
+  const verification = fs.readFileSync(privilegePath, 'utf8');
+
+  assert.match(
+    grants,
+    /REVOKE ALL PRIVILEGES ON TABLE[\s\S]*\bai_environment_takeovers\b[\s\S]*FROM runtime/iu,
+  );
+  assert.match(
+    grants,
+    /GRANT SELECT, INSERT, UPDATE\s+ON TABLE ai_environment_takeovers\s+TO runtime/iu,
+  );
+  assert.doesNotMatch(
+    grants,
+    /GRANT[^;]*DELETE[^;]*ON TABLE[^;]*\bai_environment_takeovers\b/iu,
+  );
+
+  for (const privilege of ['SELECT', 'INSERT', 'UPDATE']) {
+    assert.match(
+      verification,
+      new RegExp(`\\('ai_environment_takeovers', '${privilege}'\\)`, 'u'),
+    );
+  }
+  assert.match(verification, /\('ai_environment_takeovers', 'DELETE'\)/u);
 });

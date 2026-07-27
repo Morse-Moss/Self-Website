@@ -21,6 +21,9 @@ BEGIN
     ('ai_config_events', 'SELECT'),
     ('ai_config_events', 'INSERT'),
     ('ai_config_events', 'DELETE'),
+    ('ai_environment_takeovers', 'SELECT'),
+    ('ai_environment_takeovers', 'INSERT'),
+    ('ai_environment_takeovers', 'UPDATE'),
     ('interaction_provider_attempts', 'SELECT'),
     ('interaction_provider_attempts', 'INSERT'),
     ('interaction_provider_attempts', 'UPDATE'),
@@ -38,7 +41,8 @@ BEGIN
     ('ai_route_targets', 'DELETE'),
     ('ai_runtime_state', 'INSERT'),
     ('ai_runtime_state', 'DELETE'),
-    ('ai_config_events', 'UPDATE')
+    ('ai_config_events', 'UPDATE'),
+    ('ai_environment_takeovers', 'DELETE')
   )
   SELECT array_agg(format('%s:%s', table_name, privilege) ORDER BY table_name, privilege)
     INTO forbidden_privileges
