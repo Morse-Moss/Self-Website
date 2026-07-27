@@ -85,7 +85,10 @@ review:
 knowledge_impact:
   - docs/portfolio-blueprint.md
   - docs/runbooks/tencent-lighthouse.md
-  - docs/verify/digital-morse/controlled-context-v22-closeout.md
+  - docs/runbooks/production.md
+  - docs/verify/release/controlled-context-v22-local-closeout-2026-07-28.md
+  - docs/verify/release/controlled-context-v22-production-closeout-2026-07-28.md
+  - docs/task-center/run-state.md
   - deployment environment contract
 non_goals:
   - all-history API payloads, Provider conversation state, previous_response_id, compaction, LLM routing, Agentic RAG, or long-term user memory
@@ -202,8 +205,8 @@ Verified 2026-07-28: the complete isolated test set passed `1156/1156` with zero
 **Files:** implementation/tests plus impacted knowledge and the Morse rollout log.
 
 - [x] Reconcile blueprint, runbook, environment contract, closeout evidence, and Resume Pointer; obtain a current `KnowledgeReceipt`.
-- [ ] Stage only explicit owned files, inspect the full staged diff, create scoped commits, and verify `master` contains them without touching `.github/`.
-- [ ] Push the frozen commit, create and hash the release archive, and verify the local/remote SHA-256 before any production pointer change.
+- [x] Stage only explicit owned files, inspect the full staged diff, create scoped commits, and verify `master` contains them without touching `.github/`.
+- [x] Push the frozen commit, create and hash the release archive, and verify the local/remote SHA-256 before any production pointer change.
 
 ### Task 10: Deploy disabled-first and observe the invite canary
 
@@ -211,15 +214,15 @@ Verified 2026-07-28: the complete isolated test set passed `1156/1156` with zero
 
 - [x] Recheck live release, containers, schema registry, active Chat V2/safe mode, Provider route, RAG, long transactions, backup destination, and rollback-compatible prior release.
 - [x] Confirm the deployed `9c13490` baseline already has migration `001-012`, a verified pre-release backup, runtime grants and the Web-only digest Secret while Context Packet remains disabled/0%/empty allowlist; this correction has no migration or public-knowledge corpus change, so it must not repeat quiescence, backup, migration, grants or ingest.
-- [ ] Build/start the reviewed correction release with Context Packet still disabled; rebuild only Web/Worker, then verify migration manifest, live/ready, mock failure-chain, containers, logs, and `release:smoke` before real Provider use.
-- [ ] Enable only the named test invite and issue at most five main answers. Reproduce the new-conversation failure chain and, when eligible, the legacy bridge; inspect user-visible output plus redacted manifest/attempt invariants.
-- [ ] Stop at invite canary observation. Do not start 10% until 24-hour/20-turn natural-sample monitoring can be satisfied under a separately current rollout decision.
-- [ ] Update production evidence/runbook, finalize the CloseoutReceipt, validate/commit the Morse rollout-log entry, and reach `KNOWLEDGE_RECONCILED`.
+- [x] Build/start the reviewed correction release with Context Packet still disabled; rebuild only Web/Worker, then verify migration manifest, live/ready, mock failure-chain, containers, logs, and `release:smoke` before real Provider use.
+- [x] Enable only the named test invite and issue at most five main answers. Reproduce the new-conversation failure chain and inspect user-visible output plus redacted manifest/attempt invariants.
+- [x] Stop at invite canary observation. Do not start 10% until 24-hour/20-turn natural-sample monitoring can be satisfied under a separately current rollout decision.
+- [x] Update production evidence/runbook, finalize the CloseoutReceipt, validate/commit the Morse rollout-log entry, and reach `KNOWLEDGE_RECONCILED`.
 
 ## Resume Pointer
 
-Current stage and state: `CLOSEOUT / Task 9 final KnowledgeReceipt and scoped commit in progress`.
+Current stage and state: `CLOSE / KNOWLEDGE_RECONCILED / PRODUCTION_OBSERVED`.
 
-Last completed verified step: local stage exit passed `1156/1156`, the affected boundary passed `191/191`, planner plus V2.2 PostgreSQL passed `31/31`, `chat:eval` passed `96/96` with zero external calls, RAG passed `46/46` top-3, and typecheck/build/scoped lint/diff/sensitive scans plus split CRITICAL review passed; fresh production read-only preflight confirmed release `9c13490`, migration `001-012`, 41/48 RAG, route revision 2, Context Packet disabled/0%/empty allowlist, Web-only Secret scope, five healthy zero-restart containers, live/ready/release smoke, and zero 20-minute error-keyword counts.
+Last completed verified step: a final read-only production check reconfirmed runtime commit `f02e9de`, exact Web/Worker images, unchanged DB/Embedding/Edge identities, five healthy zero-restart containers, enabled/0%/empty Context Packet state, matching `001-012` registry/manifest, inactive/expired `5,8,5` canary aggregates, route boundaries, release smoke and zero 15-minute Web/Worker/Edge/DB error-keyword counts. The local disposable verification database was dropped and confirmed absent; the categorical Morse rollout row validated and was committed locally in Evolution as `857c419` without push.
 
-Exact next action: finish the current KnowledgeReceipt, explicitly stage owned files, commit and absorb/push the frozen release without touching the main worktree `.github/` directory.
+Exact next action: none inside this closed scope. Any 10% or broader Context Packet rollout requires a new current authorization and a separately frozen 24-hour/20-turn observation contract.

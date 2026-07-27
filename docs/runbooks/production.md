@@ -172,7 +172,7 @@ migration `012` 应用后，回滚只先设置 `MORSE_CHAT_CONTEXT_PACKET_ENABLE
 
 ## 8. 当前生产状态与硬化余项
 
-首个生产实例在 `39849e1` 完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实对话 smoke 和公网 live/ready/release smoke。2026-07-27 当前应用 release 为 `c2d575c`：生产 migration 已在受控停写窗口从 `008` 前向应用到 `011`，Provider 接管持久化、增长索引和 canonical Task Frame 均通过 readiness 与权限门禁；只重建 Web/Worker，DB、Embedding 与 Edge 容器 ID 不变。公开知识未变化，未运行 ingest，也未调用真实 Provider。公网 live/ready/release smoke、公开页面和未授权边界均通过；认证后的真实 Provider 接管、测试与激活仍需管理员显式执行。当前实例细节和发布证据以腾讯云实例手册及 `docs/verify/release/provider-takeover-migration-production-closeout-2026-07-27.md` 为准。
+首个生产实例在 `39849e1` 完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实对话 smoke 和公网 live/ready/release smoke。2026-07-28 当前应用 release 为 `f02e9de`：Controlled Context V2.2 使用已存在的 migration `001-012`、grants、公开知识与 Web-only digest Secret，只替换 Web/Worker，DB、Embedding 与 Edge 容器身份不变。单邀请码五轮冻结链已完成生产观察；收尾后 Context Packet 保持 enabled、percent `0`、空白名单，测试邀请码停用且 Session 过期。公网健康、发布 smoke、未授权边界和新鲜错误日志门禁通过；五轮缺少内联 `[来源N]` 的问题保留为非阻断质量债，未经新授权不进入百分比灰度。当前实例细节和脱敏证据以腾讯云实例手册及 `docs/verify/release/controlled-context-v22-production-closeout-2026-07-28.md` 为准。
 
 以下事项完成前保持 `LIMITED_LAUNCH`，不标记完整 `ONLINE_READY`：
 

@@ -4,10 +4,19 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**CHAT_PROJECT_COLLECTION_PRODUCTION_OBSERVED / USER_CONVERSATION_NOT_RERUN**
+**CONTROLLED_CONTEXT_V22_PRODUCTION_OBSERVED / INVITE_CANARY_COMPLETE / PERCENT_0**
 
 ## next_allowed_pointer
-当前生产应用运行 `11ce329`。“你做过的其他项目有哪些”等项目集合问法使用五项已审核作品目录，不调用 Embedding/RAG/Search；输出必须覆盖五个项目及五个对应来源。项目证据、排名、对比、项目管理经验、明确单项目和支付系统等未知类别保持原受控路由。公网 live/ready、release smoke、Web 健康和未登录权限边界已复验，Worker 正常运行；DB、Embedding、Edge 容器未重建。部署没有执行真实 Provider 对话，下一步由用户在网站复测截图原句及其自然变体。
+当前生产应用运行 `f02e9de`。Controlled Context V2.2 的单邀请码五轮冻结链已经完成生产观察，收尾状态为 enabled、percent `0`、空白名单；测试邀请码停用且唯一 Session 过期。五轮均完成主回答，但均缺少内联 `[来源N]`，保留为非阻断质量债。未经新的当前授权，不进入 10% 或更高灰度；后续若推进，应先冻结 24 小时/20 轮自然样本的观察合同与引用质量门。
+
+## Controlled Context V2.2 单邀请码生产发布（2026-07-28）
+
+- 根因与方案：不再把筛选后的对话历史直接传给 Provider；服务端从数据库权威状态构建有界 Context Packet，用结构化 Task Frame 维持任务连续性，RAG 只为当前语义意图选择已审核公开证据，并在 Provider 前冻结 packet/request 完整性。
+- Verification：隔离测试集 `1156/1156`、受影响边界 `191/191`、planner + V2.2 PostgreSQL `31/31`、`chat:eval` `96/96` 且 `externalCalls=0`、RAG top-3 `46/46`、typecheck、33-route build、scoped lint/diff/sensitive scan 及 CRITICAL 双审查通过。生产前无 Provider 固定链在内部 Docker 网络与临时 pgvector 数据库通过 `1/1`，临时资源已删除。
+- Release：运行提交 `f02e9de` 已进入 `origin/master`；冻结归档 19,577,725 bytes，SHA-256 `f2f22805fa1381fdc12a43cbae3755640d388ee69e3bf9d8c63daa3c8354f2a4`，本地与服务器一致。生产指针为 `/opt/revolution/releases/f02e9de/revolution`；只替换 Web/Worker，DB、Embedding、Edge 容器身份不变，migration registry/manifest 保持 `001-012`。
+- Observation：冻结 fixture 的五条消息在一个对话中各发送一次，五个主回答全部完成，共八次 Provider attempt；前三轮 primary 不可用后由 fallback 完成，后两轮由 primary 完成。Task Frame 终态为 `completed / task_complete`、完成轮次 5；来源 ID、真实检索分数、redacted manifest 与 packet/request HMAC 一致性通过，无 raw input 或 stale marker 泄漏。
+- Cleanup：邀请码已停用、唯一 Session 已过期、消息数为 5；Context Packet 保持 enabled、percent `0`、空白名单。五容器 healthy、restart count 0，公网健康与 `release:smoke` 通过，Web/Worker/Edge/DB 新鲜错误关键词计数为 0。
+- Boundary：五个答案均缺少内联 `[来源N]`，记录为非阻断 `missing_grounded_citation`，不得借此丢弃已完成正文或增加 Provider attempt。没有进入百分比灰度；脱敏证据不含原始问答、邀请码、HMAC 值、Provider payload、凭据、URL 或私密简历内容。完整证据见 `docs/verify/release/controlled-context-v22-production-closeout-2026-07-28.md`。
 
 ## Chat v2 项目集合答非所问修正生产发布（2026-07-25）
 

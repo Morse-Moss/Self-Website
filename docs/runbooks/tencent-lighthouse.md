@@ -2,7 +2,17 @@
 
 本文对应 `aimorse.tech` 的生产部署。当前实例为腾讯云 Lighthouse 首尔节点，公网地址为 `43.133.68.202`。境外节点不需要 ICP 备案；DNS 解析和 HTTPS 证书签发已完成，域名实名状态继续由腾讯云注册控制台维护。
 
-## 当前生产状态（2026-07-28，回答质量检查改为非阻断）
+## 当前生产状态（2026-07-28，Controlled Context V2.2 单邀请码观察完成）
+
+- 状态：`PRODUCTION_OBSERVED / INVITE_CANARY_COMPLETE / PERCENT_0`。当前运行提交为 `f02e9de`；`/opt/revolution/current`、Web 与 Worker Compose working directory 指向 `/opt/revolution/releases/f02e9de/revolution`。运行提交已在部署前进入 `origin/master`。
+- 冻结归档为 19,577,725 bytes，SHA-256 `f2f22805fa1381fdc12a43cbae3755640d388ee69e3bf9d8c63daa3c8354f2a4`，本地与服务器哈希一致。Web 镜像为 `sha256:549aa6a78b82c2040255d7184ea2dc07eee9698f5424859e736d1fb5d955b137`，Worker 镜像为 `sha256:22b6db3fd8a6b923c40f1c4a531b59f6b70bb43aca3dd9e92b32d734518ba65a`。
+- 本次只替换 Web/Worker；DB、Embedding、Edge 完整容器 ID 不变。五容器均 healthy、restart count 为 0；migration registry 与 release manifest 均为 `001-012`。没有重复 migration、grants 或 ingest。
+- 无 Provider 的固定失败链在隔离 Docker 内网与临时 pgvector 数据库中通过 `1/1`，无外部请求且临时资源已清理。随后只对一个测试邀请码逐轮发送冻结 fixture 的五条消息；五个主回答全部完成，共八次 Provider attempt，前三轮由 fallback 完成，后两轮由 primary 完成。最终 Task Frame 为 `completed / task_complete`、完成轮次为 5。
+- 脱敏 manifest、证据 ID/真实检索分数及 packet/request HMAC 一致性通过；没有 raw input 或 stale marker 泄漏。五个答案均未输出内联 `[来源N]`，记录为非阻断 `missing_grounded_citation` 质量债，不触发丢弃已完成回答或额外 Provider attempt。
+- canary 结束后测试邀请码已停用、唯一 Session 已过期、白名单已清空。Context Packet 保持 enabled、percent `0`、空白名单；未经新的当前授权不进入 10% 或更高灰度。受限环境备份为 `/opt/revolution/shared/.env.production.bak-post-canary-f02e9de-20260727T231554Z`。
+- 公网 live/ready/兼容 health、公开页面、未登录权限边界与 `release:smoke` 均通过；Web/Worker/Edge/DB 新鲜错误关键词计数均为 0。完整脱敏证据见 `docs/verify/release/controlled-context-v22-production-closeout-2026-07-28.md`。
+
+## 历史生产状态（2026-07-28，回答质量检查改为非阻断）
 
 - 状态：`DEPLOYED_UNOBSERVED / HEALTHY / PROVIDER_NOT_CALLED`。当前应用 release `d947cb7`；`/opt/revolution/current`、Web 与 Worker Compose working directory 指向 `/opt/revolution/releases/d947cb7/revolution`。本地提交未 push；部署状态不能替代远端同步状态。
 - Provider 完成协议并返回非空正文后，运行时直接交付并持久化；内容质量规则不再触发丢弃、strict、reset、Provider 切换、Provider incident 或 `PROVIDER_UNAVAILABLE`。质量规则保留为离线评测或非阻断观测。只有真实 Provider、网络、协议、超时、空完成或 incomplete 故障可以在可见正文前触发后续 Provider attempt。
