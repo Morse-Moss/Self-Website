@@ -284,7 +284,7 @@ test('terminal reconciliation copies generation and three latency milestones', a
   }
 });
 
-test('started attempts persist integrity and reject packet or same-mode request drift', async () => {
+test('started attempts persist integrity and reject any request or generation-mode drift', async () => {
   const database = await createDisposablePostgresDatabase();
   const pool = new Pool({ connectionString: database.connectionString });
   try {
@@ -295,8 +295,40 @@ test('started attempts persist integrity and reject packet or same-mode request 
     const deleteAfter = new Date(startedAt.getTime() + 10 * DAY_MS);
     const normal = requestIntegrity('normal', 'b'.repeat(64));
     const strict = requestIntegrity('strict', 'c'.repeat(64));
+    const strictOnlyTurnId = await insertTurn(pool);
+    const strictWithoutIntegrityTurnId = await insertTurn(pool);
     const client = await pool.connect();
     try {
+      await assert.rejects(
+        recordProviderAttemptEvent(client, {
+          interactionTurnId: strictOnlyTurnId,
+          executionId: randomUUID(),
+        }, {
+          type: 'started',
+          attemptNo: 1,
+          providerAlias: 'primary',
+          launchKind: 'primary',
+          startedAt,
+          startDelayMs: 0,
+          generationMode: 'strict',
+        }, deleteAfter, strict),
+        /PROVIDER_ATTEMPT_INTEGRITY_MISMATCH/,
+      );
+      await assert.rejects(
+        recordProviderAttemptEvent(client, {
+          interactionTurnId: strictWithoutIntegrityTurnId,
+          executionId: randomUUID(),
+        }, {
+          type: 'started',
+          attemptNo: 1,
+          providerAlias: 'primary',
+          launchKind: 'primary',
+          startedAt,
+          startDelayMs: 0,
+          generationMode: 'strict',
+        }, deleteAfter),
+        /PROVIDER_ATTEMPT_INTEGRITY_MISMATCH/,
+      );
       await recordProviderAttemptEvent(client, { interactionTurnId, executionId }, {
         type: 'started',
         attemptNo: 1,
@@ -342,25 +374,16 @@ test('started attempts persist integrity and reject packet or same-mode request 
       );
 
       const strictExecutionId = randomUUID();
-      await recordProviderAttemptEvent(client, { interactionTurnId, executionId: strictExecutionId }, {
-        type: 'started',
-        attemptNo: 1,
-        providerAlias: 'primary',
-        launchKind: 'primary',
-        startedAt: new Date(startedAt.getTime() + 4),
-        startDelayMs: 0,
-        generationMode: 'strict',
-      }, deleteAfter, strict);
       await assert.rejects(
-        recordProviderAttemptEvent(client, { interactionTurnId, executionId: randomUUID() }, {
+        recordProviderAttemptEvent(client, { interactionTurnId, executionId: strictExecutionId }, {
           type: 'started',
           attemptNo: 1,
           providerAlias: 'primary',
           launchKind: 'primary',
-          startedAt: new Date(startedAt.getTime() + 5),
+          startedAt: new Date(startedAt.getTime() + 4),
           startDelayMs: 0,
-          generationMode: 'normal',
-        }, deleteAfter, normal),
+          generationMode: 'strict',
+        }, deleteAfter, strict),
         /PROVIDER_ATTEMPT_INTEGRITY_MISMATCH/,
       );
     } finally {
@@ -392,14 +415,6 @@ test('started attempts persist integrity and reject packet or same-mode request 
         packet_hmac_sha256: normal.packetHmacSha256,
         generation_overlay_version: null,
         generation_request_hmac_sha256: normal.generationRequestHmacSha256,
-      },
-      {
-        generation_mode: 'strict',
-        context_builder_version: strict.contextBuilderVersion,
-        packet_hmac_key_id: strict.packetHmacKeyId,
-        packet_hmac_sha256: strict.packetHmacSha256,
-        generation_overlay_version: 'strict-overlay-v1',
-        generation_request_hmac_sha256: strict.generationRequestHmacSha256,
       },
     ]);
   } finally {

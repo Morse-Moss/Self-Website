@@ -27,7 +27,6 @@ import {
 } from '../contracts/chat-context.ts';
 import { chatCapabilityPolicy, siteContent } from '../site-content.ts';
 import {
-  AnswerExecutionError,
   ProviderRunError,
   type AiMessage,
   type AiProvider,
@@ -46,7 +45,7 @@ import {
   type NormalizedChatRequest,
 } from './chat-core.ts';
 import {
-  runGuardedChatAnswer,
+  runChatAnswer,
   type ChatAnswerRunnerEvent,
 } from './chat-answer-runner.ts';
 import { createChatExecutionBudget } from './chat-execution-budget.ts';
@@ -100,11 +99,6 @@ import {
 } from './capability-evidence.ts';
 import { resolveChatEvidence } from './chat-evidence.ts';
 import { buildV2SystemInstructions } from './chat-prompt.ts';
-import {
-  inspectChatAnswer,
-  inspectChatAnswerPrefix,
-  inspectTemplateRepetition,
-} from './chat-output-guard.ts';
 import { buildSafeChatAnswer } from './chat-safe-answer.ts';
 import {
   completeInteraction,
@@ -2116,13 +2110,6 @@ function providerPhaseError(error: unknown): RuntimePhaseError {
   return new RuntimePhaseError('PROVIDER_UNAVAILABLE', 'PROVIDER_UNAVAILABLE', error);
 }
 
-function strictRegenerationInstructions(instructions: string): string {
-  return [
-    instructions,
-    '严格重生成：上一候选未通过输出守卫。请从空白开始重写，只陈述可由当前公开证据支持的内容，并严格遵守引用、语气和流程边界。',
-  ].filter(Boolean).join('\n\n');
-}
-
 type MonitoredDependency = 'provider' | 'search';
 
 function serviceFingerprint(dependency: MonitoredDependency, errorCode: string): string {
@@ -2853,7 +2840,7 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
     });
 
     if (turn.behavior === 'safe') {
-      if (!safeFallback) throw new AnswerExecutionError('OUTPUT_GUARD_REJECTED');
+      if (!safeFallback) throw new Error('SAFE_ANSWER_UNAVAILABLE');
       answer = safeFallback.text;
       sources = toLocalPublicSources(safeFallback.sources);
       yield { type: 'delta', text: answer };
@@ -2907,9 +2894,6 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
     );
     const currentTurn = turn;
     let answerSources = sources;
-    const approvedProjectSlugs = preparedContext?.builtPacket?.packet.approvedEvidence
-      .map((source) => source.projectSlug)
-      .filter((slug): slug is string => typeof slug === 'string') ?? [];
     const providerStartedAtMs = Date.now();
     const executionBudget = createChatExecutionBudget({
       turnStartedAtMs: executionStartedAtMs,
@@ -2918,48 +2902,15 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
       providerTimeoutMs: input.config.providerStageTimeoutMs,
       maxAttempts: input.config.providerMaxAttempts,
     });
-    const previousAnswers = turn.messages
-      .filter((message) => message.role === 'assistant')
-      .map((message) => message.content);
-    const inspectCandidate = (candidate: string, complete: boolean) => {
-      const guard = (complete ? inspectChatAnswer : inspectChatAnswerPrefix)({
-        answer: candidate,
-        approvedProjectSlugs,
-        route: v2Route ?? undefined,
-        semanticIntent: preparedContext?.resolution.resolved.semantic.intent,
-        intent: v2Route ? undefined : route.intent,
-        workflow: requestWorkflow(input.request),
-        question: routingQuestion,
-        sourceCount: sources.length,
-        hasResumeEvidence: knowledge.some((source) => source.documentId === 'resume-facts'),
-      });
-      if (!guard.ok || !complete) return guard;
-      return inspectTemplateRepetition({
-        current: candidate,
-        previousAnswers,
-      });
-    };
-    answerIterator = runGuardedChatAnswer({
+    answerIterator = runChatAnswer({
       budget: executionBudget,
       now: () => Date.now(),
       releasePolicy: route.release,
-      generate({ strict, generationMode, remainingProviderMs }) {
+      generate({ remainingProviderMs }) {
         const executionId = randomUUID();
-        const contextRequest = preparedContext?.builtPacket
-          ? generationMode === 'strict'
-            ? preparedContext.builtPacket.strict
-            : preparedContext.builtPacket.normal
-          : null;
-        const requestInstructions = contextRequest
-          ? [
-              contextRequest.request.baseInstructions,
-              contextRequest.request.overlay?.content,
-            ].filter(Boolean).join('\n\n')
-          : strict
-            ? strictRegenerationInstructions(instructions)
-            : instructions;
+        const contextRequest = preparedContext?.builtPacket?.normal ?? null;
         return input.provider.streamAnswer({
-          instructions: requestInstructions,
+          instructions: contextRequest?.request.baseInstructions ?? instructions,
           reasoningEffort: contextRequest
             ? contextRequest.request.reasoningEffort ?? undefined
             : route.reasoningEffort,
@@ -2971,15 +2922,12 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
                 minimumBufferCharacters: 1,
                 totalTimeoutMs: remainingProviderMs,
                 budget: executionBudget,
-                generationMode,
+                generationMode: 'normal',
                 integrity: contextRequest?.integrity,
                 protocolEventTimeoutMs: input.config.providerProtocolEventTimeoutMs,
                 modelTextTimeoutMs: input.config.providerModelTextTimeoutMs,
                 hedgingEnabled: false,
                 delaysMs: [0],
-                acceptCandidate(candidate, complete) {
-                  return inspectCandidate(candidate, complete).ok;
-                },
                 async reserveHedgedAttempt(event) {
                   try {
                     return await reserveHedgedProviderAttempt(
@@ -3021,9 +2969,6 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
               }
             : undefined,
         }, input.signal);
-      },
-      inspect(candidate, complete) {
-        return inspectCandidate(candidate, complete);
       },
     })[Symbol.asyncIterator]();
 
@@ -3078,16 +3023,6 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
         answer += event.text;
         if (answerSources.length === 0) answerSources = sources;
         yield event;
-        continue;
-      }
-
-      if (event.type === 'reset') {
-        answer = '';
-        answerSources = [];
-        yield {
-          type: 'status',
-          stage: 'switching',
-        };
         continue;
       }
 

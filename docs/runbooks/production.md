@@ -91,7 +91,7 @@ npm run production:worker
 
 以下步骤每次都先保留当前已观察镜像，记录变更后只重启 Web，并复验 live、ready、公开页面和 v1 会话。真实 Provider 评审、故障注入和扩大流量分别需要明确授权，不能因配置已写入手册而自动执行：
 
-回答可靠性版本的默认时序为：`MORSE_PROVIDER_PROTOCOL_EVENT_TIMEOUT_MS=25000`、`MORSE_PROVIDER_MODEL_TEXT_TIMEOUT_MS=40000`、`MORSE_PROVIDER_STAGE_TIMEOUT_MS=80000`、`MORSE_CHAT_TURN_TIMEOUT_MS=90000`、`MORSE_PROVIDER_MAX_ATTEMPTS=2`。启动时必须满足“协议事件 < 模型正文 <= Provider 阶段 < 完整 turn”，attempt 数必须等于 2。normal、strict 和串行 failover 共用同一个绝对 deadline；一次主生成后，failover 与 strict 恢复二选一，切换节点不得重置 80 秒预算，SSE heartbeat 不延长任何 deadline，hedging 保持关闭。
+回答可靠性版本的默认时序为：`MORSE_PROVIDER_PROTOCOL_EVENT_TIMEOUT_MS=25000`、`MORSE_PROVIDER_MODEL_TEXT_TIMEOUT_MS=40000`、`MORSE_PROVIDER_STAGE_TIMEOUT_MS=80000`、`MORSE_CHAT_TURN_TIMEOUT_MS=90000`、`MORSE_PROVIDER_MAX_ATTEMPTS=2`。启动时必须满足“协议事件 < 模型正文 <= Provider 阶段 < 完整 turn”，attempt 数必须等于 2。normal 与仅由真实 Provider、协议或超时故障触发的串行 failover 共用同一个绝对 deadline；内容质量不得触发第二次调用、strict、reset 或节点切换。切换节点不得重置 80 秒预算，SSE heartbeat 不延长任何 deadline，hedging 保持关闭。
 
 升级已有实例时，必须先独立验证 DB/Embedding healthy、PostgreSQL TLS 证书可解析且私钥为普通 `0600` 文件；migration、grants、ingest 和存储初始化使用 `docker compose run --rm --no-deps ...`。plain `compose run` 会协调 `depends_on`，配置或 bind 源漂移时可能重建依赖容器，不能用于升级路径。
 
@@ -156,7 +156,7 @@ npm run production:worker
 
 ## 8. 当前生产状态与硬化余项
 
-首个生产实例在 `39849e1` 完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实对话 smoke 和公网 live/ready/release smoke。2026-07-25 当前应用 release 为 `11ce329`：`/opt/revolution/current`、Web 与 Worker 指向该冻结 release，DB、Embedding 与 Edge 容器 ID 在切换前后保持不变。本次只重建 Web/Worker，没有执行 migration、grants、ingest、数据库备份恢复、生产配置修改、Provider 调用或私密简历操作。生产 migration 001–007、私有卷、文件型 Secret、runtime grants 与 PostgreSQL TLS 沿用已验收状态；公网 live/ready/release smoke、公开页面和未授权边界均通过。生产 BGE + pgvector 与 Lighthouse 数字仍属于历史验收证据，本轮未重跑，真实项目集合对话由用户复验。当前实例细节和发布证据以实例手册及 `docs/verify/release/chat-project-collection-production-closeout-2026-07-25.md` 为准。
+首个生产实例在 `39849e1` 完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实对话 smoke 和公网 live/ready/release smoke。2026-07-27 当前应用 release 为 `c2d575c`：生产 migration 已在受控停写窗口从 `008` 前向应用到 `011`，Provider 接管持久化、增长索引和 canonical Task Frame 均通过 readiness 与权限门禁；只重建 Web/Worker，DB、Embedding 与 Edge 容器 ID 不变。公开知识未变化，未运行 ingest，也未调用真实 Provider。公网 live/ready/release smoke、公开页面和未授权边界均通过；认证后的真实 Provider 接管、测试与激活仍需管理员显式执行。当前实例细节和发布证据以腾讯云实例手册及 `docs/verify/release/provider-takeover-migration-production-closeout-2026-07-27.md` 为准。
 
 以下事项完成前保持 `LIMITED_LAUNCH`，不标记完整 `ONLINE_READY`：
 

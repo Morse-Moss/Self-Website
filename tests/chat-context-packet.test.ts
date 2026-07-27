@@ -266,7 +266,7 @@ test('12k chat budget rejects an uncuttable 12k CJK input while 24k JD budget ac
   assert.equal(generation.split(currentInput).length - 1, 1);
 });
 
-test('packet and generation HMACs are domain-separated and stable across same-mode attempts', () => {
+test('packet builder emits one normal request with no strict overlay', () => {
   const first = buildContextPacket({
     resolved: resolved(),
     currentInput: '哪些项目相关？',
@@ -290,10 +290,11 @@ test('packet and generation HMACs are domain-separated and stable across same-mo
 
   assert.equal(first.packetHmacSha256, second.packetHmacSha256);
   assert.equal(first.normal.generationRequestHmacSha256, second.normal.generationRequestHmacSha256);
-  assert.equal(first.strict.generationRequestHmacSha256, second.strict.generationRequestHmacSha256);
   assert.notEqual(first.packetHmacSha256, first.normal.generationRequestHmacSha256);
-  assert.notEqual(first.normal.generationRequestHmacSha256, first.strict.generationRequestHmacSha256);
-  assert.equal(first.normal.request.packetHmacSha256, first.strict.request.packetHmacSha256);
+  assert.equal(first.normal.request.generationMode, 'normal');
+  assert.equal(first.normal.request.overlay, null);
+  assert.equal('strict' in first, false);
+  assert.equal(Object.hasOwn(first.manifest.token_estimate_by_layer, 'strict_overlay'), false);
 });
 
 test('digest config requires canonical base64 with at least 32 decoded bytes and a controlled key id', () => {

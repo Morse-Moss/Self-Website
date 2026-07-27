@@ -19,7 +19,7 @@ controls:
   execution: STAGED
   risk: CRITICAL
   delivery: DEPLOYED
-state: EXECUTE
+state: VERIFY
 scope:
   owned:
     - db/migrations/012_controlled_context_packet.sql
@@ -29,7 +29,7 @@ scope:
     - lib/server/chat-context-projection.ts
     - lib/server/chat-context-packet.ts
     - lib/server/chat-evidence-planner.ts
-    - existing chat, prompt, guard, attempt, config, readiness, migration, deployment, and test files required by the approved V2.2 contract
+    - existing chat, prompt, offline quality evaluation, attempt, config, readiness, migration, deployment, and test files required by the approved V2.2 contract
     - V2.2 plan, verification, runbook, blueprint, and closeout knowledge
   forbidden:
     - private resume plaintext, administrator data, credentials, raw production Provider payloads, and external read-only project writes
@@ -42,8 +42,8 @@ dod:
   - recruitment Task Frames exist without a topicRef and only successful turns advance or complete them
   - Final Projection excludes prior-task company, role, JD, history, and evidence from switch, new-task, one-shot, and temporary turns
   - project RAG over-fetches and returns at most three unique audited projects while structured evidence remains authoritative
-  - canonical packet and generation-request HMACs are stable, budgeted, redacted, and identical across same-mode primary/fallback attempts
-  - all terminally guarded intents buffer complete candidates; rejected normal text produces zero user-visible delta
+  - canonical packet and the single normal generation-request HMAC are stable, budgeted, redacted, and identical across every primary/fallback attempt in one turn
+  - complete release buffers only until protocol completion, then delivers every non-empty Provider body exactly once; quality labels never trigger strict, reset, failover, compensation, or failure
   - success, compensation, replay, rollback assignment, bridge consumption, and manifest persistence satisfy the approved atomicity contract
   - focused unit/PostgreSQL/SSE failure-chain tests, chat:eval externalCalls=0, rag gold top-3 46/46, full tests, typecheck, build, diff, and secret scan pass
   - reviewed commit is absorbed into master, pushed, deployed with migration/readiness/grants/mock checks, and observed through the authorized production invite canary
@@ -157,23 +157,23 @@ Focused evidence/RAG tests passed `22` with `3` database-dependent skips; TypeSc
 **Files:** create `lib/server/chat-context-packet.ts`; modify config/readiness/production/deployment contracts and packet tests.
 
 - [x] Write RED tests for stable key ordering, exact current-input single copy, 12k/24k budgets, 90% reserve, whole-turn eviction, uncuttable over-budget failure, HMAC domain separation, invalid key readiness, and redacted manifests.
-- [x] Implement canonical `context-packet-v1` and `generation-request-v1`, Base64 32-byte key validation, key ID validation, stable UTF-8 serialization, and strict-overlay reservation.
+- [x] Implement canonical `context-packet-v1` and one normal `generation-request-v1`, Base64 32-byte key validation, key ID validation, stable UTF-8 serialization, and no strict overlay.
 - [x] Add `MORSE_CHAT_CONTEXT_PACKET_ENABLED`, context canary, invite IDs, token budgets, digest key/file and key ID configuration. Mount the digest key only into Web in production.
 - [x] Run config, readiness, production contract, packet, and privacy tests GREEN.
 
 Verified 2026-07-27: packet tests passed `7/7`, config/readiness/production tests passed `50/50`, production contract passed `12/12`, and TypeScript passed.
 
-### Task 6: Enforce attempt integrity and complete buffering
+### Task 6: Enforce attempt integrity and protocol-complete buffering
 
-**Files:** modify `lib/server/ai-provider.ts`, `provider-attempt-log.ts`, `interaction-log.ts`, `failover-ai-provider.ts`, `chat-answer-runner.ts`, `chat-output-guard.ts`, and their tests.
+**Files:** modify `lib/server/ai-provider.ts`, `provider-attempt-log.ts`, `interaction-log.ts`, `failover-ai-provider.ts`, `chat-answer-runner.ts`, and their tests; keep `chat-output-guard.ts` offline-only.
 
-- [x] Write RED tests proving each started attempt records builder/key/packet/request digests before the Provider starts; mismatches prevent the network call; same-mode primary/fallback match; only normal-to-strict request HMAC changes; mirror rows copy authority values.
-- [x] Write RED SSE tests proving all terminally constrained intents expose zero rejected-normal delta and no `reset`; only an accepted full candidate emits text.
+- [x] Write RED tests proving each started attempt records builder/key/packet/request digests before the Provider starts; any packet/request/mode/overlay mismatch prevents the network call; all primary/fallback attempts match; historical strict rows remain readable; mirror rows copy authority values.
+- [x] Write RED SSE tests proving complete release exposes no body before protocol completion and then emits the exact non-empty body once, while segment release remains streaming without `reset`.
 - [x] Add attempt integrity to `AnswerExecutionOptions`, enforce it transactionally in `chat_provider_attempts`, and copy it to `interaction_provider_attempts` without recomputation.
-- [x] Make semantic release policy authoritative and buffer complete candidates through full guard and template checks.
+- [x] Make semantic release policy authoritative for display timing only; remove online quality checks, strict regeneration, reset, and quality-triggered Provider failure.
 - [x] Run provider, guard, answer-runner, SSE, and attempt PostgreSQL tests GREEN.
 
-Verified 2026-07-27: Provider attempt PostgreSQL and answer-runner tests passed `13/13`; failover, output-guard, and SSE tests passed `73/73`; `npm run typecheck` passed. Rejected complete-policy normal output emitted no delta or reset, and authority/mirror integrity drift was rejected.
+Reverified after mainline integration on 2026-07-28: answer runner and packet tests passed `15/15`; Provider attempt PostgreSQL passed `5/5`; the affected unit boundary passed `119/119`; `npm run typecheck` passed. New attempts accept only normal/no-overlay requests, all integrity fields must match within a turn, and complete release changes timing without gating content quality.
 
 ### Task 7: Integrate the three-stage V2.2 chat transaction
 
@@ -184,14 +184,14 @@ Verified 2026-07-27: Provider attempt PostgreSQL and answer-runner tests passed 
 - [x] Keep legacy V1/V2 and diagnosis paths schema-aware but payload-isolated; a successful non-V2.2 override locks a prior V2.2 conversation and closes its frame.
 - [x] Run chat service, PostgreSQL, compensation, replay, and existing V1/V2 compatibility tests GREEN.
 
-Verified 2026-07-27: controlled-context PostgreSQL integration passed `3/3`; the complete legacy Chat service integration passed `91/91`, 0 fail, 0 skip after migrations `001-012` and deterministic ingest of 41 documents / 48 chunks in a disposable loopback PostgreSQL database. The database was removed in `finally`.
+Reverified after mainline integration on 2026-07-28: the controlled-context/migration/context-state/attempt/runtime PostgreSQL boundary passed with zero failures; the complete legacy Chat service integration passed `90/90`, 0 fail, 0 skip after migrations `001-012` and deterministic ingest of 41 documents / 48 chunks in a disposable loopback PostgreSQL database. The database was removed in `finally`.
 
 ### Task 8: Replay the real failure chain and close local CRITICAL gates
 
 **Files:** add a desensitized fixture/eval and Mock SSE replay; update `scripts/chat-eval.mjs` only if needed.
 
-- [ ] Write the five-turn RED fixture with expected semantic intent, task ID continuity, project slugs, evidence levels, prompt/packet projection, guard, and final visible answer.
-- [ ] Make the smallest production corrections required by the fixture, keeping them inside Tasks 2-7 ownership.
+- [x] Write the five-turn RED fixture with expected semantic intent, task ID continuity, project slugs, evidence levels, prompt/packet projection, offline quality evaluation, and final visible answer.
+- [x] Make the smallest production corrections required by the fixture, keeping them inside Tasks 2-7 ownership.
 - [ ] Run focused tests, `chat:eval` with `externalCalls=0`, `rag:eval` top-3 46/46, typecheck, full tests, build, diff check, and scoped secret scan.
 - [ ] Perform split compliance/spec and quality/safety review against this StagePacket; close admitted blockers within the CRITICAL correction budget.
 
@@ -216,8 +216,8 @@ Verified 2026-07-27: controlled-context PostgreSQL integration passed `3/3`; the
 
 ## Resume Pointer
 
-Current stage and state: `EXECUTE / Task 8 in progress`; Task 4 gold eval remains an explicit Task 8 exit gate.
+Current stage and state: `VERIFY / Task 8 stage-exit checks in progress`; the gold RAG eval, full suite, build, review, and sensitive scan remain open.
 
-Last completed verified step: Task 7 V2.2 orchestration passed its `3/3` controlled-context PostgreSQL tests and the fully migrated, deterministically ingested legacy Chat service regression passed `91/91` with zero skips.
+Last completed verified step: merged normal-only/non-blocking semantics passed the affected `119/119` unit boundary, `5/5` Provider attempt PostgreSQL tests, and fully migrated, deterministically ingested Chat service regression `90/90` with zero skips.
 
-Exact next action: write and run the five-turn desensitized failure-chain RED integration fixture, then close its semantic, Task Frame, Top-3 evidence, manifest/HMAC, output-guard, and old-context exclusion gaps.
+Exact next action: run chat eval, real local BGE/pgvector gold RAG, full suite, build, diff/sensitive scans, then close split review findings before final knowledge reconciliation.

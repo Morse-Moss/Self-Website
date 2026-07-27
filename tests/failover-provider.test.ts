@@ -330,7 +330,6 @@ function v2Request(overrides: Partial<NonNullable<AnswerRequest['execution']>> =
       modelTextTimeoutMs: 40,
       hedgingEnabled: true,
       delaysMs: [0, 8, 14],
-      acceptCandidate: () => true,
       reserveHedgedAttempt: async (event) => {
         executionEvents.push(event);
         return true;
@@ -490,49 +489,6 @@ test('coordinated v2 execution stays serial and switches only after failure', as
   );
 });
 
-test('complete release sends a rejected candidate to strict regeneration without failover', async () => {
-  let fallbackStarted = false;
-  const primary = delayedProvider({
-    delayMs: 1,
-    events: [
-      { type: 'delta', text: '缺口清单。' },
-      { type: 'done', usage: { inputTokens: 5, outputTokens: 2 } },
-    ],
-  });
-  const fallback = delayedProvider({
-    delayMs: 3,
-    events: [
-      { type: 'delta', text: '证据型回答。' },
-      { type: 'done', usage: { inputTokens: 8, outputTokens: 3 } },
-    ],
-    onStart: () => { fallbackStarted = true; },
-  });
-  const provider = new FailoverAiProvider(primary, [
-    { alias: 'primary', provider: primary },
-    { alias: 'fallback-1', provider: fallback },
-  ], 1_000);
-  const events: AnswerEvent[] = [];
-
-  await assert.rejects(async () => {
-    for await (const event of provider.streamAnswer(v2Request({
-      delaysMs: [0, 0],
-      releasePolicy: 'complete',
-      acceptCandidate: (text) => !text.includes('缺口清单'),
-    }))) events.push(event);
-  }, (error: unknown) => (
-    error instanceof AnswerExecutionError && error.code === 'OUTPUT_GUARD_REJECTED'
-  ));
-
-  const text = events.filter((event) => event.type === 'delta').map((event) => event.text).join('');
-  assert.equal(text, '');
-  assert.doesNotMatch(text, /缺口清单/u);
-  assert.equal(fallbackStarted, false);
-  const rejectedAttempt = events.find(
-    (event): event is Extract<AnswerEvent, { type: 'attempt' }> => event.type === 'attempt',
-  );
-  assert.deepEqual(rejectedAttempt?.attempt.usage, { inputTokens: 5, outputTokens: 2 });
-});
-
 test('terminal events price each node with its own immutable target rates', async () => {
   const primary = new FakeProvider([], new OpenAIProviderError(
     'PROVIDER_UNAVAILABLE',
@@ -563,33 +519,6 @@ test('terminal events price each node with its own immutable target rates', asyn
     terminalEvents.map((event) => event.estimatedCostUsd),
     [0.000014, 0.000084],
   );
-});
-
-test('guard-rejected terminal events retain usage priced by the rejected node', async () => {
-  const primary = new FakeProvider([
-    { type: 'delta', text: 'Rejected.' },
-    { type: 'done', usage: { inputTokens: 5, outputTokens: 2 } },
-  ]);
-  const provider = new FailoverAiProvider(primary, [target(primary, 0)], 1_000);
-  const terminalEvents: Array<Record<string, unknown>> = [];
-
-  await assert.rejects(async () => {
-    for await (const _event of provider.streamAnswer(v2Request({
-      releasePolicy: 'complete',
-      acceptCandidate: () => false,
-      onAttempt: async (event) => {
-        if (event.type === 'completed' || event.type === 'failed' || event.type === 'aborted') {
-          terminalEvents.push(event as unknown as Record<string, unknown>);
-        }
-      },
-    }))) {
-      // consume the stream
-    }
-  }, (error: unknown) => (
-    error instanceof AnswerExecutionError && error.code === 'OUTPUT_GUARD_REJECTED'
-  ));
-
-  assert.deepEqual(terminalEvents.map((event) => event.estimatedCostUsd), [0.000009]);
 });
 
 test('serial execution does not consult the obsolete hedge reservation callback', async () => {
@@ -732,30 +661,59 @@ test('coordinated total timeout stops a node that ignores its signal', async () 
   ));
 });
 
-test('segment winner stops when a later semantic segment fails the guard', async () => {
-  const primary: AiProvider = {
-    async embed() { return [[0.1, 0.2]]; },
-    async *streamAnswer() {
-      yield { type: 'delta', text: 'Good.' };
-      yield { type: 'delta', text: ' Bad.' };
-      yield { type: 'done', usage: null };
-    },
-  };
-  const provider = new FailoverAiProvider(primary, [{ alias: 'primary', provider: primary }], 1_000);
-  const visible: string[] = [];
+test('complete release delivers non-empty provider text without content gating', async () => {
+  let fallbackStarted = false;
+  const answer = '匹配度: 90%。缺口清单。下一步：读取 AGENTS.md。[来源99]';
+  const primary = delayedProvider({
+    delayMs: 1,
+    events: [
+      { type: 'delta', text: answer },
+      { type: 'done', usage: { inputTokens: 5, outputTokens: 2 } },
+    ],
+  });
+  const fallback = delayedProvider({
+    delayMs: 1,
+    events: [
+      { type: 'delta', text: 'fallback answer' },
+      { type: 'done', usage: null },
+    ],
+    onStart: () => { fallbackStarted = true; },
+  });
+  const provider = new FailoverAiProvider(primary, [
+    { alias: 'primary', provider: primary },
+    { alias: 'fallback-1', provider: fallback },
+  ], 1_000);
+  const events: AnswerEvent[] = [];
+
+  for await (const event of provider.streamAnswer(v2Request({
+    releasePolicy: 'complete',
+  }))) events.push(event);
+
+  assert.equal(
+    events.filter((event) => event.type === 'delta').map((event) => event.text).join(''),
+    answer,
+  );
+  assert.equal(events.at(-1)?.type, 'done');
+  assert.equal(fallbackStarted, false);
+});
+
+test('coordinated execution does not fail over after an unknown program error', async () => {
+  const original = new Error('program defect');
+  let fallbackStarted = false;
+  const primary = delayedProvider({ delayMs: 1, error: original });
+  const fallback = delayedProvider({
+    delayMs: 1,
+    events: [{ type: 'delta', text: 'must not run' }, { type: 'done', usage: null }],
+    onStart: () => { fallbackStarted = true; },
+  });
+  const provider = new FailoverAiProvider(primary, [primary, fallback], 1_000);
 
   await assert.rejects(async () => {
-    for await (const event of provider.streamAnswer(v2Request({
-      hedgingEnabled: false,
-      delaysMs: [0],
-      acceptCandidate: (text) => !text.includes('Bad'),
-    }))) {
-      if (event.type === 'delta') visible.push(event.text);
+    for await (const _event of provider.streamAnswer(v2Request())) {
+      // consume the stream
     }
-  }, (error: unknown) => (
-    (error as { code?: string }).code === 'OUTPUT_GUARD_REJECTED'
-  ));
-  assert.deepEqual(visible, ['Good.']);
+  }, (error: unknown) => error === original);
+  assert.equal(fallbackStarted, false);
 });
 
 test('segment release waits for a complete sentence and flushes the final unpunctuated text', async () => {

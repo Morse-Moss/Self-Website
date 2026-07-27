@@ -53,8 +53,8 @@ knowledge_impact:
 
 ## Resume Pointer
 
-Current stage and state: `CLOSE / LOCAL_READY / KNOWLEDGE_RECONCILED`.
+Current stage and state: `CLOSE / PRODUCTION_OBSERVED / KNOWLEDGE_RECONCILED`.
 
-Last completed verified step: migration repair coverage passed, the affected database boundary passed `133/133`, the repository passed `1083/1083`, typecheck and production build passed, and the `.env.local` development database migrated idempotently through `011` with canonical `008` checksum and complete Task Frame schema.
+Last completed verified step: release `c2d575c` was pushed and deployed; production backup and controlled write quiescence preceded migrations `009-011`, grants and runtime permission verification passed, the registry is `001-011`, all five containers are healthy, public checks and release smoke passed, and post-Web-start error/5xx counts are zero.
 
-Exact next action: no further local repair action; commit, push, and production deployment remain outside this request, and production `009` requires a maintenance window or controlled write quiescence.
+Exact next action: none for migration-chain repair; authenticated Environment Provider takeover/testing remains an explicit administrator observation, not part of this no-Provider deployment.

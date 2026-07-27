@@ -18,11 +18,6 @@ import {
 
 const CONTEXT_DOMAIN = Buffer.from('morse/context-packet/v1\0', 'utf8');
 const GENERATION_DOMAIN = Buffer.from('morse/generation-request/v1\0', 'utf8');
-const STRICT_OVERLAY_CONTENT = [
-  '这是一次严格重生成。',
-  '只使用同一 Context Packet 中的准入证据。',
-  '完整遵守 response_contract；不得输出未命名项目的泛化结论，也不得否认已准入证据。',
-].join('\n');
 const LAYER_ORDER: readonly ContextLayerName[] = [
   'current_input',
   'discourse_context',
@@ -220,8 +215,7 @@ function buildMessages(packet: CanonicalContextPacket): ContextChatMessage[] {
   ];
 }
 
-function requestForMode(input: {
-  mode: 'normal' | 'strict';
+function buildGenerationRequest(input: {
   packetHmacKeyId: string;
   packetHmacSha256: string;
   baseInstructions: string;
@@ -232,10 +226,8 @@ function requestForMode(input: {
     schemaVersion: 'generation-request-v1',
     packetHmacKeyId: input.packetHmacKeyId,
     packetHmacSha256: input.packetHmacSha256,
-    generationMode: input.mode,
-    overlay: input.mode === 'strict'
-      ? { version: 'strict-overlay-v1', content: STRICT_OVERLAY_CONTENT }
-      : null,
+    generationMode: 'normal',
+    overlay: null,
     baseInstructions: input.baseInstructions,
     messages: input.messages,
     reasoningEffort: input.reasoningEffort,
@@ -257,7 +249,6 @@ function layerTokenEstimates(packet: CanonicalContextPacket): ContextPacketManif
     task_inputs: estimateTokens(Buffer.from(stableSerialize(packet.taskInputs)).toString('utf8')),
     task_history: estimateTokens(Buffer.from(stableSerialize(packet.taskHistory)).toString('utf8')),
     approved_evidence: estimateTokens(Buffer.from(stableSerialize(packet.approvedEvidence)).toString('utf8')),
-    strict_overlay: estimateTokens(STRICT_OVERLAY_CONTENT),
   };
 }
 
@@ -304,7 +295,6 @@ export interface BuiltContextPacket {
   canonicalPacketBytes: Uint8Array;
   packetHmacSha256: string;
   normal: BuiltGenerationRequest;
-  strict: BuiltGenerationRequest;
   manifest: ContextPacketManifest;
 }
 
@@ -330,7 +320,6 @@ export function buildContextPacket(input: BuildContextPacketInput): BuiltContext
   const maximumInputTokens = Math.floor(input.tokenBudget * 0.9);
   let packet: CanonicalContextPacket;
   let normalRequest: CanonicalGenerationRequest;
-  let strictRequest: CanonicalGenerationRequest;
   let packetBytes: Uint8Array;
   let packetHmacSha256: string;
 
@@ -346,23 +335,14 @@ export function buildContextPacket(input: BuildContextPacketInput): BuiltContext
     packetHmacSha256 = hmac(input.digestKey, CONTEXT_DOMAIN, packetBytes);
     const instructions = buildInstructions(packet, input.resolved);
     const messages = buildMessages(packet);
-    normalRequest = requestForMode({
-      mode: 'normal',
+    normalRequest = buildGenerationRequest({
       packetHmacKeyId: input.digestKeyId,
       packetHmacSha256,
       baseInstructions: instructions,
       messages,
       reasoningEffort: input.reasoningEffort,
     });
-    strictRequest = requestForMode({
-      mode: 'strict',
-      packetHmacKeyId: input.digestKeyId,
-      packetHmacSha256,
-      baseInstructions: instructions,
-      messages,
-      reasoningEffort: input.reasoningEffort,
-    });
-    if (requestTokenEstimate(strictRequest) <= maximumInputTokens) break;
+    if (requestTokenEstimate(normalRequest) <= maximumInputTokens) break;
     if (history.length > 0) {
       history.shift();
       evictedLayers.add('task_history');
@@ -380,9 +360,7 @@ export function buildContextPacket(input: BuildContextPacketInput): BuiltContext
   }
 
   const normalBytes = stableSerialize(normalRequest);
-  const strictBytes = stableSerialize(strictRequest);
   const normalHmac = hmac(input.digestKey, GENERATION_DOMAIN, normalBytes);
-  const strictHmac = hmac(input.digestKey, GENERATION_DOMAIN, strictBytes);
   const includedLayers = LAYER_ORDER.filter((layer) => {
     if (layer === 'current_input') return true;
     if (layer === 'discourse_context') return packet.discourseContext.length > 0;
@@ -449,7 +427,6 @@ export function buildContextPacket(input: BuildContextPacketInput): BuiltContext
     canonicalPacketBytes: packetBytes,
     packetHmacSha256,
     normal: builtRequest(normalRequest, normalBytes, normalHmac),
-    strict: builtRequest(strictRequest, strictBytes, strictHmac),
     manifest,
   };
 }

@@ -5267,7 +5267,7 @@ test('v2 complete follow-up reaches Provider with the preceding conversation his
   }
 });
 
-test('recruitment guard hides the rejected candidate and strictly regenerates once', {
+test('recruitment answer is delivered and persisted even when offline quality rules would reject it', {
   skip: !pool,
 }, async () => {
   const testNow = new Date();
@@ -5298,24 +5298,20 @@ test('recruitment guard hides the rejected candidate and strictly regenerates on
       now: testNow,
     });
 
-    assert.equal(node.requests.length, 2);
+    assert.equal(node.requests.length, 1);
     assert.equal(node.requests[0].reasoningEffort, undefined);
-    assert.equal(node.requests[1].reasoningEffort, undefined);
     assert.doesNotMatch(node.requests[0].instructions, /严格重生成/u);
-    assert.match(node.requests[1].instructions, /严格重生成/u);
-    assert.equal(node.requests[1].execution?.hedgingEnabled, false);
-    assert.doesNotMatch(JSON.stringify(events), /匹配度: 90%/u);
     assert.equal(
       events.filter((event) => event.type === 'delta').map((event) => event.text).join(''),
-      '我在深度研究 Agent 系统中完成了 RAG、Agent 交付与可验证证据链。[来源1]',
+      '匹配度: 90%',
     );
 
     const interaction = await readInteraction(turnId);
     assert.equal(interaction.status, 'completed');
-    assert.equal(interaction.answer, '我在深度研究 Agent 系统中完成了 RAG、Agent 交付与可验证证据链。[来源1]');
-    assert.equal(interaction.input_tokens, 21);
-    assert.equal(interaction.output_tokens, 5);
-    assert.equal(Number(interaction.estimated_cost_usd), 0.000031);
+    assert.equal(interaction.answer, '匹配度: 90%');
+    assert.equal(interaction.input_tokens, 10);
+    assert.equal(interaction.output_tokens, 2);
+    assert.equal(Number(interaction.estimated_cost_usd), 0.000014);
 
     const attempts = await pool!.query<{
       input_tokens: number;
@@ -5330,8 +5326,7 @@ test('recruitment guard hides the rejected candidate and strictly regenerates on
       [turnId],
     );
     assert.deepEqual(attempts.rows, [
-      { input_tokens: 10, output_tokens: 2, status: 'failed', winner: false },
-      { input_tokens: 11, output_tokens: 3, status: 'completed', winner: true },
+      { input_tokens: 10, output_tokens: 2, status: 'completed', winner: true },
     ]);
 
     const beforeReplay = attempts.rowCount;
@@ -5359,84 +5354,6 @@ test('recruitment guard hides the rejected candidate and strictly regenerates on
     if (replayDone?.type === 'done') {
       assert.equal(replayDone.consumed, false);
     }
-  } finally {
-    await cleanupFailureFixture(fixture);
-  }
-});
-
-test('two guard failures persist only attempt metadata and return an explicit failure', {
-  skip: !pool,
-}, async () => {
-  const testNow = new Date();
-  const fixture = await createFailureFixture('chat-v2-guard-rejected', testNow);
-  const node = new SequencedAnswerProvider([
-    '匹配度: 90%',
-    '匹配度: 95%',
-  ]);
-  const coordinated = new FailoverAiProvider(
-    node,
-    [answerTarget(node, 0, '1', '2')],
-    1_000,
-  );
-  const turnId = randomUUID();
-
-  try {
-    await assert.rejects(consumeChat({
-      pool: pool!,
-      provider: coordinated,
-      accessSessionId: fixture.accessSessionId,
-      request: normalizeChatRequest({
-        workflow: 'jd_match',
-        jobDescription: 'Public role requires evidence-backed agent delivery. SECRET_JD_MARKER',
-        audienceIntent: 'recruiter',
-        turnId,
-      }),
-      config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
-      now: testNow,
-    }), (error: unknown) => (
-      error instanceof ChatServiceError && error.code === 'PROVIDER_UNAVAILABLE'
-    ));
-    assert.equal(node.requests.length, 2);
-
-    assert.deepEqual(await readSessionSnapshot(fixture.accessSessionId), {
-      messageCount: 0,
-      messageRows: 0,
-      usageRows: 0,
-    });
-    const interaction = await readInteraction(turnId);
-    assert.equal(interaction.status, 'failed');
-    assert.equal(interaction.error_code, 'PROVIDER_UNAVAILABLE');
-    assert.equal(interaction.answer, null);
-    assert.equal(interaction.input_tokens, 21);
-    assert.equal(interaction.output_tokens, 5);
-    assert.equal(Number(interaction.estimated_cost_usd), 0.000031);
-
-    const attempts = await pool!.query<{ row: Record<string, unknown> }>(
-      `SELECT to_jsonb(attempt) AS row
-         FROM chat_provider_attempts AS attempt
-        WHERE interaction_turn_id = $1
-        ORDER BY started_at, execution_id`,
-      [turnId],
-    );
-    assert.equal(attempts.rowCount, 2);
-    for (const { row } of attempts.rows) {
-      assert.deepEqual(
-        Object.keys(row).filter((key) => (
-          key !== 'packet_hmac_key_id'
-          && /question|job|answer|url|key|prompt|instruction/iu.test(key)
-        )),
-        [],
-      );
-      assert.doesNotMatch(
-        JSON.stringify(row),
-        /SECRET_JD_MARKER|匹配度: 9[05]%|https?:|api[_-]?key/iu,
-      );
-      assert.equal(typeof row.provider_alias, 'string');
-      assert.equal(typeof row.launch_kind, 'string');
-      assert.equal(typeof row.duration_ms, 'number');
-      assert.equal(row.status, 'failed');
-    }
-
   } finally {
     await cleanupFailureFixture(fixture);
   }
@@ -5488,7 +5405,7 @@ test('v2 identity skips embedding and search while using the approved identity c
   }
 });
 
-test('a rejected later segment switches and restarts strict output from blank', {
+test('a later segment matching an offline quality rule remains visible without regeneration', {
   skip: !pool,
 }, async () => {
   const testNow = new Date();
@@ -5521,8 +5438,7 @@ test('a rejected later segment switches and restarts strict output from blank', 
     ));
     assert.deepEqual(answerEvents, [
       { type: 'delta', text: 'Kubernetes is an orchestration system. ' },
-      { type: 'status', stage: 'switching' },
-      { type: 'delta', text: 'Kubernetes is an orchestration system.' },
+      { type: 'delta', text: 'AGENTS.md.' },
     ]);
 
     let visible = '';
@@ -5530,14 +5446,14 @@ test('a rejected later segment switches and restarts strict output from blank', 
       if (event.type === 'status') visible = '';
       else visible += event.text;
     }
-    assert.equal(visible, 'Kubernetes is an orchestration system.');
-    assert.match(node.requests[1].instructions, /严格重生成/u);
+    assert.equal(visible, 'Kubernetes is an orchestration system. AGENTS.md.');
+    assert.equal(node.requests.length, 1);
   } finally {
     await cleanupFailureFixture(fixture);
   }
 });
 
-test('a repeated long answer triggers one strict regeneration from conversation history', {
+test('a repeated long answer is delivered without strict regeneration', {
   skip: !pool,
 }, async () => {
   const testNow = new Date();
@@ -5582,9 +5498,8 @@ test('a repeated long answer triggers one strict regeneration from conversation 
       now: new Date(testNow.getTime() + 1_000),
     });
     assert.equal(second.at(-1)?.type, 'done');
-    assert.equal(provider.requests.length, 3);
+    assert.equal(provider.requests.length, 2);
     assert.equal(provider.requests[1].execution?.generationMode, 'normal');
-    assert.equal(provider.requests[2].execution?.generationMode, 'strict');
     assert.match(second.filter((event) => event.type === 'delta').map((event) => event.text).join(''), /内容创作 Agent/u);
   } finally {
     await cleanupFailureFixture(fixture);
@@ -5702,18 +5617,26 @@ test('JD provider exhaustion has no invented fallback and can replay the same tu
   }
 });
 
-test('v1 same-turn retry books historical v2 attempts plus current legacy usage once', {
+test('v1 same-turn retry books historical failed v2 attempts plus current legacy usage once', {
   skip: !pool,
 }, async () => {
   const testNow = new Date();
   const fixture = await createFailureFixture('chat-v2-to-v1-usage-retry', testNow);
-  const node = new SequencedAnswerProvider([
-    '匹配度：90%',
-    '匹配度：95%',
-  ]);
+  const primary: AiProvider = {
+    async embed(inputs) { return inputs.map(() => queryEmbedding); },
+    async *streamAnswer() {
+      throw new OpenAIProviderError('PROVIDER_UNAVAILABLE', { inputTokens: 10, outputTokens: 2 });
+    },
+  };
+  const fallback: AiProvider = {
+    async embed(inputs) { return inputs.map(() => queryEmbedding); },
+    async *streamAnswer() {
+      throw new OpenAIProviderError('PROVIDER_UNAVAILABLE', { inputTokens: 11, outputTokens: 3 });
+    },
+  };
   const coordinated = new FailoverAiProvider(
-    node,
-    [{ alias: 'primary', provider: node }],
+    primary,
+    [answerTarget(primary, 0, '1', '2'), answerTarget(fallback, 1, '1', '2')],
     1_000,
   );
   const turnId = randomUUID();

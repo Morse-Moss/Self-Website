@@ -244,15 +244,6 @@ test('project collection instructions require the complete approved public catal
   assert.match(instructions, /不得补充未在本轮证据中的项目/);
 });
 
-test('strict v2 instructions add one regeneration constraint without changing evidence', () => {
-  const normal = buildV2SystemInstructions({ intent: 'project', sources: [source] });
-  const strict = buildV2SystemInstructions({ intent: 'project', sources: [source], strict: true });
-
-  assert.doesNotMatch(normal, /严格重生成/);
-  assert.match(strict, /严格重生成/);
-  assert.match(strict, /\[来源1\]/);
-});
-
 test('v2 instructions lead with stable persona and policy blocks before per-turn blocks', () => {
   const groundedRoute = {
     routeKind: 'grounded' as const,

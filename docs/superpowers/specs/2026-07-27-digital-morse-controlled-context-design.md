@@ -2,7 +2,7 @@
 
 日期：2026-07-27
 
-状态：四节产品与技术设计已逐节确认；独立反证审查修订完成；用户已于 2026-07-27 复核批准
+状态：四节产品与技术设计已逐节确认；2026-07-28 按回答交付优先级移除在线质量阻断与 strict 重生成
 
 规格固化合同：`STAGED / STANDARD / LOCAL`
 
@@ -22,6 +22,7 @@
 - Provider 历史不再等同于同任务历史；最终请求使用分层、统一预算的 Context Packet。
 - 项目 RAG 只负责相关性选择，不能决定事实是否存在。
 - 生产灰度必须重放真实失败链，离线路由通过不能代替用户可见回答证据。
+- Provider 完成协议并返回非空正文后必须交付；质量规则只参与离线评测或非阻断观测，不能触发丢弃、strict、reset、failover、Provider incident 或失败补偿。
 
 以下 V2.1 合同继续有效：
 
@@ -91,7 +92,7 @@
 - 同一 turn 的 failover 收到不同语义、不同证据或不同历史。
 - 新任务、一次性问题或临时闲聊把旧任务的公司、岗位、JD、历史或证据发送给 Provider。
 - 活跃 Task Frame 引用已经随 10 天分析日志清理而消失的槽位来源。
-- `semanticIntent` 在兼容映射为 `routeKind` 后丢失，导致 Prompt、Evidence Planner 或 output guard 按错误语义工作。
+- `semanticIntent` 在兼容映射为 `routeKind` 后丢失，导致 Prompt、Evidence Planner 或离线质量评测按错误语义工作。
 - 超预算时从会话头部无差别截断，或静默裁掉当前问题。
 - 相同 completed `turnId` 再次生成或重复扣额度。
 
@@ -341,7 +342,7 @@ Task Frame 不复制原始 JD、自由文本摘要、公司私密信息或 assis
 
 必须增加真实 PostgreSQL 集成测试：先用 V2.2 创建 `recruitment_evaluation` Frame，再分别模拟独立 Context Packet 开关关闭、safe mode 和 Chat V2 总开关关闭，在同 conversation 成功提交下一轮，证明非 V2.2 Payload 不包含旧 JD、旧 V2.2 history 或不兼容 task row；随后恢复对应开关，证明 conversation 仍为 `legacy_locked_after_v22`，旧 Frame 不会复活。还要覆盖覆盖期间失败或 stopped、未提交用户可见 turn 时 assignment 与 Frame 不被关闭。若必须回滚应用镜像，只能发布带当前 migration manifest 的新 compatibility build 并走相同 legacy 路径，不能部署 pre-V2.2 image。
 
-当前工作区的 migration `009/011` 和相关脚本已有独立计划记录的 `LOCAL_READY / KNOWLEDGE_RECONCILED` 验证，但仍是未提交的本地变更，不属于本规格。本文不指定新 migration 编号，也不修改或吸收这些文件。实施前必须先由其所有者完成独立 scoped closeout，形成可核验 commit 和权威迁移顺序；在此之前不得抢号，也不得把“本地已验证”写成“已进入实施基线”。
+migration `009/011` 和相关脚本已由独立修复提交 `c2d575c` 形成权威顺序 `008 -> 009 -> 010 -> 011`，并在生产应用到 `011`。它们不属于本规格的实现内容，后续 Context V2.2 若需要 additive migration，应从 `012` 起重新冻结编号与兼容边界，不得改写或复用 `009-011`。
 
 ## 8. 语义解析与路由
 
@@ -390,7 +391,7 @@ interface ResolvedChatTurn {
 
 该结果由确定性规则、审核项目别名、能力台账、Task Frame 和 Discourse Context 生成，不新增 LLM 分类调用。`confidence` 必须位于 `0..1`，只用于审计和澄清门槛，不允许由低置信度自动升级事实。`evidencePlan` 只允许版本化枚举值，不能携带查询文本或模型生成的工具名；`referent.ref` 只允许审核 slug、能力 ID、槽位来源 ID 等受控引用，不能携带公司、岗位或 JD 原文。
 
-`ResolvedChatTurn` 是 V2.2 下游稳定合同。`legacyRoute` 只是兼容适配结果，不能替代或反推出 `semantic`。Semantic Resolver、Task Frame、Evidence Planner、RAG、Final Context Projection、Prompt、output guard、manifest 和 interaction 持久化必须接收同一份不可变 `ResolvedChatTurn`；任何一层仅凭 `routeKind` 或 `reasonCode` 决定招聘语义都属于实现错误。
+`ResolvedChatTurn` 是 V2.2 下游稳定合同。`legacyRoute` 只是兼容适配结果，不能替代或反推出 `semantic`。Semantic Resolver、Task Frame、Evidence Planner、RAG、Final Context Projection、Prompt、离线质量评测、manifest 和 interaction 持久化必须接收同一份不可变 `ResolvedChatTurn`；任何一层仅凭 `routeKind` 或 `reasonCode` 决定招聘语义都属于实现错误。
 
 ### 8.2 优先级
 
@@ -446,9 +447,9 @@ JD 判定不使用字符数阈值，也不要求固定双标题。`recruitment-s
 | `general_conversation` | `conversation` | `stable_general_conversation` |
 | `clarify` | `clarify` | `missing_relevance_referent` |
 
-这允许复用现有 SSE 和部分持久化边界，同时消除旧 routeKind 承担过多语义的情况。Prompt、Evidence Planner 和 output guard 必须读取 `semantic.intent` 与 `evidencePlan`：普通 `workflow='chat'` 的 `project_fit` 也必须启用招聘回答合同，拒绝虚构匹配百分比、无项目名的泛化回答，以及在已准入项目证据时声称“没有可核验资料”。
+这允许复用现有 SSE 和部分持久化边界，同时消除旧 routeKind 承担过多语义的情况。Prompt 与 Evidence Planner 必须读取 `semantic.intent` 与 `evidencePlan`；离线评测可据此标记虚构匹配百分比、无项目名的泛化回答，以及在已准入项目证据时声称“没有可核验资料”，但标记不影响在线交付。
 
-`releasePolicy` 也必须由 `ResolvedChatTurn.semantic` 决定，不能沿用兼容 `routeKind` 的默认值。凡回答合同含只能在完整候选上判定的终态约束，均使用 `complete`：首版至少包括 `project_catalog`、`project_fit`、`named_project_fact`、`capability_fact`、`jd_match`、`unsupported_personal_history` 和 `external_current`。Provider 仍可在服务端流式接收，但应用必须缓存到完整 output guard 通过后才发送首个用户可见 delta；被拒绝的 normal 候选不得泄漏任何正文，也不得依赖前端 reset 修补，再以 strict 候选从空白重生成。只有没有终态约束且所有守卫都能在已释放前缀上证明的 intent 才可使用 `segment`。
+`releasePolicy` 也必须由 `ResolvedChatTurn.semantic` 决定，不能沿用兼容 `routeKind` 的默认值。`complete` 仍可用于需要协议完成后一次释放的回答，`segment` 用于按完整语义段释放；二者都只控制显示时机，不能把内容质量变成成功门禁。Provider 完成协议并返回非空正文后必须释放，不得再由 output guard 丢弃、reset 或 strict 重生成。
 
 ## 9. 证据与 RAG
 
@@ -489,7 +490,7 @@ RAG 的职责是“在已经获准公开的项目资料中排序相关内容”�
 
 不输出虚构匹配百分比，不主动罗列完整缺口，不把“能力台账无单项命中”写成“没有相关项目经验”。
 
-当 `project_fit` 或 `jd_match` 已准入至少一项 direct/transferable 项目时，output guard 必须要求回答命名至少一个对应审核项目，并拒绝笼统的“没有可核验资料”。当没有任何项目达到准入门槛时，允许诚实说明无直接匹配，不能为了满足格式强塞无关项目。
+当 `project_fit` 或 `jd_match` 已准入至少一项 direct/transferable 项目时，Prompt 必须要求回答命名至少一个对应审核项目，离线质量评测标记笼统的“没有可核验资料”。当没有任何项目达到准入门槛时，允许诚实说明无直接匹配，不能为了满足格式强塞无关项目。质量标记不影响当前正文交付。
 
 项目级评测 fixture 必须固定：预期入选 slug、明确禁止的无关 slug、每个项目的 direct/transferable 等级、去重后的项目顺序和 RAG 降级结果。既有 `top-3 46/46` 继续作为 chunk retrieval 不回归门，但不能替代 `project_fit` 的项目级排序、去重和回答验收。
 
@@ -525,9 +526,9 @@ V2.2 首版决策：
 
 Context Packet 在 Provider 调用前只构建一次并冻结。主节点和所有串行 fallback 获得相同的 canonical packet bytes、base instructions、messages、evidence 和预算结果；不能按 Provider 重新路由、重新投影或重新检索。Provider adapter 只能增加协议封装字段，不能修改语义内容。
 
-保留现有 output guard 的最多一次 strict 重生成，但它只能在相同 Context Packet 上增加一个版本化固定 overlay：`generation_mode='strict'` 与 `strict-overlay-v1`。该 overlay 不得修改 semantic intent、Task Frame、task inputs、history、evidence、检索结果或预算，也不能触发新的 Resolver/RAG/Search。普通模式及其 fallback 使用同一 normal request；strict 模式及其 fallback 使用同一 strict request。两种模式分别审计 request HMAC，Context Packet HMAC 在整个 turn 内必须相同。
+Context Packet 只生成 normal 请求，不增加 strict overlay。主节点和基础设施故障后的 fallback 使用相同的 canonical application request；request HMAC 与 Context Packet HMAC 在整个 turn 内必须相同。历史 strict/guard attempt 继续可读，但新运行时不得创建。
 
-对 §8.4 列出的 `complete` intent，normal 候选通过完整 output guard 前 `first_user_visible` 必须为空；若 normal 被拒绝，strict 候选也必须完整通过后才一次开始释放。SSE 可以在缓存期间发送不含候选正文的 activity/status，但不能发送 normal 文本、局部引用或需要客户端撤回的 delta。
+对 `complete` intent，`first_user_visible` 在 Provider 完成协议并确认正文非空前保持为空，随后一次开始释放；对 `segment` intent，完整语义段可按现有规则释放。SSE 可以在缓存期间发送不含候选正文的 activity/status，但不能要求客户端撤回已经释放的 delta。
 
 ## 11. 上下文预算
 
@@ -540,7 +541,7 @@ Context Packet 在 Provider 调用前只构建一次并冻结。主节点和所�
 - 输出预算继续由活动 Provider target 独立控制；环境默认目前为 `MORSE_MAX_OUTPUT_TOKENS=1200`，数据库活动模型版本可能覆盖它，本规格不修改该值。
 - 预估内容最多使用输入预算的 90%，为分词和消息包装误差保留 10%。
 - token 计算必须覆盖 instructions、Task Frame、history、evidence 和当前输入，而不是只计算 history。
-- 预算按较大的 `strict-overlay-v1` 请求计算并预留固定 overlay；normal 通过但 strict 超预算的 Packet 不得启动 Provider。
+- 预算按唯一 normal 请求计算；不再为 strict overlay 预留输入空间或 Provider attempt。
 - 沿用对中文偏保守的估算；未来替换 tokenizer 不改变优先级合同。
 
 ### 11.2 分层上限与淘汰顺序
@@ -565,7 +566,7 @@ Context Packet 在 Provider 调用前只构建一次并冻结。主节点和所�
 - Semantic decision、候选 Task Frame、Final Context Projection 和 Context Packet 在 reserve commit 后、Provider 调用前于内存生成。
 - success transaction：写 assistant message、completed interaction、usage、terminal manifest，以及成功结果对应的 Task Frame、槽位引用和 `conversation_context_completed_turns`；这些写入必须同成同败。deterministic reply 也走该 success transaction，只是 `context_build_status='not_required'` 且不写 Provider attempt。
 - failure compensation：若 turn 尚未 completed，删除 reserve transaction 写入但未完成的 user message、恢复相应配额，并把 interaction 终结为 `failed` 或 `stopped`，同时写入无正文 terminal manifest；不得提交候选 Frame、槽位、completed-turn index 或 Approved Evidence 正文。
-- Provider、output guard、Context Build 或 success transaction 失败时，不提交候选 Task Frame。若 success commit 的客户端确认丢失，只能按现有幂等核验读取已提交结果，不能再次执行 Provider。
+- Provider、Context Build 或 success transaction 失败时，不提交候选 Task Frame。质量评测结果不是事务失败条件；若 success commit 的客户端确认丢失，只能按现有幂等核验读取已提交结果，不能再次执行 Provider。
 - 相同 completed `turnId` 原样重放，不重新装配 Context Packet、不调用 Provider。
 - running turn 不允许读取尚未完成的 conversation message 作为历史。
 - Embedding/RAG 降级不改变任务身份，只改变 evidence plan 和 manifest。
@@ -611,11 +612,11 @@ packet_hmac_sha256
 
 canonical packet 使用稳定键排序、稳定数组顺序和 UTF-8 编码。部署配置新增 secret `MORSE_CONTEXT_PACKET_DIGEST_KEY` 与非敏感版本 `MORSE_CONTEXT_PACKET_DIGEST_KEY_ID`；key 必须是解码后至少 32 bytes 的独立随机值，key ID 只允许受约束的非敏感版本标识。两项只在 Context Packet 可能启用时必填；启用但缺失或非法必须使 readiness 失败，关闭时不得阻断 legacy Chat。`packet_hmac_sha256 = HMAC-SHA256(key, UTF8("morse/context-packet/v1\0") || canonicalPacketBytes)`；manifest 的 `packet_hmac_key_id` 只保存 key ID，不保存 key。不得使用可被字典猜测的裸内容 hash，也不得复用 Provider、邀请码或管理员凭据。HMAC key 只存在于服务端 secret 配置，不进入数据库、日志或 manifest。
 
-`generation-request-v1` 是 Provider adapter 之前的应用级语义请求，按同一稳定 JSON 规则编码为 `canonicalGenerationRequestBytes`，字段白名单固定为：`schemaVersion`、`packetHmacKeyId`、`packetHmacSha256`、`generationMode`、`overlay`、`baseInstructions`、有序 `messages[{role, content}]`、应用级 `reasoningEffort` 和 `store:false`。normal 的 `overlay=null`；strict 的 overlay 必须编码为独立对象 `{ version: 'strict-overlay-v1', content: <固定版本正文> }`，不得先用未规定的分隔符拼接后再计算。新增任何会改变模型语义的应用级字段都必须升级 schema 并进入该白名单。
+`generation-request-v1` 是 Provider adapter 之前的应用级语义请求，按同一稳定 JSON 规则编码为 `canonicalGenerationRequestBytes`，字段白名单固定为：`schemaVersion`、`packetHmacKeyId`、`packetHmacSha256`、`generationMode`、`overlay`、`baseInstructions`、有序 `messages[{role, content}]`、应用级 `reasoningEffort` 和 `store:false`。新请求固定 `generationMode='normal'` 且 `overlay=null`；字段暂时保留是为了稳定序列化和兼容历史记录，不表示允许 strict。新增任何会改变模型语义的应用级字段都必须升级 schema 并进入该白名单。
 
 `generation_request_hmac_sha256 = HMAC-SHA256(key, UTF8("morse/generation-request/v1\0") || canonicalGenerationRequestBytes)`。Provider alias、route revision、target position、model ID、Base URL、协议 envelope、API key/headers、连接超时、传输重试和各 target 的输出上限是单独审计的 Provider 专属字段，不进入该 HMAC；adapter 不得借这些字段改写白名单中的 instructions、messages、overlay 或 reasoning effort。这样 request HMAC 证明主节点与 fallback 获得相同应用级语义请求，而 Provider 专属配置继续由既有 config digest/attempt 字段证明。
 
-每个 turn 在 Context Build 时快照 key/key ID；轮换只影响后续新 turn。`chat_provider_attempts` 是调用前一致性校验的唯一实时权威：每个 Provider attempt 必须先在该表写入同一个 builder version、key ID 与 `packet_hmac_sha256`，并另存 `generation_mode`、overlay version 和 `generation_request_hmac_sha256`，成功提交 `started` 记录后才可发起网络调用。写入时必须与该 turn 已有 attempt 在事务内比较；所有 attempt 的 packet HMAC 必须相同，request HMAC 只允许在 `normal -> strict` 的单次守卫重生成边界变化，且同一 generation mode 内主节点与 fallback 必须相同。任何其他差异都以稳定一致性错误终结，且不得发起该 Provider 调用。
+每个 turn 在 Context Build 时快照 key/key ID；轮换只影响后续新 turn。`chat_provider_attempts` 是调用前一致性校验的唯一实时权威：每个 Provider attempt 必须先在该表写入同一个 builder version、key ID 与 `packet_hmac_sha256`，并另存 `generation_mode`、overlay version 和 `generation_request_hmac_sha256`，成功提交 `started` 记录后才可发起网络调用。写入时必须与该 turn 已有 attempt 在事务内比较；所有 attempt 的 packet HMAC 和 request HMAC 必须相同，`generation_mode` 固定为 normal 且 overlay version 为空。任何差异都以稳定一致性错误终结，且不得发起该 Provider 调用。
 
 `interaction_provider_attempts` 仅是 execution 结束后供管理后台与分析使用的投影，不参与调用前 enforcement。若它镜像 builder/HMAC/overlay 字段，值必须从对应 `chat_provider_attempts` 行复制，不得独立重算；缺失源行或复制不一致必须使 terminal transaction 失败，不能形成第二套权威。
 
@@ -649,7 +650,7 @@ manifest 不保存完整 Prompt、用户原文、JD 副本、assistant 回答、
 4. “你有什么相关项目经验吗？”解析为 Morse 的 `project_fit`。
 5. 最终回答至少引用一个相关审核项目，不得输出“没有可核验资料”。
 
-该 fixture 固定预期入选 slug、禁止出现的无关 slug 和 direct/transferable 等级，并覆盖 semantic intent、legacy route、Task Frame、Final Context Projection、history、项目级 RAG、evidence、prompt 和 output guard，不能只测正则函数。
+该 fixture 固定预期入选 slug、禁止出现的无关 slug 和 direct/transferable 等级，并覆盖 semantic intent、legacy route、Task Frame、Final Context Projection、history、项目级 RAG、evidence、prompt 和离线质量评测，不能只测正则函数。
 
 ### 14.2 反例与故障注入
 
@@ -663,11 +664,11 @@ manifest 不保存完整 Prompt、用户原文、JD 副本、assistant 回答、
 - 先提交含敏感标记的 JD，再发送临时闲聊、自包含新任务和显式切题；三类 Provider Payload 均不得包含旧 JD、旧 Task History 或旧 evidence，活动 Frame 本身保持不变。
 - V2.2 创建招聘 Frame 后，分别关闭 Context Packet 开关、启用 safe mode、关闭 Chat V2 总开关；同 conversation 的非 V2.2 下一轮均不读取 V2.2 Frame/history/JD，并能从当前输入完成。该 turn 成功后 assignment 锁定 `legacy_locked_after_v22`，恢复开关也不复活旧 Frame；failed/stopped 则不锁定。
 - `taskAction='complete'` 的 Provider 最终回答只收到当前任务最小投影，确定性结束语不调用 Provider；两者成功后都原子写入 `completed / task_complete`，后续输入不得隐式恢复已完成 Frame。
-- `project_fit + workflow='chat'` 分别拒绝虚构匹配百分比、已准入证据时的“没有可核验资料”和未命名任何准入项目的回答。
-- `project_fit` normal 候选在完整 guard 因未命名准入项目或错误否认证据而拒绝时，SSE 中用户可见 delta 必须为 0，normal attempt 的 `first_user_visible` 为空；只有完整通过的 strict 候选可以开始释放正文。其余 §8.4 `complete` intent 同样不得先流出再 reset。
+- `project_fit + workflow='chat'` 的离线评测分别标记虚构匹配百分比、已准入证据时的“没有可核验资料”和未命名任何准入项目的回答；标记不改变 completed 状态或正文。
+- 命中任意离线质量规则的 normal 候选仍必须通过 SSE 交付和成功事务持久化，Provider 调用数保持 1，不产生 strict、reset、failover、`OUTPUT_GUARD_REJECTED` 或 Provider incident。
 - RAG over-fetch 后按 `projectSlug` 去重、稳定项目级排序；多个高分 chunk 属于同一项目时只能占一个名额，不足两项时不得强塞禁止 slug。
-- 首轮显式 `jd_match` 使用恰好 12,000 字的最大输入 fixture：Current Input 正文只序列化一次，本轮槽位在 `<task_inputs>` 中不复制正文，并在默认 24k、90% 上限和 strict overlay 预留下完成 Context Build；不得因重复计 token 返回输入过长。
-- canonical packet 的稳定序列化可重放；`chat_provider_attempts` 的调用前事务拒绝任何 builder version/packet HMAC 不一致。normal 与 strict 各自的主 Provider/fallback request HMAC 必须相同，只有一次 `normal -> strict-overlay-v1` 边界允许 request HMAC 变化；`interaction_provider_attempts` 的镜像值逐行等于实时权威且无独立重算。
+- 首轮显式 `jd_match` 使用恰好 12,000 字的最大输入 fixture：Current Input 正文只序列化一次，本轮槽位在 `<task_inputs>` 中不复制正文，并在默认 24k、90% 上限内完成 Context Build；不得因重复计 token 返回输入过长。
+- canonical packet 的稳定序列化可重放；`chat_provider_attempts` 的调用前事务拒绝任何 builder version/packet HMAC/request HMAC 不一致。主 Provider 与基础设施故障后的 fallback request HMAC 必须相同；`interaction_provider_attempts` 的镜像值逐行等于实时权威且无独立重算。
 - Context Build 的 `built/over_budget/failed/not_required` 均持久化无正文 manifest；失败和 stopped 路径不提交候选 Frame。
 - 未审核支付、医疗或规模经历保持 unavailable。
 - assistant 自称做过某事不能成为 Approved Evidence。
@@ -704,7 +705,7 @@ manifest 不保存完整 Prompt、用户原文、JD 副本、assistant 回答、
 
 ### 15.2 上线顺序
 
-1. 先让已本地验证但未提交的 migration `009/011` 修复完成独立 scoped closeout，并确认权威 commit、实施基线、分支和生产 release。
+1. 以已部署的 migration `001-011` 和 release `c2d575c` 为实施基线；新增 schema 从 `012` 起编号并重新完成独立迁移合同。
 2. additive migration 与兼容代码部署，Context Packet 默认关闭。
 3. 配置独立 Context Packet HMAC secret；不调用 Provider 完成 live/ready、migration、grants、构建、manifest 和 Mock 主链验证。
 4. 获得单独授权后，只对指定测试邀请码开启并执行最多五次真实主回答。
@@ -745,7 +746,7 @@ V2.2 只有同时满足以下条件才能称为生产修复完成：
 
 - 本规格的产品语义、Context Packet、Task Frame、证据和预算合同均有对应实现与测试。
 - 脱敏失败链和反例全部通过。
-- migration 在真实测试 PostgreSQL 上通过，且未吸收未知 migration 变更。
+- migration 在真实测试 PostgreSQL 上通过，并以已部署的 `001-011` manifest 为不可改写基线。
 - RAG `top-3 46/46` 与公开/私密隔离门槛保持通过。
 - 真实测试邀请码的失败链得到用户可见正确回答。
 - 零容忍项为 0，Git commit、push、生产 release 指针和线上行为分别有独立证据。
@@ -754,7 +755,7 @@ V2.2 只有同时满足以下条件才能称为生产修复完成：
 实施计划开始前必须满足：
 
 1. 用户复核并批准本规格。
-2. 当前已本地验证的 migration `009/011` 和相关脚本改动完成独立 scoped closeout，取得明确归属、commit 和权威顺序。
+2. 已部署的 migration `001-011`、提交 `c2d575c` 和生产 schema 作为明确实施基线；任何新 migration 从 `012` 起。
 3. 基于干净、已确认的提交创建隔离实施工作树，或由用户显式授权在当前工作树协作。
 4. 重新核对生产 release、Chat V2/safe mode、活动 Provider 路由和 RAG 状态。
 

@@ -2,7 +2,25 @@
 
 本文对应 `aimorse.tech` 的生产部署。当前实例为腾讯云 Lighthouse 首尔节点，公网地址为 `43.133.68.202`。境外节点不需要 ICP 备案；DNS 解析和 HTTPS 证书签发已完成，域名实名状态继续由腾讯云注册控制台维护。
 
-## 当前生产状态（2026-07-27，V2.1 output guard 修复）
+## 当前生产状态（2026-07-28，回答质量检查改为非阻断）
+
+- 状态：`DEPLOYED_UNOBSERVED / HEALTHY / PROVIDER_NOT_CALLED`。当前应用 release `d947cb7`；`/opt/revolution/current`、Web 与 Worker Compose working directory 指向 `/opt/revolution/releases/d947cb7/revolution`。本地提交未 push；部署状态不能替代远端同步状态。
+- Provider 完成协议并返回非空正文后，运行时直接交付并持久化；内容质量规则不再触发丢弃、strict、reset、Provider 切换、Provider incident 或 `PROVIDER_UNAVAILABLE`。质量规则保留为离线评测或非阻断观测。只有真实 Provider、网络、协议、超时、空完成或 incomplete 故障可以在可见正文前触发后续 Provider attempt。
+- 冻结归档为 25,077,760 bytes，SHA-256 `887ee3c4696bbe877f9d8192c67af49cd006a17650a5296e05c100cb1b2096d9`；本地与服务器哈希一致。生产镜像构建生成 33 条 Next.js 路由，隔离生产镜像回归测试 `27/27` 通过。
+- 只重建 Web/Worker；DB `cdd60bc525be...`、Embedding `1a37c91fe1b5...`、Edge `b2c4293eec67...` 的完整容器 ID 在切换前后不变。五容器均 healthy、restart count 为 0；新 Web 启动后的 Web/Worker/Edge/DB 错误关键词计数均为 0。
+- 公网 live、ready、兼容 health、根页、works、admin、admin/api 均为 HTTP 200；未登录 Provider runtime、turn list、简历文件和简历授权接口均为 HTTP 401；`release:smoke` 返回 `{"ok":true}`。
+- 本次没有运行 migration、grants 或 ingest，没有修改生产环境、Provider 路由、数据库、公开知识或私密简历数据。没有真实 Chat/Embedding/Search/Bocha/Feishu/Provider 调用，因此“实际付费 Provider 回答被直接交付”尚未做生产业务观察；保留 `revolution-web:rollback-c2d575c` 与 `revolution-worker:rollback-c2d575c`。
+
+## 历史生产状态（2026-07-27，Provider 接管与迁移链修复）
+
+- 状态：`PRODUCTION_OBSERVED / MIGRATIONS_009_011_APPLIED / PROVIDER_TAKEOVER_DEPLOYED`，当前应用 release `c2d575c`；`/opt/revolution/current` 指向 `/opt/revolution/releases/c2d575c/revolution`。该运行提交已推送，随后生产证据由文档提交 `0426eaf` 记录到 GitHub `master`；文档提交不需要重建运行镜像。
+- 冻结归档为 19,503,454 bytes，SHA-256 `45ff9cba30e7f884302f81fb8f32373c004edcb091d109b07517cd40e36a0c2b`，本地与服务器哈希一致。迁移前备份为 `/opt/revolution/shared/backups/pre-c2d575c-20260727T155358Z.dump`，349,213 bytes，SHA-256 `d321aecccaca660cadbba7984255b121ca06e2f4d721d258b9c1e3a633a8db75`。
+- 在停止 Web/Worker 的受控停写窗口内确认无长事务后，migration `009`、`010`、`011` 依次成功；重复 migration 幂等，registry 为 `001-011`。生产原本已是 canonical `008` Task Frame，因此 `011` 没有历史行需要转换；Task State 保持 0 行，10 个目标索引齐全，`ai_environment_takeovers` 已存在，migration 角色经 grants 恢复为非超级用户且 AI runtime 权限门禁通过。
+- 只重建 Web/Worker；DB、Embedding、Edge 完整容器 ID 不变，五容器均 healthy 且 restart count 为 0。公开知识未变化，因此未运行 ingest；未重建 DB、Embedding 或 Edge。
+- 公网 live/ready/兼容 health、根页、works、admin、admin/api 均为 HTTP 200；未登录 Provider runtime、turn list 和简历文件均为 401；`release:smoke` 返回 `{"ok":true}`。维护停写期 Edge 记录 2 条上游不可达关键词；新 Web 启动后的 Web/Worker/Edge/DB 错误关键词和 Edge 5xx 均为 0。
+- 本次没有管理员登录、邀请码创建、生产配置修改、真实 Provider/Embedding/Search 调用或私密简历访问。Environment Provider 接管入口与持久化已部署，但认证后的真实接管、测试和激活仍由管理员显式操作；旧活动 V1/V2 状态未在本次发布中修改。`revolution-web:rollback-4a039ab` 与 `revolution-worker:rollback-4a039ab` 保留。
+
+## 历史生产状态（2026-07-27，V2.1 output guard 修复）
 
 - 状态：`DEPLOYED / HEALTHY / PROVIDER_BLOCKED`，当前应用 release `4a039ab`；`/opt/revolution/current` 指向 `/opt/revolution/releases/4a039ab/revolution`。
 - 冻结归档为 19,210,438 bytes，SHA-256 `395f87d164f29ae1075ce994658f43c497dc7f8e163afd30c8fe438675565c33`，本地与服务器哈希一致。发布时 GitHub 443 暂时不可达，因此 release 来自本地已冻结 commit；远端 push 必须单独取得成功回执，不能由部署状态代替。
@@ -85,7 +103,7 @@
 
 本节记录当前回答可靠性版本的生产运维合同，不改变上方 2026-07-23 的已观察生产事实。真实 Provider 评审、故障注入和扩大流量仍需分别授权：
 
-回答可靠性版本沿用平台手册的串行共享预算：协议事件 25 秒、模型正文 40 秒、Provider 阶段 80 秒、完整 turn 90 秒、normal/strict/failover 合计 3 个 attempt。生产预检必须核对这些值的严格顺序；节点切换只消费剩余预算，不得因切备用重新获得 80 秒，评审期间不得启用 hedging。
+回答可靠性版本沿用平台手册的串行共享预算：协议事件 25 秒、模型正文 40 秒、Provider 阶段 80 秒、完整 turn 90 秒，normal 与仅由真实 Provider、协议或超时故障触发的 failover 合计最多 3 个 attempt。内容质量不得触发第二次调用、strict、reset 或节点切换。生产预检必须核对这些值的严格顺序；节点切换只消费剩余预算，不得因切备用重新获得 80 秒，评审期间不得启用 hedging。
 
 1. 首次发布设置 `MORSE_CHAT_V2_ENABLED=true`、`MORSE_CHAT_V2_CANARY_PERCENT=0`、`MORSE_CHAT_V2_CANARY_INVITE_IDS` 留空、`MORSE_CHAT_HEDGED_FAILOVER_ENABLED=false`、`MORSE_CHAT_SAFE_MODE=false`，发布后先证明没有 Session 进入 v2。
 2. 新管理 UI 可用后，在 `/admin` 创建专用聊天邀请码。一次性明文只保留在当前浏览器内；当场复制后台显示的非敏感灰度 UUID，白名单不使用邀请码明文。

@@ -89,13 +89,12 @@ function validateIntegrity(
   generationMode: 'normal' | 'strict',
   integrity: GenerationRequestIntegrity,
 ): void {
-  if (!/^[a-z0-9][a-z0-9._-]{0,63}$/u.test(integrity.contextBuilderVersion)
+  if (generationMode !== 'normal'
+    || !/^[a-z0-9][a-z0-9._-]{0,63}$/u.test(integrity.contextBuilderVersion)
     || !/^[a-z0-9][a-z0-9._-]{0,31}$/u.test(integrity.packetHmacKeyId)
     || !/^[0-9a-f]{64}$/u.test(integrity.packetHmacSha256)
     || !/^[0-9a-f]{64}$/u.test(integrity.generationRequestHmacSha256)
-    || integrity.generationOverlayVersion !== (
-      generationMode === 'strict' ? 'strict-overlay-v1' : null
-    )) integrityMismatch();
+    || integrity.generationOverlayVersion !== null) integrityMismatch();
 }
 
 function assertIntegrityCompatible(
@@ -115,13 +114,9 @@ function assertIntegrityCompatible(
     if (row.context_builder_version !== integrity.contextBuilderVersion
       || row.packet_hmac_key_id !== integrity.packetHmacKeyId
       || row.packet_hmac_sha256 !== integrity.packetHmacSha256
-      || row.generation_mode === null
-      || (row.generation_mode === 'strict' && generationMode === 'normal')) {
-      integrityMismatch();
-    }
-    if (row.generation_mode === generationMode
-      && (row.generation_overlay_version !== integrity.generationOverlayVersion
-        || row.generation_request_hmac_sha256 !== integrity.generationRequestHmacSha256)) {
+      || row.generation_mode !== generationMode
+      || row.generation_overlay_version !== integrity.generationOverlayVersion
+      || row.generation_request_hmac_sha256 !== integrity.generationRequestHmacSha256) {
       integrityMismatch();
     }
   }
@@ -154,6 +149,7 @@ async function recordStartedEvent(
   integrity: GenerationRequestIntegrity | null,
 ): Promise<void> {
   const generationMode = event.generationMode ?? 'normal';
+  if (generationMode !== 'normal') integrityMismatch();
   await client.query(
     'SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))',
     [`revolution:provider-attempt-integrity:v1:${key.interactionTurnId}`],

@@ -210,7 +210,7 @@ export interface ContextPacketManifest {
   evicted_layers: ContextLayerName[];
   projection_reason_codes: string[];
   eviction_reason_codes: string[];
-  token_estimate_by_layer: Partial<Record<ContextLayerName | 'instructions' | 'strict_overlay', number>>;
+  token_estimate_by_layer: Partial<Record<ContextLayerName | 'instructions', number>>;
   evidence_ids: string[];
   retrieval_scores: Array<{ evidenceId: string; score: number }>;
   degraded_reason: string | null;
