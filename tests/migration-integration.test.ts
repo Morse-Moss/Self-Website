@@ -15,6 +15,24 @@ import {
 const repoRoot = path.resolve('.');
 const migrationRunner = path.join(repoRoot, 'scripts', 'migrate-db.mjs');
 const migrationSourceDirectory = path.join(repoRoot, 'db', 'migrations');
+const taskStateRepairFileName = '011_conversation_task_state_repair.sql';
+const historicalTaskStateSql = `CREATE TABLE conversation_task_state (
+  conversation_id uuid PRIMARY KEY
+    REFERENCES conversations(id) ON DELETE CASCADE,
+  active_topic_kind text NOT NULL DEFAULT 'none'
+    CHECK (active_topic_kind IN ('none', 'project', 'capability', 'jd', 'external')),
+  active_topic_ref text
+    CHECK (active_topic_ref IS NULL OR char_length(active_topic_ref) BETWEEN 1 AND 160),
+  status text NOT NULL DEFAULT 'active'
+    CHECK (status IN ('active', 'waiting_input', 'completed')),
+  version integer NOT NULL DEFAULT 1 CHECK (version > 0),
+  updated_by_turn_id uuid
+    REFERENCES interaction_turns(id) ON DELETE SET NULL,
+  updated_at timestamptz NOT NULL,
+  CHECK (active_topic_kind <> 'none' OR active_topic_ref IS NULL)
+);
+`;
+const historicalTaskStateChecksum = '7276ecca1906f7f08383c25423bc6782da3af92ce0413733f047f8e5514e44c2';
 
 interface RunnerResult {
   code: number | null;
@@ -1078,6 +1096,448 @@ test('conversation task state migration defines the complete Task Frame and turn
     /interaction_turns\s*\(conversation_id,\s*task_id,\s*status,\s*created_at\)/iu,
   );
   assert.doesNotMatch(sql, /REFERENCES conversation_task_state\s*\(task_id\)/iu);
+});
+
+test('migration 009 owns the database growth indexes before Provider takeover history', async () => {
+  const versions = await migrationVersions();
+  assert.ok(versions.indexOf('008') < versions.indexOf('009'));
+  assert.ok(versions.indexOf('009') < versions.indexOf('010'));
+
+  const sql = await fs.readFile(
+    path.join(migrationSourceDirectory, '009_db_growth_indexes.sql'),
+    'utf8',
+  );
+  for (const definition of [
+    /interaction_turns_inherited_from_idx[\s\S]+inherited_from_turn_id[\s\S]+IS NOT NULL/iu,
+    /interaction_turns_running_session_idx[\s\S]+access_session_id[\s\S]+status = 'running'/iu,
+    /interaction_turns_conversation_created_idx[\s\S]+conversation_id, created_at DESC/iu,
+    /interaction_turns_completed_at_idx[\s\S]+completed_at[\s\S]+status = 'completed'/iu,
+    /conversations_session_updated_idx[\s\S]+access_session_id, updated_at DESC/iu,
+    /usage_events_interaction_turn_idx[\s\S]+interaction_turn_id/iu,
+    /usage_events_access_session_idx[\s\S]+access_session_id/iu,
+    /usage_events_conversation_idx[\s\S]+conversation_id/iu,
+    /chat_provider_attempts_hedge_started_idx[\s\S]+launch_kind, started_at[\s\S]+launch_kind = 'hedge'/iu,
+  ]) {
+    assert.match(sql, definition);
+  }
+});
+
+test('migration 011 declares the forward-only historical Task Frame repair', async () => {
+  const repairPath = path.join(migrationSourceDirectory, taskStateRepairFileName);
+  const exists = await fs.stat(repairPath).then(() => true, () => false);
+  assert.equal(exists, true, 'migration 011 must exist without rewriting migration 008');
+  if (!exists) return;
+
+  const sql = await fs.readFile(repairPath, 'utf8');
+  assert.equal(migrationChecksum(historicalTaskStateSql), historicalTaskStateChecksum);
+  assert.match(sql, /active_topic_kind/iu);
+  assert.match(sql, /task_id/iu);
+  assert.match(sql, /task_kind/iu);
+  assert.match(sql, /waiting_for/iu);
+  assert.match(sql, /interaction_turns_conversation_task_status_created_idx/iu);
+  assert.doesNotMatch(sql, /UPDATE\s+schema_migrations/iu);
+});
+
+test('migration runner repairs the historical 008 schema and checksum atomically', async (context) => {
+  const repairPath = path.join(migrationSourceDirectory, taskStateRepairFileName);
+  if (!await fs.stat(repairPath).then(() => true, () => false)) {
+    context.skip('migration 011 is not implemented yet');
+    return;
+  }
+
+  const database = await createDisposablePostgresDatabase();
+  const directory = await copyMigrations();
+  const projectConversationId = randomUUID();
+  const jdConversationId = randomUUID();
+  const emptyConversationId = randomUUID();
+  const projectTurnId = randomUUID();
+  const jdTurnId = randomUUID();
+  try {
+    await removeMigrationsAfter(directory, '008');
+    await fs.writeFile(
+      path.join(directory, '008_conversation_task_state.sql'),
+      historicalTaskStateSql,
+      'utf8',
+    );
+    const historical = await runMigrations(database.connectionString, directory);
+    assert.equal(historical.code, 0, historical.stderr);
+
+    await withPostgresClient(database.connectionString, async (client) => {
+      const inviteId = randomUUID();
+      await client.query(
+        `INSERT INTO invite_codes
+          (id, code_hash, label, active, expires_at, max_sessions, session_count)
+         VALUES ($1, $2, 'historical task repair', true, now() + interval '1 day', 3, 3)`,
+        [inviteId, 'd'.repeat(64)],
+      );
+      const fixtures = [
+        [randomUUID(), projectConversationId, projectTurnId, 'project question'],
+        [randomUUID(), jdConversationId, jdTurnId, 'jd question'],
+        [randomUUID(), emptyConversationId, null, 'no task question'],
+      ] as const;
+      for (const [sessionId, conversationId, turnId, question] of fixtures) {
+        await client.query(
+          `INSERT INTO access_sessions (id, invite_code_id, token_hash, expires_at)
+           VALUES ($1, $2, $3, now() + interval '12 hours')`,
+          [sessionId, inviteId, createHash('sha256').update(sessionId).digest('hex')],
+        );
+        await client.query(
+          `INSERT INTO conversations (id, access_session_id, mode, expires_at)
+           VALUES ($1, $2, 'general', now() + interval '12 hours')`,
+          [conversationId, sessionId],
+        );
+        if (turnId) {
+          await client.query(
+            `INSERT INTO interaction_turns
+              (id, access_session_id, conversation_id, workflow, audience_intent,
+               question, status, delete_after)
+             VALUES ($1, $2, $3, 'chat', 'general', $4, 'completed',
+               now() + interval '10 days')`,
+            [turnId, sessionId, conversationId, question],
+          );
+        }
+      }
+      await client.query(
+        `INSERT INTO conversation_task_state
+          (conversation_id, active_topic_kind, active_topic_ref, status, version,
+           updated_by_turn_id, updated_at)
+         VALUES
+          ($1, 'project', 'digital-morse', 'active', 3, $2, '2026-07-27T01:00:00Z'),
+          ($3, 'jd', 'frontend-role', 'waiting_input', 2, $4, '2026-07-27T02:00:00Z'),
+          ($5, 'none', NULL, 'active', 1, NULL, '2026-07-27T03:00:00Z')`,
+        [projectConversationId, projectTurnId, jdConversationId, jdTurnId, emptyConversationId],
+      );
+    });
+
+    await fs.copyFile(
+      path.join(migrationSourceDirectory, '008_conversation_task_state.sql'),
+      path.join(directory, '008_conversation_task_state.sql'),
+    );
+    for (const fileName of [
+      '009_db_growth_indexes.sql',
+      '010_environment_provider_takeovers.sql',
+      taskStateRepairFileName,
+    ]) {
+      await fs.copyFile(
+        path.join(migrationSourceDirectory, fileName),
+        path.join(directory, fileName),
+      );
+    }
+
+    const upgraded = await runMigrations(database.connectionString, directory);
+    assert.equal(upgraded.code, 0, upgraded.stderr);
+    assert.match(upgraded.stdout, /Migration 011 applied/iu);
+    assert.match(upgraded.stdout, /checksum registry canonicalized for 008/iu);
+
+    const snapshot = await withPostgresClient(database.connectionString, async (client) => {
+      const registry = await client.query<{ checksum: string; version: string }>(
+        `SELECT version, checksum FROM schema_migrations
+          WHERE version IN ('008', '009', '010', '011') ORDER BY version`,
+      );
+      const rows = await client.query<{
+        conversation_id: string;
+        created_at: string;
+        last_successful_turn_id: string | null;
+        status: string;
+        task_id: string;
+        task_kind: string;
+        task_started_turn_id: string | null;
+        topic_kind: string;
+        topic_ref: string;
+        updated_at: string;
+        version: number;
+        waiting_for: string[];
+      }>(
+        `SELECT conversation_id::text, task_id::text, task_kind, topic_kind,
+                topic_ref, status, waiting_for, task_started_turn_id::text,
+                last_successful_turn_id::text, version, created_at::text,
+                updated_at::text
+           FROM conversation_task_state ORDER BY topic_kind`,
+      );
+      const turns = await client.query<{ id: string; task_id: string | null }>(
+        `SELECT id::text, task_id::text FROM interaction_turns
+          WHERE id = ANY($1::uuid[]) ORDER BY id`,
+        [[projectTurnId, jdTurnId]],
+      );
+      const indexes = await client.query<{ indexname: string }>(
+        `SELECT indexname FROM pg_indexes WHERE schemaname = 'public'
+          AND indexname IN (
+            'interaction_turns_conversation_task_status_created_idx',
+            'chat_provider_attempts_hedge_started_idx'
+          ) ORDER BY indexname`,
+      );
+      return { indexes: indexes.rows, registry: registry.rows, rows: rows.rows, turns: turns.rows };
+    });
+
+    assert.deepEqual(snapshot.registry.map((row) => row.version), ['008', '009', '010', '011']);
+    assert.equal(
+      snapshot.registry[0].checksum,
+      migrationChecksum(await fs.readFile(path.join(migrationSourceDirectory, '008_conversation_task_state.sql'))),
+    );
+    assert.deepEqual(snapshot.rows.map((row) => ({
+      conversationId: row.conversation_id,
+      taskKind: row.task_kind,
+      topicKind: row.topic_kind,
+      topicRef: row.topic_ref,
+      status: row.status,
+      waitingFor: row.waiting_for,
+      taskStartedTurnId: row.task_started_turn_id,
+      lastSuccessfulTurnId: row.last_successful_turn_id,
+      version: row.version,
+      timestampsMatch: row.created_at === row.updated_at,
+      taskIdIsUuid: /^[0-9a-f-]{36}$/u.test(row.task_id),
+    })), [
+      {
+        conversationId: jdConversationId,
+        taskKind: 'jd_match',
+        topicKind: 'jd',
+        topicRef: 'frontend-role',
+        status: 'waiting_input',
+        waitingFor: ['job_description'],
+        taskStartedTurnId: jdTurnId,
+        lastSuccessfulTurnId: jdTurnId,
+        version: 2,
+        timestampsMatch: true,
+        taskIdIsUuid: true,
+      },
+      {
+        conversationId: projectConversationId,
+        taskKind: 'project_discussion',
+        topicKind: 'project',
+        topicRef: 'digital-morse',
+        status: 'active',
+        waitingFor: [],
+        taskStartedTurnId: projectTurnId,
+        lastSuccessfulTurnId: projectTurnId,
+        version: 3,
+        timestampsMatch: true,
+        taskIdIsUuid: true,
+      },
+    ]);
+    assert.equal(new Set(snapshot.rows.map((row) => row.task_id)).size, 2);
+    assert.deepEqual(
+      snapshot.turns.map((turn) => turn.task_id).sort(),
+      snapshot.rows.map((row) => row.task_id).sort(),
+    );
+    assert.deepEqual(snapshot.indexes.map((row) => row.indexname), [
+      'chat_provider_attempts_hedge_started_idx',
+      'interaction_turns_conversation_task_status_created_idx',
+    ]);
+
+    const repeated = await runMigrations(database.connectionString, directory);
+    assert.equal(repeated.code, 0, repeated.stderr);
+    assert.doesNotMatch(repeated.stdout, /Migration \d+ applied/iu);
+  } finally {
+    await fs.rm(directory, { force: true, recursive: true });
+    await database.dispose();
+  }
+});
+
+test('a failed migration 011 rolls back Task Frame repair and checksum canonicalization', async () => {
+  const database = await createDisposablePostgresDatabase();
+  const directory = await copyMigrations();
+  try {
+    await removeMigrationsAfter(directory, '008');
+    await fs.writeFile(
+      path.join(directory, '008_conversation_task_state.sql'),
+      historicalTaskStateSql,
+      'utf8',
+    );
+    const historical = await runMigrations(database.connectionString, directory);
+    assert.equal(historical.code, 0, historical.stderr);
+
+    await fs.copyFile(
+      path.join(migrationSourceDirectory, '008_conversation_task_state.sql'),
+      path.join(directory, '008_conversation_task_state.sql'),
+    );
+    for (const fileName of ['009_db_growth_indexes.sql', '010_environment_provider_takeovers.sql']) {
+      await fs.copyFile(
+        path.join(migrationSourceDirectory, fileName),
+        path.join(directory, fileName),
+      );
+    }
+    const repairSql = await fs.readFile(
+      path.join(migrationSourceDirectory, taskStateRepairFileName),
+      'utf8',
+    );
+    await fs.writeFile(
+      path.join(directory, taskStateRepairFileName),
+      `${repairSql}\nSELECT 1 / 0;\n`,
+      'utf8',
+    );
+
+    const failed = await runMigrations(database.connectionString, directory);
+    assert.notEqual(failed.code, 0);
+    const after = await withPostgresClient(database.connectionString, async (client) => {
+      const registry = await client.query<{ checksum: string; version: string }>(
+        `SELECT version, checksum FROM schema_migrations
+          WHERE version IN ('008', '011') ORDER BY version`,
+      );
+      const columns = await client.query<{ column_name: string }>(
+        `SELECT column_name FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'conversation_task_state'
+          ORDER BY ordinal_position`,
+      );
+      const turnTaskId = await client.query(
+        `SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'interaction_turns'
+            AND column_name = 'task_id'`,
+      );
+      return { columns: columns.rows, registry: registry.rows, turnTaskId: turnTaskId.rowCount };
+    });
+    assert.deepEqual(after.registry, [{ version: '008', checksum: historicalTaskStateChecksum }]);
+    assert.deepEqual(after.columns.map((row) => row.column_name), [
+      'conversation_id',
+      'active_topic_kind',
+      'active_topic_ref',
+      'status',
+      'version',
+      'updated_by_turn_id',
+      'updated_at',
+    ]);
+    assert.equal(after.turnTaskId, 0);
+  } finally {
+    await fs.rm(directory, { force: true, recursive: true });
+    await database.dispose();
+  }
+});
+
+test('historical 008 repair rejects schema drift before applying migration 009', async () => {
+  const database = await createDisposablePostgresDatabase();
+  const directory = await copyMigrations();
+  try {
+    await removeMigrationsAfter(directory, '008');
+    await fs.writeFile(
+      path.join(directory, '008_conversation_task_state.sql'),
+      historicalTaskStateSql,
+      'utf8',
+    );
+    const historical = await runMigrations(database.connectionString, directory);
+    assert.equal(historical.code, 0, historical.stderr);
+    await withPostgresClient(database.connectionString, (client) => (
+      client.query('ALTER TABLE conversation_task_state ADD COLUMN unexpected_drift text')
+    ));
+
+    await fs.copyFile(
+      path.join(migrationSourceDirectory, '008_conversation_task_state.sql'),
+      path.join(directory, '008_conversation_task_state.sql'),
+    );
+    for (const fileName of [
+      '009_db_growth_indexes.sql',
+      '010_environment_provider_takeovers.sql',
+      taskStateRepairFileName,
+    ]) {
+      await fs.copyFile(
+        path.join(migrationSourceDirectory, fileName),
+        path.join(directory, fileName),
+      );
+    }
+
+    const rejected = await runMigrations(database.connectionString, directory);
+    assert.notEqual(rejected.code, 0);
+    assert.match(rejected.stderr, /historical schema mismatch for migration 008/iu);
+    const registry = await withPostgresClient(database.connectionString, (client) => (
+      client.query<{ checksum: string; version: string }>(
+        `SELECT version, checksum FROM schema_migrations
+          WHERE version IN ('008', '009', '010', '011') ORDER BY version`,
+      )
+    ));
+    assert.deepEqual(registry.rows, [{ version: '008', checksum: historicalTaskStateChecksum }]);
+  } finally {
+    await fs.rm(directory, { force: true, recursive: true });
+    await database.dispose();
+  }
+});
+
+test('migration 011 is a no-op for canonical 008 task state', async (context) => {
+  const repairPath = path.join(migrationSourceDirectory, taskStateRepairFileName);
+  if (!await fs.stat(repairPath).then(() => true, () => false)) {
+    context.skip('migration 011 is not implemented yet');
+    return;
+  }
+
+  const database = await createDisposablePostgresDatabase();
+  const directory = await copyMigrations();
+  try {
+    await fs.rm(path.join(directory, taskStateRepairFileName), { force: true });
+    const through010 = await runMigrations(database.connectionString, directory);
+    assert.equal(through010.code, 0, through010.stderr);
+
+    const fixture = await withPostgresClient(database.connectionString, async (client) => {
+      const inviteId = randomUUID();
+      const sessionId = randomUUID();
+      const conversationId = randomUUID();
+      const turnId = randomUUID();
+      const taskId = randomUUID();
+      await client.query(
+        `INSERT INTO invite_codes
+          (id, code_hash, label, active, expires_at, max_sessions, session_count)
+         VALUES ($1, $2, 'canonical repair fixture', true, now() + interval '1 day', 1, 1)`,
+        [inviteId, 'e'.repeat(64)],
+      );
+      await client.query(
+        `INSERT INTO access_sessions (id, invite_code_id, token_hash, expires_at)
+         VALUES ($1, $2, $3, now() + interval '12 hours')`,
+        [sessionId, inviteId, 'f'.repeat(64)],
+      );
+      await client.query(
+        `INSERT INTO conversations (id, access_session_id, mode, expires_at)
+         VALUES ($1, $2, 'general', now() + interval '12 hours')`,
+        [conversationId, sessionId],
+      );
+      await client.query(
+        `INSERT INTO interaction_turns
+          (id, access_session_id, conversation_id, workflow, audience_intent,
+           question, status, delete_after, task_id)
+         VALUES ($1, $2, $3, 'chat', 'general', 'canonical fixture', 'completed',
+           now() + interval '10 days', $4)`,
+        [turnId, sessionId, conversationId, taskId],
+      );
+      await client.query(
+        `INSERT INTO conversation_task_state
+          (conversation_id, task_id, task_kind, topic_kind, topic_ref, status,
+           waiting_for, task_started_turn_id, last_successful_turn_id, version,
+           updated_by_turn_id, created_at, updated_at)
+         VALUES ($1, $2, 'project_discussion', 'project', 'digital-morse',
+           'active', '{}', $3, $3, 4, $3, '2026-07-27T04:00:00Z',
+           '2026-07-27T05:00:00Z')`,
+        [conversationId, taskId, turnId],
+      );
+      return { conversationId, taskId, turnId };
+    });
+
+    await fs.copyFile(repairPath, path.join(directory, taskStateRepairFileName));
+    const repaired = await runMigrations(database.connectionString, directory);
+    assert.equal(repaired.code, 0, repaired.stderr);
+    const after = await withPostgresClient(database.connectionString, async (client) => (
+      client.query(
+        `SELECT conversation_id::text, task_id::text, task_kind, topic_kind,
+                topic_ref, status, waiting_for, task_started_turn_id::text,
+                last_successful_turn_id::text, version, updated_by_turn_id::text,
+                created_at::text, updated_at::text
+           FROM conversation_task_state WHERE conversation_id = $1`,
+        [fixture.conversationId],
+      )
+    ));
+    assert.deepEqual(after.rows, [{
+      conversation_id: fixture.conversationId,
+      task_id: fixture.taskId,
+      task_kind: 'project_discussion',
+      topic_kind: 'project',
+      topic_ref: 'digital-morse',
+      status: 'active',
+      waiting_for: [],
+      task_started_turn_id: fixture.turnId,
+      last_successful_turn_id: fixture.turnId,
+      version: 4,
+      updated_by_turn_id: fixture.turnId,
+      created_at: '2026-07-27 04:00:00+00',
+      updated_at: '2026-07-27 05:00:00+00',
+    }]);
+  } finally {
+    await fs.rm(directory, { force: true, recursive: true });
+    await database.dispose();
+  }
 });
 
 test('conversation task state migration tracks version and clears updated_by_turn_id on turn deletion', async () => {

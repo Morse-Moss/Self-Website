@@ -1051,7 +1051,7 @@ Load `closeout`, stage only files named by this plan plus justified knowledge/ev
 - Transaction safety: request replay is checked under target lock before active-takeover conflict; conflict audit is outside rollback; deletion release shares the tombstone/secret-shred transaction.
 - Route lock: all draft mutations pass one pure index-preservation guard; locked items cannot move indirectly.
 - UI truth: no browser clock or last-100-event inference remains; lifecycle, eligibility, latest test, and operation rate limit stay separate.
-- Migration delivery: local file is `010`; publication remains blocked until `009` ownership/order is resolved independently.
+- Migration delivery: local file is `010`; the later migration-chain repair owns `009`, orders `008 -> 009 -> 010 -> 011`, and repairs the known historical `008` drift forward-only.
 - Verification cadence: focused RED/GREEN per task, one affected-boundary pass per StagePacket, one full suite/build/visual receipt at local exit.
 
 ## Resume Pointer
@@ -1060,4 +1060,4 @@ Current stage and state: `CLOSE / LOCAL_READY / KNOWLEDGE_RECONCILED`.
 
 Last completed verified step: the clean disposable database passed migrations 001-010, ingest 41 documents / 48 chunks, and 1077/1077 tests; the controlled browser journey passed 26 checks with zero console/page/external-origin errors; both review views and the final production build passed; owned Task 8 files and the validated Morse rollout row were committed locally.
 
-Exact next action: none within the LOCAL target; any later push or deployment must first resolve migration `009` ownership/order and add the forward-only repair for already-registered old `008` databases.
+Exact next action: none within this takeover LOCAL target; the former `009`/historical-`008` blockers are resolved locally by the migration-chain repair, while push and production deployment remain separate authorization gates.

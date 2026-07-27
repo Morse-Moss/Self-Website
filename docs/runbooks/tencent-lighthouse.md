@@ -193,7 +193,7 @@ docker compose --env-file .env.production -f compose.production.yaml run --rm --
 docker compose --env-file .env.production -f compose.production.yaml up -d web worker edge
 ```
 
-迁移完成后 `grants` 会撤销 migration 角色的临时超级用户权限；随后必须在受控 psql 会话执行 `deploy/postgres/verify-ai-config-runtime.sql`。重复执行 migration 和 ingest 应分别保持幂等，第二次入库应跳过未变化内容。migration `004` 应用后只允许回退到识别 004 的 Stage 1 兼容镜像，禁止切回只认识 001-003 的版本。私密简历首次部署必须先保持 `MORSE_RESUME_ENABLED=false` 完成上述序列，核对 migration `003` checksum、runtime grants、live/ready 和公开 release smoke，再在单独授权下切换开关并只重启 Web/Worker。
+迁移完成后 `grants` 会撤销 migration 角色的临时超级用户权限；随后必须在受控 psql 会话执行 `deploy/postgres/verify-ai-config-runtime.sql`。重复执行 migration 和 ingest 应分别保持幂等，第二次入库应跳过未变化内容。migration `009` 使用事务内普通 `CREATE INDEX`，生产执行前必须进入维护窗口或受控停写，并确认没有长事务；当前 runner 的单文件事务是失败回滚边界，不得直接把该文件改成 `CREATE INDEX CONCURRENTLY`。migration `011` 对 canonical `008` 为 no-op；只有 checksum 和旧七列结构都精确匹配时才修复历史 Task State，任何其他漂移都必须在应用 `009` 前停止发布。migration `004` 应用后只允许回退到识别 004 的 Stage 1 兼容镜像，禁止切回只认识 001-003 的版本。私密简历首次部署必须先保持 `MORSE_RESUME_ENABLED=false` 完成上述序列，核对 migration `003` checksum、runtime grants、live/ready 和公开 release smoke，再在单独授权下切换开关并只重启 Web/Worker。
 
 ## 私密简历首次启用与密钥轮换
 

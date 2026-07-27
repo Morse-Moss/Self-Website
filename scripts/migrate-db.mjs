@@ -44,6 +44,24 @@ const s10Tables = [
   'access_attempts',
 ];
 
+const historicalMigrationRepairs = new Map([
+  ['008', {
+    repairVersion: '011',
+    checksums: new Set([
+      '7276ecca1906f7f08383c25423bc6782da3af92ce0413733f047f8e5514e44c2',
+    ]),
+    expectedColumns: [
+      'conversation_id',
+      'active_topic_kind',
+      'active_topic_ref',
+      'status',
+      'version',
+      'updated_by_turn_id',
+      'updated_at',
+    ],
+  }],
+]);
+
 const legacyColumns = [
   ['knowledge_documents', 'id', 'text', false],
   ['knowledge_documents', 'title', 'text', false],
@@ -307,17 +325,63 @@ async function loadAppliedMigrations(client) {
 function validateAppliedMigrations(applied, migrations) {
   const available = new Map(migrations.map((migration) => [migration.version, migration]));
   const checksumUpgrades = [];
+  const repairChecksumUpgrades = new Map();
   for (const [version, checksum] of applied) {
     const migration = available.get(version);
     if (!migration) throw new Error(`Applied migration ${version} is missing from disk.`);
     if (migration.checksum !== checksum) {
-      if (!migration.legacyChecksums.has(checksum)) {
+      if (migration.legacyChecksums.has(checksum)) {
+        checksumUpgrades.push({ version, previousChecksum: checksum, checksum: migration.checksum });
+        continue;
+      }
+
+      const repair = historicalMigrationRepairs.get(version);
+      if (!repair?.checksums.has(checksum)) {
         throw new Error(`Checksum mismatch for migration ${version}.`);
       }
-      checksumUpgrades.push({ version, previousChecksum: checksum, checksum: migration.checksum });
+      if (!available.has(repair.repairVersion)) {
+        throw new Error(`Repair migration ${repair.repairVersion} is required for migration ${version}.`);
+      }
+      if (applied.has(repair.repairVersion)) {
+        throw new Error(
+          `Repair migration ${repair.repairVersion} is already registered before migration ${version} checksum canonicalization.`,
+        );
+      }
+      const upgrades = repairChecksumUpgrades.get(repair.repairVersion) ?? [];
+      upgrades.push({ version, previousChecksum: checksum, checksum: migration.checksum });
+      repairChecksumUpgrades.set(repair.repairVersion, upgrades);
     }
   }
-  return checksumUpgrades;
+  return { checksumUpgrades, repairChecksumUpgrades };
+}
+
+async function validateHistoricalMigrationRepairSchemas(client, repairChecksumUpgrades) {
+  for (const upgrades of repairChecksumUpgrades.values()) {
+    for (const upgrade of upgrades) {
+      const repair = historicalMigrationRepairs.get(upgrade.version);
+      const columns = await client.query(
+        `SELECT column_name
+           FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'conversation_task_state'
+          ORDER BY ordinal_position`,
+      );
+      const turnTaskId = await client.query(
+        `SELECT 1
+           FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'interaction_turns'
+            AND column_name = 'task_id'`,
+      );
+      if (
+        JSON.stringify(columns.rows.map((column) => column.column_name))
+          !== JSON.stringify(repair.expectedColumns)
+        || turnTaskId.rowCount !== 0
+      ) {
+        throw new Error(`Historical schema mismatch for migration ${upgrade.version}.`);
+      }
+    }
+  }
 }
 
 const client = new Client(createDatabaseClientConfig(connectionString, {
@@ -340,7 +404,11 @@ try {
   await bootstrapRegistry(client);
 
   let applied = await loadAppliedMigrations(client);
-  const checksumUpgrades = validateAppliedMigrations(applied, migrations);
+  const {
+    checksumUpgrades,
+    repairChecksumUpgrades,
+  } = validateAppliedMigrations(applied, migrations);
+  await validateHistoricalMigrationRepairSchemas(client, repairChecksumUpgrades);
   if (checksumUpgrades.length > 0) {
     await inTransaction(client, async () => {
       for (const upgrade of checksumUpgrades) {
@@ -387,15 +455,32 @@ try {
 
   for (const migration of migrations) {
     if (applied.has(migration.version)) continue;
+    const repairedChecksums = repairChecksumUpgrades.get(migration.version) ?? [];
     await inTransaction(client, async () => {
       await client.query(migrationSql(migration.sql, migration.fileName));
       await client.query(
         'INSERT INTO schema_migrations (version, checksum) VALUES ($1, $2)',
         [migration.version, migration.checksum],
       );
+      for (const upgrade of repairedChecksums) {
+        const result = await client.query(
+          `UPDATE schema_migrations
+              SET checksum = $1
+            WHERE version = $2
+              AND checksum = $3`,
+          [upgrade.checksum, upgrade.version, upgrade.previousChecksum],
+        );
+        if (result.rowCount !== 1) {
+          throw new Error(`Migration checksum registry changed for ${upgrade.version}.`);
+        }
+      }
     });
     applied.set(migration.version, migration.checksum);
     console.log(`Migration ${migration.version} applied.`);
+    for (const upgrade of repairedChecksums) {
+      applied.set(upgrade.version, upgrade.checksum);
+      console.log(`Migration checksum registry canonicalized for ${upgrade.version}.`);
+    }
   }
 
   console.log(`Database migrations current through ${migrations.at(-1).version}.`);
