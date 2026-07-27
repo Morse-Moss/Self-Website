@@ -2,7 +2,16 @@
 
 本文对应 `aimorse.tech` 的生产部署。当前实例为腾讯云 Lighthouse 首尔节点，公网地址为 `43.133.68.202`。境外节点不需要 ICP 备案；DNS 解析和 HTTPS 证书签发已完成，域名实名状态继续由腾讯云注册控制台维护。
 
-## 当前生产状态（2026-07-27，Provider 接管与迁移链修复）
+## 当前生产状态（2026-07-28，回答质量检查改为非阻断）
+
+- 状态：`DEPLOYED_UNOBSERVED / HEALTHY / PROVIDER_NOT_CALLED`。当前应用 release `d947cb7`；`/opt/revolution/current`、Web 与 Worker Compose working directory 指向 `/opt/revolution/releases/d947cb7/revolution`。本地提交未 push；部署状态不能替代远端同步状态。
+- Provider 完成协议并返回非空正文后，运行时直接交付并持久化；内容质量规则不再触发丢弃、strict、reset、Provider 切换、Provider incident 或 `PROVIDER_UNAVAILABLE`。质量规则保留为离线评测或非阻断观测。只有真实 Provider、网络、协议、超时、空完成或 incomplete 故障可以在可见正文前触发后续 Provider attempt。
+- 冻结归档为 25,077,760 bytes，SHA-256 `887ee3c4696bbe877f9d8192c67af49cd006a17650a5296e05c100cb1b2096d9`；本地与服务器哈希一致。生产镜像构建生成 33 条 Next.js 路由，隔离生产镜像回归测试 `27/27` 通过。
+- 只重建 Web/Worker；DB `cdd60bc525be...`、Embedding `1a37c91fe1b5...`、Edge `b2c4293eec67...` 的完整容器 ID 在切换前后不变。五容器均 healthy、restart count 为 0；新 Web 启动后的 Web/Worker/Edge/DB 错误关键词计数均为 0。
+- 公网 live、ready、兼容 health、根页、works、admin、admin/api 均为 HTTP 200；未登录 Provider runtime、turn list、简历文件和简历授权接口均为 HTTP 401；`release:smoke` 返回 `{"ok":true}`。
+- 本次没有运行 migration、grants 或 ingest，没有修改生产环境、Provider 路由、数据库、公开知识或私密简历数据。没有真实 Chat/Embedding/Search/Bocha/Feishu/Provider 调用，因此“实际付费 Provider 回答被直接交付”尚未做生产业务观察；保留 `revolution-web:rollback-c2d575c` 与 `revolution-worker:rollback-c2d575c`。
+
+## 历史生产状态（2026-07-27，Provider 接管与迁移链修复）
 
 - 状态：`PRODUCTION_OBSERVED / MIGRATIONS_009_011_APPLIED / PROVIDER_TAKEOVER_DEPLOYED`，当前应用 release `c2d575c`；`/opt/revolution/current` 指向 `/opt/revolution/releases/c2d575c/revolution`。该运行提交已推送，随后生产证据由文档提交 `0426eaf` 记录到 GitHub `master`；文档提交不需要重建运行镜像。
 - 冻结归档为 19,503,454 bytes，SHA-256 `45ff9cba30e7f884302f81fb8f32373c004edcb091d109b07517cd40e36a0c2b`，本地与服务器哈希一致。迁移前备份为 `/opt/revolution/shared/backups/pre-c2d575c-20260727T155358Z.dump`，349,213 bytes，SHA-256 `d321aecccaca660cadbba7984255b121ca06e2f4d721d258b9c1e3a633a8db75`。
