@@ -218,6 +218,145 @@ async function insertSuccessfulModelTest(
   );
 }
 
+async function databaseClock(pool: InstanceType<typeof Pool>): Promise<Date> {
+  const result = await pool.query<{ now: Date }>('SELECT clock_timestamp() AS now');
+  return result.rows[0].now;
+}
+
+async function insertProviderStateEvent(
+  pool: InstanceType<typeof Pool>,
+  input: {
+    configDigest: string;
+    createdAt: Date;
+    eventType: 'environment_test' | 'provider_operation_denied' | 'provider_test';
+    latencyMs?: number | null;
+    resultCode: string;
+    status: 'denied' | 'failed' | 'succeeded';
+  },
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO ai_config_events
+      (event_type, actor_admin_session_id, config_digest, result_code, status,
+       latency_ms, created_at, delete_after)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+    [
+      input.eventType,
+      adminSessionId,
+      input.configDigest,
+      input.resultCode,
+      input.status,
+      input.latencyMs ?? null,
+      input.createdAt,
+      new Date(input.createdAt.getTime() + 180 * 24 * 60 * 60_000),
+    ],
+  );
+}
+
+async function createPrimaryEnvironmentTakeover(
+  pool: InstanceType<typeof Pool>,
+  serviceOptions: AdminProviderServiceOptions,
+  input: { name?: string; requestId?: string } = {},
+) {
+  const environment = (await getProviderRuntimeSummary(pool, serviceOptions))
+    .environmentTargets.find((target) => target.environmentTargetKey === 'primary');
+  assert.ok(environment);
+  const result = await takeoverEnvironmentProvider(pool, 'primary', {
+    apiKey: null,
+    baseUrl: null,
+    expectedConfigDigest: environment.configDigest,
+    firstModel: model,
+    name: input.name ?? 'Editable primary',
+    requestId: input.requestId ?? randomUUID(),
+    reuseKeyAcrossOrigin: false,
+    userAgent: environment.userAgent,
+  }, serviceOptions);
+  return { environment, result };
+}
+
+async function seedDatabaseRouteRevision(
+  pool: InstanceType<typeof Pool>,
+  input: {
+    activatedAt: Date;
+    activationKind: 'activate' | 'bootstrap';
+    modelVersionId: string;
+    previousRouteRevisionId: string | null;
+    revisionNumber: number;
+  },
+): Promise<string> {
+  const snapshot = await pool.query<{
+    config_digest: string;
+    connection_display_name: string;
+    input_usd_per_million: string | null;
+    model_display_name: string;
+    model_id: string;
+    output_usd_per_million: string | null;
+    protocol: 'chat_completions' | 'responses';
+  }>(
+    `SELECT model.display_name AS model_display_name, model.model_id, model.protocol,
+            model.config_digest, model.input_usd_per_million::text,
+            model.output_usd_per_million::text,
+            connection.display_name AS connection_display_name
+       FROM ai_model_presets model
+       JOIN ai_connections connection ON connection.id = model.connection_version_id
+      WHERE model.id = $1`,
+    [input.modelVersionId],
+  );
+  assert.equal(snapshot.rowCount, 1);
+  const routeRevisionId = randomUUID();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `INSERT INTO ai_route_revisions
+        (id, revision_number, previous_active_revision_id, activation_kind,
+         created_at, activated_at, actor_admin_session_id)
+       VALUES ($1,$2,$3,$4,$5,$5,$6)`,
+      [
+        routeRevisionId,
+        input.revisionNumber,
+        input.previousRouteRevisionId,
+        input.activationKind,
+        input.activatedAt,
+        adminSessionId,
+      ],
+    );
+    const target = snapshot.rows[0];
+    await client.query(
+      `INSERT INTO ai_route_targets
+        (route_revision_id, position, source_type, database_model_version_id,
+         environment_target_key, connection_display_name, model_display_name,
+         model_id, protocol, config_digest, input_usd_per_million, output_usd_per_million)
+       VALUES ($1,0,'database',$2,NULL,$3,$4,$5,$6,$7,$8,$9)`,
+      [
+        routeRevisionId,
+        input.modelVersionId,
+        target.connection_display_name,
+        target.model_display_name,
+        target.model_id,
+        target.protocol,
+        target.config_digest,
+        target.input_usd_per_million,
+        target.output_usd_per_million,
+      ],
+    );
+    await client.query(
+      `UPDATE ai_runtime_state
+          SET active_route_revision_id = $1,
+              lock_version = lock_version + 1,
+              updated_at = $2
+        WHERE id = true`,
+      [routeRevisionId, input.activatedAt],
+    );
+    await client.query('COMMIT');
+    return routeRevisionId;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 function loopbackPolicy(origin: string) {
   return createProviderOutboundPolicy({
     MORSE_LOCAL_RELEASE_SMOKE: 'true',
@@ -989,6 +1128,449 @@ test('environment takeover re-reads runtime configuration after acquiring the ad
   });
 });
 
+test('provider eligibility and latest test state use database time across catalog and runtime', async () => {
+  await withDatabase(async (pool) => {
+    const baseOptions = options();
+    const primarySecret = 'state-private-key-4837';
+    const serviceOptions = options({
+      runtimeConfig: { ...baseOptions.runtimeConfig, openaiApiKey: primarySecret },
+    });
+    const created = await createProviderConnection(pool, {
+      name: 'State gateway',
+      baseUrl: 'https://state-gateway.example/v1',
+      userAgent: null,
+      apiKey: 'state-database-key-1946',
+      firstModel: model,
+    }, serviceOptions);
+    const expired = await createProviderModel(pool, created.connectionSeriesId, {
+      ...model,
+      displayName: 'Expired model',
+      modelId: 'expired-model',
+    }, serviceOptions);
+    const failureOnly = await createProviderModel(pool, created.connectionSeriesId, {
+      ...model,
+      displayName: 'Failure-only model',
+      modelId: 'failure-only-model',
+    }, serviceOptions);
+    const modelRows = await pool.query<{ config_digest: string; series_id: string }>(
+      `SELECT DISTINCT ON (series_id) series_id::text, config_digest
+         FROM ai_model_presets
+        WHERE series_id = ANY($1::uuid[])
+        ORDER BY series_id, version DESC`,
+      [[created.modelSeriesId, expired.modelSeriesId, failureOnly.modelSeriesId]],
+    );
+    const digests = new Map(modelRows.rows.map((row) => [row.series_id, row.config_digest]));
+    const eligibleDigest = digests.get(created.modelSeriesId);
+    const expiredDigest = digests.get(expired.modelSeriesId);
+    const failureDigest = digests.get(failureOnly.modelSeriesId);
+    assert.ok(eligibleDigest);
+    assert.ok(expiredDigest);
+    assert.ok(failureDigest);
+    const before = await getProviderRuntimeSummary(pool, serviceOptions);
+    const environment = before.environmentTargets.find(
+      (target) => target.environmentTargetKey === 'primary',
+    );
+    assert.ok(environment);
+    const clock = await databaseClock(pool);
+    const successfulAt = new Date(clock.getTime() - 10 * 60_000);
+    const failedAt = new Date(clock.getTime() - 60_000);
+    const expiredAt = new Date(clock.getTime() - 31 * 60_000);
+    const failureOnlyAt = new Date(clock.getTime() - 2 * 60_000);
+    const environmentAt = new Date(clock.getTime() - 5 * 60_000);
+    await insertProviderStateEvent(pool, {
+      configDigest: eligibleDigest,
+      createdAt: successfulAt,
+      eventType: 'provider_test',
+      latencyMs: 11,
+      resultCode: 'AI_CONFIG_TEST_SUCCEEDED',
+      status: 'succeeded',
+    });
+    await insertProviderStateEvent(pool, {
+      configDigest: eligibleDigest,
+      createdAt: failedAt,
+      eventType: 'provider_test',
+      resultCode: 'AI_CONFIG_TEST_FAILED',
+      status: 'failed',
+    });
+    await insertProviderStateEvent(pool, {
+      configDigest: eligibleDigest,
+      createdAt: new Date(clock.getTime() - 30_000),
+      eventType: 'provider_operation_denied',
+      resultCode: 'AI_CONFIG_RATE_LIMITED',
+      status: 'denied',
+    });
+    await insertProviderStateEvent(pool, {
+      configDigest: expiredDigest,
+      createdAt: expiredAt,
+      eventType: 'provider_test',
+      latencyMs: 12,
+      resultCode: 'AI_CONFIG_TEST_SUCCEEDED',
+      status: 'succeeded',
+    });
+    await insertProviderStateEvent(pool, {
+      configDigest: failureDigest,
+      createdAt: failureOnlyAt,
+      eventType: 'provider_test',
+      resultCode: 'AI_CONFIG_TEST_FAILED',
+      status: 'failed',
+    });
+    await insertProviderStateEvent(pool, {
+      configDigest: environment.configDigest,
+      createdAt: environmentAt,
+      eventType: 'environment_test',
+      latencyMs: 7,
+      resultCode: 'AI_CONFIG_TEST_SUCCEEDED',
+      status: 'succeeded',
+    });
+    const takeover = await createPrimaryEnvironmentTakeover(pool, serviceOptions);
+    await activateProviderRoute(pool, {
+      expectedActiveRevision: 0,
+      targets: [{ source: 'database', modelId: created.modelSeriesId }],
+    }, serviceOptions);
+
+    const catalog = await getProviderCatalog(pool, { includeDeleted: false, limit: 25, page: 1 });
+    const catalogModels = catalog.items.flatMap((connection) => connection.models);
+    const eligibleModel = catalogModels.find((item) => item.seriesId === created.modelSeriesId);
+    const expiredModel = catalogModels.find((item) => item.seriesId === expired.modelSeriesId);
+    const failureModel = catalogModels.find((item) => item.seriesId === failureOnly.modelSeriesId);
+    assert.deepEqual(eligibleModel?.testState, {
+      eligibility: 'eligible',
+      latestTest: {
+        latencyMs: null,
+        resultCode: 'AI_CONFIG_TEST_FAILED',
+        status: 'failed',
+        testedAt: failedAt.toISOString(),
+      },
+      successExpiresAt: new Date(successfulAt.getTime() + 30 * 60_000).toISOString(),
+    });
+    assert.deepEqual(expiredModel?.testState, {
+      eligibility: 'expired',
+      latestTest: {
+        latencyMs: 12,
+        resultCode: 'AI_CONFIG_TEST_SUCCEEDED',
+        status: 'succeeded',
+        testedAt: expiredAt.toISOString(),
+      },
+      successExpiresAt: new Date(expiredAt.getTime() + 30 * 60_000).toISOString(),
+    });
+    assert.deepEqual(failureModel?.testState, {
+      eligibility: 'untested',
+      latestTest: {
+        latencyMs: null,
+        resultCode: 'AI_CONFIG_TEST_FAILED',
+        status: 'failed',
+        testedAt: failureOnlyAt.toISOString(),
+      },
+      successExpiresAt: null,
+    });
+
+    const runtime = await getProviderRuntimeSummary(pool, serviceOptions);
+    assert.deepEqual(runtime.targets[0].testState, eligibleModel?.testState);
+    const primary = runtime.environmentTargets.find(
+      (target) => target.environmentTargetKey === 'primary',
+    );
+    assert.deepEqual(primary?.testState, {
+      eligibility: 'eligible',
+      latestTest: {
+        latencyMs: 7,
+        resultCode: 'AI_CONFIG_TEST_SUCCEEDED',
+        status: 'succeeded',
+        testedAt: environmentAt.toISOString(),
+      },
+      successExpiresAt: new Date(environmentAt.getTime() + 30 * 60_000).toISOString(),
+    });
+    assert.deepEqual(primary?.takeover, {
+      connectionSeriesId: takeover.result.connectionSeriesId,
+      modelSeriesId: takeover.result.modelSeriesId,
+      sourceConfigMatches: true,
+      takeoverId: takeover.result.takeoverId,
+    });
+    const changedRuntime = await getProviderRuntimeSummary(pool, {
+      ...serviceOptions,
+      runtimeConfig: {
+        ...serviceOptions.runtimeConfig,
+        openaiApiKey: 'changed-state-private-key-6752',
+      },
+    });
+    assert.equal(changedRuntime.environmentTargets.find(
+      (target) => target.environmentTargetKey === 'primary',
+    )?.takeover?.sourceConfigMatches, false);
+    assertSecretsRedacted(
+      { changedRuntime, runtime },
+      [primarySecret, 'changed-state-private-key-6752'],
+    );
+  });
+});
+
+test('activation eligibility matches the database-time 30-minute boundary', async () => {
+  await withDatabase(async (pool) => {
+    const serviceOptions = options();
+    const created = await createProviderConnection(pool, {
+      name: 'Boundary gateway',
+      baseUrl: 'https://boundary.example/v1',
+      userAgent: null,
+      apiKey: 'boundary-private-key-8193',
+      firstModel: model,
+    }, serviceOptions);
+    const eligible = await createProviderModel(pool, created.connectionSeriesId, {
+      ...model,
+      displayName: 'Eligible boundary model',
+      modelId: 'eligible-boundary-model',
+    }, serviceOptions);
+    const rows = await pool.query<{ config_digest: string; series_id: string }>(
+      `SELECT DISTINCT ON (series_id) series_id::text, config_digest
+         FROM ai_model_presets
+        WHERE series_id = ANY($1::uuid[])
+        ORDER BY series_id, version DESC`,
+      [[created.modelSeriesId, eligible.modelSeriesId]],
+    );
+    const digests = new Map(rows.rows.map((row) => [row.series_id, row.config_digest]));
+    const expiredDigest = digests.get(created.modelSeriesId);
+    const eligibleDigest = digests.get(eligible.modelSeriesId);
+    assert.ok(expiredDigest);
+    assert.ok(eligibleDigest);
+    const clock = await databaseClock(pool);
+    await insertProviderStateEvent(pool, {
+      configDigest: expiredDigest,
+      createdAt: new Date(clock.getTime() - 31 * 60_000),
+      eventType: 'provider_test',
+      resultCode: 'AI_CONFIG_TEST_SUCCEEDED',
+      status: 'succeeded',
+    });
+    await insertProviderStateEvent(pool, {
+      configDigest: eligibleDigest,
+      createdAt: new Date(clock.getTime() - 29 * 60_000),
+      eventType: 'provider_test',
+      resultCode: 'AI_CONFIG_TEST_SUCCEEDED',
+      status: 'succeeded',
+    });
+    const skewedOptions = {
+      ...serviceOptions,
+      now: () => new Date(clock.getTime() + 24 * 60 * 60_000),
+    };
+    const catalog = await getProviderCatalog(pool, { includeDeleted: false, limit: 25, page: 1 });
+    const models = catalog.items.flatMap((connection) => connection.models);
+    assert.equal(models.find((item) => item.seriesId === created.modelSeriesId)?.testState.eligibility, 'expired');
+    assert.equal(models.find((item) => item.seriesId === eligible.modelSeriesId)?.testState.eligibility, 'eligible');
+
+    await assert.rejects(
+      activateProviderRoute(pool, {
+        expectedActiveRevision: 0,
+        targets: [{ source: 'database', modelId: created.modelSeriesId }],
+      }, skewedOptions),
+      (error: unknown) => error instanceof AiConfigError && error.code === 'AI_CONFIG_TEST_REQUIRED',
+    );
+    const activated = await activateProviderRoute(pool, {
+      expectedActiveRevision: 0,
+      targets: [{ source: 'database', modelId: eligible.modelSeriesId }],
+    }, skewedOptions);
+    assert.equal(activated.activeRevision, 1);
+    const runtime = await getProviderRuntimeSummary(pool, serviceOptions);
+    assert.equal(runtime.targets[0].testState.eligibility, 'eligible');
+  });
+});
+
+test('takeover initial model deletion retains history without releasing the Environment target', async () => {
+  await withDatabase(async (pool) => {
+    const serviceOptions = options();
+    const takeover = await createPrimaryEnvironmentTakeover(pool, serviceOptions);
+
+    assert.deepEqual(
+      await deleteProviderModel(
+        pool,
+        takeover.result.modelSeriesId,
+        model.displayName,
+        serviceOptions,
+      ),
+      { disposition: 'history_retained' },
+    );
+    const stored = await pool.query<{
+      archived_at: Date | null;
+      deleted_at: Date | null;
+      released_at: Date | null;
+    }>(`SELECT model.archived_at, model.deleted_at, takeover.released_at
+          FROM ai_environment_takeovers takeover
+          JOIN ai_model_presets model ON model.id = takeover.initial_model_version_id`);
+    assert.equal(stored.rowCount, 1);
+    assert.ok(stored.rows[0].archived_at);
+    assert.ok(stored.rows[0].deleted_at);
+    assert.equal(stored.rows[0].released_at, null);
+    const runtime = await getProviderRuntimeSummary(pool, serviceOptions);
+    assert.equal(runtime.environmentTargets.find(
+      (target) => target.environmentTargetKey === 'primary',
+    )?.takeover?.takeoverId, takeover.result.takeoverId);
+    assert.equal((await pool.query<{ count: number }>(
+      `SELECT count(*)::integer AS count FROM ai_config_events
+        WHERE event_type = 'environment_takeover_released'`,
+    )).rows[0].count, 0);
+  });
+});
+
+test('takeover connection deletion atomically tombstones every version, shreds secrets, and releases the target', async () => {
+  await withDatabase(async (pool) => {
+    const serviceOptions = options();
+    const takeover = await createPrimaryEnvironmentTakeover(pool, serviceOptions);
+    const baseUrl = serviceOptions.runtimeConfig.openaiBaseUrl;
+    assert.ok(baseUrl);
+    await updateProviderConnection(pool, takeover.result.connectionSeriesId, {
+      apiKey: 'rotated-takeover-key-4072',
+      baseUrl,
+      name: 'Editable primary v2',
+      reuseKeyAcrossOrigin: false,
+      userAgent: null,
+    }, serviceOptions);
+    await updateProviderModel(pool, takeover.result.modelSeriesId, {
+      ...model,
+      displayName: 'Primary model v2',
+      modelId: 'takeover-model-v2',
+    }, serviceOptions);
+
+    assert.deepEqual(
+      await deleteProviderConnection(
+        pool,
+        takeover.result.connectionSeriesId,
+        'Editable primary v2',
+        serviceOptions,
+      ),
+      { disposition: 'history_retained' },
+    );
+    const connections = await pool.query<{
+      all_deleted: boolean;
+      all_secrets_destroyed: boolean;
+      deleted_at: Date;
+      versions: number;
+    }>(`SELECT count(*)::integer AS versions,
+              bool_and(archived_at IS NOT NULL AND deleted_at IS NOT NULL) AS all_deleted,
+              bool_and(api_key_ciphertext IS NULL AND api_key_iv IS NULL AND api_key_tag IS NULL
+                AND secret_destroyed_at IS NOT NULL) AS all_secrets_destroyed,
+              min(deleted_at) AS deleted_at
+         FROM ai_connections WHERE series_id = $1`, [takeover.result.connectionSeriesId]);
+    const models = await pool.query<{ all_deleted: boolean; versions: number }>(
+      `SELECT count(*)::integer AS versions,
+              bool_and(archived_at IS NOT NULL AND deleted_at IS NOT NULL) AS all_deleted
+         FROM ai_model_presets WHERE series_id = $1`,
+      [takeover.result.modelSeriesId],
+    );
+    const relation = await pool.query<{ released_at: Date }>(
+      `SELECT released_at FROM ai_environment_takeovers WHERE id = $1`,
+      [takeover.result.takeoverId],
+    );
+    assert.deepEqual(connections.rows[0], {
+      all_deleted: true,
+      all_secrets_destroyed: true,
+      deleted_at: connections.rows[0].deleted_at,
+      versions: 2,
+    });
+    assert.deepEqual(models.rows[0], { all_deleted: true, versions: 3 });
+    assert.ok(relation.rows[0].released_at);
+    assert.equal(relation.rows[0].released_at.getTime(), connections.rows[0].deleted_at.getTime());
+    assert.equal((await pool.query<{ count: number }>(
+      `SELECT count(*)::integer AS count FROM ai_config_events
+        WHERE event_type = 'environment_takeover_released'`,
+    )).rows[0].count, 1);
+    const runtime = await getProviderRuntimeSummary(pool, serviceOptions);
+    assert.equal(runtime.environmentTargets.find(
+      (target) => target.environmentTargetKey === 'primary',
+    )?.takeover, null);
+  });
+});
+
+test('takeover connection deletion rolls back tombstones and secret shredding when release fails', async () => {
+  await withDatabase(async (pool) => {
+    const serviceOptions = options();
+    const takeover = await createPrimaryEnvironmentTakeover(pool, serviceOptions);
+    await pool.query(`CREATE FUNCTION test_reject_environment_takeover_release() RETURNS trigger
+      LANGUAGE plpgsql AS $$
+      BEGIN
+        RAISE EXCEPTION 'FORCED_TAKEOVER_RELEASE_FAILURE';
+      END;
+      $$`);
+    await pool.query(`CREATE TRIGGER test_reject_environment_takeover_release_update
+      BEFORE UPDATE ON ai_environment_takeovers
+      FOR EACH ROW EXECUTE FUNCTION test_reject_environment_takeover_release()`);
+
+    await assert.rejects(
+      deleteProviderConnection(
+        pool,
+        takeover.result.connectionSeriesId,
+        'Editable primary',
+        serviceOptions,
+      ),
+      /FORCED_TAKEOVER_RELEASE_FAILURE/u,
+    );
+    const connection = await pool.query<{
+      api_key_ciphertext: Buffer | null;
+      archived_at: Date | null;
+      deleted_at: Date | null;
+      secret_destroyed_at: Date | null;
+    }>(`SELECT api_key_ciphertext, archived_at, deleted_at, secret_destroyed_at
+          FROM ai_connections WHERE series_id = $1`, [takeover.result.connectionSeriesId]);
+    const modelState = await pool.query<{ archived_at: Date | null; deleted_at: Date | null }>(
+      `SELECT archived_at, deleted_at FROM ai_model_presets WHERE series_id = $1`,
+      [takeover.result.modelSeriesId],
+    );
+    const relation = await pool.query<{ released_at: Date | null }>(
+      `SELECT released_at FROM ai_environment_takeovers WHERE id = $1`,
+      [takeover.result.takeoverId],
+    );
+    assert.ok(connection.rows[0].api_key_ciphertext);
+    assert.equal(connection.rows[0].archived_at, null);
+    assert.equal(connection.rows[0].deleted_at, null);
+    assert.equal(connection.rows[0].secret_destroyed_at, null);
+    assert.deepEqual(modelState.rows[0], { archived_at: null, deleted_at: null });
+    assert.equal(relation.rows[0].released_at, null);
+    assert.equal((await pool.query<{ count: number }>(
+      `SELECT count(*)::integer AS count FROM ai_config_events
+        WHERE event_type = 'environment_takeover_released'`,
+    )).rows[0].count, 0);
+  });
+});
+
+test('released target accepts a new takeover requestId and keeps immutable history', async () => {
+  await withDatabase(async (pool) => {
+    let providerCalls = 0;
+    const serviceOptions = options({
+      transport: {
+        async discover() { providerCalls += 1; return []; },
+        async test() {
+          providerCalls += 1;
+          return { latencyMs: 1, usage: null };
+        },
+      },
+    });
+    const first = await createPrimaryEnvironmentTakeover(pool, serviceOptions);
+    await deleteProviderConnection(
+      pool,
+      first.result.connectionSeriesId,
+      'Editable primary',
+      serviceOptions,
+    );
+    const second = await createPrimaryEnvironmentTakeover(pool, serviceOptions);
+    const histories = await pool.query<{
+      id: string;
+      released_at: Date | null;
+    }>(`SELECT id::text, released_at FROM ai_environment_takeovers
+          WHERE environment_target_key = 'primary' ORDER BY created_at, id`);
+
+    assert.equal(providerCalls, 0);
+    assert.equal(histories.rowCount, 2);
+    assert.equal(histories.rows.filter((row) => row.released_at === null).length, 1);
+    assert.ok(histories.rows.some((row) => row.id === first.result.takeoverId && row.released_at));
+    assert.ok(histories.rows.some((row) => row.id === second.result.takeoverId && !row.released_at));
+    assert.notEqual(first.result.connectionSeriesId, second.result.connectionSeriesId);
+    assert.deepEqual(await environmentTakeoverCounts(pool), {
+      connections: 2,
+      events: 4,
+      models: 2,
+      takeovers: 2,
+    });
+    assert.equal((await pool.query<{ count: number }>(
+      `SELECT count(*)::integer AS count FROM ai_config_events
+        WHERE event_type = 'environment_takeover_released'`,
+    )).rows[0].count, 1);
+  });
+});
+
 test('a connection remains usable after its last unused model is deleted', async () => {
   await withDatabase(async (pool) => {
     const serviceOptions = options();
@@ -1430,9 +2012,7 @@ test('activation verifies database targets against the active master key before 
 
 test('only the immediately previous route receives the rollback test-window exemption', async () => {
   await withDatabase(async (pool) => {
-    const base = new Date();
-    let operationNow = base;
-    const serviceOptions = options({ now: () => operationNow });
+    const serviceOptions = options();
     const created = await createProviderConnection(pool, {
       name: 'Gateway', baseUrl: 'https://gateway.example/v1', userAgent: null,
       apiKey: 'top-secret-key', firstModel: model,
@@ -1443,32 +2023,37 @@ test('only the immediately previous route receives the rollback test-window exem
     const third = await createProviderModel(pool, created.connectionSeriesId, {
       ...model, displayName: 'Third model', modelId: 'third-model',
     }, serviceOptions);
+    const clock = await databaseClock(pool);
+    const firstRoute = await seedDatabaseRouteRevision(pool, {
+      activatedAt: new Date(clock.getTime() - 20 * 60_000),
+      activationKind: 'bootstrap',
+      modelVersionId: created.modelVersionId,
+      previousRouteRevisionId: null,
+      revisionNumber: 1,
+    });
+    const secondRoute = await seedDatabaseRouteRevision(pool, {
+      activatedAt: new Date(clock.getTime() - 10 * 60_000),
+      activationKind: 'activate',
+      modelVersionId: second.modelVersionId,
+      previousRouteRevisionId: firstRoute,
+      revisionNumber: 2,
+    });
+    await seedDatabaseRouteRevision(pool, {
+      activatedAt: new Date(clock.getTime() - 60_000),
+      activationKind: 'activate',
+      modelVersionId: third.modelVersionId,
+      previousRouteRevisionId: secondRoute,
+      revisionNumber: 3,
+    });
 
-    await insertSuccessfulModelTest(pool, created.modelSeriesId, base);
-    operationNow = new Date(base.getTime() + 29 * 60_000);
-    await activateProviderRoute(pool, {
-      expectedActiveRevision: 0,
-      targets: [{ source: 'database', modelId: created.modelSeriesId }],
-    }, serviceOptions);
-
-    await insertSuccessfulModelTest(pool, second.modelSeriesId, new Date(operationNow.getTime() + 1_000));
-    operationNow = new Date(operationNow.getTime() + 2_000);
-    await activateProviderRoute(pool, {
-      expectedActiveRevision: 1,
+    const immediateRollback = await activateProviderRoute(pool, {
+      expectedActiveRevision: 3,
       targets: [{ source: 'database', modelId: second.modelSeriesId }],
     }, serviceOptions);
-
-    await insertSuccessfulModelTest(pool, third.modelSeriesId, new Date(operationNow.getTime() + 1_000));
-    operationNow = new Date(operationNow.getTime() + 2_000);
-    await activateProviderRoute(pool, {
-      expectedActiveRevision: 2,
-      targets: [{ source: 'database', modelId: third.modelSeriesId }],
-    }, serviceOptions);
-
-    operationNow = new Date(base.getTime() + 31 * 60_000);
+    assert.equal(immediateRollback.targets[0].databaseModelSeriesId, second.modelSeriesId);
     await assert.rejects(
       activateProviderRoute(pool, {
-        expectedActiveRevision: 3,
+        expectedActiveRevision: 4,
         targets: [{ source: 'database', modelId: created.modelSeriesId }],
       }, serviceOptions),
       (error: unknown) => error instanceof AiConfigError && error.code === 'AI_CONFIG_TEST_REQUIRED',
@@ -1478,9 +2063,7 @@ test('only the immediately previous route receives the rollback test-window exem
 
 test('rollback grace starts when the previous route was switched away from', async () => {
   await withDatabase(async (pool) => {
-    const base = new Date();
-    let operationNow = base;
-    const serviceOptions = options({ now: () => operationNow });
+    const serviceOptions = options();
     const created = await createProviderConnection(pool, {
       name: 'Gateway', baseUrl: 'https://gateway.example/v1', userAgent: null,
       apiKey: 'top-secret-key', firstModel: model,
@@ -1488,22 +2071,22 @@ test('rollback grace starts when the previous route was switched away from', asy
     const second = await createProviderModel(pool, created.connectionSeriesId, {
       ...model, displayName: 'Second model', modelId: 'second-model',
     }, serviceOptions);
+    const clock = await databaseClock(pool);
+    const firstRoute = await seedDatabaseRouteRevision(pool, {
+      activatedAt: new Date(clock.getTime() - 5 * 60 * 60_000),
+      activationKind: 'bootstrap',
+      modelVersionId: created.modelVersionId,
+      previousRouteRevisionId: null,
+      revisionNumber: 1,
+    });
+    await seedDatabaseRouteRevision(pool, {
+      activatedAt: new Date(clock.getTime() - 29 * 60_000),
+      activationKind: 'activate',
+      modelVersionId: second.modelVersionId,
+      previousRouteRevisionId: firstRoute,
+      revisionNumber: 2,
+    });
 
-    await insertSuccessfulModelTest(pool, created.modelSeriesId, base);
-    operationNow = new Date(base.getTime() + 29 * 60_000);
-    await activateProviderRoute(pool, {
-      expectedActiveRevision: 0,
-      targets: [{ source: 'database', modelId: created.modelSeriesId }],
-    }, serviceOptions);
-
-    operationNow = new Date(base.getTime() + 5 * 60 * 60_000);
-    await insertSuccessfulModelTest(pool, second.modelSeriesId, operationNow);
-    await activateProviderRoute(pool, {
-      expectedActiveRevision: 1,
-      targets: [{ source: 'database', modelId: second.modelSeriesId }],
-    }, serviceOptions);
-
-    operationNow = new Date(operationNow.getTime() + 29 * 60_000);
     const rollback = await activateProviderRoute(pool, {
       expectedActiveRevision: 2,
       rollbackToPrevious: true,
@@ -1511,17 +2094,23 @@ test('rollback grace starts when the previous route was switched away from', asy
     }, serviceOptions);
     assert.equal(rollback.targets[0].databaseModelSeriesId, created.modelSeriesId);
 
-    operationNow = new Date(operationNow.getTime() + 1_000);
-    await activateProviderRoute(pool, {
+    const secondRollback = await activateProviderRoute(pool, {
       expectedActiveRevision: 3,
       rollbackToPrevious: true,
       targets: [],
     }, serviceOptions);
+    assert.equal(secondRollback.targets[0].databaseModelSeriesId, second.modelSeriesId);
 
-    operationNow = new Date(operationNow.getTime() + 31 * 60_000);
+    await seedDatabaseRouteRevision(pool, {
+      activatedAt: new Date(clock.getTime() - 31 * 60_000),
+      activationKind: 'activate',
+      modelVersionId: created.modelVersionId,
+      previousRouteRevisionId: secondRollback.routeRevisionId,
+      revisionNumber: 5,
+    });
     await assert.rejects(
       activateProviderRoute(pool, {
-        expectedActiveRevision: 4,
+        expectedActiveRevision: 5,
         rollbackToPrevious: true,
         targets: [],
       }, serviceOptions),

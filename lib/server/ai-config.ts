@@ -75,6 +75,17 @@ export interface AiProviderTestSummary {
   testedAt: Date;
 }
 
+export interface AiProviderTestState {
+  eligibility: 'untested' | 'eligible' | 'expired';
+  latestTest: null | {
+    latencyMs: number | null;
+    resultCode: string;
+    status: 'succeeded' | 'failed';
+    testedAt: string;
+  };
+  successExpiresAt: string | null;
+}
+
 export interface AiProviderAttemptSummary {
   attemptIndex: number;
   configDigest: string;

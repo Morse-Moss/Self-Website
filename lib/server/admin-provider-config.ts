@@ -7,6 +7,7 @@ import {
   AiConfigError,
   type AiChatProtocol,
   type AiConfigKey,
+  type AiProviderTestState,
   type AiProviderTestSummary,
   type AiRouteTargetSnapshot,
 } from './ai-config.ts';
@@ -20,11 +21,17 @@ import {
   resolveModelRuntime,
   resolveModelVersionRuntime,
   shredConnectionSecret,
+  tombstoneConnection,
   tombstoneModel,
+  tombstoneModelsForConnection,
   type ModelInput,
 } from './ai-config-store.ts';
 import type { OpenAIReasoningEffort } from './config.ts';
 import { listAdminEnvironmentTargets } from './environment-provider-target.ts';
+import {
+  readActiveEnvironmentTakeovers,
+  releaseEnvironmentTakeover,
+} from './environment-provider-takeover.ts';
 import { OpenAIProvider } from './openai-provider.ts';
 import {
   createPinnedProviderFetch,
@@ -37,6 +44,7 @@ import {
 } from './provider-outbound.ts';
 import type { ProviderRuntimeConfig } from './provider-runtime.ts';
 import type { ParsedRouteTarget } from './provider-config-input.ts';
+import { readProviderTestStates } from './provider-test-state.ts';
 
 type Pool = pg.Pool;
 type Client = pg.PoolClient;
@@ -345,6 +353,10 @@ export async function getProviderCatalog(
       ORDER BY series_id, version DESC`,
     [ids, input.includeDeleted],
   );
+  const testStates = await readProviderTestStates(
+    pool,
+    models.rows.map((item) => item.config_digest),
+  );
   return {
     items: connections.rows.map((connection) => ({
       archivedAt: connection.archived_at?.toISOString() ?? null,
@@ -366,6 +378,7 @@ export async function getProviderCatalog(
         protocol: model.protocol,
         reasoningEffort: model.reasoning_effort,
         seriesId: model.series_id,
+        testState: testStateFor(testStates, model.config_digest),
         version: model.version,
       })),
       seriesId: connection.series_id,
@@ -384,6 +397,17 @@ function environmentTargets(options: AdminProviderServiceOptions) {
     options.configKey,
     options.outboundPolicy ?? createProviderOutboundPolicy(),
   );
+}
+
+function testStateFor(
+  states: Map<string, AiProviderTestState>,
+  digest: string,
+): AiProviderTestState {
+  return states.get(digest) ?? {
+    eligibility: 'untested',
+    latestTest: null,
+    successExpiresAt: null,
+  };
 }
 
 function safeEndpointHost(baseUrl: string): string | null {
@@ -571,7 +595,7 @@ export async function testEnvironmentProviderTarget(
 async function testedRecently(
   client: Client,
   digest: string,
-  activationNow: Date,
+  databaseNow: Date,
   rollbackRevisionId: string | null,
   rollbackDepartureRevisionId: string | null,
 ): Promise<boolean> {
@@ -587,7 +611,7 @@ async function testedRecently(
         WHERE target.config_digest = $1 AND target.route_revision_id = $3::uuid
           AND departure.activated_at >= $2::timestamptz - interval '30 minutes'
        ) AS valid`,
-    [digest, activationNow, rollbackRevisionId, rollbackDepartureRevisionId],
+    [digest, databaseNow, rollbackRevisionId, rollbackDepartureRevisionId],
   );
   return result.rows[0]?.valid === true;
 }
@@ -669,6 +693,10 @@ export async function activateProviderRoute(
     const previousActiveId = state.rows[0]?.previous_active_revision_id ?? null;
     const activeRevision = Number(state.rows[0]?.revision_number ?? 0);
     if (activeRevision !== input.expectedActiveRevision) throw new AiConfigError('AI_CONFIG_CONFLICT');
+    const databaseClock = await client.query<{ activation_now: Date }>(
+      'SELECT clock_timestamp() AS activation_now',
+    );
+    const activationNow = databaseClock.rows[0].activation_now;
     const currentTargets = activeId
       ? await client.query<{ config_digest: string; position: number }>(
           `SELECT config_digest, position FROM ai_route_targets
@@ -798,7 +826,7 @@ export async function activateProviderRoute(
         && !await testedRecently(
           client,
           positioned.configDigest,
-          now(options),
+          activationNow,
           rollbackRequested ? previousActiveId : null,
           rollbackRequested ? activeId : null,
         )) {
@@ -815,7 +843,6 @@ export async function activateProviderRoute(
     );
     const revisionNumber = Number(revision.rows[0].next_revision);
     const routeRevisionId = randomUUID();
-    const activationNow = now(options);
     await client.query(
       `INSERT INTO ai_route_revisions
         (id, revision_number, previous_active_revision_id, activation_kind,
@@ -897,6 +924,10 @@ async function modelHistory(client: Client, modelSeriesId: string): Promise<bool
        SELECT 1 FROM interaction_provider_attempts attempt
        JOIN ai_model_presets model ON model.id = attempt.model_version_id
        WHERE model.series_id = $1
+       UNION ALL
+       SELECT 1 FROM ai_environment_takeovers takeover
+       JOIN ai_model_presets model ON model.id = takeover.initial_model_version_id
+       WHERE model.series_id = $1
      ) AS historical`,
     [modelSeriesId],
   );
@@ -943,6 +974,10 @@ async function connectionHistory(client: Client, connectionSeriesId: string): Pr
        SELECT 1 FROM interaction_provider_attempts attempt
        JOIN ai_connections connection ON connection.id = attempt.connection_version_id
        WHERE connection.series_id = $1
+       UNION ALL
+       SELECT 1 FROM ai_environment_takeovers takeover
+       JOIN ai_connections connection ON connection.id = takeover.initial_connection_version_id
+       WHERE connection.series_id = $1
      ) AS historical`,
     [connectionSeriesId],
   );
@@ -970,18 +1005,23 @@ export async function deleteProviderConnection(
     } else {
       const deletionTime = now(options);
       await shredConnectionSecret(client, connectionSeriesId, deletionTime);
-      await client.query(
-        `UPDATE ai_connections SET archived_at = COALESCE(archived_at, $2),
-                deleted_at = COALESCE(deleted_at, $2) WHERE series_id = $1`,
-        [connectionSeriesId, deletionTime],
+      await tombstoneConnection(client, connectionSeriesId, deletionTime);
+      await tombstoneModelsForConnection(client, connectionSeriesId, deletionTime);
+      const releasedTarget = await releaseEnvironmentTakeover(
+        client,
+        connectionSeriesId,
+        deletionTime,
       );
-      await client.query(
-        `UPDATE ai_model_presets SET archived_at = COALESCE(archived_at, $2),
-                deleted_at = COALESCE(deleted_at, $2)
-          WHERE connection_version_id IN
-            (SELECT id FROM ai_connections WHERE series_id = $1)`,
-        [connectionSeriesId, deletionTime],
-      );
+      if (releasedTarget) {
+        await insertAiConfigEvent(client, {
+          actorAdminSessionId: options.actorAdminSessionId,
+          connectionSeriesId,
+          environmentTargetKey: releasedTarget,
+          eventType: 'environment_takeover_released',
+          resultCode: 'AI_CONFIG_TAKEOVER_RELEASED',
+          status: 'succeeded',
+        });
+      }
     }
     await insertAiConfigEvent(client, {
       actorAdminSessionId: options.actorAdminSessionId,
@@ -1000,6 +1040,13 @@ export async function getProviderRuntimeSummary(
 ) {
   const route = await readActiveRouteRaw(pool);
   const configuredEnvironmentTargets = environmentTargets(options);
+  const [testStates, activeTakeovers] = await Promise.all([
+    readProviderTestStates(pool, [
+      ...(route?.targets.map((target) => target.configDigest) ?? []),
+      ...configuredEnvironmentTargets.map((target) => target.snapshot.configDigest),
+    ]),
+    readActiveEnvironmentTakeovers(pool),
+  ]);
   const environmentHosts = new Map(configuredEnvironmentTargets.map((target) => [
     target.key,
     safeEndpointHost(target.effectiveBaseUrl),
@@ -1052,24 +1099,37 @@ export async function getProviderRuntimeSummary(
         reasoningEffort: databaseTarget
           ? databaseTarget.reasoningEffort
           : options.runtimeConfig.reasoningEffort ?? null,
+        testState: testStateFor(testStates, target.configDigest),
       };
     }) ?? [],
-    environmentTargets: configuredEnvironmentTargets.map((target) => ({
-      baseUrlMode: target.baseUrlMode,
-      baseUrlPrefill: target.baseUrlPrefill,
-      configDigest: target.snapshot.configDigest,
-      connectionDisplayName: target.snapshot.connectionDisplayName,
-      endpointHost: safeEndpointHost(target.effectiveBaseUrl),
-      environmentTargetKey: target.key,
-      inputUsdPerMillion: target.snapshot.inputUsdPerMillion,
-      maxOutputTokens: target.maxOutputTokens,
-      modelDisplayName: target.snapshot.modelDisplayName,
-      modelId: target.snapshot.modelId,
-      outputUsdPerMillion: target.snapshot.outputUsdPerMillion,
-      protocol: target.snapshot.protocol,
-      reasoningEffort: target.reasoningEffort,
-      userAgent: target.userAgent,
-    })),
+    environmentTargets: configuredEnvironmentTargets.map((target) => {
+      const takeover = activeTakeovers.get(target.key);
+      return {
+        baseUrlMode: target.baseUrlMode,
+        baseUrlPrefill: target.baseUrlPrefill,
+        configDigest: target.snapshot.configDigest,
+        connectionDisplayName: target.snapshot.connectionDisplayName,
+        endpointHost: safeEndpointHost(target.effectiveBaseUrl),
+        environmentTargetKey: target.key,
+        inputUsdPerMillion: target.snapshot.inputUsdPerMillion,
+        maxOutputTokens: target.maxOutputTokens,
+        modelDisplayName: target.snapshot.modelDisplayName,
+        modelId: target.snapshot.modelId,
+        outputUsdPerMillion: target.snapshot.outputUsdPerMillion,
+        protocol: target.snapshot.protocol,
+        reasoningEffort: target.reasoningEffort,
+        takeover: takeover
+          ? {
+              connectionSeriesId: takeover.connectionSeriesId,
+              modelSeriesId: takeover.modelSeriesId,
+              sourceConfigMatches: takeover.sourceConfigDigest === target.snapshot.configDigest,
+              takeoverId: takeover.takeoverId,
+            }
+          : null,
+        testState: testStateFor(testStates, target.snapshot.configDigest),
+        userAgent: target.userAgent,
+      };
+    }),
   };
 }
 

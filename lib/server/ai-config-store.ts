@@ -578,6 +578,37 @@ export async function tombstoneModel(
   if (result.rowCount === 0) throw new AiConfigError('AI_CONFIG_NOT_FOUND');
 }
 
+export async function tombstoneConnection(
+  client: TransactionClient,
+  connectionSeriesId: string,
+  now: Date,
+): Promise<void> {
+  await assertTransaction(client);
+  const result = await client.query(
+    `UPDATE ai_connections
+        SET archived_at = COALESCE(archived_at, $2), deleted_at = COALESCE(deleted_at, $2)
+      WHERE series_id = $1 AND deleted_at IS NULL`,
+    [connectionSeriesId, now],
+  );
+  if (result.rowCount === 0) throw new AiConfigError('AI_CONFIG_NOT_FOUND');
+}
+
+export async function tombstoneModelsForConnection(
+  client: TransactionClient,
+  connectionSeriesId: string,
+  now: Date,
+): Promise<void> {
+  await assertTransaction(client);
+  await client.query(
+    `UPDATE ai_model_presets
+        SET archived_at = COALESCE(archived_at, $2), deleted_at = COALESCE(deleted_at, $2)
+      WHERE connection_version_id IN
+        (SELECT id FROM ai_connections WHERE series_id = $1)
+        AND deleted_at IS NULL`,
+    [connectionSeriesId, now],
+  );
+}
+
 export async function shredConnectionSecret(
   client: TransactionClient,
   connectionSeriesId: string,

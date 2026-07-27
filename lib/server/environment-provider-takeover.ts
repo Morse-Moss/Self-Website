@@ -29,6 +29,7 @@ import type { ParsedEnvironmentTakeoverInput } from './provider-config-input.ts'
 
 type Pool = pg.Pool;
 type Client = pg.PoolClient;
+type Queryable = Pick<pg.Pool | pg.PoolClient, 'query'>;
 
 interface TakeoverRow {
   connection_series_id: string;
@@ -45,6 +46,64 @@ export interface EnvironmentTakeoverResult {
   modelSeriesId: string;
   modelVersion: 1;
   takeoverId: string;
+}
+
+export interface ActiveEnvironmentTakeover {
+  connectionSeriesId: string;
+  environmentTargetKey: EnvironmentTargetKey;
+  modelSeriesId: string;
+  sourceConfigDigest: string;
+  takeoverId: string;
+}
+
+export async function readActiveEnvironmentTakeovers(
+  queryable: Queryable,
+): Promise<Map<EnvironmentTargetKey, ActiveEnvironmentTakeover>> {
+  const result = await queryable.query<{
+    connection_series_id: string;
+    environment_target_key: EnvironmentTargetKey;
+    model_series_id: string;
+    source_config_digest: string;
+    takeover_id: string;
+  }>(
+    `SELECT takeover.id::text AS takeover_id,
+            takeover.environment_target_key,
+            takeover.source_config_digest,
+            connection.series_id::text AS connection_series_id,
+            model.series_id::text AS model_series_id
+       FROM ai_environment_takeovers takeover
+       JOIN ai_connections connection
+         ON connection.id = takeover.initial_connection_version_id
+       JOIN ai_model_presets model
+         ON model.id = takeover.initial_model_version_id
+      WHERE takeover.released_at IS NULL`,
+  );
+  return new Map(result.rows.map((row) => [row.environment_target_key, {
+    connectionSeriesId: row.connection_series_id,
+    environmentTargetKey: row.environment_target_key,
+    modelSeriesId: row.model_series_id,
+    sourceConfigDigest: row.source_config_digest,
+    takeoverId: row.takeover_id,
+  }]));
+}
+
+export async function releaseEnvironmentTakeover(
+  client: Client,
+  connectionSeriesId: string,
+  releasedAt: Date,
+): Promise<EnvironmentTargetKey | null> {
+  const result = await client.query<{ environment_target_key: EnvironmentTargetKey }>(
+    `UPDATE ai_environment_takeovers takeover
+        SET released_at = $2
+      WHERE takeover.released_at IS NULL
+        AND takeover.initial_connection_version_id IN (
+          SELECT id FROM ai_connections WHERE series_id = $1
+        )
+      RETURNING takeover.environment_target_key`,
+    [connectionSeriesId, releasedAt],
+  );
+  if ((result.rowCount ?? 0) > 1) throw new AiConfigError('AI_CONFIG_CONFLICT');
+  return result.rows[0]?.environment_target_key ?? null;
 }
 
 function toResult(row: TakeoverRow, targetKey: EnvironmentTargetKey): EnvironmentTakeoverResult {
