@@ -1,7 +1,7 @@
 # Chat v2 对话路由、回答质量与响应可靠性修正规格
 
 日期：2026-07-22
-状态：设计已确认并部署；2026-07-25 按生产反馈补充项目集合路由与完整来源守卫，真实对话待用户复验
+状态：设计已确认并部署；2026-07-28 回答交付优先级修订覆盖运行时 output guard 与 strict 重生成
 执行合同：`STAGED / CRITICAL / DEPLOYED`
 授权边界：本规格不授权真实 Provider 调用、扩大灰度、push 或部署
 
@@ -16,6 +16,10 @@
 - 第 9.2 节 `0 / 8 / 14` 秒错峰并发接管。Hedging 继续关闭，不在本轮启用。
 - 第 9.3 节客户端自动重连和 Provider 全失败后的本地摘要回答。
 - 第 11 节过弱的等待反馈。
+
+### 1.1 2026-07-28 回答交付优先级修订
+
+本修订覆盖本文后续所有把 output guard、模板重复或其他内容质量规则接入在线成功/失败状态机的条款。Provider 完成协议并返回非空正文后，质量检查不得丢弃正文、触发 strict、reset、Provider 切换、Provider incident 或 `PROVIDER_UNAVAILABLE`。质量规则只保留为离线评测或不影响交付的非阻断观测。第二次 Provider 调用只允许用于尚无用户可见正文时的网络、协议、限流、超时、空完成或 incomplete 故障。本文残留的 guard/strict 描述仅是历史问题与旧方案记录，不是当前实现要求。
 - 第 13 节中不能区分协议事件、模型正文和用户可见正文的首字节指标。
 
 本规格不改变生产 canary 范围，也不继续已经暂停的真实 Provider 20 轮评审。实施和确定性验证完成后，真实评审必须重新获得授权。
@@ -47,12 +51,12 @@
 - 闲聊、一般观点和通用技术讨论不加载项目摘要、不强制引用、不把话题拉回作品集。
 - 多轮追问能继承上一轮明确主题；用户切换话题时立即重新路由，不被首次入口或旧意图锁定。
 - 主线路获得足够的正常推理时间，不因固定 20 秒门槛被过早中断。
-- 所有线路、strict 和恢复动作共享一个有界总预算，禁止串行超时无限累加。
-- 网络或 Provider 故障只触发线路切换；strict 只修复已生成但未通过输出守卫的回答。
+- 所有线路切换和恢复动作共享一个有界总预算，禁止串行超时无限累加。
+- 只有网络、协议、限流、超时、空完成或 incomplete 故障可以在尚无可见正文时触发线路切换；内容质量不得触发第二次调用。
 - Provider 全失败时明确失败、不扣消息次数、不生成无关本地回答。
 - 缺少 JD 时先补齐输入，不消耗 Provider 调用。
 - 等待期间持续提供明显、轻量且可停止的活动反馈。
-- 记录足以区分中转慢、模型推理慢、应用缓冲慢和守卫重生成慢的遥测。
+- 记录足以区分中转慢、模型推理慢、应用缓冲慢和持久化慢的遥测；质量标签不得进入 Provider incident。
 
 ### 3.2 非目标
 
@@ -75,23 +79,23 @@ Hedging 可以降低尾延迟，但会增加成本、并发和重复候选处理
 
 ### 4.3 共享总预算下的自适应串行接管
 
-采用。主线路使用软门槛和硬门槛区分“完全无响应”与“协议仍活跃但尚未产生正文”；所有 attempt 和 strict 共享一个轮次 deadline。该方案同时限制过早切换和最坏等待时间。
+采用。主线路使用软门槛和硬门槛区分“完全无响应”与“协议仍活跃但尚未产生正文”；所有基础设施故障 attempt 共享一个轮次 deadline。该方案同时限制过早切换和最坏等待时间。
 
 ## 5. 时间预算与定义
 
 ### 5.1 两层 deadline
 
-- 交互轮次 deadline：从服务端接受合法请求开始最多 90 秒，覆盖路由、Embedding、检索、可选搜索、Provider、守卫和提交。
+- 交互轮次 deadline：从服务端接受合法请求开始最多 90 秒，覆盖路由、Embedding、检索、可选搜索、Provider 和提交。
 - Provider 阶段 deadline：进入回答生成后最多 80 秒，并受交互轮次剩余时间限制。
 
-Provider、strict 或 failover 不得创建新的独立 80 秒预算。它们只能消费同一绝对 deadline 的剩余时间。
+Provider failover 不得创建新的独立 80 秒预算，只能消费同一绝对 deadline 的剩余时间。
 
 ### 5.2 单次 attempt 的软门槛与硬门槛
 
 - `25 秒软门槛`：当前线路完全没有有效协议事件时中止并串行切换下一条健康线路。
 - `40 秒正文硬门槛`：25 秒前已经收到有效协议事件，但服务端仍未收到第一段模型正文时，最多继续等待到 attempt 启动后的第 40 秒。
 - 协议活动只能触发一次从 25 秒到 40 秒的延长。后续元数据、心跳或重复状态事件不能重置计时器。
-- 主线路、备用 normal 和备用 strict 使用同一规则；实际门槛取本节门槛与 Provider 阶段剩余时间的较小值。
+- 主线路和备用 normal 使用同一规则；实际门槛取本节门槛与 Provider 阶段剩余时间的较小值。
 - 剩余 Provider 阶段预算少于 10 秒时不再启动新 attempt。
 - 网络拒绝、明确 4xx/5xx、流错误和连接失败立即结束当前 attempt，不等待软门槛。
 - 服务端收到模型正文后取消首正文门槛，但仍受 Provider 阶段和交互轮次 deadline 约束。
@@ -100,9 +104,9 @@ Provider、strict 或 failover 不得创建新的独立 80 秒预算。它们只
 
 - 协议事件：Provider 流已建立并产生合法 Responses/Chat Completions 事件，不代表用户已经看到内容。
 - 模型正文：服务端收到非空文本 delta 或完整文本事件。
-- 用户可见正文：通过当前缓冲和输出守卫后第一次写入 SSE `delta`。
+- 用户可见正文：服务端收到可释放的非空正文后第一次写入 SSE `delta`。
 
-招聘和 JD 使用完整缓冲时，模型正文可以取消 40 秒门槛，但等待 UI 必须持续到回答通过守卫并真正可见。
+招聘和 JD 使用完整缓冲时，模型正文可以取消 40 秒门槛，但等待 UI 只持续到 Provider 完成协议且非空正文开始释放。
 
 ### 5.3 已经开始可见输出后的行为
 
@@ -125,36 +129,33 @@ Provider、strict 或 failover 不得创建新的独立 80 秒预算。它们只
       -> 已提供 JD：结合能力台账和相关公开证据执行匹配
   -> 主线路 normal
       -> 基础设施失败且尚无可见正文：备用线路 normal
-      -> 输出守卫通过：提交并完成
-      -> OUTPUT_GUARD_REJECTED：同线路 strict
-          -> strict 通过：提交并完成
-          -> strict 基础设施失败或再次被拒绝：备用线路 strict
+      -> Provider 完成且正文非空：提交并完成
+      -> 内容质量标签：仅离线评测或非阻断观测，不改变本轮状态
   -> 共享 deadline 或 attempt 上限耗尽：明确失败，不扣次数
 ```
 
 ### 6.1 attempt 上限
 
-一轮最多 3 个真实 Provider attempt。normal、strict 和 failover 都计入同一个上限。
+一轮最多 3 个真实 Provider attempt，全部是 normal；只有基础设施或协议故障才能消费后续 attempt。
 
 典型路径：
 
 - `主 normal -> 完成`：1 次。
 - `主 normal 基础设施失败 -> 备 normal -> 完成`：2 次。
-- `主 normal 基础设施失败 -> 备 normal 被守卫拒绝 -> 备 strict`：3 次。
-- `主 normal 被守卫拒绝 -> 主 strict 失败 -> 备 strict`：3 次。
-- `主 normal 失败 -> 备 1 normal 失败 -> 备 2 normal`：3 次，不再 strict。
+- `主 normal 失败 -> 备 1 normal 失败 -> 备 2 normal`：3 次。
+- `主 normal -> 非空完成`：即使离线质量规则标记问题也立即完成，仍为 1 次。
 
 没有足够剩余时间启动一个有意义的 attempt 时直接终止，不为凑满次数启动注定被立即取消的请求。
 
 ### 6.2 错误分类
 
-仅 `OUTPUT_GUARD_REJECTED` 可以触发 strict。以下错误不得触发 strict：
+运行时不再存在内容触发的 strict。只有以下故障可以在无可见正文时进入下一 normal Provider：
 
 - 首协议事件超时、首模型正文超时或共享总超时。
 - DNS、连接、TLS、网络中断、429、5xx 和 Provider stream failed/incomplete。
 - 用户停止、Session、额度、输入校验、Embedding、检索或搜索错误。
 
-守卫拒绝证明 Provider 可达，不计入节点基础设施熔断失败；网络和协议失败继续进入节点健康统计。
+内容质量标签不写 Provider attempt 失败或节点熔断；网络和协议失败继续进入节点健康统计。
 
 ## 7. 数字分身对话、回答正确性与降级
 
@@ -234,7 +235,7 @@ Provider、strict 或 failover 不得创建新的独立 80 秒预算。它们只
 
 所有轮次只共享精简固定身份：数字 Morse、第一人称、自然交流、不得编造和泄密。
 
-Chat v2 提示使用稳定、不可由用户文本注入的内部 `response_contract` 标记路由、原因码和证据类别，离线评估只读取该结构化合同。用户问题和证据必须转义；输出守卫必须拒绝模型复述该内部标签。
+Chat v2 提示使用稳定、不可由用户文本注入的内部 `response_contract` 标记路由、原因码和证据类别，离线评估读取该结构化合同。用户问题和证据必须转义；若模型复述内部标签，离线评测记录质量问题，但在线回答仍交付。
 
 - 自由对话只注入精简固定身份，不注入完整身份卡、项目列表、RAG 来源或招聘规则。
 - 身份问题只注入公开定位和最多两个与问题相关的代表项目，不附带全部项目摘要。
@@ -300,7 +301,7 @@ Provider 全失败后不得把检索 top 2、身份卡或项目摘要自动拼�
 - 提示词将当前问题和本轮回答目标放在历史记录之后，明确要求第一段先直接回应当前问题；只有 grounded/JD 才在后续补证据。
 - 只把通过相关度过滤的公开证据交给生成器；不得用相邻项目填满回答。只有对方明确核实个人事实时才简短说明该项暂未能确认，普通项目/JD 回答不主动输出边界段落。
 - 自由对话出现来源引用、项目清单、岗位分析结构或“根据资料”式措辞时直接判为路由/人格失败。
-- personal_fact/grounded/JD 回答如果没有回答当前问题，只是在罗列项目摘要，则由输出守卫以 `answer_not_direct` 拒绝并触发唯一一次 strict 重生成。
+- personal_fact/grounded/JD 回答如果没有回答当前问题，只是在罗列项目摘要，则离线评测记录 `answer_not_direct`，用于后续改进 prompt、证据和路由，不影响当前回答交付。
 - personal_fact 回答必须提到本轮规范化能力或批准别名；被明确追问的 `none` 与 `transferable` 必须包含该项事实边界，不能用含糊措辞暗示 direct。JD 中未被单独追问的 `none` 不要求输出。
 - 同一会话中，不同问题得到完全相同或高度相似的长回答时，以 `template_repetition` 拒绝；该检查是防回归手段，不是本次设计的主要路由机制。
 - 不在热路径新增第二次 Provider 相关性评审。
@@ -321,7 +322,7 @@ Provider 全失败后不得把检索 top 2、身份卡或项目摘要自动拼�
 每个 attempt 至少记录：
 
 - `started_at`、`first_protocol_event_ms`、`first_model_text_ms`、`first_user_visible_ms`。
-- 真实 wall duration、完成状态、稳定错误码、normal/strict 和 primary/failover 启动类型。
+- 真实 wall duration、完成状态、稳定错误码、历史 generation mode 和 primary/failover 启动类型；新请求只使用 normal。
 - usage、成本完整性和赢家信息；未知值保持 `null`，不得推断。
 
 轮次同时记录从请求接受到终态的真实 wall duration。数据库时长、Provider attempt 跨度和公网观察必须能互相对齐。原始问题、JD、回答、Provider URL、Key 和系统提示不得进入遥测。
@@ -348,7 +349,7 @@ Provider 全失败后不得把检索 top 2、身份卡或项目摘要自动拼�
 1. 对话策略器：只根据当前问题、显式工作流和紧邻上一轮的合法主题锚点产生路由与稳定原因码。
 2. 能力台账与证据准入器：规范化别名，区分 direct/transferable/none，并过滤检索候选。
 3. Provider 流计时：区分协议事件、模型正文和总 deadline。
-4. 回答执行协调：管理共享 deadline、attempt 上限、normal/strict/failover 状态机。
+4. 回答执行协调：管理共享 deadline、attempt 上限和 normal/failover 状态机；不消费质量评测结果。
 5. Chat 服务：处理缺少 JD、路由持久化、失败补偿、额度和 SSE 状态。
 6. 客户端 hook：删除自动 replay，维护单个 pending assistant 和等待秒数。
 7. 展示组件：非确定进度条、阶段文案、停止和 reduced-motion。
@@ -374,8 +375,8 @@ Provider 全失败后不得把检索 top 2、身份卡或项目摘要自动拼�
 - “什么情况下才会升级到多 Agent”等自包含技术问题默认进入 conversation；“那什么时候升级”在实际消息历史存在时沿用普通对话，没有真实历史和受控主题时才询问指代对象。
 - “你是干什么的”进入 identity；“那代表作呢”能继承当前项目主题；固定澄清后的“一般做法”“具体经历”“都说说”不得再次输出同一澄清。
 - 自包含的新问题不得继承旧 route/topic；连续合法短追问逐轮继承紧邻锚点，并分别记录 `inherited_from_turn_id`。同一 turn 重试不得改变 route/evidence 决策。
-- Chat v2 的 conversation、JD、normal 与 strict 请求均不携带路由级 `low` 覆盖；OpenAI-compatible Provider 最终使用当前激活模型预设的推理强度。
-- 用户输入不得伪造内部 `response_contract`；模型回答复述该标签时必须被输出守卫拒绝并按既有 strict 预算处理。
+- Chat v2 的 conversation、JD 与 normal 请求均不携带路由级 `low` 覆盖；OpenAI-compatible Provider 最终使用当前激活模型预设的推理强度。
+- 用户输入不得伪造内部 `response_contract`；模型回答复述该标签时由离线评测标记，不触发在线拒绝或第二次调用。
 - conversation 提示只含精简数字分身身份，不含完整身份卡、项目清单、引用规则或招聘模板。
 - conversation 回答不得出现来源引用、项目清单或岗位分析结构；grounded/JD 回答必须直接回应当前问题。
 - pgvector 高分但能力台账没有 direct 的候选不得被表述为个人直接经验；台账引用失效、别名冲突或边界矛盾时构建检查失败。
@@ -384,8 +385,8 @@ Provider 全失败后不得把检索 top 2、身份卡或项目摘要自动拼�
 - 25 秒前有协议事件时可延长到 40 秒；重复元数据不能继续延长。
 - 30-40 秒之间到达的第一段模型正文不会被 20 秒旧门槛误杀。
 - 40 秒仍无模型正文时切换，所有后续 attempt 只使用 80 秒共享 deadline 的剩余时间。
-- Provider 超时和网络错误不触发 strict；只有 `OUTPUT_GUARD_REJECTED` 触发。
-- normal、strict 和 failover 合计不超过 3 个 attempt。
+- Provider 超时和网络错误只允许在无可见正文时触发 normal failover；任何内容都不触发 strict。
+- normal 和 failover 合计不超过 3 个 attempt。
 - 客户端一次提交只发起一次 `/api/chat` 请求，不自动 replay Provider 错误。
 - Provider 全失败时没有本地拼接回答、没有扣次数、没有完成 assistant 历史。
 - 无 JD 的岗位匹配请求不调用 Embedding、Search 或 Chat Provider。

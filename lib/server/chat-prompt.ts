@@ -12,11 +12,6 @@ const EVIDENCE_POLICY = [
   '关键个人或项目事实使用 [来源N] 标记，编号只能对应本轮服务端提供的来源。',
 ].join('\n');
 
-const STRICT_REGENERATION_POLICY = [
-  '这是一次严格重生成。',
-  '第一段必须直接回答当前问题；只保留本轮证据支持的个人事实和必要引用。',
-].join('\n');
-
 function escapeEvidence(value: string): string {
   return value
     .replaceAll('&', '&amp;')
@@ -148,7 +143,6 @@ export function buildV2SystemInstructions(input: {
   capability?: CapabilityAssessment;
   capabilities?: readonly CapabilityAssessment[];
   identityProjectSlugs?: readonly string[];
-  strict?: boolean;
 }): string {
   if (!input.route && !input.intent) throw new TypeError('route or intent is required.');
   const route = input.route ?? legacyRoute(input.intent!);
@@ -187,7 +181,6 @@ export function buildV2SystemInstructions(input: {
       ? realtimePersonalStateInstruction(input.question ?? '')
       : '',
     ...turnEvidence,
-    input.strict ? STRICT_REGENERATION_POLICY : '',
     input.question ? `<current_question>${escapeEvidence(input.question)}</current_question>` : '',
     `<answer_objective>${escapeEvidence(input.answerObjective ?? answerObjective(route))}</answer_objective>`,
   ].filter(Boolean).join('\n\n');

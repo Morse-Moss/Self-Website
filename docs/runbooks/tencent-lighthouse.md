@@ -94,7 +94,7 @@
 
 本节记录当前回答可靠性版本的生产运维合同，不改变上方 2026-07-23 的已观察生产事实。真实 Provider 评审、故障注入和扩大流量仍需分别授权：
 
-回答可靠性版本沿用平台手册的串行共享预算：协议事件 25 秒、模型正文 40 秒、Provider 阶段 80 秒、完整 turn 90 秒、normal/strict/failover 合计 3 个 attempt。生产预检必须核对这些值的严格顺序；节点切换只消费剩余预算，不得因切备用重新获得 80 秒，评审期间不得启用 hedging。
+回答可靠性版本沿用平台手册的串行共享预算：协议事件 25 秒、模型正文 40 秒、Provider 阶段 80 秒、完整 turn 90 秒，normal 与仅由真实 Provider、协议或超时故障触发的 failover 合计最多 3 个 attempt。内容质量不得触发第二次调用、strict、reset 或节点切换。生产预检必须核对这些值的严格顺序；节点切换只消费剩余预算，不得因切备用重新获得 80 秒，评审期间不得启用 hedging。
 
 1. 首次发布设置 `MORSE_CHAT_V2_ENABLED=true`、`MORSE_CHAT_V2_CANARY_PERCENT=0`、`MORSE_CHAT_V2_CANARY_INVITE_IDS` 留空、`MORSE_CHAT_HEDGED_FAILOVER_ENABLED=false`、`MORSE_CHAT_SAFE_MODE=false`，发布后先证明没有 Session 进入 v2。
 2. 新管理 UI 可用后，在 `/admin` 创建专用聊天邀请码。一次性明文只保留在当前浏览器内；当场复制后台显示的非敏感灰度 UUID，白名单不使用邀请码明文。

@@ -38,12 +38,11 @@ export interface AnswerExecutionOptions {
   modelTextTimeoutMs: number;
   hedgingEnabled: boolean;
   delaysMs: readonly number[];
-  acceptCandidate(text: string, complete: boolean): boolean;
   reserveHedgedAttempt(event: Extract<ProviderAttemptEvent, { type: 'started' }>): Promise<boolean>;
   onAttempt(event: ProviderAttemptEvent): Promise<void>;
 }
 
-export type AnswerExecutionErrorCode = 'OUTPUT_GUARD_REJECTED' | 'PROVIDER_INCOMPLETE';
+export type AnswerExecutionErrorCode = 'PROVIDER_INCOMPLETE';
 
 export class AnswerExecutionError extends Error {
   readonly code: AnswerExecutionErrorCode;

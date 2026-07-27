@@ -53,7 +53,6 @@ test('Responses metadata is protocol activity but not model text', async () => {
       modelTextTimeoutMs: 40_000,
       hedgingEnabled: false,
       delaysMs: [0],
-      acceptCandidate: () => true,
       reserveHedgedAttempt: async () => false,
       onAttempt: async () => undefined,
     },

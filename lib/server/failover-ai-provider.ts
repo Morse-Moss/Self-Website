@@ -13,7 +13,7 @@ import {
 import { OpenAIProviderError } from './openai-provider.ts';
 import { createProviderDeadline } from './provider-deadline.ts';
 import { ProviderHealthRegistry } from './provider-health.ts';
-import { createTimeoutSignal, raceWithSignal } from './timeout.ts';
+import { createTimeoutSignal, OperationTimeoutError, raceWithSignal } from './timeout.ts';
 
 export interface ProviderNode {
   alias: string;
@@ -53,6 +53,13 @@ function stableErrorCode(error: unknown): string {
     ? String((error as { code?: unknown }).code ?? '')
     : '';
   return /^[A-Z0-9_]{1,80}$/u.test(code) ? code : 'PROVIDER_UNAVAILABLE';
+}
+
+function isFailoverEligible(error: unknown): boolean {
+  return error instanceof OpenAIProviderError
+    || error instanceof OperationTimeoutError
+    || error instanceof ProviderRunError
+    || (error instanceof AnswerExecutionError && error.code === 'PROVIDER_INCOMPLETE');
 }
 
 export class FailoverAiProvider implements AiProvider {
@@ -168,6 +175,7 @@ export class FailoverAiProvider implements AiProvider {
           attempts.push(attempt);
           yield { type: 'attempt', attempt };
           if (callerStopped) throw signal?.reason;
+          if (!isFailoverEligible(error)) throw error;
           if (totalTimeout.signal.aborted || emittedOutput || index + 1 >= this.nodes.length) {
             throw new ProviderRunError(errorCode, attempts);
           }
@@ -351,9 +359,6 @@ export class FailoverAiProvider implements AiProvider {
               if (execution.releasePolicy === 'segment'
                 && completeSegment
                 && text.length >= execution.minimumBufferCharacters) {
-                if (!execution.acceptCandidate(text, false)) {
-                  throw new AnswerExecutionError('OUTPUT_GUARD_REJECTED');
-                }
                 await recordUserVisible(Date.now());
                 yield { type: 'delta', text: text.slice(releasedLength) };
                 releasedLength = text.length;
@@ -363,9 +368,6 @@ export class FailoverAiProvider implements AiProvider {
 
             latestUsage = event.usage;
             if (!text.trim()) throw new AnswerExecutionError('PROVIDER_INCOMPLETE');
-            if (!execution.acceptCandidate(text, true)) {
-              throw new AnswerExecutionError('OUTPUT_GUARD_REJECTED');
-            }
             if (releasedLength < text.length) {
               await recordUserVisible(Date.now());
               yield { type: 'delta', text: text.slice(releasedLength) };
@@ -389,14 +391,12 @@ export class FailoverAiProvider implements AiProvider {
           }
         } catch (error) {
           const callerStopped = Boolean(signal?.aborted);
-          const guardRejected = error instanceof AnswerExecutionError
-            && error.code === 'OUTPUT_GUARD_REJECTED';
           const errorUsage = error instanceof OpenAIProviderError ? error.usage : latestUsage;
           const errorCode = callerStopped ? null : stableErrorCode(error);
           if (!terminalRecorded) {
             const recorded = await recordTerminal(
               callerStopped ? 'stopped' : 'failed',
-              guardRejected ? 'OUTPUT_GUARD_REJECTED' : errorCode,
+              errorCode,
               errorUsage,
             );
             yield { type: 'attempt', attempt: recorded };
@@ -405,8 +405,8 @@ export class FailoverAiProvider implements AiProvider {
             this.health.abort(node.alias);
             throw signal?.reason;
           }
-          if (guardRejected) {
-            this.health.success(node.alias);
+          if (!isFailoverEligible(error)) {
+            this.health.abort(node.alias);
             throw error;
           }
           this.health.failure(node.alias, new Date());
