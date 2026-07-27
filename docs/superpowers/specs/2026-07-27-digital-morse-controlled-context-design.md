@@ -341,7 +341,7 @@ Task Frame 不复制原始 JD、自由文本摘要、公司私密信息或 assis
 
 必须增加真实 PostgreSQL 集成测试：先用 V2.2 创建 `recruitment_evaluation` Frame，再分别模拟独立 Context Packet 开关关闭、safe mode 和 Chat V2 总开关关闭，在同 conversation 成功提交下一轮，证明非 V2.2 Payload 不包含旧 JD、旧 V2.2 history 或不兼容 task row；随后恢复对应开关，证明 conversation 仍为 `legacy_locked_after_v22`，旧 Frame 不会复活。还要覆盖覆盖期间失败或 stopped、未提交用户可见 turn 时 assignment 与 Frame 不被关闭。若必须回滚应用镜像，只能发布带当前 migration manifest 的新 compatibility build 并走相同 legacy 路径，不能部署 pre-V2.2 image。
 
-当前工作区的 migration `009/011` 和相关脚本已有独立计划记录的 `LOCAL_READY / KNOWLEDGE_RECONCILED` 验证，但仍是未提交的本地变更，不属于本规格。本文不指定新 migration 编号，也不修改或吸收这些文件。实施前必须先由其所有者完成独立 scoped closeout，形成可核验 commit 和权威迁移顺序；在此之前不得抢号，也不得把“本地已验证”写成“已进入实施基线”。
+migration `009/011` 和相关脚本已由独立修复提交 `c2d575c` 形成权威顺序 `008 -> 009 -> 010 -> 011`，并在生产应用到 `011`。它们不属于本规格的实现内容，后续 Context V2.2 若需要 additive migration，应从 `012` 起重新冻结编号与兼容边界，不得改写或复用 `009-011`。
 
 ## 8. 语义解析与路由
 
@@ -704,7 +704,7 @@ manifest 不保存完整 Prompt、用户原文、JD 副本、assistant 回答、
 
 ### 15.2 上线顺序
 
-1. 先让已本地验证但未提交的 migration `009/011` 修复完成独立 scoped closeout，并确认权威 commit、实施基线、分支和生产 release。
+1. 以已部署的 migration `001-011` 和 release `c2d575c` 为实施基线；新增 schema 从 `012` 起编号并重新完成独立迁移合同。
 2. additive migration 与兼容代码部署，Context Packet 默认关闭。
 3. 配置独立 Context Packet HMAC secret；不调用 Provider 完成 live/ready、migration、grants、构建、manifest 和 Mock 主链验证。
 4. 获得单独授权后，只对指定测试邀请码开启并执行最多五次真实主回答。
@@ -745,7 +745,7 @@ V2.2 只有同时满足以下条件才能称为生产修复完成：
 
 - 本规格的产品语义、Context Packet、Task Frame、证据和预算合同均有对应实现与测试。
 - 脱敏失败链和反例全部通过。
-- migration 在真实测试 PostgreSQL 上通过，且未吸收未知 migration 变更。
+- migration 在真实测试 PostgreSQL 上通过，并以已部署的 `001-011` manifest 为不可改写基线。
 - RAG `top-3 46/46` 与公开/私密隔离门槛保持通过。
 - 真实测试邀请码的失败链得到用户可见正确回答。
 - 零容忍项为 0，Git commit、push、生产 release 指针和线上行为分别有独立证据。
@@ -754,7 +754,7 @@ V2.2 只有同时满足以下条件才能称为生产修复完成：
 实施计划开始前必须满足：
 
 1. 用户复核并批准本规格。
-2. 当前已本地验证的 migration `009/011` 和相关脚本改动完成独立 scoped closeout，取得明确归属、commit 和权威顺序。
+2. 已部署的 migration `001-011`、提交 `c2d575c` 和生产 schema 作为明确实施基线；任何新 migration 从 `012` 起。
 3. 基于干净、已确认的提交创建隔离实施工作树，或由用户显式授权在当前工作树协作。
 4. 重新核对生产 release、Chat V2/safe mode、活动 Provider 路由和 RAG 状态。
 

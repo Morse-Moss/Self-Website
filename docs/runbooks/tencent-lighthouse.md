@@ -2,7 +2,16 @@
 
 本文对应 `aimorse.tech` 的生产部署。当前实例为腾讯云 Lighthouse 首尔节点，公网地址为 `43.133.68.202`。境外节点不需要 ICP 备案；DNS 解析和 HTTPS 证书签发已完成，域名实名状态继续由腾讯云注册控制台维护。
 
-## 当前生产状态（2026-07-27，V2.1 output guard 修复）
+## 当前生产状态（2026-07-27，Provider 接管与迁移链修复）
+
+- 状态：`PRODUCTION_OBSERVED / MIGRATIONS_009_011_APPLIED / PROVIDER_TAKEOVER_DEPLOYED`，当前应用 release `c2d575c`；`/opt/revolution/current` 指向 `/opt/revolution/releases/c2d575c/revolution`，GitHub `master` 同步到同一提交。
+- 冻结归档为 19,503,454 bytes，SHA-256 `45ff9cba30e7f884302f81fb8f32373c004edcb091d109b07517cd40e36a0c2b`，本地与服务器哈希一致。迁移前备份为 `/opt/revolution/shared/backups/pre-c2d575c-20260727T155358Z.dump`，349,213 bytes，SHA-256 `d321aecccaca660cadbba7984255b121ca06e2f4d721d258b9c1e3a633a8db75`。
+- 在停止 Web/Worker 的受控停写窗口内确认无长事务后，migration `009`、`010`、`011` 依次成功；重复 migration 幂等，registry 为 `001-011`。生产原本已是 canonical `008` Task Frame，因此 `011` 没有历史行需要转换；Task State 保持 0 行，10 个目标索引齐全，`ai_environment_takeovers` 已存在，migration 角色经 grants 恢复为非超级用户且 AI runtime 权限门禁通过。
+- 只重建 Web/Worker；DB、Embedding、Edge 完整容器 ID 不变，五容器均 healthy 且 restart count 为 0。公开知识未变化，因此未运行 ingest；未重建 DB、Embedding 或 Edge。
+- 公网 live/ready/兼容 health、根页、works、admin、admin/api 均为 HTTP 200；未登录 Provider runtime、turn list 和简历文件均为 401；`release:smoke` 返回 `{"ok":true}`。维护停写期 Edge 记录 2 条上游不可达关键词；新 Web 启动后的 Web/Worker/Edge/DB 错误关键词和 Edge 5xx 均为 0。
+- 本次没有管理员登录、邀请码创建、生产配置修改、真实 Provider/Embedding/Search 调用或私密简历访问。Environment Provider 接管入口与持久化已部署，但认证后的真实接管、测试和激活仍由管理员显式操作；旧活动 V1/V2 状态未在本次发布中修改。`revolution-web:rollback-4a039ab` 与 `revolution-worker:rollback-4a039ab` 保留。
+
+## 历史生产状态（2026-07-27，V2.1 output guard 修复）
 
 - 状态：`DEPLOYED / HEALTHY / PROVIDER_BLOCKED`，当前应用 release `4a039ab`；`/opt/revolution/current` 指向 `/opt/revolution/releases/4a039ab/revolution`。
 - 冻结归档为 19,210,438 bytes，SHA-256 `395f87d164f29ae1075ce994658f43c497dc7f8e163afd30c8fe438675565c33`，本地与服务器哈希一致。发布时 GitHub 443 暂时不可达，因此 release 来自本地已冻结 commit；远端 push 必须单独取得成功回执，不能由部署状态代替。
