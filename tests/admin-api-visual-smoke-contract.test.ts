@@ -74,3 +74,35 @@ test('admin API visual smoke renders six-target layers and fails closed on clean
   assert.match(source, /cleanup:mock-port-still-in-use/u);
   assert.doesNotMatch(source, /terminateOwnedChild\([^)]*\)\.catch\(\(\) => undefined\)/u);
 });
+
+test('admin API visual smoke proves mock-only Environment takeover across both widths', () => {
+  const source = fs.readFileSync(scriptPath, 'utf8');
+
+  for (const scenario of [
+    'takeover-save-no-provider',
+    'takeover-latest-failure-retryable',
+    'takeover-success-eligible',
+    'takeover-replace-same-position',
+    'provider-operation-budget-exact',
+    'desktop:environment-overflow',
+    'mobile:environment-overflow',
+  ]) {
+    assert.match(source, new RegExp(scenario, 'u'));
+  }
+  for (const screenshot of [
+    'admin-api-environment-desktop-1440x900.png',
+    'admin-api-takeover-form-desktop-1440x900.png',
+    'admin-api-environment-mobile-390x844.png',
+    'admin-api-takeover-form-mobile-390x844.png',
+  ]) {
+    assert.match(source, new RegExp(screenshot.replaceAll('.', '\\.'), 'u'));
+  }
+  assert.match(source, /OPENAI_API_KEY:\s*providerKey/u);
+  assert.match(source, /MORSE_MOCK_OPENAI_SCENARIO/u);
+  assert.match(source, /auth_failure/u);
+  assert.match(source, /latestTest\?\.status === ['"]failed['"]/u);
+  assert.match(source, /再次测试/u);
+  assert.match(source, /expectedFailedModelTest/u);
+  assert.match(source, /operations\.length === 3/u);
+  assert.match(source, /provider_discover[\s\S]+failed[\s\S]+provider_test[\s\S]+succeeded[\s\S]+provider_test[\s\S]+failed/u);
+});

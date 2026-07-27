@@ -28,7 +28,7 @@ import {
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
-const targetUrl = new URL('http://127.0.0.1:3012');
+const targetUrl = new URL(`http://127.0.0.1:${process.env.ADMIN_API_VISUAL_PORT || 3012}`);
 const mockUrl = new URL('http://127.0.0.1:18092');
 const migrationScript = 'scripts/migrate-db.mjs';
 const mockScript = 'scripts/mock-openai.mjs';
@@ -39,6 +39,8 @@ const viewports = Object.freeze([
   Object.freeze({ key: 'mobile', width: 390, height: 844 }),
 ]);
 const timeoutMs = 30_000;
+const takeoverConnectionName = 'Synthetic environment gateway';
+const takeoverModelName = 'Mock environment takeover';
 const expectedChecks = [
   'discover-failure',
   'manual-model',
@@ -54,6 +56,13 @@ const expectedChecks = [
   'mobile:layer-overflow',
   'mobile:form-overflow',
   'mobile:dialog-overflow',
+  'takeover-save-no-provider',
+  'takeover-latest-failure-retryable',
+  'takeover-success-eligible',
+  'takeover-replace-same-position',
+  'provider-operation-budget-exact',
+  'desktop:environment-overflow',
+  'mobile:environment-overflow',
   'catalog-empty',
   ...viewports.flatMap((viewport) => [`${viewport.key}:overflow`, `${viewport.key}:control-height`]),
 ];
@@ -158,13 +167,13 @@ async function runNodeScript(relativePath, env) {
   if (code !== 0) throw new HarnessError(`setup:${path.basename(relativePath)}-failed`);
 }
 
-function startMock(apiKey) {
+function startMock(apiKey, scenario = 'success') {
   return spawnOwned(process.execPath, [path.join(repoRoot, mockScript)], {
     env: {
       ...process.env,
       MORSE_MOCK_OPENAI_PORT: mockUrl.port,
       MORSE_MOCK_OPENAI_API_KEY: apiKey,
-      MORSE_MOCK_OPENAI_SCENARIO: 'success',
+      MORSE_MOCK_OPENAI_SCENARIO: scenario,
     },
   });
 }
@@ -229,6 +238,7 @@ async function openPage(browser) {
   check(response.ok, 'cdp:new-tab-failed');
   const tab = await response.json();
   const errors = { console: [], page: [], external: new Set() };
+  let expectedFailedModelTest = false;
   const expectedLogError = (entry) => {
     let url;
     try {
@@ -240,6 +250,9 @@ async function openPage(browser) {
     if (url.origin !== targetUrl.origin) return false;
     if (url.pathname === '/api/admin/session' && text.includes('401 (Unauthorized)')) return true;
     if (/^\/api\/admin\/providers\/[0-9a-f-]{36}\/discover$/u.test(url.pathname)
+      && text.includes('400 (Bad Request)')) return true;
+    if (expectedFailedModelTest
+      && /^\/api\/admin\/providers\/models\/[0-9a-f-]{36}\/test$/u.test(url.pathname)
       && text.includes('400 (Bad Request)')) return true;
     return url.pathname === '/api/admin/providers/routes/activate' && text.includes('409 (Conflict)');
   };
@@ -277,6 +290,7 @@ async function openPage(browser) {
     errors,
     dispose: transport.dispose,
     send(method, params = {}) { return transport.send(method, params); },
+    setExpectedFailedModelTest(value) { expectedFailedModelTest = value; },
     async evaluate(expression) {
       const result = await transport.send('Runtime.evaluate', {
         expression,
@@ -388,6 +402,233 @@ async function login(page, password) {
   await waitFor(page, 'document.querySelector(\'[data-testid="admin-api-console"]\')', 'admin:login');
 }
 
+async function selectConnection(page, displayName) {
+  await waitFor(
+    page,
+    `[...document.querySelectorAll('[aria-label="中转列表"] button')].some((item) => item.textContent?.includes(${JSON.stringify(displayName)}))`,
+    `connection:${displayName}:available`,
+  );
+  await clickText(page, '[aria-label="中转列表"] button', displayName);
+  await waitFor(
+    page,
+    `document.querySelector('article[data-mobile-open] h2')?.textContent?.trim() === ${JSON.stringify(displayName)}`,
+    `connection:${displayName}:selected`,
+  );
+}
+
+async function prepareTakeoverForm(page) {
+  await waitFor(page, 'document.querySelector(\'[data-testid="admin-api-console"]\')?.getAttribute(\'aria-busy\') === \'false\'', 'takeover:catalog-settled');
+  await clickText(page, '[data-testid="environment-provider-primary"] button', '编辑');
+  await waitFor(page, 'document.querySelector(\'input[name="connectionName"]\')', 'takeover:connection-step');
+  await setValue(page, 'input[name="connectionName"]', takeoverConnectionName);
+  const keyIsBlank = await page.evaluate('document.querySelector(\'input[name="apiKey"]\')?.value === \'\'');
+  check(keyIsBlank, 'takeover:key-prefill-forbidden');
+  await clickText(page, 'form button[type="submit"]', '下一步');
+  await waitFor(page, 'document.querySelector(\'input[name="modelDisplayName"]\')', 'takeover:model-step');
+  await setValue(page, 'input[name="modelDisplayName"]', takeoverModelName);
+  await setValue(page, 'select', 'high');
+  await setValue(page, 'input[name="maxOutputTokens"]', '1200');
+}
+
+async function savePreparedTakeover(page, password) {
+  await clickText(page, 'form button[type="submit"]', '保存并复验密码');
+  await reauthenticate(page, password);
+  await waitFor(page, 'document.body.textContent?.includes(\'环境 Provider 已接管为数据库草稿\')', 'takeover:saved');
+  await waitFor(page, 'document.querySelector(\'[data-testid="admin-api-console"]\')?.getAttribute(\'aria-busy\') === \'false\'', 'takeover:refreshed');
+}
+
+async function assertTakeoverSavedWithoutProvider(page, checks) {
+  const events = await page.evaluate(`(async () => {
+    const response = await fetch('/api/admin/providers/events?page=1&limit=100', {
+      cache: 'no-store',
+      credentials: 'same-origin',
+    });
+    return response.ok ? response.json() : null;
+  })()`);
+  check(events?.items?.some((event) => event.eventType === 'environment_takeover_created'), 'takeover:event-missing');
+  check(
+    events.items.every((event) => !['provider_test', 'environment_test'].includes(event.eventType)),
+    'takeover-save-no-provider',
+  );
+  checks.add('takeover-save-no-provider');
+}
+
+async function assertProviderOperationBudget(page, checks) {
+  const operations = await page.evaluate(`(async () => {
+    const response = await fetch('/api/admin/providers/events?page=1&limit=100', {
+      cache: 'no-store',
+      credentials: 'same-origin',
+    });
+    if (!response.ok) return null;
+    const events = await response.json();
+    return events.items.filter((event) => [
+      'provider_discover',
+      'provider_test',
+      'environment_test',
+      'provider_operation_denied',
+    ].includes(event.eventType)).reverse();
+  })()`);
+  const expected = [
+    { eventType: 'provider_discover', resultCode: 'AI_CONFIG_TEST_FAILED', status: 'failed' },
+    { eventType: 'provider_test', resultCode: 'AI_CONFIG_TEST_SUCCEEDED', status: 'succeeded' },
+    { eventType: 'provider_test', resultCode: 'AI_CONFIG_TEST_FAILED', status: 'failed' },
+  ];
+  check(
+    Array.isArray(operations) && operations.length === 3
+      && operations.every((operation, index) => (
+        operation.eventType === expected[index].eventType
+        && operation.resultCode === expected[index].resultCode
+        && operation.status === expected[index].status
+      )),
+    'provider-operation-budget-exact',
+  );
+  checks.add('provider-operation-budget-exact');
+}
+
+async function readProviderModel(page, displayName) {
+  return page.evaluate(`(async () => {
+    const response = await fetch('/api/admin/providers?page=1&limit=100&includeDeleted=false', {
+      cache: 'no-store',
+      credentials: 'same-origin',
+    });
+    if (!response.ok) return null;
+    const catalog = await response.json();
+    return catalog.items.flatMap((connection) => connection.models)
+      .find((model) => model.displayName === ${JSON.stringify(displayName)}) ?? null;
+  })()`);
+}
+
+async function waitForProviderModelState(page, displayName, expectedStatus, code) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const model = await readProviderModel(page, displayName);
+    if (model?.testState?.latestTest?.status === expectedStatus) return model;
+    await delay(75);
+  }
+  throw new HarnessError(code);
+}
+
+async function testTakeoverSuccess(page, password, checks) {
+  await selectConnection(page, takeoverConnectionName);
+  await clickModelAction(page, takeoverModelName, 'provider-model-test');
+  await reauthenticate(page, password);
+  await waitFor(page, 'document.body.textContent?.includes(\'测试通过，延迟\')', 'takeover:test-success');
+  const model = await waitForProviderModelState(page, takeoverModelName, 'succeeded', 'takeover:success-state');
+  check(model.testState.eligibility === 'eligible', 'takeover-success-eligible');
+  checks.add('provider-test');
+  checks.add('takeover-success-eligible');
+}
+
+async function testTakeoverFailure(page, password, checks) {
+  await selectConnection(page, takeoverConnectionName);
+  page.setExpectedFailedModelTest(true);
+  try {
+    await clickModelAction(page, takeoverModelName, 'provider-model-test');
+    await reauthenticate(page, password);
+    await waitFor(
+      page,
+      'document.querySelector(\'[data-testid="admin-reauth-dialog"] [role="alert"]\')?.textContent?.includes(\'中转测试未通过\')',
+      'takeover:test-failure',
+    );
+    await delay(150);
+  } finally {
+    page.setExpectedFailedModelTest(false);
+  }
+  const model = await waitForProviderModelState(page, takeoverModelName, 'failed', 'takeover:failed-state');
+  check(
+    model.testState.eligibility === 'eligible' && model.testState.latestTest?.status === 'failed',
+    'takeover:failed-state-invalid',
+  );
+  await clickText(page, '[data-testid="admin-reauth-dialog"] button', '取消');
+  await navigate(page, '/admin/api');
+  await waitFor(page, 'document.querySelector(\'[data-testid="admin-api-console"]\')?.getAttribute(\'aria-busy\') === \'false\'', 'takeover:failure-refresh');
+  await selectConnection(page, takeoverConnectionName);
+  const retryable = await page.evaluate(`(() => {
+    const row = [...document.querySelectorAll('article')]
+      .find((item) => item.querySelector('strong')?.textContent?.trim() === ${JSON.stringify(takeoverModelName)});
+    const button = row?.querySelector('[data-testid="provider-model-test"]');
+    return button instanceof HTMLButtonElement && button.textContent?.trim() === '再次测试' && !button.disabled;
+  })()`);
+  check(retryable, 'takeover-latest-failure-retryable');
+  checks.add('takeover-latest-failure-retryable');
+}
+
+async function readEffectiveRouteSnapshot(page) {
+  return page.evaluate(`(async () => {
+    const response = await fetch('/api/admin/providers/runtime', {
+      cache: 'no-store',
+      credentials: 'same-origin',
+    });
+    if (!response.ok) return null;
+    const runtime = await response.json();
+    const identities = runtime.targets.length > 0
+      ? runtime.targets.map((target) => target.sourceType === 'database'
+        ? 'database:' + target.databaseModelSeriesId + ':' + target.databaseModelVersionId
+        : 'environment:' + target.environmentTargetKey)
+      : runtime.environmentTargets.map((target) => 'environment:' + target.environmentTargetKey);
+    return {
+      activeRevision: runtime.activeRevision,
+      identities,
+      positions: runtime.targets.length > 0
+        ? runtime.targets.map((target) => target.position)
+        : runtime.environmentTargets.map((_target, index) => index),
+      takeoverModelSeriesId: runtime.environmentTargets
+        .find((target) => target.environmentTargetKey === 'primary')?.takeover?.modelSeriesId ?? null,
+    };
+  })()`);
+}
+
+async function replaceEnvironmentPrimary(page, password, checks) {
+  const before = await readEffectiveRouteSnapshot(page);
+  check(before?.takeoverModelSeriesId, 'takeover:replacement-model-missing');
+  const replacedIndex = before.identities.indexOf('environment:primary');
+  check(replacedIndex >= 0, 'takeover:primary-not-effective');
+  await page.evaluate('document.querySelector(\'[data-testid="environment-provider-primary"]\')?.scrollIntoView({ block: \'center\' })');
+  await clickText(page, '[data-testid="environment-provider-primary"] button', '替换并激活');
+  await reauthenticate(page, password);
+  await waitFor(page, '!document.querySelector(\'[data-testid="admin-reauth-dialog"]\')', 'takeover:replace-complete');
+  await waitFor(page, 'document.querySelector(\'[data-testid="admin-api-console"]\')?.getAttribute(\'aria-busy\') === \'false\'', 'takeover:replace-refresh');
+  const after = await readEffectiveRouteSnapshot(page);
+  check(after?.activeRevision === before.activeRevision + 1, 'takeover:replace-revision');
+  check(after.identities.length === before.identities.length, 'takeover:replace-length');
+  check(
+    after.identities[replacedIndex]?.startsWith(`database:${before.takeoverModelSeriesId}:`)
+      && after.positions[replacedIndex] === replacedIndex,
+    'takeover:replace-position',
+  );
+  check(
+    before.identities.every((identity, index) => index === replacedIndex || after.identities[index] === identity),
+    'takeover:replace-order',
+  );
+  checks.add('route-activate');
+  checks.add('takeover-replace-same-position');
+}
+
+async function assertEnvironmentLayout(page, viewportKey, checks) {
+  await page.evaluate('document.querySelector(\'[data-testid="environment-provider-primary"]\')?.closest(\'section\')?.scrollIntoView({ block: \'start\' })');
+  await delay(150);
+  const geometry = await page.evaluate(`(() => {
+    const rows = [...document.querySelectorAll('[data-testid^="environment-provider-"]')]
+      .filter((item) => item instanceof HTMLElement && item.getClientRects().length > 0);
+    const buttons = rows.flatMap((row) => [...row.querySelectorAll('button')]);
+    return {
+      documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      rowCount: rows.length,
+      rowOverflow: rows.reduce((maximum, row) => Math.max(maximum, row.scrollWidth - row.clientWidth), 0),
+      controlsInsideViewport: buttons.every((button) => {
+        const rect = button.getBoundingClientRect();
+        return rect.left >= -1 && rect.right <= window.innerWidth + 1;
+      }),
+    };
+  })()`);
+  check(
+    geometry.rowCount === 3 && geometry.documentOverflow <= 1
+      && geometry.rowOverflow <= 1 && geometry.controlsInsideViewport,
+    `${viewportKey}:environment-overflow`,
+  );
+  checks.add(`${viewportKey}:environment-overflow`);
+}
+
 async function createProviderThroughUi(page, password, providerKey) {
   await click(page, '[data-testid="provider-create"]');
   await waitFor(page, 'document.querySelector(\'input[name="connectionName"]\')', 'create:connection-step');
@@ -427,12 +668,6 @@ async function discoverFailure(page, password) {
   await clickText(page, '[data-testid="admin-reauth-dialog"] button', '取消');
 }
 
-async function testProviderThroughUi(page, password) {
-  await clickModelAction(page, 'Mock responses', 'provider-model-test');
-  await reauthenticate(page, password);
-  await waitFor(page, 'document.body.textContent?.includes(\'测试通过，延迟\')', 'test:complete');
-}
-
 async function clickModelAction(page, displayName, testId) {
   const clicked = await page.evaluate(`(() => {
     const action = [...document.querySelectorAll(${JSON.stringify(`[data-testid="${testId}"]`)})]
@@ -464,51 +699,26 @@ async function composeSixTargetDraft(page, viewportKey, checks) {
   await waitFor(page, 'document.querySelector(\'[data-testid="admin-api-console"]\')?.getAttribute(\'aria-busy\') === \'false\'', `${viewportKey}:catalog-settled`);
   await click(page, '[data-testid="route-editor-open"]');
   await waitFor(page, 'document.querySelector(\'[data-testid^="route-candidate-"]\')', `${viewportKey}:route-candidates`);
-  for (let index = 0; index < 6; index += 1) {
-    const before = await page.evaluate('document.querySelectorAll(\'[data-testid^="route-candidate-"]\').length');
+  let selectedTargetCount = await page.evaluate('document.querySelectorAll(\'ol li [aria-label^="移除"]\').length');
+  for (let index = selectedTargetCount; index < 6; index += 1) {
+    const before = selectedTargetCount;
     await click(page, '[data-testid^="route-candidate-"]');
     await waitFor(
       page,
-      `document.querySelectorAll('[data-testid^="route-candidate-"]').length === ${before - 1}`,
+      `document.querySelectorAll('ol li [aria-label^="移除"]').length === ${before + 1}`,
       `${viewportKey}:route-add-${index + 1}`,
     );
+    selectedTargetCount = before + 1;
   }
-  const selectedTargetCount = await page.evaluate('document.querySelectorAll(\'ol li [aria-label^="移除"]\').length');
   check(selectedTargetCount === 6, `${viewportKey}:route-six`);
   checks.add(`${viewportKey}:route-six`);
   await assertLayerLayout(page, '[role="dialog"]', `${viewportKey}:layer-overflow`);
   checks.add(`${viewportKey}:layer-overflow`);
 }
 
-async function clickRouteCandidateText(page, text) {
-  const clicked = await page.evaluate(`(() => {
-    const candidate = [...document.querySelectorAll('[data-testid^="route-candidate-"]')]
-      .find((button) => button.closest('li')?.textContent?.includes(${JSON.stringify(text)}));
-    if (!(candidate instanceof HTMLElement) || candidate.getClientRects().length === 0) return false;
-    candidate.click();
-    return true;
-  })()`);
-  check(clicked, `route:candidate:${text}`);
-}
-
 async function closeLayer(page) {
   await clickText(page, '[role="dialog"] button', '← 返回');
   await waitFor(page, '!document.querySelector(\'[role="dialog"]\')', 'layer:closed');
-}
-
-async function activateRouteThroughUi(page, password) {
-  await waitFor(page, 'document.querySelector(\'[data-testid="admin-api-console"]\')?.getAttribute(\'aria-busy\') === \'false\'', 'route:catalog-settled');
-  await click(page, '[data-testid="route-editor-open"]');
-  await waitFor(page, 'document.querySelector(\'[data-testid^="route-candidate-database:"]\')', 'route:candidates');
-  await clickRouteCandidateText(page, 'Mock responses');
-  await waitFor(page, '![...document.querySelectorAll(\'[data-testid^="route-candidate-database:"]\')].some((button) => button.closest(\'li\')?.textContent?.includes(\'Mock responses\'))', 'route:database-added');
-  await click(page, '[data-testid="route-candidate-environment:fallback-1"]');
-  await waitFor(page, '!document.querySelector(\'[data-testid="route-candidate-environment:fallback-1"]\')', 'route:fallback-1-added');
-  await click(page, '[data-testid="route-candidate-environment:fallback-2"]');
-  await waitFor(page, '!document.querySelector(\'[data-testid="route-candidate-environment:fallback-2"]\')', 'route:fallback-2-added');
-  await click(page, '[data-testid="route-activate"]');
-  await reauthenticate(page, password);
-  await waitFor(page, 'document.body.textContent?.includes(\'路由 v1 已激活\')', 'route:activated');
 }
 
 async function causeConflict(page, password) {
@@ -540,13 +750,14 @@ async function causeConflict(page, password) {
   await waitFor(page, '!document.querySelector(\'[data-error-code="AI_CONFIG_CONFLICT"]\')', 'conflict:refreshed');
 }
 
-async function deleteModelThroughUi(page, password) {
-  await clickModelAction(page, 'Mock responses', 'provider-model-delete');
+async function deleteModelThroughUi(page, password, displayName) {
+  await clickModelAction(page, displayName, 'provider-model-delete');
   await waitFor(page, 'document.querySelector(\'[data-testid="admin-reauth-dialog"]\')', 'delete:reauth');
-  await setValue(page, 'input[name="confirmationName"]', 'Mock responses');
+  await setValue(page, 'input[name="confirmationName"]', displayName);
   await setValue(page, 'input[name="adminPassword"]', password);
+  await waitFor(page, '!document.querySelector(\'[data-testid="admin-reauth-confirm"]\')?.disabled', `delete:${displayName}:enabled`);
   await click(page, '[data-testid="admin-reauth-confirm"]');
-  await waitFor(page, 'document.body.textContent?.includes(\'历史元数据保留\')', 'delete:result');
+  await waitFor(page, '!document.querySelector(\'[data-testid="admin-reauth-dialog"]\')', `delete:${displayName}:result`);
 }
 
 async function deleteUnreferencedModelThroughUi(page, password, displayName) {
@@ -554,17 +765,25 @@ async function deleteUnreferencedModelThroughUi(page, password, displayName) {
   await waitFor(page, 'document.querySelector(\'[data-testid="admin-reauth-dialog"]\')', `delete:${displayName}:reauth`);
   await setValue(page, 'input[name="confirmationName"]', displayName);
   await setValue(page, 'input[name="adminPassword"]', password);
+  await waitFor(page, '!document.querySelector(\'[data-testid="admin-reauth-confirm"]\')?.disabled', `delete:${displayName}:enabled`);
   await click(page, '[data-testid="admin-reauth-confirm"]');
   await waitFor(page, '!document.querySelector(\'[data-testid="admin-reauth-dialog"]\')', `delete:${displayName}:complete`);
 }
 
-async function deleteConnectionThroughUi(page, password) {
+async function deleteConnectionThroughUi(page, password, displayName, expectCatalogEmpty = false) {
   await clickText(page, 'button', '删除中转');
   await waitFor(page, 'document.querySelector(\'[data-testid="admin-reauth-dialog"]\')', 'delete:connection:reauth');
-  await setValue(page, 'input[name="confirmationName"]', 'Synthetic gateway');
+  await setValue(page, 'input[name="confirmationName"]', displayName);
   await setValue(page, 'input[name="adminPassword"]', password);
+  await waitFor(page, '!document.querySelector(\'[data-testid="admin-reauth-confirm"]\')?.disabled', `delete:${displayName}:connection-enabled`);
   await click(page, '[data-testid="admin-reauth-confirm"]');
-  await waitFor(page, 'document.querySelector(\'[data-testid="admin-api-console"]\')?.getAttribute(\'data-empty\') === \'true\'', 'catalog-empty');
+  await waitFor(
+    page,
+    expectCatalogEmpty
+      ? 'document.querySelector(\'[data-testid="admin-api-console"]\')?.getAttribute(\'data-empty\') === \'true\''
+      : `![...document.querySelectorAll('[aria-label="中转列表"] button')].some((item) => item.textContent?.includes(${JSON.stringify(displayName)}))`,
+    expectCatalogEmpty ? 'catalog-empty' : `delete:${displayName}:connection`,
+  );
 }
 
 async function assertLayout(page, viewport, checks) {
@@ -665,7 +884,7 @@ export async function runAdminApiVisualSmoke() {
       MORSE_PROVIDER_MOCK_ORIGIN: mockUrl.origin,
       MORSE_CHAT_ENABLED: 'false',
       MORSE_SEARCH_ENABLED: 'false',
-      OPENAI_API_KEY: 'synthetic-environment-primary',
+      OPENAI_API_KEY: providerKey,
       OPENAI_BASE_URL: `${mockUrl.origin}/v1`,
       OPENAI_FALLBACK_1_API_KEY: 'synthetic-environment-fallback-1',
       OPENAI_FALLBACK_1_BASE_URL: `${mockUrl.origin}/v1`,
@@ -692,9 +911,30 @@ export async function runAdminApiVisualSmoke() {
     await setViewport(page, viewports[0]);
     await login(page, adminPassword);
 
+    markStage('desktop:takeover-form');
+    await prepareTakeoverForm(page);
+    await assertLayerLayout(page, '.formLayer, [role="dialog"]', 'desktop:takeover-form-overflow');
+    screenshots.push(await capture(page, 'admin-api-takeover-form-desktop-1440x900.png'));
+    await closeLayer(page);
+
+    markStage('mobile:takeover-form');
+    await setViewport(page, viewports[1]);
+    await navigate(page, '/admin/api');
+    await waitFor(page, 'document.querySelector(\'[data-testid="admin-api-console"]\')', 'mobile:takeover-ready');
+    await prepareTakeoverForm(page);
+    await assertLayerLayout(page, '.formLayer, [role="dialog"]', 'mobile:form-overflow');
+    checks.add('mobile:form-overflow');
+    screenshots.push(await capture(page, 'admin-api-takeover-form-mobile-390x844.png'));
+    await savePreparedTakeover(page, adminPassword);
+    await assertTakeoverSavedWithoutProvider(page, checks);
+
     markStage('desktop:create');
+    await setViewport(page, viewports[0]);
+    await navigate(page, '/admin/api');
+    await waitFor(page, 'document.querySelector(\'[data-testid="admin-api-console"]\')', 'desktop:create-ready');
     await createProviderThroughUi(page, adminPassword, providerKey);
     checks.add('manual-model');
+    await selectConnection(page, 'Synthetic gateway');
     markStage('desktop:discover-failure');
     await terminateOwnedChild(mock);
     mock = null;
@@ -705,12 +945,37 @@ export async function runAdminApiVisualSmoke() {
     markStage('desktop:manual-models');
     await addModelThroughUi(page, adminPassword, 'Mock compact', 'gpt-mock-compact-manual-fallback');
     await addModelThroughUi(page, adminPassword, 'Mock durable', 'gpt-mock-durable-manual-fallback');
-    markStage('desktop:test');
-    await testProviderThroughUi(page, adminPassword);
-    checks.add('provider-test');
+
+    markStage('desktop:takeover-test-success');
+    await testTakeoverSuccess(page, adminPassword, checks);
+    await terminateOwnedChild(mock);
+    mock = null;
+    await waitForPortFree(mockUrl, 'takeover:mock-success-still-running');
+    mock = startMock(providerKey, 'auth_failure');
+    await waitForHttp(new URL('/v1/models', mockUrl), mock, 'takeover:failure-mock-ready');
+    markStage('desktop:takeover-test-failure');
+    await testTakeoverFailure(page, adminPassword, checks);
+
+    markStage('desktop:environment-evidence');
+    await setViewport(page, viewports[0]);
+    await navigate(page, '/admin/api');
+    await waitFor(page, 'document.querySelector(\'[data-testid="admin-api-console"]\')?.getAttribute(\'aria-busy\') === \'false\'', 'desktop:environment-ready');
+    await assertEnvironmentLayout(page, 'desktop', checks);
+    screenshots.push(await capture(page, 'admin-api-environment-desktop-1440x900.png'));
+
+    markStage('mobile:environment-evidence');
+    await setViewport(page, viewports[1]);
+    await navigate(page, '/admin/api');
+    await waitFor(page, 'document.querySelector(\'[data-testid="admin-api-console"]\')?.getAttribute(\'aria-busy\') === \'false\'', 'mobile:environment-ready');
+    await assertEnvironmentLayout(page, 'mobile', checks);
+    screenshots.push(await capture(page, 'admin-api-environment-mobile-390x844.png'));
+
+    markStage('desktop:route-six');
+    await setViewport(page, viewports[0]);
+    await navigate(page, '/admin/api');
+    await waitFor(page, 'document.querySelector(\'[data-testid="admin-api-console"]\')?.getAttribute(\'aria-busy\') === \'false\'', 'desktop:route-ready');
     await assertLayout(page, viewports[0], checks);
     screenshots.push(await capture(page, 'admin-api-runtime-desktop-1440x900.png'));
-    markStage('desktop:route-six');
     await composeSixTargetDraft(page, 'desktop', checks);
     screenshots.push(await capture(page, 'admin-api-desktop-1440x900.png'));
     await closeLayer(page);
@@ -725,38 +990,34 @@ export async function runAdminApiVisualSmoke() {
     screenshots.push(await capture(page, 'admin-api-mobile-390x844.png'));
     await closeLayer(page);
 
-    markStage('mobile:form-overflow');
-    await clickText(page, '[aria-label="中转列表"] button', 'Synthetic gateway');
-    await waitFor(page, 'document.querySelector(\'article[data-mobile-open="true"]\')', 'mobile:inspector');
-    await clickText(page, 'button', '新增模型');
-    await waitFor(page, 'document.querySelector(\'input[name="modelDisplayName"]\')', 'mobile:form-open');
-    await assertLayerLayout(page, '.formLayer, [role="dialog"]', 'mobile:form-overflow');
-    checks.add('mobile:form-overflow');
-    await closeLayer(page);
-
     markStage('mobile:dialog-overflow');
+    await selectConnection(page, 'Synthetic gateway');
     await clickModelAction(page, 'Mock responses', 'provider-model-test');
     await waitFor(page, 'document.querySelector(\'[data-testid="admin-reauth-dialog"]\')', 'mobile:dialog-open');
     await assertLayerLayout(page, '[data-testid="admin-reauth-dialog"]', 'mobile:dialog-overflow');
     checks.add('mobile:dialog-overflow');
     await clickText(page, '[data-testid="admin-reauth-dialog"] button', '取消');
 
-    markStage('desktop:activate');
+    markStage('desktop:replace-environment');
     await setViewport(page, viewports[0]);
     await navigate(page, '/admin/api');
     await waitFor(page, 'document.querySelector(\'[data-testid="admin-api-console"]\')', 'desktop:return');
-    await activateRouteThroughUi(page, adminPassword);
-    checks.add('route-activate');
+    await replaceEnvironmentPrimary(page, adminPassword, checks);
 
     markStage('desktop:conflict');
     await causeConflict(page, adminPassword);
     checks.add('conflict');
+    await assertProviderOperationBudget(page, checks);
     markStage('desktop:delete');
-    await deleteModelThroughUi(page, adminPassword);
+    await selectConnection(page, 'Synthetic gateway');
+    await deleteModelThroughUi(page, adminPassword, 'Mock responses');
     checks.add('delete-result');
     await deleteUnreferencedModelThroughUi(page, adminPassword, 'Mock compact');
     await deleteUnreferencedModelThroughUi(page, adminPassword, 'Mock durable');
-    await deleteConnectionThroughUi(page, adminPassword);
+    await deleteConnectionThroughUi(page, adminPassword, 'Synthetic gateway');
+    await selectConnection(page, takeoverConnectionName);
+    await deleteModelThroughUi(page, adminPassword, takeoverModelName);
+    await deleteConnectionThroughUi(page, adminPassword, takeoverConnectionName, true);
     checks.add('catalog-empty');
 
     if (process.env.ADMIN_API_VISUAL_DEBUG === 'true' && page.errors.console.length > 0) {

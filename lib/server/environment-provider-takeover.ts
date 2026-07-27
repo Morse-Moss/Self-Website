@@ -10,7 +10,6 @@ import {
   createConnectionWithModel,
   insertAiConfigEvent,
 } from './ai-config-store.ts';
-import type { AdminProviderServiceOptions } from './admin-provider-config.ts';
 import {
   listAdminEnvironmentTargets,
   type AdminEnvironmentProviderTarget,
@@ -30,6 +29,15 @@ import type { ParsedEnvironmentTakeoverInput } from './provider-config-input.ts'
 type Pool = pg.Pool;
 type Client = pg.PoolClient;
 type Queryable = Pick<pg.Pool | pg.PoolClient, 'query'>;
+
+interface EnvironmentTakeoverOptions {
+  actorAdminSessionId: string;
+  configKey: AiConfigKey;
+  outboundPolicy?: ProviderOutboundPolicy;
+  resolver?: ProviderAddressResolver;
+  runtimeConfig: ProviderRuntimeConfig;
+  runtimeConfigLoader?: () => ProviderRuntimeConfig;
+}
 
 interface TakeoverRow {
   connection_series_id: string;
@@ -198,7 +206,7 @@ async function recordConflict(
   pool: Pool,
   targetKey: EnvironmentTargetKey,
   expectedConfigDigest: string,
-  options: AdminProviderServiceOptions,
+  options: EnvironmentTakeoverOptions,
 ): Promise<void> {
   const client = await pool.connect();
   try {
@@ -224,7 +232,7 @@ async function executeTakeover(
   pool: Pool,
   targetKey: EnvironmentTargetKey,
   input: Omit<ParsedEnvironmentTakeoverInput, 'password'>,
-  options: AdminProviderServiceOptions,
+  options: EnvironmentTakeoverOptions,
 ): Promise<EnvironmentTakeoverResult> {
   const client = await pool.connect();
   try {
@@ -317,7 +325,7 @@ export async function takeoverEnvironmentProvider(
   pool: Pool,
   targetKey: EnvironmentTargetKey,
   input: Omit<ParsedEnvironmentTakeoverInput, 'password'>,
-  options: AdminProviderServiceOptions,
+  options: EnvironmentTakeoverOptions,
 ): Promise<EnvironmentTakeoverResult> {
   try {
     return await executeTakeover(pool, targetKey, input, options);

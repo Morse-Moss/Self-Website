@@ -135,7 +135,7 @@ non_goals:
 - Modify: `lib/server/readiness.ts`
 - Modify: `tests/readiness.test.ts`
 
-- [ ] **Step 1: Write the failing migration and privilege tests**
+- [x] **Step 1: Write the failing migration and privilege tests**
 
 Append a schema-contract test that applies a temporary migration set without the unrelated `009` file and verifies the table, columns, restrictive foreign keys, active-target unique index, and release-only update trigger:
 
@@ -194,7 +194,7 @@ test('migration 010 adds immutable replayable environment takeover history', asy
 
 Extend deployment and readiness contracts so `runtime` must have `SELECT, INSERT, UPDATE` but not `DELETE`, and readiness reads the new table.
 
-- [ ] **Step 2: Run the focused tests and confirm RED**
+- [x] **Step 2: Run the focused tests and confirm RED**
 
 Run:
 
@@ -204,7 +204,7 @@ node --test tests/migration-integration.test.ts tests/provider-deployment-contra
 
 Expected: failure because migration `010`, its grants, and the readiness relation check do not exist.
 
-- [ ] **Step 3: Create migration 010 with release-only lifecycle**
+- [x] **Step 3: Create migration 010 with release-only lifecycle**
 
 Create the migration with this complete shape:
 
@@ -261,7 +261,7 @@ BEFORE UPDATE ON ai_environment_takeovers
 FOR EACH ROW EXECUTE FUNCTION ai_guard_environment_takeover_update();
 ```
 
-- [ ] **Step 4: Narrow runtime privileges and include the table in readiness**
+- [x] **Step 4: Narrow runtime privileges and include the table in readiness**
 
 Add the table to the provider `REVOKE ALL` list, then grant only:
 
@@ -277,7 +277,7 @@ Add matching required/forbidden rows to `verify-ai-config-runtime.sql`, and exte
 (SELECT count(*) FROM ai_environment_takeovers) >= 0 AS takeovers_readable
 ```
 
-- [ ] **Step 5: Run the persistence checks and confirm GREEN**
+- [x] **Step 5: Run the persistence checks and confirm GREEN**
 
 Run:
 
@@ -287,7 +287,7 @@ node --test tests/migration-integration.test.ts tests/provider-deployment-contra
 
 Expected: all tests pass; the temporary migration directory excludes only the unrelated copied `009` file.
 
-- [ ] **Step 6: Commit only StagePacket 1 files**
+- [x] **Step 6: Commit only StagePacket 1 files**
 
 ```powershell
 git add -- db/migrations/010_environment_provider_takeovers.sql deploy/postgres/grant-runtime.sql deploy/postgres/verify-ai-config-runtime.sql lib/server/readiness.ts tests/migration-integration.test.ts tests/provider-deployment-contract.test.ts tests/readiness.test.ts
@@ -309,7 +309,7 @@ Confirm `db/migrations/009_db_growth_indexes.sql` and `.github/` remain untracke
 - Modify: `tests/provider-config-input.test.ts`
 - Modify: `tests/admin-provider-integration.test.ts`
 
-- [ ] **Step 1: Write failing error, parser, and default-URL tests**
+- [x] **Step 1: Write failing error, parser, and default-URL tests**
 
 Add the three public codes in the asserted order:
 
@@ -325,7 +325,7 @@ Add integration assertions for all three redacted URL modes: an unset primary pr
 
 Add a digest equivalence test proving Environment snapshots call the existing `createRuntimeConfigDigest` with `options.configKey.key` (the decoded `MORSE_PROVIDER_CONFIG_KEY`/key-file value) and canonical input containing the current Environment API Key plus `digestBaseUrl`. Primary without `OPENAI_BASE_URL` uses `digestBaseUrl: ''`; configured primary/fallback use their server values. Assert changing either current key or `digestBaseUrl` changes the digest; do not introduce an Environment-keyed HMAC or a second digest helper.
 
-- [ ] **Step 2: Run the contract tests and confirm RED**
+- [x] **Step 2: Run the contract tests and confirm RED**
 
 ```powershell
 node --test tests/ai-config.test.ts tests/provider-config-input.test.ts tests/admin-provider-integration.test.ts
@@ -333,7 +333,7 @@ node --test tests/ai-config.test.ts tests/provider-config-input.test.ts tests/ad
 
 Expected: missing public codes, parser export, and Environment target helper.
 
-- [ ] **Step 3: Add the shared target type and effective URL resolver**
+- [x] **Step 3: Add the shared target type and effective URL resolver**
 
 Create `environment-provider-target.ts` with these public contracts:
 
@@ -363,7 +363,7 @@ export function listAdminEnvironmentTargets(
 
 For primary, set `digestBaseUrl` to `config.openaiBaseUrl ?? ''` and `effectiveBaseUrl` to `config.openaiBaseUrl ?? OPENAI_DEFAULT_BASE_URL`. For fallbacks, both internal URL values use their configured URL. Classify configured values without exposing them: credential-free values accepted by the runtime outbound policy are `server_reusable`; userinfo/query/hash or otherwise structurally unsafe values are `replacement_required`; only the absent-primary default is `public_default` with a non-null prefill. Compute `snapshot.configDigest` only through `createRuntimeConfigDigest(canonicalInput, configKey.key)`. `apiKey`, `effectiveBaseUrl`, and `digestBaseUrl` are server-only and must never be spread into an HTTP result.
 
-- [ ] **Step 4: Add the strict takeover parser**
+- [x] **Step 4: Add the strict takeover parser**
 
 Export this exact shape from `provider-config-input.ts`:
 
@@ -385,11 +385,11 @@ export function parseEnvironmentTakeoverInput(input: unknown): ParsedEnvironment
 
 Use the existing strict `record`, `uuid`, `baseUrl`, `password`, `parseModelInput`, and key-length rules. `null` is the only inheritance sentinel; empty strings remain invalid. Add a `configDigest` helper that accepts only `/^[0-9a-f]{64}$/u`.
 
-- [ ] **Step 5: Replace the private Environment builder without changing runtime snapshots**
+- [x] **Step 5: Replace the private Environment builder without changing runtime snapshots**
 
 In `admin-provider-config.ts`, remove the private `environmentTargets` implementation and call `listAdminEnvironmentTargets(options.runtimeConfig, options.configKey, options.outboundPolicy)`. Update Environment testing to use server-only `effectiveBaseUrl`, while route snapshots continue to use `digestBaseUrl`. Extend each public Environment runtime-summary item with `baseUrlMode`, `baseUrlPrefill`, `userAgent`, `modelDisplayName`, `inputUsdPerMillion`, and `outputUsdPerMillion`; never return `effectiveBaseUrl`, `digestBaseUrl`, or any configured full URL. Keep `endpointHost` as the only configured-endpoint location detail.
 
-- [ ] **Step 6: Re-run the focused tests and commit**
+- [x] **Step 6: Re-run the focused tests and commit**
 
 ```powershell
 node --test tests/ai-config.test.ts tests/provider-config-input.test.ts tests/admin-provider-integration.test.ts
@@ -405,7 +405,7 @@ git commit -m "feat: define environment provider takeover contracts"
 - Modify: `lib/server/admin-provider-config.ts`
 - Modify: `tests/admin-provider-integration.test.ts`
 
-- [ ] **Step 1: Write failure-first integration cases**
+- [x] **Step 1: Write failure-first integration cases**
 
 Add a complete happy-path test using the existing `withDatabase`, `options`, and runtime-summary helpers:
 
@@ -457,7 +457,7 @@ Add a separate `fallback-1 environment takeover creates an independent encrypted
 
 Add four additional named tests: rollback on a forced relation insert failure; same-request replay after `loseFirstCommitAcknowledgement`; two different request IDs yielding one takeover plus one committed conflict audit; and a mutable `runtimeConfigLoader` changing the digest while the second call waits on the advisory lock. Each test asserts row counts in `ai_connections`, `ai_model_presets`, `ai_environment_takeovers`, and `ai_config_events`; the inherited/replacement key is decrypted only inside the test for equality and is absent, including its final four characters, from serialized events and service results.
 
-- [ ] **Step 2: Run the takeover cases and confirm RED**
+- [x] **Step 2: Run the takeover cases and confirm RED**
 
 ```powershell
 node --test --test-name-pattern="environment takeover|requestId|advisory lock" tests/admin-provider-integration.test.ts
@@ -465,7 +465,7 @@ node --test --test-name-pattern="environment takeover|requestId|advisory lock" t
 
 Expected: missing `takeoverEnvironmentProvider` and takeover read functions.
 
-- [ ] **Step 3: Implement the focused service API**
+- [x] **Step 3: Implement the focused service API**
 
 Export these contracts from `environment-provider-takeover.ts`:
 
@@ -508,7 +508,7 @@ Resolve `input.baseUrl` after the digest check: a string is a requested replacem
 
 When a new request hits the active-target unique relation, roll back the business transaction, write one redacted `environment_takeover_conflict` event in a separate transaction, then throw `AI_CONFIG_TAKEOVER_EXISTS`. Do not write a denied event when COMMIT succeeded but its acknowledgement was lost.
 
-- [ ] **Step 4: Make production re-read environment configuration inside the lock**
+- [x] **Step 4: Make production re-read environment configuration inside the lock**
 
 Extend `AdminProviderServiceOptions`:
 
@@ -518,7 +518,7 @@ runtimeConfigLoader?: () => ProviderRuntimeConfig;
 
 Set it to `loadServerConfig` in `adminProviderServiceOptions`. Integration tests provide a mutable loader to prove the digest comparison happens after advisory-lock acquisition.
 
-- [ ] **Step 5: Run the complete provider integration file and commit**
+- [x] **Step 5: Run the complete provider integration file and commit**
 
 ```powershell
 node --test tests/admin-provider-integration.test.ts
@@ -539,7 +539,7 @@ Do not stage an unchanged `app/api/admin/_shared.ts`; it is listed only if the s
 - Modify: `lib/server/ai-config-store.ts`
 - Modify: `tests/admin-provider-integration.test.ts`
 
-- [ ] **Step 1: Write failing eligibility and deletion tests**
+- [x] **Step 1: Write failing eligibility and deletion tests**
 
 Add integration cases that seed audit events relative to `SELECT clock_timestamp()` and assert this read model:
 
@@ -567,7 +567,7 @@ Add deletion cases that prove:
 - an injected failure before release rolls back tombstones and secret shredding;
 - a released target accepts a new request ID and creates a second takeover history row.
 
-- [ ] **Step 2: Run the focused cases and confirm RED**
+- [x] **Step 2: Run the focused cases and confirm RED**
 
 ```powershell
 node --test --test-name-pattern="eligibility|latest test|takeover.*delet|released target" tests/admin-provider-integration.test.ts
@@ -575,7 +575,7 @@ node --test --test-name-pattern="eligibility|latest test|takeover.*delet|release
 
 Expected: catalog/runtime have no server test state and deletion can still choose physical removal.
 
-- [ ] **Step 3: Add the database-time test-state query**
+- [x] **Step 3: Add the database-time test-state query**
 
 Define the shared response contract in `ai-config.ts`:
 
@@ -605,7 +605,7 @@ Use one SQL query with `clock_timestamp()`, a lateral latest actual test ordered
 
 At the start of `activateProviderRoute`'s locked transaction, read one PostgreSQL `clock_timestamp()` and use it for `testedRecently`, `ai_route_revisions.activated_at`, `ai_runtime_state.updated_at`, and rollback-grace comparison. Remove the application-clock argument from `testedRecently`; this keeps the activation decision on the same time authority as the read model.
 
-- [ ] **Step 4: Attach test state to catalog and runtime read models**
+- [x] **Step 4: Attach test state to catalog and runtime read models**
 
 In `getProviderCatalog`, fetch states for every returned current model digest and add `testState` to each model. In `getProviderRuntimeSummary`, fetch states for current route and configured Environment digests, add `testState` to route targets and Environment targets, and add:
 
@@ -620,7 +620,7 @@ takeover: null | {
 
 The takeover query must join initial version IDs back to their series IDs and return only `released_at IS NULL`. The Environment response may return `endpointHost`, `baseUrlMode`, the public-default-only `baseUrlPrefill`, User-Agent, model metadata, and prices, but must never return a configured full URL, `effectiveBaseUrl`, `digestBaseUrl`, `apiKey`, ciphertext, IV, tag, secret suffix, or request headers.
 
-- [ ] **Step 5: Make takeover-linked deletion historical and atomic**
+- [x] **Step 5: Make takeover-linked deletion historical and atomic**
 
 Add `tombstoneConnection` to `ai-config-store.ts` so connection lifecycle and model lifecycle updates share the same transaction helper. Extend `modelHistory` and `connectionHistory` with active takeover joins. On connection deletion, call this sequence inside the existing transaction:
 
@@ -633,7 +633,7 @@ await releaseEnvironmentTakeover(client, connectionSeriesId, deletionTime);
 
 Insert `environment_takeover_released` only when an active takeover row was released. A model-only deletion never calls the release function.
 
-- [ ] **Step 6: Run the full server boundary and commit**
+- [x] **Step 6: Run the full server boundary and commit**
 
 ```powershell
 node --test tests/ai-config-store-integration.test.ts tests/admin-provider-integration.test.ts
@@ -652,7 +652,7 @@ git commit -m "feat: expose provider eligibility and safe takeover deletion"
 - Modify: `app/api/admin/_shared.ts`
 - Modify: `tests/admin-provider-api-contract.test.ts`
 
-- [ ] **Step 1: Write failing API contract coverage**
+- [x] **Step 1: Write failing API contract coverage**
 
 Add the new route to `routePaths`, import it in the test setup, and exercise:
 
@@ -668,7 +668,7 @@ Add the new route to `routePaths`, import it in the test setup, and exercise:
 - `baseUrl: null` against `replacement_required` -> `400 AI_CONFIG_INVALID`, with no draft rows;
 - response, audit JSON, and captured `console.error`/`console.warn` text do not contain any configured full URL/path/query fixture, submitted key, inherited key, ciphertext hex/base64, tag hex/base64, or key suffix.
 
-- [ ] **Step 2: Run the API file and confirm RED**
+- [x] **Step 2: Run the API file and confirm RED**
 
 ```powershell
 node --test tests/admin-provider-api-contract.test.ts
@@ -676,7 +676,7 @@ node --test tests/admin-provider-api-contract.test.ts
 
 Expected: the takeover route and new error mappings are absent.
 
-- [ ] **Step 3: Implement the strict route using existing security helpers**
+- [x] **Step 3: Implement the strict route using existing security helpers**
 
 Create the route with the same boundary order as other Provider mutations:
 
@@ -723,11 +723,11 @@ export async function POST(request: NextRequest, context: Context) {
 
 Use a named target-key guard exported from `environment-provider-target.ts`; do not repeat loose casts in the route.
 
-- [ ] **Step 4: Map the new stable errors without leaking internals**
+- [x] **Step 4: Map the new stable errors without leaking internals**
 
 In `adminProviderError`, map `AI_CONFIG_ENVIRONMENT_CHANGED` and `AI_CONFIG_TAKEOVER_EXISTS` to `409`, and `AI_CONFIG_ENVIRONMENT_UNAVAILABLE` to `503`. Preserve the existing rule that internal key-loading codes collapse to `AI_CONFIG_UNAVAILABLE`.
 
-- [ ] **Step 5: Run API, type, and redaction checks**
+- [x] **Step 5: Run API, type, and redaction checks**
 
 ```powershell
 node --test tests/admin-provider-api-contract.test.ts tests/provider-config-input.test.ts tests/ai-config.test.ts
@@ -737,7 +737,7 @@ rg -n "apiKey|ciphertext|api_key_tag|key suffix|OPENAI_API_KEY" app/api/admin/pr
 
 Expected: tests and typecheck pass; search hits are only request parsing/server-only handling, never response construction or logging.
 
-- [ ] **Step 6: Commit StagePacket 3**
+- [x] **Step 6: Commit StagePacket 3**
 
 ```powershell
 git add -- app/api/admin/_shared.ts app/api/admin/providers/runtime/environment/[targetKey]/takeover/route.ts tests/admin-provider-api-contract.test.ts
@@ -757,7 +757,7 @@ git commit -m "feat: expose environment provider takeover API"
 - Modify: `components/admin/AdminProviderLibrary.tsx`
 - Modify: `tests/admin-api-management-ui-contract.test.ts`
 
-- [ ] **Step 1: Write failing pure-state and source-contract tests**
+- [x] **Step 1: Write failing pure-state and source-contract tests**
 
 Add pure tests for labels and replacement construction:
 
@@ -783,7 +783,7 @@ Add pure `preserveLockedRouteIndices` cases with current keys `['a', 'locked', '
 
 Update the source contract to forbid `Date.now()` and fixed-page event inference in `targetTestLabel`/`testLabel`, and require `eligibility`, `successExpiresAt`, and `latestTest` in the client types.
 
-- [ ] **Step 2: Run the UI state tests and confirm RED**
+- [x] **Step 2: Run the UI state tests and confirm RED**
 
 ```powershell
 node --test tests/admin-provider-ui-state.test.ts tests/admin-api-management-ui-contract.test.ts
@@ -791,7 +791,7 @@ node --test tests/admin-provider-ui-state.test.ts tests/admin-api-management-ui-
 
 Expected: the pure helper and typed server states are missing.
 
-- [ ] **Step 3: Extend the client response types and takeover call**
+- [x] **Step 3: Extend the client response types and takeover call**
 
 Add:
 
@@ -844,7 +844,7 @@ export function takeoverEnvironmentTarget(
 
 Map the three new public errors to specific operator actions: refresh changed environment, use the existing takeover, or restore the missing server source.
 
-- [ ] **Step 4: Add pure label and route replacement helpers**
+- [x] **Step 4: Add pure label and route replacement helpers**
 
 In `provider-ui-state.ts`, export:
 
@@ -871,11 +871,11 @@ export function preserveLockedRouteIndices(
 
 `effectiveRouteInputs` maps an explicit runtime revision to exact database model version IDs or Environment target keys; when no revision exists, it maps the configured Environment baseline. `replaceEnvironmentTarget` is the only place that constructs “替换并激活”; it must preserve array length and all non-matching entries by identity. `preserveLockedRouteIndices` returns `nextKeys` only when every locked key remains present at exactly its current numeric index; otherwise it returns the original `currentKeys` object. Cover moving the locked item, moving another item across it, deleting an item before it, and drag/drop across it as rejected, plus a same-side move as allowed.
 
-- [ ] **Step 5: Consume server state everywhere**
+- [x] **Step 5: Consume server state everywhere**
 
 Remove `targetTestLabel`, `lastTest`, and `testLabel`. Render `model.testState` and `target.testState` directly. Keep Provider events only for audit history/recent activation display. A failed action updates `actionError` but does not synthesize a failed test state; refresh retrieves the canonical server read model.
 
-- [ ] **Step 6: Run and commit the typed-state slice**
+- [x] **Step 6: Run and commit the typed-state slice**
 
 ```powershell
 node --test tests/admin-provider-ui-state.test.ts tests/admin-api-management-ui-contract.test.ts
@@ -896,7 +896,7 @@ git commit -m "fix: render canonical provider test state"
 - Modify: `tests/admin-api-management-ui-contract.test.ts`
 - Modify: `tests/admin-provider-ui-state.test.ts`
 
-- [ ] **Step 1: Write failing component contracts**
+- [x] **Step 1: Write failing component contracts**
 
 Require these observable controls and states:
 
@@ -911,7 +911,7 @@ Require these observable controls and states:
 - pure mutation cases prove the locked candidate keeps the same index when another item is dragged, moved, removed, or appended;
 - “再次测试” remains enabled after a failed latest test.
 
-- [ ] **Step 2: Run UI contracts and confirm RED**
+- [x] **Step 2: Run UI contracts and confirm RED**
 
 ```powershell
 node --test tests/admin-provider-ui-state.test.ts tests/admin-api-management-ui-contract.test.ts
@@ -919,7 +919,7 @@ node --test tests/admin-provider-ui-state.test.ts tests/admin-api-management-ui-
 
 Expected: Environment rows, takeover form mode, and locked route semantics do not exist.
 
-- [ ] **Step 3: Extend the existing two-step form**
+- [x] **Step 3: Extend the existing two-step form**
 
 Add `takeover_environment` to `ProviderFormMode` and pass an `environmentTarget` plus stable `requestId` in `FormState`. Initialize the Base URL field only from public `baseUrlPrefill`: show the public default when present, otherwise keep it blank with “将安全沿用当前服务器 URL”; for `replacement_required`, show a blocking replacement message and require a new URL. Initialize other connection/model fields from safe server prefill and keep the key blank. Generate `crypto.randomUUID()` once when the edit action opens; reuse it while the reauthentication dialog remains open or the request is retried.
 
@@ -936,21 +936,21 @@ The form result must be:
 
 Serialize an untouched blank Base URL as `null`. Because the browser never receives the configured origin, show the existing Key-reuse confirmation whenever the administrator types a replacement URL while leaving Key blank; the server remains authoritative and rejects only an actual cross-origin reuse without confirmation.
 
-- [ ] **Step 4: Add the compact Environment source band**
+- [x] **Step 4: Add the compact Environment source band**
 
 `AdminEnvironmentProviders.tsx` renders one unframed dense row per source with source name/host/model, lifecycle, eligibility, latest test, and actions. Before takeover show “编辑” and “测试”; after takeover show the database draft identity, “编辑数据库版本”, diagnostic “测试环境源”, and either “替换并激活” or “加入路由”. The component receives callbacks and performs no fetch itself.
 
-- [ ] **Step 5: Preserve the effective live route and replacement position**
+- [x] **Step 5: Preserve the effective live route and replacement position**
 
 In `AdminApiConsole`, call `effectiveRouteInputs(runtime)` and build current keys from the corresponding runtime snapshots. For a taken-over Environment target still present, include one locked `RouteCandidate`; set `locked: true`, disable its drag/up/down/remove controls, and exclude it from the available list. Route every mutation of `keys` (button move, drag/drop, remove, and add) through `preserveLockedRouteIndices`; this also blocks an unlocked item from crossing a locked item or changing its index by removal/insertion. When replacing, call `replaceEnvironmentTarget`, then queue the existing `activateRoute(runtime.activeRevision, targets, password)` flow.
 
 After acknowledgement, close form/route layers and refresh runtime/catalog. If `AI_CONFIG_CONFLICT` occurs, keep the current conflict banner and require canonical refresh.
 
-- [ ] **Step 6: Add responsive styles using existing tokens only**
+- [x] **Step 6: Add responsive styles using existing tokens only**
 
 Add stable grid tracks for Environment rows, `min-width: 0` on long identity cells, wrapping action groups, and a single-column `@media (max-width: 640px)` layout. Use only existing `var(--...)` values from `app/styles/tokens.css`; no raw color literals, gradients, nested cards, or viewport-scaled font sizes.
 
-- [ ] **Step 7: Run UI, type, and token checks**
+- [x] **Step 7: Run UI, type, and token checks**
 
 ```powershell
 node --test tests/admin-provider-ui-state.test.ts tests/admin-api-management-ui-contract.test.ts
@@ -960,7 +960,7 @@ rg -n "#[0-9a-fA-F]{3,8}|rgb\(|hsl\(|linear-gradient|radial-gradient" components
 
 Expected: tests/typecheck pass and the color scan returns no new raw color or gradient.
 
-- [ ] **Step 8: Commit the complete UI interaction**
+- [x] **Step 8: Commit the complete UI interaction**
 
 ```powershell
 git add -- components/admin/AdminEnvironmentProviders.tsx components/admin/AdminApiConsole.tsx components/admin/AdminProviderForm.tsx components/admin/AdminRouteEditor.tsx components/admin/AdminApiConsole.module.css tests/admin-api-management-ui-contract.test.ts tests/admin-provider-ui-state.test.ts
@@ -976,7 +976,7 @@ git commit -m "feat: edit and replace environment providers"
 - Create: `docs/verify/admin-api/editable-provider-takeover-closeout.md`
 - Modify: `docs/portfolio-blueprint.md`
 
-- [ ] **Step 1: Write the failing visual-smoke source contract**
+- [x] **Step 1: Write the failing visual-smoke source contract**
 
 Require named checks for:
 
@@ -991,7 +991,7 @@ mobile:environment-overflow
 
 Require screenshots of the Environment source band and takeover form at 1440x900 and 390x844.
 
-- [ ] **Step 2: Add the synthetic takeover journey**
+- [x] **Step 2: Add the synthetic takeover journey**
 
 Before creating a manual Provider, open `Environment primary`, change display name/reasoning/output limit, leave the key blank, save through reauthentication, and verify the mock Provider has not been called through the in-process transport counter asserted by the server integration test. In browser smoke, verify no test-success audit row appears after save by calling the authenticated events endpoint. Set the synthetic primary Environment key to the harness `providerKey` so the inherited-key path can pass against Mock OpenAI without exposing the key to the browser.
 
@@ -1001,7 +1001,7 @@ Extend the harness's expected-error filter only for the intentional failed model
 
 Use only the loopback disposable database and Mock OpenAI already owned by the harness. Do not add a real credential or external origin.
 
-- [ ] **Step 3: Run pre-browser checks and production build**
+- [x] **Step 3: Run pre-browser checks and production build**
 
 ```powershell
 node --test tests/admin-api-visual-smoke-contract.test.ts tests/admin-api-management-ui-contract.test.ts
@@ -1011,7 +1011,7 @@ npm run build
 
 Expected: all pass and `.next/BUILD_ID` exists for the controlled production-mode smoke.
 
-- [ ] **Step 4: Run the dual-width browser acceptance**
+- [x] **Step 4: Run the dual-width browser acceptance**
 
 ```powershell
 npm run visual:admin-api
@@ -1019,11 +1019,11 @@ npm run visual:admin-api
 
 Expected: JSON receipt has `passed: true`, all named checks, `consoleErrors: 0`, `pageErrors: 0`, `externalOrigins: 0`, and screenshots for both widths.
 
-- [ ] **Step 5: Inspect every generated screenshot**
+- [x] **Step 5: Inspect every generated screenshot**
 
 Use visual inspection on the 1440x900 and 390x844 runtime, Environment source, form, and route screenshots. Confirm no overlap, horizontal overflow, clipped action, unreadable long URL/model, nested-card clutter, or ambiguous state label. Record any correction against this StagePacket and rerun only the affected focused/browser check.
 
-- [ ] **Step 6: Run the final local verification receipt once**
+- [x] **Step 6: Run the final local verification receipt once**
 
 ```powershell
 git diff --check
@@ -1033,11 +1033,11 @@ npm run build
 
 Record exact pass/fail/skip counts, the current HEAD and intended diff, screenshot paths, mock-only Provider evidence, and these explicit gaps: no real Provider call, no production migration, no push, and no deployment.
 
-- [ ] **Step 7: Perform CRITICAL split review**
+- [x] **Step 7: Perform CRITICAL split review**
 
 Compliance review checks auth/origin/reauth, secret redaction, request replay, migration/grants, delete/release atomicity, cost boundary, and forbidden files. Quality/safety review checks version semantics, database-time state, route position preservation, manual Provider regressions, mobile/desktop interaction, and test adequacy. Admit blockers only with concrete evidence and close them within the three-batch correction budget.
 
-- [ ] **Step 8: Route through closeout and knowledge reconciliation**
+- [x] **Step 8: Route through closeout and knowledge reconciliation**
 
 Load `closeout`, stage only files named by this plan plus justified knowledge/evidence updates, and produce the VerificationReceipt. Invoke `neat-freak`; `KNOWLEDGE_RECONCILED` may be `updated` or `checked-no-change`. Do not stage `.github/` or `db/migrations/009_db_growth_indexes.sql`, and do not push or deploy.
 
@@ -1056,8 +1056,8 @@ Load `closeout`, stage only files named by this plan plus justified knowledge/ev
 
 ## Resume Pointer
 
-Current stage and state: `EXECUTE / Task 1 not started`.
+Current stage and state: `CLOSE / LOCAL_READY / KNOWLEDGE_RECONCILED`.
 
-Last completed verified step: independent re-review returned `READY_TO_CONTRACT` after verifying configured-URL redaction, canonical HMAC, locked-index preservation, and fallback-1 functional proof.
+Last completed verified step: the clean disposable database passed migrations 001-010, ingest 41 documents / 48 chunks, and 1077/1077 tests; the controlled browser journey passed 26 checks with zero console/page/external-origin errors; both review views and the final production build passed; owned Task 8 files and the validated Morse rollout row were committed locally.
 
-Exact next action: begin Task 1 Step 1 with failing migration/grant/readiness tests, without touching real Provider, production, `009`, or `.github/`.
+Exact next action: none within the LOCAL target; any later push or deployment must first resolve migration `009` ownership/order and add the forward-only repair for already-registered old `008` databases.
