@@ -126,9 +126,10 @@ export default function AdminApiConsole() {
   }, [includeDeleted, reloadRevision, requireLogin]);
 
   const allEvents = events?.items ?? [];
+  const effectiveTargets = useMemo(() => runtime ? effectiveRouteInputs(runtime) : [], [runtime]);
   const candidates = useMemo<RouteCandidate[]>(() => {
     if (!runtime || !catalog) return [];
-    const currentEnvironmentKeys = new Set(effectiveRouteInputs(runtime).flatMap((target) => (
+    const currentEnvironmentKeys = new Set(effectiveTargets.flatMap((target) => (
       target.source === 'environment' ? [target.environmentTargetKey] : []
     )));
     const result: RouteCandidate[] = runtime.environmentTargets.map((target) => ({
@@ -181,11 +182,11 @@ export default function AdminApiConsole() {
       });
     }
     return result;
-  }, [catalog, runtime]);
+  }, [catalog, effectiveTargets, runtime]);
 
   const currentKeys = useMemo(() => {
     if (!runtime) return [];
-    return effectiveRouteInputs(runtime).flatMap((input) => {
+    return effectiveTargets.flatMap((input) => {
       const candidate = candidates.find((item) => (
         input.source === 'environment'
           ? item.target.source === 'environment' && item.target.environmentTargetKey === input.environmentTargetKey
@@ -194,7 +195,7 @@ export default function AdminApiConsole() {
       ));
       return candidate ? [candidate.key] : [];
     });
-  }, [candidates, runtime]);
+  }, [candidates, effectiveTargets, runtime]);
 
   function queue(action: PendingAction) {
     setActionError('');
@@ -354,8 +355,9 @@ export default function AdminApiConsole() {
     if (!target.takeover) return;
     const candidate = candidates.find((item) => item.target.source === 'database'
       && item.target.modelId === target.takeover?.modelSeriesId);
-    if (!candidate || currentKeys.includes(candidate.key)) {
+    if (!candidate || currentKeys.includes(candidate.key) || currentKeys.length >= 6) {
       setRouteInitialKeys(null);
+      if (currentKeys.length >= 6) setNotice('当前路由已有 6 条线路，请先移除一条再加入。');
     } else {
       setRouteInitialKeys([...currentKeys, candidate.key]);
     }
@@ -501,14 +503,13 @@ export default function AdminApiConsole() {
 
       <AdminEnvironmentProviders
         targets={runtime.environmentTargets}
-        routeContains={(target) => effectiveRouteInputs(runtime).some((item) => item.source === 'environment' && item.environmentTargetKey === target.environmentTargetKey)}
-        takeoverEligible={(target) => {
-          const model = target.takeover
-            ? catalog.items.flatMap((connection) => connection.models)
-              .find((item) => item.seriesId === target.takeover?.modelSeriesId)
-            : null;
-          return model?.testState.eligibility === 'eligible';
-        }}
+        routeContains={(target) => effectiveTargets.some((item) => item.source === 'environment' && item.environmentTargetKey === target.environmentTargetKey)}
+        takeoverModel={(target) => target.takeover
+          ? catalog.items.flatMap((connection) => connection.models)
+            .find((item) => item.seriesId === target.takeover?.modelSeriesId) ?? null
+          : null}
+        takeoverIsLive={(_target, model) => effectiveTargets.some((item) => item.source === 'database'
+          && item.modelId === model.seriesId && item.modelVersionId === model.id)}
         onEditDatabase={editEnvironmentDatabase}
         onEditEnvironment={openEnvironmentEditor}
         onJoinRoute={joinEnvironmentRoute}

@@ -171,7 +171,7 @@ export default function AdminRouteEditor({ candidates, currentKeys, initialKeys,
             type="button"
             data-testid="route-activate"
             className={styles.primaryButton}
-            disabled={!changed || selected.length === 0}
+            disabled={!changed || selected.length === 0 || selected.length > 6}
             onClick={() => onActivate(selected.map((candidate) => candidate.target))}
           >
             激活配置

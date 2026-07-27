@@ -1,6 +1,6 @@
 'use client';
 
-import type { EnvironmentTarget } from './admin-api-client';
+import type { EnvironmentTarget, ProviderModel } from './admin-api-client';
 import { testStateLabels } from './provider-ui-state';
 import styles from './AdminApiConsole.module.css';
 
@@ -12,7 +12,8 @@ interface Props {
   onReplaceAndActivate: (target: EnvironmentTarget) => void;
   onTest: (target: EnvironmentTarget) => void;
   routeContains: (target: EnvironmentTarget) => boolean;
-  takeoverEligible: (target: EnvironmentTarget) => boolean;
+  takeoverIsLive: (target: EnvironmentTarget, model: ProviderModel) => boolean;
+  takeoverModel: (target: EnvironmentTarget) => ProviderModel | null;
 }
 
 export default function AdminEnvironmentProviders({
@@ -23,7 +24,8 @@ export default function AdminEnvironmentProviders({
   onReplaceAndActivate,
   onTest,
   routeContains,
-  takeoverEligible,
+  takeoverIsLive,
+  takeoverModel,
 }: Props) {
   return (
     <section className={styles.environmentProviders} aria-labelledby="environment-providers-title">
@@ -35,11 +37,15 @@ export default function AdminEnvironmentProviders({
       </div>
       <div className={styles.environmentProviderList}>
         {targets.map((target) => {
-          const state = testStateLabels(target.testState);
+          const databaseModel = target.takeover ? takeoverModel(target) : null;
+          const state = testStateLabels(databaseModel?.testState ?? target.testState);
           const inRoute = routeContains(target);
-          const eligible = takeoverEligible(target);
+          const databaseLive = databaseModel ? takeoverIsLive(target, databaseModel) : false;
+          const eligible = databaseModel?.testState.eligibility === 'eligible';
           const lifecycle = target.takeover
-            ? `数据库草稿 ${target.takeover.connectionSeriesId.slice(0, 8)} / ${target.takeover.modelSeriesId.slice(0, 8)}`
+            ? databaseLive
+              ? '线上使用中'
+              : `数据库草稿 ${databaseModel?.displayName ?? target.takeover.modelSeriesId.slice(0, 8)}`
             : '服务器环境源';
           return (
             <article
@@ -64,7 +70,7 @@ export default function AdminEnvironmentProviders({
                     {inRoute && eligible ? (
                       <button type="button" className={styles.primaryButton} onClick={() => onReplaceAndActivate(target)}>替换并激活</button>
                     ) : null}
-                    {!inRoute ? (
+                    {!inRoute && !databaseLive ? (
                       <button type="button" className={styles.primaryButton} onClick={() => onJoinRoute(target)}>加入路由</button>
                     ) : null}
                   </>

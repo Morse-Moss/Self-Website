@@ -182,8 +182,10 @@ test('environment providers expose separate takeover, diagnostics, and route act
   assert.match(environmentProviders, /lifecycle/u);
   assert.match(environmentProviders, /eligibility/u);
   assert.match(environmentProviders, /latest/u);
-  assert.match(environmentProviders, /takeoverEligible\(target\)/u);
-  assert.match(consoleSource, /model\?\.testState\.eligibility === 'eligible'/u);
+  assert.match(environmentProviders, /databaseModel\?\.testState\.eligibility === 'eligible'/u);
+  assert.match(environmentProviders, /databaseModel\?\.testState \?\? target\.testState/u);
+  assert.match(environmentProviders, /!inRoute && !databaseLive/u);
+  assert.match(consoleSource, /takeoverIsLive/u);
   assert.match(form, /takeover_environment/u);
   assert.match(form, /environmentTarget/u);
   assert.match(form, /requestId/u);
@@ -203,6 +205,7 @@ test('environment providers expose separate takeover, diagnostics, and route act
   assert.match(routeEditor, /preserveLockedRouteIndices/u);
   assert.match(routeEditor, /locked\?: boolean/u);
   assert.match(routeEditor, /candidate\.locked/u);
+  assert.match(routeEditor, /selected\.length > 6/u);
   assert.match(routeEditor, /preserveLockedRouteIndices/u);
   assert.match(read(files.library), /model\.testState\.latestTest\s*\?\s*['"]再次测试['"]\s*:\s*['"]测试['"]/u);
 });
