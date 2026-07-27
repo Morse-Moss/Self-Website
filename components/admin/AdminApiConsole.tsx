@@ -16,10 +16,12 @@ import {
   rollbackRoute,
   testEnvironmentTarget,
   testModel,
+  takeoverEnvironmentTarget,
   updateConnection,
   updateModel,
   type ProviderCatalog,
   type ProviderConnection,
+  type EnvironmentTarget,
   type ProviderEvent,
   type ProviderEventList,
   type ProviderModel,
@@ -31,16 +33,23 @@ import AdminProviderForm, {
   type ProviderFormValue,
 } from './AdminProviderForm';
 import AdminProviderLibrary from './AdminProviderLibrary';
+import AdminEnvironmentProviders from './AdminEnvironmentProviders';
 import AdminReauthDialog, { type ReauthKind } from './AdminReauthDialog';
 import AdminRouteEditor, { type RouteCandidate } from './AdminRouteEditor';
 import { useAdminSession } from './AdminShell';
-import { testStateLabels } from './provider-ui-state';
+import {
+  effectiveRouteInputs,
+  replaceEnvironmentTarget,
+  testStateLabels,
+} from './provider-ui-state';
 import styles from './AdminApiConsole.module.css';
 
 interface FormState {
   connection: ProviderConnection | null;
+  environmentTarget: EnvironmentTarget | null;
   mode: ProviderFormMode;
   model: ProviderModel | null;
+  requestId: string | null;
 }
 
 interface PendingAction {
@@ -73,6 +82,7 @@ export default function AdminApiConsole() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mobileDetails, setMobileDetails] = useState(false);
   const [routeOpen, setRouteOpen] = useState(false);
+  const [routeInitialKeys, setRouteInitialKeys] = useState<string[] | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
   const [discoveredModels, setDiscoveredModels] = useState<string[]>([]);
   const [pending, setPending] = useState<PendingAction | null>(null);
@@ -118,6 +128,9 @@ export default function AdminApiConsole() {
   const allEvents = events?.items ?? [];
   const candidates = useMemo<RouteCandidate[]>(() => {
     if (!runtime || !catalog) return [];
+    const currentEnvironmentKeys = new Set(effectiveRouteInputs(runtime).flatMap((target) => (
+      target.source === 'environment' ? [target.environmentTargetKey] : []
+    )));
     const result: RouteCandidate[] = runtime.environmentTargets.map((target) => ({
       configDigest: target.configDigest,
       identity: `environment:${target.environmentTargetKey}`,
@@ -126,6 +139,7 @@ export default function AdminApiConsole() {
       meta: `${target.endpointHost ?? '来源不可用'} · ${target.modelId} · ${target.protocol}`,
       target: { source: 'environment', environmentTargetKey: target.environmentTargetKey },
       testLabel: testStateLabels(target.testState).eligibility,
+      locked: Boolean(target.takeover && currentEnvironmentKeys.has(target.environmentTargetKey)),
     }));
     for (const connection of catalog.items) {
       if (connection.deletedAt) continue;
@@ -143,8 +157,11 @@ export default function AdminApiConsole() {
       }
     }
     for (const target of runtime.targets) {
-      const existing = result.find((candidate) => candidate.configDigest === target.configDigest);
-      if (existing || target.sourceType !== 'database') continue;
+      if (target.sourceType !== 'database') continue;
+      const existing = result.find((candidate) => candidate.target.source === 'database'
+        && candidate.target.modelId === target.databaseModelSeriesId
+        && candidate.target.modelVersionId === target.databaseModelVersionId);
+      if (existing) continue;
       const currentModel = catalog.items.flatMap((connection) => connection.models.map((model) => ({ connection, model })))
         .find(({ model }) => model.seriesId === target.databaseModelSeriesId);
       if (!currentModel || !target.databaseModelSeriesId || !target.databaseModelVersionId) continue;
@@ -165,10 +182,18 @@ export default function AdminApiConsole() {
     return result;
   }, [catalog, runtime]);
 
-  const currentKeys = useMemo(() => runtime?.targets.map((target) => {
-    const candidate = candidates.find((item) => item.configDigest === target.configDigest);
-    return candidate?.key ?? '';
-  }).filter(Boolean) ?? [], [candidates, runtime]);
+  const currentKeys = useMemo(() => {
+    if (!runtime) return [];
+    return effectiveRouteInputs(runtime).flatMap((input) => {
+      const candidate = candidates.find((item) => (
+        input.source === 'environment'
+          ? item.target.source === 'environment' && item.target.environmentTargetKey === input.environmentTargetKey
+          : item.target.source === 'database'
+            && item.target.modelId === input.modelId && item.target.modelVersionId === input.modelVersionId
+      ));
+      return candidate ? [candidate.key] : [];
+    });
+  }, [candidates, runtime]);
 
   function queue(action: PendingAction) {
     setActionError('');
@@ -184,6 +209,8 @@ export default function AdminApiConsole() {
       setNotice(message);
       setPending(null);
       setForm(null);
+      setRouteOpen(false);
+      setRouteInitialKeys(null);
       setConflict(false);
       refresh();
     } catch (caught) {
@@ -203,7 +230,7 @@ export default function AdminApiConsole() {
   function submitForm(value: ProviderFormValue) {
     queue({
       kind: 'save',
-      title: value.mode === 'create_connection' ? '保存新中转' : value.mode === 'edit_connection' ? '保存中转版本' : '保存模型版本',
+      title: value.mode === 'create_connection' ? '保存新中转' : value.mode === 'edit_connection' ? '保存中转版本' : value.mode === 'takeover_environment' ? '接管环境 Provider' : '保存模型版本',
       run: async (password) => {
         if (value.mode === 'create_connection') {
           await createConnection(value.connection, password);
@@ -213,6 +240,10 @@ export default function AdminApiConsole() {
           if (!form?.connection) throw new Error('缺少中转上下文。');
           await updateConnection(form.connection.seriesId, value.connection, password);
           return '中转新版本已保存，关联模型需要重新测试。';
+        }
+        if (value.mode === 'takeover_environment') {
+          await takeoverEnvironmentTarget(value.takeover.environmentTargetKey, value.takeover, password);
+          return '环境 Provider 已接管为数据库草稿；测试与激活仍需显式执行。';
         }
         if (!form?.connection) throw new Error('缺少中转上下文。');
         if (value.mode === 'create_model') {
@@ -233,7 +264,7 @@ export default function AdminApiConsole() {
       run: async (password) => {
         const result = await discoverModels(connection.seriesId, password);
         setDiscoveredModels(result.items);
-        setForm({ connection, mode: 'create_model', model: null });
+        setForm({ connection, environmentTarget: null, mode: 'create_model', model: null, requestId: null });
         return `已获取 ${result.items.length} 个模型，可选择或手动输入。`;
       },
     });
@@ -272,6 +303,61 @@ export default function AdminApiConsole() {
         return `路由 v${next.activeRevision} 已激活。`;
       },
     });
+  }
+
+  function openEnvironmentEditor(target: EnvironmentTarget) {
+    setForm({
+      connection: null,
+      environmentTarget: target,
+      mode: 'takeover_environment',
+      model: null,
+      requestId: crypto.randomUUID(),
+    });
+  }
+
+  function editEnvironmentDatabase(target: EnvironmentTarget) {
+    if (!target.takeover || !catalog) return;
+    const connection = catalog.items.find((item) => item.seriesId === target.takeover?.connectionSeriesId) ?? null;
+    const model = connection?.models.find((item) => item.seriesId === target.takeover?.modelSeriesId) ?? null;
+    if (!connection || !model) {
+      refresh();
+      return;
+    }
+    setForm({ connection, environmentTarget: null, mode: 'edit_model', model, requestId: null });
+  }
+
+  function activateEnvironmentReplacement(target: EnvironmentTarget) {
+    if (!runtime || !target.takeover) return;
+    queue({
+      kind: 'activate',
+      title: `替换并激活 ${target.connectionDisplayName}`,
+      run: async (password) => {
+        const freshCatalog = await getProviderCatalog(false);
+        const replacementModel = freshCatalog.items.flatMap((connection) => connection.models)
+          .find((item) => item.seriesId === target.takeover?.modelSeriesId);
+        if (!replacementModel) throw new Error('接管的数据库模型不可用，请刷新后重试。');
+        const targets = replaceEnvironmentTarget(effectiveRouteInputs(runtime), target.environmentTargetKey, {
+          source: 'database',
+          modelId: replacementModel.seriesId,
+          modelVersionId: replacementModel.id,
+        });
+        if (!targets) throw new Error('环境源已不在当前有效路由，请刷新后重试。');
+        const next = await activateRoute(runtime.activeRevision, targets, password);
+        return `路由 v${next.activeRevision} 已激活。`;
+      },
+    });
+  }
+
+  function joinEnvironmentRoute(target: EnvironmentTarget) {
+    if (!target.takeover) return;
+    const candidate = candidates.find((item) => item.target.source === 'database'
+      && item.target.modelId === target.takeover?.modelSeriesId);
+    if (!candidate || currentKeys.includes(candidate.key)) {
+      setRouteInitialKeys(null);
+    } else {
+      setRouteInitialKeys([...currentKeys, candidate.key]);
+    }
+    setRouteOpen(true);
   }
 
   function rollback() {
@@ -392,9 +478,9 @@ export default function AdminApiConsole() {
         mobileOpen={mobileDetails}
         runtime={runtime}
         selectedId={selectedId}
-        onAddModel={(connection) => { setDiscoveredModels([]); setForm({ connection, mode: 'create_model', model: null }); }}
+        onAddModel={(connection) => { setDiscoveredModels([]); setForm({ connection, environmentTarget: null, mode: 'create_model', model: null, requestId: null }); }}
         onBack={() => setMobileDetails(false)}
-        onCreate={() => { setDiscoveredModels([]); setForm({ connection: null, mode: 'create_connection', model: null }); }}
+        onCreate={() => { setDiscoveredModels([]); setForm({ connection: null, environmentTarget: null, mode: 'create_connection', model: null, requestId: null }); }}
         onDeleteConnection={(connection) => queue({
           kind: 'delete', confirmationName: connection.displayName, title: `删除中转 ${connection.displayName}`,
           run: async (password, confirmation) => dispositionMessage('中转', (await deleteConnection(connection.seriesId, confirmation, password)).disposition),
@@ -404,20 +490,39 @@ export default function AdminApiConsole() {
           run: async (password, confirmation) => dispositionMessage('模型', (await deleteModel(model.seriesId, confirmation, password)).disposition),
         })}
         onDiscover={discover}
-        onEditConnection={(connection) => setForm({ connection, mode: 'edit_connection', model: null })}
-        onEditModel={(connection, model) => setForm({ connection, mode: 'edit_model', model })}
+        onEditConnection={(connection) => setForm({ connection, environmentTarget: null, mode: 'edit_connection', model: null, requestId: null })}
+        onEditModel={(connection, model) => setForm({ connection, environmentTarget: null, mode: 'edit_model', model, requestId: null })}
         onSelect={(connection) => { setSelectedId(connection.seriesId); setMobileDetails(true); }}
         onTest={testDatabaseModel}
         onToggleDeleted={setIncludeDeleted}
       />
 
-      <AdminRouteEditor candidates={candidates} currentKeys={currentKeys} open={routeOpen} onActivate={activate} onClose={() => setRouteOpen(false)} />
+      <AdminEnvironmentProviders
+        targets={runtime.environmentTargets}
+        routeContains={(target) => effectiveRouteInputs(runtime).some((item) => item.source === 'environment' && item.environmentTargetKey === target.environmentTargetKey)}
+        takeoverEligible={(target) => {
+          const model = target.takeover
+            ? catalog.items.flatMap((connection) => connection.models)
+              .find((item) => item.seriesId === target.takeover?.modelSeriesId)
+            : null;
+          return model?.testState.eligibility === 'eligible';
+        }}
+        onEditDatabase={editEnvironmentDatabase}
+        onEditEnvironment={openEnvironmentEditor}
+        onJoinRoute={joinEnvironmentRoute}
+        onReplaceAndActivate={activateEnvironmentReplacement}
+        onTest={(target) => testEnvironment(target.environmentTargetKey, target.connectionDisplayName)}
+      />
+
+      <AdminRouteEditor candidates={candidates} currentKeys={currentKeys} initialKeys={routeInitialKeys} open={routeOpen} onActivate={activate} onClose={() => { setRouteOpen(false); setRouteInitialKeys(null); }} />
       <AdminProviderForm
         connection={form?.connection}
         discoveredModels={discoveredModels}
+        environmentTarget={form?.environmentTarget}
         mode={form?.mode ?? 'create_connection'}
         model={form?.model}
         open={Boolean(form)}
+        requestId={form?.requestId}
         onCancel={() => setForm(null)}
         onSubmit={submitForm}
       />

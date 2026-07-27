@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import type { RouteTargetInput } from './admin-api-client';
+import { preserveLockedRouteIndices } from './provider-ui-state';
 import styles from './AdminApiConsole.module.css';
 
 export interface RouteCandidate {
@@ -13,12 +14,14 @@ export interface RouteCandidate {
   meta: string;
   target: RouteTargetInput;
   testLabel: string;
+  locked?: boolean;
   unavailable?: boolean;
 }
 
 interface Props {
   candidates: RouteCandidate[];
   currentKeys: string[];
+  initialKeys?: string[] | null;
   open: boolean;
   onActivate: (targets: RouteTargetInput[]) => void;
   onClose: () => void;
@@ -33,20 +36,25 @@ function move<T>(items: T[], from: number, to: number): T[] {
   return next;
 }
 
-export default function AdminRouteEditor({ candidates, currentKeys, open, onActivate, onClose }: Props) {
+export default function AdminRouteEditor({ candidates, currentKeys, initialKeys, open, onActivate, onClose }: Props) {
   const [keys, setKeys] = useState<string[]>(currentKeys);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
 
   useEffect(() => {
-    if (open) setKeys(currentKeys);
-  }, [currentKeys, open]);
+    if (open) setKeys(initialKeys ?? currentKeys);
+  }, [currentKeys, initialKeys, open]);
 
   const byKey = useMemo(() => new Map(candidates.map((candidate) => [candidate.key, candidate])), [candidates]);
   const selected = keys.map((key) => byKey.get(key)).filter((item): item is RouteCandidate => Boolean(item));
   const selectedIdentities = new Set(selected.map((candidate) => candidate.identity));
   const available = candidates.filter((candidate) => !keys.includes(candidate.key)
-    && !selectedIdentities.has(candidate.identity) && !candidate.unavailable);
+    && !selectedIdentities.has(candidate.identity) && !candidate.unavailable && !candidate.locked);
   const changed = keys.join('|') !== currentKeys.join('|');
+  const lockedKeys = useMemo(() => new Set(candidates.filter((candidate) => candidate.locked).map((candidate) => candidate.key)), [candidates]);
+
+  function mutate(next: (current: string[]) => string[]) {
+    setKeys((current) => preserveLockedRouteIndices(currentKeys, next(current), lockedKeys));
+  }
 
   if (!open) return null;
 
@@ -77,11 +85,11 @@ export default function AdminRouteEditor({ candidates, currentKeys, open, onActi
                 {selected.map((candidate, index) => (
                   <li
                     key={candidate.key}
-                    draggable
-                    onDragStart={() => setDragIndex(index)}
+                    draggable={!candidate.locked}
+                    onDragStart={() => { if (!candidate.locked) setDragIndex(index); }}
                     onDragOver={(event) => event.preventDefault()}
                     onDrop={() => {
-                      if (dragIndex !== null && dragIndex !== index) setKeys((current) => move(current, dragIndex, index));
+                      if (dragIndex !== null && dragIndex !== index) mutate((current) => move(current, dragIndex, index));
                       setDragIndex(null);
                     }}
                   >
@@ -89,7 +97,7 @@ export default function AdminRouteEditor({ candidates, currentKeys, open, onActi
                     <span className={styles.routePosition}>{positionLabels[index]}</span>
                     <span className={styles.routeIdentity}>
                       <strong>{candidate.label}</strong>
-                      <small>{candidate.meta}</small>
+                      <small>{candidate.meta}{candidate.locked ? ' · 当前环境源已锁定' : ''}</small>
                     </span>
                     <span className={styles.testState}>{candidate.testLabel}</span>
                     <span className={styles.routeControls}>
@@ -97,21 +105,22 @@ export default function AdminRouteEditor({ candidates, currentKeys, open, onActi
                         type="button"
                         aria-label={`上移 ${candidate.label}`}
                         title={`上移 ${candidate.label}`}
-                        disabled={index === 0}
-                        onClick={() => setKeys((current) => move(current, index, index - 1))}
+                        disabled={candidate.locked || index === 0}
+                        onClick={() => mutate((current) => move(current, index, index - 1))}
                       >↑</button>
                       <button
                         type="button"
                         aria-label={`下移 ${candidate.label}`}
                         title={`下移 ${candidate.label}`}
-                        disabled={index === selected.length - 1}
-                        onClick={() => setKeys((current) => move(current, index, index + 1))}
+                        disabled={candidate.locked || index === selected.length - 1}
+                        onClick={() => mutate((current) => move(current, index, index + 1))}
                       >↓</button>
                       <button
                         type="button"
                         aria-label={`移除 ${candidate.label}`}
                         title={`移除 ${candidate.label}`}
-                        onClick={() => setKeys((current) => current.filter((key) => key !== candidate.key))}
+                        disabled={candidate.locked}
+                        onClick={() => mutate((current) => current.filter((key) => key !== candidate.key))}
                       >×</button>
                     </span>
                   </li>
@@ -139,7 +148,7 @@ export default function AdminRouteEditor({ candidates, currentKeys, open, onActi
                       type="button"
                       data-testid={`route-candidate-${candidate.identity}`}
                       disabled={selected.length >= 6}
-                      onClick={() => setKeys((current) => [...current, candidate.key])}
+                      onClick={() => mutate((current) => [...current, candidate.key])}
                     >加入</button>
                   </li>
                 ))}

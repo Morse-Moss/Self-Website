@@ -12,6 +12,7 @@ const files = {
   styles: path.resolve('components/admin/AdminApiConsole.module.css'),
   library: path.resolve('components/admin/AdminProviderLibrary.tsx'),
   routeEditor: path.resolve('components/admin/AdminRouteEditor.tsx'),
+  environmentProviders: path.resolve('components/admin/AdminEnvironmentProviders.tsx'),
   form: path.resolve('components/admin/AdminProviderForm.tsx'),
   reauth: path.resolve('components/admin/AdminReauthDialog.tsx'),
   client: path.resolve('components/admin/admin-api-client.ts'),
@@ -164,6 +165,42 @@ test('provider UI consumes canonical server test state instead of event-page or 
   assert.doesNotMatch(combined, /Date\.now\(\)/u);
   assert.doesNotMatch(consoleSource, /targetTestLabel/u);
   assert.doesNotMatch(library, /function\s+(?:lastTest|testLabel)\b/u);
+});
+
+test('environment providers expose separate takeover, diagnostics, and route actions', () => {
+  const consoleSource = read(files.console);
+  const environmentProviders = read(files.environmentProviders);
+  const form = read(files.form);
+  const routeEditor = read(files.routeEditor);
+
+  assert.match(environmentProviders, /environment-provider-\$\{target\.environmentTargetKey\}/u);
+  assert.match(environmentProviders, /编辑/u);
+  assert.match(environmentProviders, /编辑数据库版本/u);
+  assert.match(environmentProviders, /诊断 测试环境源/u);
+  assert.match(environmentProviders, /替换并激活/u);
+  assert.match(environmentProviders, /加入路由/u);
+  assert.match(environmentProviders, /lifecycle/u);
+  assert.match(environmentProviders, /eligibility/u);
+  assert.match(environmentProviders, /latest/u);
+  assert.match(environmentProviders, /takeoverEligible\(target\)/u);
+  assert.match(consoleSource, /model\?\.testState\.eligibility === 'eligible'/u);
+  assert.match(form, /takeover_environment/u);
+  assert.match(form, /environmentTarget/u);
+  assert.match(form, /requestId/u);
+  assert.match(form, /将安全沿用当前服务器 Key/u);
+  assert.doesNotMatch(form, /Key 后缀|Key 末尾|keySuffix/u);
+  assert.match(form, /baseUrlPrefill/u);
+  assert.match(form, /replacement_required/u);
+  assert.match(form, /baseUrlChanged/u);
+  assert.match(form, /baseUrl:\s*baseUrl\.trim\(\)\s*\|\|\s*null/u);
+  assert.match(consoleSource, /crypto\.randomUUID\(\)/u);
+  assert.match(consoleSource, /takeoverEnvironmentTarget/u);
+  assert.match(consoleSource, /replaceEnvironmentTarget/u);
+  assert.match(consoleSource, /effectiveRouteInputs/u);
+  assert.match(routeEditor, /preserveLockedRouteIndices/u);
+  assert.match(routeEditor, /locked\?: boolean/u);
+  assert.match(routeEditor, /candidate\.locked/u);
+  assert.match(routeEditor, /preserveLockedRouteIndices/u);
 });
 
 test('route activation reloads the canonical runtime read model after acknowledgement', () => {

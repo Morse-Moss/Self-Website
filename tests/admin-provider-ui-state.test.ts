@@ -139,3 +139,19 @@ test('locked route indices reject movement and crossing while allowing same-side
   const removedAfter = ['a', 'locked', 'c'];
   assert.equal(preserveLockedRouteIndices(current, removedAfter, locked), removedAfter);
 });
+
+test('locked candidate position survives every permitted route mutation', () => {
+  const current = ['a', 'locked', 'b', 'c'];
+  const locked = new Set(['locked']);
+  const mutations = {
+    dragged: ['c', 'locked', 'a', 'b'],
+    moved: ['b', 'locked', 'a', 'c'],
+    removed: ['a', 'locked', 'c'],
+    appended: ['a', 'locked', 'b', 'c', 'new'],
+  };
+
+  for (const next of Object.values(mutations)) {
+    const result = preserveLockedRouteIndices(current, next, locked);
+    assert.equal(result?.indexOf('locked'), 1);
+  }
+});

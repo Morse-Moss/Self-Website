@@ -294,6 +294,70 @@
   font-family: var(--font-mono);
 }
 
+.environmentProviders {
+  min-width: 0;
+  padding: var(--space-5) 0;
+  border-top: 1px solid var(--line-faint);
+  border-bottom: 1px solid var(--line-faint);
+}
+
+.environmentProviderList {
+  display: grid;
+  min-width: 0;
+  margin-top: var(--space-3);
+}
+
+.environmentProviderRow {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.1fr) minmax(280px, 1fr) minmax(300px, auto);
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-4) 0;
+  border-top: 1px solid var(--line-faint);
+}
+
+.environmentIdentity {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-1);
+}
+
+.environmentIdentity span,
+.environmentState dt,
+.environmentState dd,
+.formHint {
+  min-width: 0;
+  color: var(--faint);
+  font-size: var(--fs-3xs);
+  overflow-wrap: anywhere;
+}
+
+.environmentState {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+  min-width: 0;
+  margin: 0;
+}
+
+.environmentState dd {
+  margin-top: var(--space-1);
+  color: var(--muted);
+}
+
+.environmentActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.formHint {
+  margin: calc(var(--space-2) * -1) 0 0;
+}
+
 .testButton {
   min-width: 110px;
   padding: 0 var(--space-2);
@@ -785,6 +849,15 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .environmentProviderRow {
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 1fr);
+  }
+
+  .environmentActions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+
   .modelActions {
     justify-content: flex-start;
   }
@@ -808,8 +881,14 @@
   .runtimeBand,
   .runtimeFacts,
   .fieldGrid,
-  .routeEditorBody {
+  .routeEditorBody,
+  .environmentProviderRow,
+  .environmentState {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .environmentActions {
+    grid-column: auto;
   }
 
   .runtimeRoute {
