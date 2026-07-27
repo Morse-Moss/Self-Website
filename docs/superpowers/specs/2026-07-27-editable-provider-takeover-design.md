@@ -1,7 +1,7 @@
 # Environment Provider 可编辑接管设计
 
 日期：2026-07-27
-状态：产品设计已确认，尚未实施
+状态：产品设计已确认，技术审查修订完成，尚未实施
 
 ## 1. 背景
 
@@ -66,6 +66,8 @@ Environment Provider 卡片新增“编辑”操作。首次点击时打开“�
 - `max_output_tokens`；
 - 已有价格元数据，若环境来源没有价格则保持空值。
 
+若未显式设置 `OPENAI_BASE_URL`，表单中的 Base URL 预填 OpenAI SDK 实际使用的规范默认值 `https://api.openai.com/v1`，不得以空字符串展示或保存。该规范化只用于接管草稿字段，不追溯改写既有 Environment 路由快照。
+
 API Key 输入框为空且显示“将安全沿用当前服务器 Key”。管理员输入新 Key 时，新 Key 取代环境 Key。任何情况下都不显示原 Key 或其尾号。
 
 如果管理员修改 Base URL 且新旧 URL 的 origin 不同，同时 API Key 留空，必须明确勾选“将当前服务器 Key 用于新域名”；未勾选时拒绝保存。
@@ -74,7 +76,7 @@ API Key 输入框为空且显示“将安全沿用当前服务器 Key”。管�
 
 接管成功后，普通 Provider 列表展示新建的数据库 Provider，并提供与手动创建 Provider 相同的编辑能力。原 Environment 目标从普通 Provider 候选中隐藏，移入折叠的“系统应急配置”区域，只用于显示服务器启动来源和可用性诊断。
 
-接管本身不改变活动路由。若原 Environment 目标仍在线上路由中，页面显示“已接管草稿，线上仍使用环境版本”。
+接管本身不改变活动路由。若原 Environment 目标仍在线上路由中，它必须继续作为“当前只读线路项”显示，并标记“已接管草稿，线上仍使用环境版本”；只能从“可加入线路”候选中隐藏，不能在完成原子替换前从当前线路消失。
 
 ### 5.3 测试与激活
 
@@ -89,6 +91,8 @@ API Key 输入框为空且显示“将安全沿用当前服务器 Key”。管�
 测试失败不会锁定、归档或删除 Provider。“再次测试”始终可用，但继续受现有管理员全局操作频率限制。频率限制单独显示等待提示，不记作 Provider 测试失败。
 
 系统不自动重试。每次真实测试都由管理员点击触发，并分别记录结果。对于同一配置摘要，30 分钟内存在成功结果即可满足激活测试门；之后出现一次波动失败不会抹掉该成功证据，但界面必须同时显示最近失败和仍有效的成功时限，由管理员决定是否激活。
+
+上述状态由服务端按配置摘要查询并使用数据库时间计算。Provider/模型读取响应直接返回 `eligibility`、`successExpiresAt` 和 `latestTest`；浏览器不得通过截取最近若干条审计事件自行推断。`latestTest` 只表示最近一次实际 Provider 测试，管理员限流是独立操作状态，不写成测试失败。
 
 ### 5.4 替换原线路
 
@@ -105,6 +109,7 @@ API Key 输入框为空且显示“将安全沿用当前服务器 Key”。管�
 新增 `ai_environment_takeovers`，用于稳定关联环境目标与接管后的数据库系列。建议字段如下：
 
 - `id uuid PRIMARY KEY`；
+- `request_id uuid NOT NULL UNIQUE`，用于识别提交回执丢失后的同一请求重放；
 - `environment_target_key varchar(32) NOT NULL`，仅允许 `primary`、`fallback-1`、`fallback-2`；
 - `source_config_digest char(64) NOT NULL`，记录接管时环境配置摘要；
 - `initial_connection_version_id uuid NOT NULL REFERENCES ai_connections(id) ON DELETE RESTRICT`；
@@ -114,9 +119,13 @@ API Key 输入框为空且显示“将安全沿用当前服务器 Key”。管�
 
 使用部分唯一索引保证同一 `environment_target_key` 同时最多只有一条 `released_at IS NULL` 的接管关系。系列 ID 通过初始版本行解析，避免把没有唯一约束的 `series_id` 当作外键。
 
-正常编辑只创建新的 `ai_connections` 和 `ai_model_presets` 版本，不修改接管关系。若接管后的 Provider 被不可逆删除，接管关系进入 released 状态；管理员之后可以重新接管仍存在的环境目标，并生成新的接管记录和数据库系列。
+正常编辑只创建新的 `ai_connections` 和 `ai_model_presets` 版本，不修改接管关系。接管关系引用的连接系列和初始模型系列从创建起始终视为历史，因此不得走现有“无历史则物理删除”的分支：
 
-该迁移是纯新增，不改写现有 Provider、活动路由或历史 attempt。实现时使用下一个可用且无冲突的迁移编号，不吸收工作区中既有的无关迁移文件。
+- 单独删除接管关系的初始模型系列时，只 tombstone 该模型系列，不释放连接级接管关系；
+- 删除接管后的连接系列时，在同一事务内 tombstone 该连接的所有版本及关联模型、销毁全部连接密文，并设置接管关系的 `released_at`；
+- 事务提交后，管理员可以重新接管仍存在的 Environment 目标并生成新的接管记录和数据库系列；历史接管行和已经存在的 route revision/attempt 仍可解释。
+
+该迁移是纯新增，不改写现有 Provider、活动路由或历史 attempt。本地功能迁移固定使用 `010`；工作区中未跟踪的 `009_db_growth_indexes.sql` 所有权未知，本功能不得修改或提交它。进入可发布状态前必须先独立确认并解决 `009` 的所有权、内容和迁移顺序，否则不得 push 或部署 `010`。
 
 ## 7. 管理 API
 
@@ -127,6 +136,7 @@ API Key 输入框为空且显示“将安全沿用当前服务器 Key”。管�
 - Environment 目标增加 `takeoverStatus`；
 - 已接管时返回脱敏的数据库 connection/model series ID；
 - 返回接管时摘要与当前环境摘要是否一致；
+- 数据库模型返回由服务端按摘要计算的 `eligibility`、`successExpiresAt` 和 `latestTest`；
 - 不返回环境 API Key、密文、认证标签或 Key 尾号。
 
 ### 7.2 创建接管草稿
@@ -138,15 +148,18 @@ API Key 输入框为空且显示“将安全沿用当前服务器 Key”。管�
 请求包含：
 
 - 管理员密码复验；
+- 客户端生成的 `requestId`；
 - `expectedConfigDigest`；
 - 连接表单字段；
 - 模型表单字段；
 - 可选新 API Key；
 - 跨 origin 沿用环境 Key 的显式确认。
 
-服务端必须重新读取目标并比对 `expectedConfigDigest`。环境配置已变化时返回稳定冲突，不使用页面中的旧快照创建 Provider。
+服务端必须在取得该 target 的事务级 advisory lock 后重新读取目标，并以当前环境 Key 为 HMAC key 重算摘要，再比对 `expectedConfigDigest`。环境配置已变化时返回稳定冲突，不使用页面中的旧快照创建 Provider。
 
-成功响应只返回接管 ID、connection/model series ID、版本号和脱敏摘要，并设置 `Cache-Control: no-store`。
+同一 `requestId` 的重放返回之前已经提交的成功结果，解决数据库 COMMIT 成功但 HTTP 回执丢失的问题；只有新的 `requestId` 遇到已有有效接管关系时才返回 `AI_CONFIG_TAKEOVER_EXISTS`。冲突审计必须在回滚事务之外单独写入，不能因为业务事务回滚而丢失。
+
+成功响应只返回接管 ID、connection/model series ID、版本号和脱敏摘要，并设置 `Cache-Control: no-store`。响应、审计、日志和错误详情不得包含 API Key、密文、认证 tag 或 Key 尾号。
 
 ### 7.3 后续编辑与测试
 
@@ -163,19 +176,20 @@ API Key 输入框为空且显示“将安全沿用当前服务器 Key”。管�
 
 接管请求依次完成：
 
-1. 验证管理员 Session、Origin、密码复验和请求格式；
-2. 读取 Environment 目标并比对 `expectedConfigDigest`；
-3. 验证 Base URL 出站策略和跨 origin Key 规则；
-4. 为目标获取事务级互斥，防止重复提交；
-5. 若存在有效接管关系，返回冲突并附带现有脱敏目标 ID；
-6. 选择管理员提交的新 Key，或读取当前环境 Key；
-7. 使用现有 AES-256-GCM 配置密钥加密 API Key；
-8. 创建连接首版本和模型首版本；
-9. 创建接管关系；
-10. 写入 `environment_takeover_created` 脱敏审计事件；
-11. 提交事务并清理内存中的明文引用。
+1. 验证管理员 Session、Origin、密码复验、`requestId` 和请求格式；
+2. 验证 Base URL 出站策略和跨 origin Key 规则；
+3. 开启事务并为 Environment target 获取事务级 advisory lock；
+4. 先按 `requestId` 查询：若找到已提交记录，返回其既有脱敏成功结果；
+5. 在锁内重新读取 Environment 目标，以当前环境 Key 重算 HMAC 摘要并比对 `expectedConfigDigest`；
+6. 若新的 `requestId` 遇到有效接管关系，回滚业务事务，随后在独立事务写入脱敏冲突审计并返回冲突；
+7. 选择管理员提交的新 Key，或读取当前环境 Key；
+8. 使用现有 AES-256-GCM 配置密钥加密 API Key；
+9. 创建连接首版本和模型首版本；
+10. 创建包含 `requestId` 的接管关系；
+11. 写入 `environment_takeover_created` 脱敏审计事件；
+12. 提交事务并清理内存中的明文引用。
 
-第 7 至第 10 步任一步失败，整个数据库事务回滚。现有活动路由不在接管事务中修改。
+第 7 至第 11 步任一步失败，整个数据库事务回滚。现有活动路由不在接管事务中修改。
 
 ## 9. 密钥和安全边界
 
@@ -189,7 +203,7 @@ API Key 输入框为空且显示“将安全沿用当前服务器 Key”。管�
 
 ## 10. 并发、失败和恢复
 
-- 重复点击接管：事务级互斥和唯一约束保证最多创建一条有效接管关系。
+- 重复点击接管：同一 `requestId` 幂等返回已有成功结果；不同 `requestId` 由事务级互斥和唯一约束保证最多创建一条有效接管关系，并返回 `AI_CONFIG_TAKEOVER_EXISTS`。
 - Environment 配置在表单打开后变化：摘要冲突，要求刷新后重新编辑。
 - 接管失败：不留下连接、模型或接管关系，当前路由不变。
 - 测试失败：保留草稿并允许继续手动测试。
@@ -197,6 +211,7 @@ API Key 输入框为空且显示“将安全沿用当前服务器 Key”。管�
 - 多管理页冲突：使用现有 `expectedActiveRevision`，后提交方不得覆盖先提交方。
 - 编辑活动 Provider：旧精确版本继续服务，直到新版本测试并激活。
 - 删除活动 Provider：继续返回 `AI_CONFIG_IN_USE`，必须先从路由移除。
+- 删除接管 Provider：初始连接和模型始终按历史数据 tombstone；连接删除、密钥销毁和接管释放必须原子完成，模型单删不释放接管。
 - 服务器环境目标后来丢失：已接管的数据库 Provider 继续工作，应急区域显示环境来源不可用。
 - 服务器环境目标后来变化：不覆盖数据库版本，应急区域显示摘要已变化。
 
@@ -219,17 +234,20 @@ API Key 输入框为空且显示“将安全沿用当前服务器 Key”。管�
 
 审计可以记录 target key、配置摘要、数据库系列 ID、结果码和时间，但不得记录完整 Base URL、API Key、请求头或 Provider 响应正文。
 
+安全验证必须对管理 API 响应、审计 metadata 和捕获的应用日志做负向断言，证明 API Key、密文、认证 tag 和 Key 尾号均未出现。
+
 接管、编辑、激活和回退不产生 Provider 调用。只有显式发现模型或显式测试会调用 Provider；测试继续使用受控的短输出上限。自动化测试全部使用模拟 transport。
 
 ## 12. 兼容与上线顺序
 
-1. 先应用新增接管表的数据库迁移；
-2. 部署兼容旧环境路由和新接管关系的服务端代码；
-3. 部署管理页编辑入口；
-4. 不自动接管、不自动测试、不自动激活任何 Provider；
-5. 管理员逐个接管目标，显式测试后替换活动路由；
-6. 数据库路由稳定后，原环境来源继续作为隐藏应急信息保留；
-7. 需要真实 Provider 验收、生产迁移或部署时，另行获得明确授权。
+1. 独立确认并解决未跟踪迁移 `009` 的所有权与发布顺序；
+2. 应用新增接管表的 `010` 数据库迁移，并同步 runtime grants 与权限验证脚本；
+3. 部署兼容旧环境路由和新接管关系的服务端代码；
+4. 部署管理页编辑入口；
+5. 不自动接管、不自动测试、不自动激活任何 Provider；
+6. 管理员逐个接管目标，显式测试后替换活动路由；
+7. 数据库路由稳定后，原环境来源继续作为隐藏应急信息保留；
+8. 需要真实 Provider 验收、生产迁移或部署时，另行获得明确授权。
 
 本功能不要求重建 Embedding，不要求重新 ingest RAG 知识库，也不改变 Edge 配置。
 
@@ -240,7 +258,7 @@ API Key 输入框为空且显示“将安全沿用当前服务器 Key”。管�
 - Environment 预填字段和 target key 校验；
 - 空 Key 沿用环境 Key、新 Key 替换和跨 origin 显式确认；
 - 环境摘要变化检测；
-- 测试状态、30 分钟成功门和配置修改后的过期状态；
+- 服务端测试状态、数据库时间计算的 30 分钟成功门和配置修改后的过期状态；
 - 手动重复测试与频率限制的状态区分；
 - “替换并激活”保持原位置和其他路由目标不变。
 
@@ -249,8 +267,9 @@ API Key 输入框为空且显示“将安全沿用当前服务器 Key”。管�
 - 连接、模型、接管关系和审计事件原子写入；
 - 任一步失败时完整回滚；
 - 并发接管只产生一条有效关系；
+- COMMIT 回执丢失后使用同一 `requestId` 重放只返回原成功结果，不重复创建版本；
 - 接管后的版本编辑沿用现有不可变版本链；
-- 不可逆删除后释放关系并允许重新接管；
+- 单删初始模型只 tombstone 且不释放接管；连接删除原子完成 tombstone、secret shred 和接管释放，并允许重新接管；
 - 历史 route revision 和 provider attempt 仍可解释。
 
 ### 13.3 API 合同测试
@@ -260,6 +279,7 @@ API Key 输入框为空且显示“将安全沿用当前服务器 Key”。管�
 - 稳定错误码和 HTTP 状态；
 - 重复提交、摘要冲突和活动路由并发冲突；
 - 测试失败后可以再次请求测试。
+- 响应、审计和捕获日志均不包含 Key、密文、认证 tag 或 Key 尾号。
 
 ### 13.4 UI 与回归测试
 
@@ -267,9 +287,11 @@ API Key 输入框为空且显示“将安全沿用当前服务器 Key”。管�
 - 草稿、测试通过、测试失败、测试过期和线上使用状态清晰；
 - 测试失败后按钮仍可操作；
 - 接管后普通列表不再出现不可编辑的重复 Environment 卡片；
+- 接管后若 Environment 仍在线路中，当前线路保留只读项，而“可加入线路”不再重复显示它；
 - 手动 Provider 的创建、编辑、删除、路由排序和回退不回归；
 - `npx tsc --noEmit`、相关测试、`npm test` 和 `npm run build` 通过；
 - 本地数据库迁移从当前已提交基线和全新数据库两条路径通过。
+- `grant-runtime.sql`、`verify-ai-config-runtime.sql` 和 `provider-deployment-contract.test.ts` 覆盖新表最小权限。
 
 真实 Provider 测试不属于自动化验证。实施完成后如需线上观察，必须由用户再次明确授权，并限制调用次数和输出长度。
 
