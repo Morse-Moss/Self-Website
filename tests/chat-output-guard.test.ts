@@ -263,6 +263,46 @@ test('grounded answers must address every explicitly named project', () => {
   assert.ok(result.reasons.includes('answer_not_direct'));
 });
 
+test('a routed single-project answer may use a natural project pronoun', () => {
+  const result = inspectChatAnswer({
+    answer: '这个项目适合投递偏 AI 应用的前端岗位，因为作品集界面、响应式交互和管理后台都有可核验实现。[来源1]',
+    route: groundedRoute({ topicRef: 'digital-morse' }),
+    workflow: 'chat',
+    question: '数字摩斯这个项目适合投前端岗位吗？',
+    sourceCount: 1,
+  });
+
+  assert.equal(result.ok, true);
+});
+
+test('a generic first-person phrase is not a project reference', () => {
+  const result = inspectChatAnswer({
+    answer: '我的判断是可以谨慎投递。[来源1]',
+    route: groundedRoute({ topicRef: 'digital-morse' }),
+    workflow: 'chat',
+    question: '数字摩斯这个项目适合投前端岗位吗？',
+    sourceCount: 1,
+  });
+
+  assert.ok(result.reasons.includes('answer_not_direct'));
+});
+
+test('a non-grounded route cannot use a project pronoun exception', () => {
+  const result = inspectChatAnswer({
+    answer: '这个项目适合投 React 岗位。[来源1]',
+    route: groundedRoute({
+      routeKind: 'jd',
+      topicKind: 'project',
+      topicRef: 'digital-morse',
+    }),
+    workflow: 'chat',
+    question: '数字摩斯这个项目适合投 React 岗位吗？',
+    sourceCount: 1,
+  });
+
+  assert.ok(result.reasons.includes('answer_not_direct'));
+});
+
 test('grounded project comparisons reject name-only restatements', () => {
   const result = inspectChatAnswer({
     answer: '深度研究系统和数字摩斯都是公开展示的项目。',

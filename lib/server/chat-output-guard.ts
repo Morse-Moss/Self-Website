@@ -200,9 +200,17 @@ function validateDirectAnswer(input: ChatGuardInput, reasons: ReasonSet): void {
     capability.aliases.some((alias) => containsCapabilityAlias(input.answer, alias))
   ));
   const naturalSingleProjectReference = namedProjects.length === 1
-    && requestedCapabilities.length > 0
-    && answersRequestedCapability
-    && /我的|这个项目|它/iu.test(input.answer);
+    && kind === 'grounded'
+    && input.route?.topicKind === 'project'
+    && input.route.topicRef === namedProjects[0]
+    && (
+      (
+        requestedCapabilities.length > 0
+        && answersRequestedCapability
+        && /我的|这个项目|它/iu.test(input.answer)
+      )
+      || /我的(?:这个)?项目|这个项目|它/iu.test(input.answer)
+    );
   if (
     namedProjects.some((slug) => !mentionsChatProject(input.answer, slug))
     && !naturalSingleProjectReference
