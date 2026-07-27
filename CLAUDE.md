@@ -25,7 +25,7 @@
 - `docs/runbooks/production.md` 是平台无关的生产合同,`docs/runbooks/tencent-lighthouse.md` 是当前腾讯云实例运行源;2026-07-20 已到 `PRODUCTION_OBSERVED / LIMITED_LAUNCH`,但不得写成已完成全部 `ONLINE_READY` 硬化
 - 同一 Node 24 非 root 应用镜像提供 Web、Worker、Migration、Ingest 四个显式角色;Node 镜像不包含 PostgreSQL、BGE、TLS edge 或托管备份
 - `/api/health/live` 无依赖;`/api/health/ready` 与 `/api/health` 只返回通用 `{ ok }`,并要求配置、数据库、migration checksum 与公开知识就绪
-- 当前生产 Web release 为 `3ec952a`(2026-07-26,在 ops 硬化基础上叠加:HNSW 友好两段式检索、prompt 稳定前缀、usage_events/service_incidents retention、sitemap/robots/OG、admin 分页上限;migrations 仍为 001-007),域名为 `aimorse.tech`;Chat 使用 `gpt-5.6-terra` Responses + high reasoning,按 `sub.exellome.online`、`worldclawpro.ai`、`ai.sandongs.com` 有序容灾,仅在零正文时切换;首页 Warp Tunnel 已完成生产双宽观察,生产 Lighthouse 移动端与桌面端 Performance 均为 99;管理员使用密码登录并可管理邀请码,私有导出时重新输入密码;五项目页面统一使用“项目负责人”并保留独立完成全部技术实现口径,五张正式主图均已上线;生产 RAG 为 40 documents / 47 chunks,46/46 gold 进入 top-3;其余工作区改动不属于生产,再次部署、push、清理旧 release 或远端安全配置变更仍需明确授权
+- 当前生产 Web release 为 `4a039ab`(2026-07-27,Chat V2.1 唯一项目自然指代 guard 修复;migrations 为 001-008),域名为 `aimorse.tech`;活动主线路仍为数据库 V1 `version 1 / high / 30000`,V2 `version 2 / medium / 1200` 未激活。发布后 live/ready/release smoke 与五容器健康通过,只重建 Web/Worker,DB/Embedding/Edge 容器 ID 不变,未运行 migration/grants/ingest。真实首轮路由正确但 V1 主节点与第一串行备用均在首协议事件前 `PROVIDER_UNAVAILABLE`,第二轮按成本门未发送;三个中转入口 HEAD 可达不等于 Responses 模型调用可用,在真实测试通过前禁止绕过门禁激活 V2或开启并发 Provider。首页 Warp Tunnel 已完成生产双宽观察,生产 Lighthouse 移动端与桌面端 Performance 均为 99;管理员使用密码登录并可管理邀请码,私有导出时重新输入密码;五项目页面统一使用“项目负责人”并保留独立完成全部技术实现口径,五张正式主图均已上线;生产 RAG 事实以 `docs/runbooks/tencent-lighthouse.md` 最新记录为准;其余工作区改动不属于生产,再次部署、push、清理旧 release 或远端安全配置变更仍需明确授权
 - 生产数据库 001/002 migration 与 checksum 已验证;历史长期本地主库的 checksum 漂移仍是本地边界,未经明确破坏性授权不得改登记或重建
 
 ## 红线

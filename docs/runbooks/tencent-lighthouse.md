@@ -2,7 +2,18 @@
 
 本文对应 `aimorse.tech` 的生产部署。当前实例为腾讯云 Lighthouse 首尔节点，公网地址为 `43.133.68.202`。境外节点不需要 ICP 备案；DNS 解析和 HTTPS 证书签发已完成，域名实名状态继续由腾讯云注册控制台维护。
 
-## 当前生产状态（2026-07-26，第三次发布）
+## 当前生产状态（2026-07-27，V2.1 output guard 修复）
+
+- 状态：`DEPLOYED / HEALTHY / PROVIDER_BLOCKED`，当前应用 release `4a039ab`；`/opt/revolution/current` 指向 `/opt/revolution/releases/4a039ab/revolution`。
+- 冻结归档为 19,210,438 bytes，SHA-256 `395f87d164f29ae1075ce994658f43c497dc7f8e163afd30c8fe438675565c33`，本地与服务器哈希一致。发布时 GitHub 443 暂时不可达，因此 release 来自本地已冻结 commit；远端 push 必须单独取得成功回执，不能由部署状态代替。
+- 本次修复只允许已经由 grounded 路由锁定的唯一项目使用“这个项目 / 它 / 我的项目”等自然指代，并保留明确能力问答中的“我的 RAG 实现”等表达；非 grounded、topic 不匹配、多项目和泛化“我的判断”继续拒绝。聚焦回归 `88/88`、TypeScript 和生产构建通过，独立复核 PASS。
+- 只重建 Web/Worker；DB、Embedding、Edge 的完整容器 ID 在切换前后不变，五容器均 healthy，restart count 为 0。没有 schema 变更，未运行 migration、grants 或 ingest；生产 migration 继续为 001–008，公开知识未改动。
+- 公网 live、ready、根页、works、admin、admin/api 均为 HTTP 200，`release:smoke` 返回 `{"ok":true}`；发布后 Web、Worker、Edge、DB 的十分钟错误关键词计数均为 0。
+- 真实 Provider 观察只发送第一轮“数字摩斯这个项目适合投前端岗位吗？”。路由正确落到 `grounded / project_fact_query / project / digital-morse`，但活动 V1 主节点与第一备用均在首协议事件前返回 `PROVIDER_UNAVAILABLE`，总耗时约 3.3 秒，没有正文、usage 或 token 记录；第二轮因成本门未发送。三个中转入口的无生成 HEAD 探测分别返回 HTTP 200、200、403，说明服务器基础网络可达，阻塞位于带模型、协议和鉴权的 Responses 请求链路。
+- 活动主线路仍为 V1 `version 1 / high / 30000`；V2 `version 2 / medium / 1200` 仍未激活。此前 V2 官方测试与 64-token 诊断同样失败，因此禁止绕过测试门直接激活，也不因本轮失败开启并发 Provider 或额外生成重试。
+- 临时 smoke 邀请码已停用，关联 Session 已过期；一次性运维镜像 `revolution-ops:c971979` 在确认无容器依赖后删除。生产密钥、邀请码、原始回答和 Provider payload 未写入证据。
+
+## 历史生产状态（2026-07-26，第三次发布）
 
 - 状态：`PRODUCTION_OBSERVED / RETRIEVAL_AND_SEO_APPLIED`，当前应用 release `3ec952a`。
 - `/opt/revolution/current` 指向 `/opt/revolution/releases/3ec952a/revolution`；冻结归档 SHA-256 `5c431bac78313ef4ad7fc4802d9883ebe7d5447db2d56c232860576818b709f4`，本地与服务器哈希一致。
