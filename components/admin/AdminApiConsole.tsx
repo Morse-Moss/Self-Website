@@ -140,6 +140,7 @@ export default function AdminApiConsole() {
       target: { source: 'environment', environmentTargetKey: target.environmentTargetKey },
       testLabel: testStateLabels(target.testState).eligibility,
       locked: Boolean(target.takeover && currentEnvironmentKeys.has(target.environmentTargetKey)),
+      unavailable: Boolean(target.takeover),
     }));
     for (const connection of catalog.items) {
       if (connection.deletedAt) continue;
@@ -242,7 +243,8 @@ export default function AdminApiConsole() {
           return '中转新版本已保存，关联模型需要重新测试。';
         }
         if (value.mode === 'takeover_environment') {
-          await takeoverEnvironmentTarget(value.takeover.environmentTargetKey, value.takeover, password);
+          const { environmentTargetKey, ...takeover } = value.takeover;
+          await takeoverEnvironmentTarget(environmentTargetKey, takeover, password);
           return '环境 Provider 已接管为数据库草稿；测试与激活仍需显式执行。';
         }
         if (!form?.connection) throw new Error('缺少中转上下文。');

@@ -175,7 +175,9 @@ export default function AdminProviderLibrary({
                             <div><dt>成本</dt><dd>{model.inputUsdPerMillion === null || model.outputUsdPerMillion === null ? '未知' : `$${model.inputUsdPerMillion} / $${model.outputUsdPerMillion}`}</dd></div>
                           </dl>
                           <div className={styles.modelActions}>
-                            <button type="button" data-testid="provider-model-test" disabled={Boolean(model.deletedAt)} onClick={() => onTest(model)}>测试</button>
+                            <button type="button" data-testid="provider-model-test" disabled={Boolean(model.deletedAt)} onClick={() => onTest(model)}>
+                              {model.testState.latestTest ? '再次测试' : '测试'}
+                            </button>
                             <button type="button" disabled={Boolean(model.deletedAt)} onClick={() => onEditModel(selected, model)}>编辑</button>
                             <button type="button" data-testid="provider-model-delete" className={styles.dangerQuietButton} disabled={Boolean(model.deletedAt)} onClick={() => onDeleteModel(model)}>删除</button>
                           </div>

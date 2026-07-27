@@ -195,12 +195,16 @@ test('environment providers expose separate takeover, diagnostics, and route act
   assert.match(form, /baseUrl:\s*baseUrl\.trim\(\)\s*\|\|\s*null/u);
   assert.match(consoleSource, /crypto\.randomUUID\(\)/u);
   assert.match(consoleSource, /takeoverEnvironmentTarget/u);
+  assert.match(consoleSource, /const \{ environmentTargetKey, \.\.\.takeover \} = value\.takeover/u);
+  assert.match(consoleSource, /takeoverEnvironmentTarget\(environmentTargetKey, takeover, password\)/u);
   assert.match(consoleSource, /replaceEnvironmentTarget/u);
   assert.match(consoleSource, /effectiveRouteInputs/u);
+  assert.match(consoleSource, /unavailable:\s*Boolean\(target\.takeover\)/u);
   assert.match(routeEditor, /preserveLockedRouteIndices/u);
   assert.match(routeEditor, /locked\?: boolean/u);
   assert.match(routeEditor, /candidate\.locked/u);
   assert.match(routeEditor, /preserveLockedRouteIndices/u);
+  assert.match(read(files.library), /model\.testState\.latestTest\s*\?\s*['"]再次测试['"]\s*:\s*['"]测试['"]/u);
 });
 
 test('route activation reloads the canonical runtime read model after acknowledgement', () => {
