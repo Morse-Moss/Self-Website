@@ -4,7 +4,7 @@
 
 - Release commit: `c2d575c71fba9bf1ecd73eea0c3923686e5294d6` (`fix: repair migration chain`).
 - Previous production application release: `4a039ab`.
-- GitHub `master`, local `master`, and the deployed release all reached `c2d575c`.
+- Runtime commit `c2d575c` reached GitHub `master` before deployment. The follow-up production-evidence commit is `0426eaf`; it does not change the deployed application image.
 - Production pointer: `/opt/revolution/releases/c2d575c/revolution`.
 - Frozen archive: 19,503,454 bytes; SHA-256 `45ff9cba30e7f884302f81fb8f32373c004edcb091d109b07517cd40e36a0c2b`, matched locally and remotely before extraction.
 
