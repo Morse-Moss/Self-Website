@@ -1,6 +1,17 @@
 export type ProviderProtocol = 'responses' | 'chat_completions';
 export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | null;
 
+export interface ProviderTestState {
+  eligibility: 'untested' | 'eligible' | 'expired';
+  latestTest: null | {
+    latencyMs: number | null;
+    resultCode: string;
+    status: 'succeeded' | 'failed';
+    testedAt: string;
+  };
+  successExpiresAt: string | null;
+}
+
 export interface ProviderModel {
   archivedAt: string | null;
   configDigest: string;
@@ -14,6 +25,7 @@ export interface ProviderModel {
   protocol: ProviderProtocol;
   reasoningEffort: ReasoningEffort;
   seriesId: string;
+  testState: ProviderTestState;
   version: number;
 }
 
@@ -53,17 +65,31 @@ export interface RuntimeTarget {
   protocol: ProviderProtocol;
   reasoningEffort: ReasoningEffort;
   sourceType: 'database' | 'environment';
+  testState: ProviderTestState;
 }
 
 export interface EnvironmentTarget {
+  baseUrlMode: 'public_default' | 'server_reusable' | 'replacement_required';
+  baseUrlPrefill: string | null;
   configDigest: string;
   connectionDisplayName: string;
   endpointHost: string | null;
   environmentTargetKey: 'primary' | 'fallback-1' | 'fallback-2';
+  inputUsdPerMillion: string | null;
   maxOutputTokens: number;
+  modelDisplayName: string;
   modelId: string;
+  outputUsdPerMillion: string | null;
   protocol: ProviderProtocol;
   reasoningEffort: ReasoningEffort;
+  takeover: null | {
+    connectionSeriesId: string;
+    modelSeriesId: string;
+    sourceConfigMatches: boolean;
+    takeoverId: string;
+  };
+  testState: ProviderTestState;
+  userAgent: string | null;
 }
 
 export interface ProviderRuntimeSummary {
@@ -116,6 +142,25 @@ export interface ConnectionInput {
   userAgent: string | null;
 }
 
+export interface EnvironmentTakeoverInput {
+  apiKey: string | null;
+  baseUrl: string | null;
+  expectedConfigDigest: string;
+  firstModel: ModelInput;
+  name: string;
+  requestId: string;
+  reuseKeyAcrossOrigin: boolean;
+  userAgent: string | null;
+}
+
+export interface EnvironmentTakeoverResult {
+  connectionSeriesId: string;
+  connectionVersion: 1;
+  modelSeriesId: string;
+  modelVersion: 1;
+  takeoverId: string;
+}
+
 export type RouteTargetInput =
   | { source: 'database'; modelId: string; modelVersionId: string }
   | { source: 'environment'; environmentTargetKey: EnvironmentTarget['environmentTargetKey'] };
@@ -149,12 +194,15 @@ export function providerErrorMessage(status: number, code = ''): string {
     ADMIN_REAUTH_FAILED: '管理密码不正确，请重新输入。',
     ADMIN_ORIGIN_REQUIRED: '当前站点来源未获管理权限，请检查管理域名配置。',
     AI_CONFIG_CONFLICT: '其他管理页面已更新活动路由，请刷新最新配置后重试。',
+    AI_CONFIG_ENVIRONMENT_CHANGED: '服务器环境配置已变化，请刷新后重新编辑。',
+    AI_CONFIG_ENVIRONMENT_UNAVAILABLE: '服务器环境线路已不可用，请恢复该环境配置后重试。',
     AI_CONFIG_HISTORY_RETAINED: '历史记录已保留，敏感凭据已按删除策略处理。',
     AI_CONFIG_IN_USE: '该目标仍在活动路由中，请先编辑路由并移除。',
     AI_CONFIG_INVALID: '配置无效，请检查必填字段、URL、协议和路由顺序。',
     AI_CONFIG_RATE_LIMITED: '发现或测试操作过于频繁，请稍后再试。',
     AI_CONFIG_SECRET_UNAVAILABLE: '加密凭据不可用，请更新 API Key 后重试。',
     AI_CONFIG_TARGET_DELETED: '路由目标已删除，请刷新配置并选择可用目标。',
+    AI_CONFIG_TAKEOVER_EXISTS: '该环境线路已被接管，请刷新并编辑已有中转。',
     AI_CONFIG_TEST_FAILED: '中转测试未通过，请检查协议、模型 ID 和连接状态。',
     AI_CONFIG_TEST_REQUIRED: '配置已变化或测试已过期，请重新测试后激活。',
     AI_CONFIG_UNAVAILABLE: 'API 配置服务暂时不可用，请检查数据库和环境主密钥。',
@@ -258,6 +306,17 @@ export function testEnvironmentTarget(targetKey: EnvironmentTarget['environmentT
   return requestJson<{ testedAt: string; latencyMs: number }>(
     `/api/admin/providers/runtime/environment/${targetKey}/test`,
     { method: 'POST', body: jsonBody({ password }) },
+  );
+}
+
+export function takeoverEnvironmentTarget(
+  targetKey: EnvironmentTarget['environmentTargetKey'],
+  input: EnvironmentTakeoverInput,
+  password: string,
+) {
+  return requestJson<EnvironmentTakeoverResult>(
+    `/api/admin/providers/runtime/environment/${targetKey}/takeover`,
+    { method: 'POST', body: jsonBody({ ...input, password }) },
   );
 }
 

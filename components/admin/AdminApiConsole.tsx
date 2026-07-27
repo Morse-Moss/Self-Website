@@ -34,6 +34,7 @@ import AdminProviderLibrary from './AdminProviderLibrary';
 import AdminReauthDialog, { type ReauthKind } from './AdminReauthDialog';
 import AdminRouteEditor, { type RouteCandidate } from './AdminRouteEditor';
 import { useAdminSession } from './AdminShell';
+import { testStateLabels } from './provider-ui-state';
 import styles from './AdminApiConsole.module.css';
 
 interface FormState {
@@ -47,15 +48,6 @@ interface PendingAction {
   kind: ReauthKind;
   run: (password: string, confirmation: string) => Promise<string>;
   title: string;
-}
-
-function targetTestLabel(events: ProviderEvent[], digest: string): string {
-  const event = events.find((item) => item.configDigest === digest
-    && ['provider_test', 'environment_test'].includes(item.eventType));
-  if (!event) return '未测试';
-  if (event.status !== 'succeeded') return '测试失败';
-  const age = Date.now() - new Date(event.createdAt).getTime();
-  return age <= 30 * 60_000 ? `测试通过 · ${event.latencyMs ?? '-'}ms` : '测试已过期';
 }
 
 function dispositionMessage(kind: '中转' | '模型', disposition: 'deleted' | 'history_retained'): string {
@@ -133,7 +125,7 @@ export default function AdminApiConsole() {
       label: target.connectionDisplayName,
       meta: `${target.endpointHost ?? '来源不可用'} · ${target.modelId} · ${target.protocol}`,
       target: { source: 'environment', environmentTargetKey: target.environmentTargetKey },
-      testLabel: targetTestLabel(allEvents, target.configDigest),
+      testLabel: testStateLabels(target.testState).eligibility,
     }));
     for (const connection of catalog.items) {
       if (connection.deletedAt) continue;
@@ -146,7 +138,7 @@ export default function AdminApiConsole() {
           label: `${connection.displayName} / ${model.displayName}`,
           meta: `${model.modelId} · ${model.protocol}`,
           target: { source: 'database', modelId: model.seriesId, modelVersionId: model.id },
-          testLabel: targetTestLabel(allEvents, model.configDigest),
+          testLabel: testStateLabels(model.testState).eligibility,
         });
       }
     }
@@ -171,7 +163,7 @@ export default function AdminApiConsole() {
       });
     }
     return result;
-  }, [allEvents, catalog, runtime]);
+  }, [catalog, runtime]);
 
   const currentKeys = useMemo(() => runtime?.targets.map((target) => {
     const candidate = candidates.find((item) => item.configDigest === target.configDigest);
@@ -388,7 +380,7 @@ export default function AdminApiConsole() {
                     .find((item) => item.configDigest === target.configDigest);
                   if (model) testDatabaseModel(model);
                 }}
-              >{targetTestLabel(allEvents, target.configDigest)}</button>
+              >{testStateLabels(target.testState).eligibility}</button>
             </li>
           ))}
         </ol>
@@ -396,7 +388,6 @@ export default function AdminApiConsole() {
 
       <AdminProviderLibrary
         catalog={catalog}
-        events={allEvents}
         includeDeleted={includeDeleted}
         mobileOpen={mobileDetails}
         runtime={runtime}

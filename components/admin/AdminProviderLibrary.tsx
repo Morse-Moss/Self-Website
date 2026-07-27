@@ -3,15 +3,14 @@
 import type {
   ProviderCatalog,
   ProviderConnection,
-  ProviderEvent,
   ProviderModel,
   ProviderRuntimeSummary,
 } from './admin-api-client';
+import { testStateLabels } from './provider-ui-state';
 import styles from './AdminApiConsole.module.css';
 
 interface Props {
   catalog: ProviderCatalog;
-  events: ProviderEvent[];
   includeDeleted: boolean;
   mobileOpen: boolean;
   runtime: ProviderRuntimeSummary;
@@ -37,21 +36,8 @@ function domain(baseUrl: string): string {
   }
 }
 
-function lastTest(events: ProviderEvent[], digest: string): ProviderEvent | null {
-  return events.find((event) => event.configDigest === digest
-    && ['provider_test', 'environment_test'].includes(event.eventType)) ?? null;
-}
-
-function testLabel(events: ProviderEvent[], digest: string): string {
-  const event = lastTest(events, digest);
-  if (!event) return '未测试';
-  if (event.status !== 'succeeded') return '测试失败';
-  return `${new Date(event.createdAt).toLocaleString('zh-CN')} · ${event.latencyMs ?? '-'}ms`;
-}
-
 export default function AdminProviderLibrary({
   catalog,
-  events,
   includeDeleted,
   mobileOpen,
   runtime,
@@ -101,9 +87,12 @@ export default function AdminProviderLibrary({
             </div>
           ) : catalog.items.map((connection) => {
             const active = connection.models.some((model) => activeDigests.has(model.configDigest));
-            const latestTest = connection.models
-              .map((model) => lastTest(events, model.configDigest))
-              .find(Boolean);
+            const eligibleModels = connection.models.filter(
+              (model) => model.testState.eligibility === 'eligible',
+            ).length;
+            const testedModels = connection.models.filter(
+              (model) => model.testState.latestTest !== null,
+            ).length;
             return (
               <button
                 key={connection.seriesId}
@@ -119,7 +108,7 @@ export default function AdminProviderLibrary({
                 <span className={styles.connectionMeta}>
                   <small>{connection.models.length} 个模型</small>
                   <small>{connection.deletedAt ? '已删除' : connection.archivedAt ? '已归档' : active ? '使用中' : '待命'}</small>
-                  <small>{latestTest?.status === 'succeeded' ? '最近测试通过' : latestTest ? '最近测试失败' : '未测试'}</small>
+                  <small>{eligibleModels > 0 ? `${eligibleModels} 个模型测试有效` : testedModels > 0 ? '暂无有效测试' : '尚未测试'}</small>
                 </span>
               </button>
             );
@@ -166,6 +155,7 @@ export default function AdminProviderLibrary({
                   <div className={styles.modelList}>
                     {selected.models.map((model) => {
                       const active = activeDigests.has(model.configDigest);
+                      const labels = testStateLabels(model.testState);
                       return (
                         <article key={model.seriesId} className={styles.modelRow}>
                           <div className={styles.modelIdentity}>
@@ -180,7 +170,8 @@ export default function AdminProviderLibrary({
                             <div><dt>最大输出</dt><dd>{model.maxOutputTokens}</dd></div>
                             <div><dt>推理</dt><dd>{model.reasoningEffort ?? '默认'}</dd></div>
                             <div><dt>状态</dt><dd>{model.deletedAt ? '已删除' : active ? '活动路由' : '待命'}</dd></div>
-                            <div><dt>最近测试</dt><dd>{testLabel(events, model.configDigest)}</dd></div>
+                            <div><dt>测试资格</dt><dd>{labels.eligibility}</dd></div>
+                            <div><dt>最近结果</dt><dd>{labels.latest}</dd></div>
                             <div><dt>成本</dt><dd>{model.inputUsdPerMillion === null || model.outputUsdPerMillion === null ? '未知' : `$${model.inputUsdPerMillion} / $${model.outputUsdPerMillion}`}</dd></div>
                           </dl>
                           <div className={styles.modelActions}>

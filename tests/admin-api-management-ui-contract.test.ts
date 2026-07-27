@@ -15,6 +15,7 @@ const files = {
   form: path.resolve('components/admin/AdminProviderForm.tsx'),
   reauth: path.resolve('components/admin/AdminReauthDialog.tsx'),
   client: path.resolve('components/admin/admin-api-client.ts'),
+  state: path.resolve('components/admin/provider-ui-state.ts'),
 } as const;
 
 function read(filePath: string): string {
@@ -134,8 +135,35 @@ test('API client builds strict catalog queries and maps stable server errors', a
   assert.match(client.providerErrorMessage(409, 'AI_CONFIG_CONFLICT'), /其他管理页面/u);
   assert.match(client.providerErrorMessage(409, 'AI_CONFIG_TEST_REQUIRED'), /重新测试/u);
   assert.match(client.providerErrorMessage(409, 'AI_CONFIG_IN_USE'), /活动路由/u);
+  assert.match(client.providerErrorMessage(409, 'AI_CONFIG_ENVIRONMENT_CHANGED'), /刷新/u);
+  assert.match(client.providerErrorMessage(409, 'AI_CONFIG_TAKEOVER_EXISTS'), /已有中转/u);
+  assert.match(client.providerErrorMessage(503, 'AI_CONFIG_ENVIRONMENT_UNAVAILABLE'), /恢复/u);
   assert.match(client.providerErrorMessage(429, 'AI_CONFIG_RATE_LIMITED'), /稍后/u);
   assert.match(client.providerErrorMessage(401, 'ADMIN_AUTH_REQUIRED'), /重新登录/u);
+});
+
+test('provider UI consumes canonical server test state instead of event-page or browser-clock inference', () => {
+  const client = read(files.client);
+  const consoleSource = read(files.console);
+  const library = read(files.library);
+  const state = read(files.state);
+  const combined = [client, consoleSource, library, state].join('\n');
+
+  for (const field of ['eligibility', 'successExpiresAt', 'latestTest', 'testState']) {
+    assert.match(client, new RegExp(field, 'u'));
+  }
+  for (const field of ['baseUrlMode', 'baseUrlPrefill', 'takeover', 'userAgent']) {
+    assert.match(client, new RegExp(field, 'u'));
+  }
+  assert.match(client, /interface EnvironmentTakeoverInput/u);
+  assert.match(client, /requestJson<EnvironmentTakeoverResult>\([\s\S]*runtime\/environment\/\$\{targetKey\}\/takeover/u);
+  assert.match(state, /testStateLabels/u);
+  assert.match(state, /replaceEnvironmentTarget/u);
+  assert.match(state, /effectiveRouteInputs/u);
+  assert.match(state, /preserveLockedRouteIndices/u);
+  assert.doesNotMatch(combined, /Date\.now\(\)/u);
+  assert.doesNotMatch(consoleSource, /targetTestLabel/u);
+  assert.doesNotMatch(library, /function\s+(?:lastTest|testLabel)\b/u);
 });
 
 test('route activation reloads the canonical runtime read model after acknowledgement', () => {
