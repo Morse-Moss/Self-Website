@@ -153,6 +153,124 @@ test('project fit over-fetches 15 chunks and returns stable top three unique aud
   assert.ok(result.knowledge.every((item) => item.content !== `retrieved-${item.projectSlug}-1`));
 });
 
+test('project fit keeps threshold-qualified direct evidence ahead of higher-scored transferable projects', async () => {
+  const deps = dependencies([
+    source('auto-operations', 0.97),
+    source('ai-leadgen', 0.96),
+    source('content-agent', 0.95),
+    source('digital-morse', 0.7),
+  ]);
+  const result = await planChatEvidence({
+    resolved: resolved('project_fit'),
+    currentInput: 'AI 产品经理，需要设计 RAG 产品与评测方案',
+    frame: frame([slot('role', 'AI 产品经理')]),
+    ledger,
+    embed: deps.embed,
+    retrieve: deps.retrieve,
+  });
+
+  assert.deepEqual(result.knowledge.map((item) => item.projectSlug), [
+    'digital-morse',
+    'auto-operations',
+    'ai-leadgen',
+  ]);
+  assert.equal(result.knowledge[0].evidenceLevel, 'direct');
+  assert.deepEqual(result.retrievalScores.map((item) => item.evidenceId), [
+    'project:digital-morse',
+    'project:auto-operations',
+    'project:ai-leadgen',
+  ]);
+});
+
+test('JD match applies the same direct-first ordering before filling by retrieval score', async () => {
+  const deps = dependencies([
+    source('auto-operations', 0.97),
+    source('ai-leadgen', 0.96),
+    source('content-agent', 0.95),
+    source('digital-morse', 0.7),
+  ]);
+  const result = await planChatEvidence({
+    resolved: resolved('jd_match'),
+    currentInput: '负责 RAG 产品与评测方案',
+    frame: frame([slot('role', 'AI 产品经理')]),
+    ledger,
+    embed: deps.embed,
+    retrieve: deps.retrieve,
+  });
+
+  assert.deepEqual(result.knowledge.map((item) => item.projectSlug), [
+    'digital-morse',
+    'auto-operations',
+    'ai-leadgen',
+  ]);
+});
+
+test('more than three direct projects are capped by retrieval score', async () => {
+  const deps = dependencies([
+    source('deep-research', 0.91),
+    source('content-agent', 0.94),
+    source('auto-operations', 0.97),
+    source('digital-morse', 0.93),
+    source('ai-leadgen', 0.96),
+  ]);
+  const result = await planChatEvidence({
+    resolved: resolved('project_fit'),
+    currentInput: '哪些 TypeScript 项目最匹配？',
+    frame: frame([slot('role', 'TypeScript 工程师')]),
+    ledger,
+    embed: deps.embed,
+    retrieve: deps.retrieve,
+  });
+
+  assert.deepEqual(result.knowledge.map((item) => item.projectSlug), [
+    'auto-operations',
+    'ai-leadgen',
+    'content-agent',
+  ]);
+  assert.ok(result.knowledge.every((item) => item.evidenceLevel === 'direct'));
+});
+
+test('direct evidence below the retrieval threshold is not forced into the result', async () => {
+  const deps = dependencies([
+    source('auto-operations', 0.9),
+    source('ai-leadgen', 0.8),
+    source('digital-morse', 0.44),
+  ]);
+  const result = await planChatEvidence({
+    resolved: resolved('project_fit'),
+    currentInput: 'AI 产品经理，需要设计 RAG 产品',
+    frame: frame([slot('role', 'AI 产品经理')]),
+    ledger,
+    embed: deps.embed,
+    retrieve: deps.retrieve,
+  });
+
+  assert.deepEqual(result.knowledge.map((item) => item.projectSlug), [
+    'auto-operations',
+    'ai-leadgen',
+  ]);
+});
+
+test('successful retrieval with no threshold-qualified project returns empty evidence', async () => {
+  const deps = dependencies([
+    source('digital-morse', 0.44),
+    source('auto-operations', 0.43),
+  ]);
+  const result = await planChatEvidence({
+    resolved: resolved('project_fit'),
+    currentInput: 'AI 产品经理，需要设计 RAG 产品',
+    frame: frame([slot('role', 'AI 产品经理')]),
+    ledger,
+    embed: deps.embed,
+    retrieve: deps.retrieve,
+  });
+
+  assert.deepEqual(result.knowledge, []);
+  assert.deepEqual(result.admissions, []);
+  assert.deepEqual(result.retrievalScores, []);
+  assert.equal(result.degradedReason, null);
+});
+
 test('equal project scores use audited catalog order and do not force unrelated projects', async () => {
   const deps = dependencies([
     source('digital-morse', 0.9),
@@ -217,4 +335,24 @@ test('embedding failure degrades to structured direct or transferable projects w
   assert.ok(result.knowledge.every((item) => item.evidenceLevel === 'direct' || item.evidenceLevel === 'transferable'));
   assert.equal(result.admissions.some((item) => item.level === 'unavailable'), false);
   assert.equal(deps.calls.retrieve, 0);
+});
+
+test('retrieval failure degrades to structured direct or transferable projects', async () => {
+  const deps = dependencies();
+  const result = await planChatEvidence({
+    resolved: resolved('project_fit'),
+    currentInput: 'AI 产品经理，需要设计 RAG 产品',
+    frame: frame([slot('role', 'AI 产品经理')]),
+    ledger,
+    embed: deps.embed,
+    retrieve: async () => {
+      deps.calls.retrieve += 1;
+      throw Object.assign(new Error('retrieval down'), { code: 'RETRIEVAL_UNAVAILABLE' });
+    },
+  });
+
+  assert.equal(result.degradedReason, 'retrieval');
+  assert.deepEqual(result.knowledge.map((item) => item.projectSlug), ['digital-morse']);
+  assert.ok(result.knowledge.every((item) => item.evidenceLevel === 'direct'));
+  assert.equal(deps.calls.retrieve, 1);
 });

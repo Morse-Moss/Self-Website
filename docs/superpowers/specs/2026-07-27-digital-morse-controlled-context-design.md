@@ -472,12 +472,14 @@ RAG 的职责是“在已经获准公开的项目资料中排序相关内容”�
 `project_fit` 和 `jd_match` 的流程：
 
 1. 用当前问题、Task Frame 中的公司/岗位/JD 来源构造检索查询。
-2. pgvector 按现有阈值过滤后 over-fetch 最多 15 个候选 chunk；该数字覆盖当前五项目语料的项目级去重，不是最终回答数量。
-3. 丢弃没有审核 `projectSlug` 的候选，按 `projectSlug` 聚合；项目分数取该项目最高合格 chunk 分数，同分按审核项目目录稳定顺序排序。
-4. 取 Top 3 **唯一项目**，再通过 `projectSlug` 回填审核结构化项目资料；同一项目的多个 chunk 不能占用多个名额。
-5. 只将回填后的事实和每项目必要片段放入 Approved Evidence，回答按 direct、transferable、unavailable 三个等级陈述。
+2. pgvector over-fetch 最多 15 个候选 chunk；该数字覆盖当前五项目语料的项目级去重，不是最终回答数量，Top-15 之外的项目不得强塞。
+3. 先丢弃没有审核 `projectSlug`、分数非有限值或真实 BGE 分数低于 `0.45` 的候选，再按 `projectSlug` 聚合；项目分数取该项目最高合格 chunk 分数。
+4. 合格项目按结构化审核资料判定的 direct 优先；direct 与 transferable 各自按真实 BGE 分数降序，同分按审核项目目录稳定顺序。direct 不得绕过 `0.45` 门槛。
+5. 取排序后的 Top 3 **唯一项目**，再通过 `projectSlug` 回填审核结构化项目资料；同一项目的多个 chunk 不能占用多个名额，`knowledge`、`admissions` 和 `retrievalScores` 必须保持相同项目顺序并保留真实分数。
+6. 检索成功但没有项目达到门槛时返回空证据，不用结构化项目补位；只有 Embedding 或检索执行异常时才进入确定性项目级降级。
+7. 只将回填后的事实和每项目必要片段放入 Approved Evidence，回答按 direct、transferable、unavailable 三个等级陈述。
 
-当前五项目规模不需要 Agentic RAG。若 Embedding 或 pgvector 失败，使用结构化项目、项目别名和能力关联做确定性项目级降级；不得因 RAG 不可用而否认结构化公开事实。降级只能补入满足 direct/transferable 合同的项目，不能为了凑足数量加入无关项目，且必须进入 manifest。
+当前五项目规模不需要 Agentic RAG。若 Embedding 或 pgvector 执行异常，使用结构化项目、项目别名和能力关联做确定性项目级降级；不得因 RAG 不可用而否认结构化公开事实。降级只能补入满足 direct/transferable 合同的项目，不能为了凑足数量加入无关项目，且必须进入 manifest。正常检索的低相关空结果不属于降级条件。
 
 ### 9.3 回答形态
 

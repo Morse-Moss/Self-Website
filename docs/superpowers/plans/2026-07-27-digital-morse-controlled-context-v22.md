@@ -145,7 +145,7 @@ Verified 2026-07-27: projection, semantic bridge, and PostgreSQL context-state t
 
 **Files:** create `lib/server/chat-evidence-planner.ts`; modify `lib/server/rag.ts`, `lib/server/chat-evidence.ts`, prompt source metadata, and evidence/RAG tests.
 
-- [x] Write RED tests proving catalog bypasses embedding, project fit selects stable top three unique project slugs after over-fetch 15, named project locks one slug, capability facts use the ledger, and structured fallback never turns available evidence into unavailable.
+- [x] Write RED tests proving catalog bypasses embedding; project fit/JD match filter audited finite `>= 0.45` candidates, select direct-first stable Top-3 unique projects after over-fetch 15, and return empty evidence for a successful below-threshold retrieval; named project locks one slug, capability facts use the ledger, and structured fallback is limited to Embedding/retrieval exceptions.
 - [x] Add direct/transferable/unavailable admissions and return only audited project IDs plus required content to Approved Evidence.
 - [x] Preserve the existing 46-case retrieval gate and add fixed failure-chain expected/forbidden project slugs.
 - [x] Run evidence, RAG integration, and gold eval GREEN with zero external calls.
@@ -195,7 +195,7 @@ Reverified after mainline integration on 2026-07-28: the controlled-context/migr
 - [x] Run focused tests, `chat:eval` with `externalCalls=0`, `rag:eval` top-3 46/46, typecheck, full tests, build, diff check, and scoped secret scan.
 - [x] Perform split compliance/spec and quality/safety review against this StagePacket; close admitted blockers within the CRITICAL correction budget.
 
-Verified 2026-07-28: the complete isolated test set exited 0 with 1143 tests, zero failures and zero skips; Chat service integration passed `90/90`; `chat:eval` passed `96/96` with `externalCalls=0`; RAG passed `46/46` top-3 and both thresholds; typecheck, 33-route production build, changed-file ESLint, diff check and the 24-file production-sensitive scan passed. Full ESLint retains 20 pre-existing errors in untouched frontend files. Separate CRITICAL compliance/spec and quality/safety review returned PASS after the bounded corrections.
+Verified 2026-07-28: the complete isolated test set passed `1156/1156` with zero failures and zero skips; the affected Context/Provider/Chat/SSE boundary passed `191/191`, and the planner plus V2.2 PostgreSQL boundary passed `31/31`. `chat:eval` passed `96/96` with `externalCalls=0`; RAG passed `46/46` top-3 and both thresholds; typecheck, 33-route production build, changed-file ESLint, diff check and the scoped production-sensitive scan passed. Full ESLint retains 20 pre-existing errors in untouched frontend files. The final CRITICAL compliance/spec and quality/safety delta review returned PASS after the bounded corrections.
 
 ### Task 9: Close out, absorb, push, and freeze the release
 
@@ -210,16 +210,16 @@ Verified 2026-07-28: the complete isolated test set exited 0 with 1143 tests, ze
 **Files:** production release and redacted evidence only; never commit secrets or production data.
 
 - [x] Recheck live release, containers, schema registry, active Chat V2/safe mode, Provider route, RAG, long transactions, backup destination, and rollback-compatible prior release.
-- [ ] Enter controlled write quiescence, create/verify the database backup, run migrations 009-012, grants, runtime verification, and idempotent ingest with Context Packet disabled.
-- [ ] Configure a Web-only random digest key/key ID without echoing it; build/start the reviewed release; verify migration manifest, live/ready, mock failure-chain, containers, logs, and `release:smoke` before real Provider use.
+- [x] Confirm the deployed `9c13490` baseline already has migration `001-012`, a verified pre-release backup, runtime grants and the Web-only digest Secret while Context Packet remains disabled/0%/empty allowlist; this correction has no migration or public-knowledge corpus change, so it must not repeat quiescence, backup, migration, grants or ingest.
+- [ ] Build/start the reviewed correction release with Context Packet still disabled; rebuild only Web/Worker, then verify migration manifest, live/ready, mock failure-chain, containers, logs, and `release:smoke` before real Provider use.
 - [ ] Enable only the named test invite and issue at most five main answers. Reproduce the new-conversation failure chain and, when eligible, the legacy bridge; inspect user-visible output plus redacted manifest/attempt invariants.
 - [ ] Stop at invite canary observation. Do not start 10% until 24-hour/20-turn natural-sample monitoring can be satisfied under a separately current rollout decision.
 - [ ] Update production evidence/runbook, finalize the CloseoutReceipt, validate/commit the Morse rollout-log entry, and reach `KNOWLEDGE_RECONCILED`.
 
 ## Resume Pointer
 
-Current stage and state: `CLOSEOUT / Task 9 knowledge reconciliation and scoped commit in progress`.
+Current stage and state: `CLOSEOUT / Task 9 final KnowledgeReceipt and scoped commit in progress`.
 
-Last completed verified step: local stage exit passed 1143 tests with zero failures/skips, `chat:eval` 96/96 with zero external calls, RAG 46/46 top-3, typecheck, 33-route build, scoped lint/diff/sensitive scans, and split CRITICAL review; production read-only preflight confirmed release `d947cb7`, migration `001-011`, 41/48 RAG, route revision 2, Chat v2 100%, safe mode/hedging off, and Context Packet absent.
+Last completed verified step: local stage exit passed `1156/1156`, the affected boundary passed `191/191`, planner plus V2.2 PostgreSQL passed `31/31`, `chat:eval` passed `96/96` with zero external calls, RAG passed `46/46` top-3, and typecheck/build/scoped lint/diff/sensitive scans plus split CRITICAL review passed; fresh production read-only preflight confirmed release `9c13490`, migration `001-012`, 41/48 RAG, route revision 2, Context Packet disabled/0%/empty allowlist, Web-only Secret scope, five healthy zero-restart containers, live/ready/release smoke, and zero 20-minute error-keyword counts.
 
 Exact next action: finish the current KnowledgeReceipt, explicitly stage owned files, commit and absorb/push the frozen release without touching the main worktree `.github/` directory.

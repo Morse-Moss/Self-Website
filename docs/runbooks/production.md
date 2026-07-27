@@ -111,10 +111,10 @@ npm run production:worker
 
 该灰度独立于 Chat v2。每次只变更 Context Packet 自身开关、百分比或 UUID 白名单，并只重启 Web；Chat v2、Provider route、safe mode、hedging、RAG 和私密简历状态不得被顺带修改。
 
-1. migration `012` 只做前向追加；先在受控停写窗口停止 Web/Worker、确认无长事务并创建可校验备份，再用 `docker compose run --rm --no-deps migration` 和 grants 应用。禁止 down migration、删除新表/列或伪造 registry。
+1. migration `012` 只做前向追加。registry 仍为 `001-011` 的首次部署，先在受控停写窗口停止 Web/Worker、确认无长事务并创建可校验备份，再用 `docker compose run --rm --no-deps migration` 和 grants 应用。registry 已为 `001-012` 且 release 不含新 migration 的 correction 只核对现有可读备份、manifest 与 grants，禁止为发布仪式重复停写、备份或 migration。任何路径都禁止 down migration、删除新表/列或伪造 registry。
 2. 生成独立 32-byte Web-only HMAC Secret，owner/mode 按部署平台固定为应用 UID/GID `1001:1001` 与 `0600`；设置 key ID、12k/24k 预算、`MORSE_CHAT_CONTEXT_PACKET_ENABLED=true`、`MORSE_CHAT_CONTEXT_CANARY_PERCENT=0` 和空白名单后构建并只重建 Web/Worker。
 3. 在 Context Packet 白名单为空且百分比为 `0` 时先验证 migration manifest、grants、live/ready、release smoke、容器身份、错误日志和无 Provider 的固定失败链。公开知识未变化时禁止为发布仪式重跑 ingest。
-4. 创建一个专用测试邀请码，只把其非敏感 invite UUID 写入 `MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS`，保持百分比始终为 `0`，只重启 Web。该 canary 最多发起 5 次真实 Provider 主回答，覆盖招聘多轮失败链、指代追问、数字 Morse RAG 实现和 React 岗位适配；不得额外开启百分比流量。
+4. 创建一个专用测试邀请码，只把其非敏感 invite UUID 写入 `MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS`，保持百分比始终为 `0`，只重启 Web。该 canary 必须逐轮重放 `tests/fixtures/controlled-context-failure-chain.ts` 中已脱敏的 5 条消息，不得合并、增补、改写或用其他问题替代；每轮来源按当次真实 BGE 分数与 direct-first 规则核验，不得假设固定 Top-3。最多发起 5 次真实 Provider 主回答，不得额外开启百分比流量。
 5. 观察只保存 case ID、pipeline/semantic/task 状态、来源 ID、脱敏 manifest、attempt 数/状态/时延，以及同 turn 的 packet/request HMAC 一致性；不得保存邀请码明文、原始问答、Provider payload、Key、Base URL 或私密简历内容。
 6. canary 结束后停用邀请码、清空 Context Packet 白名单并保持百分比 `0`，只重启 Web，再复验 live/ready/release smoke、容器 identity/restart count 和新 Web 启动后的错误日志。未经新的当前授权，不进入 10% 或更高灰度。
 

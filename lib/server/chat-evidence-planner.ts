@@ -250,10 +250,13 @@ async function rankedProjects(input: PlanChatEvidenceInput): Promise<PlannedChat
       grouped.set(source.projectSlug, source);
     }
   }
-  if (grouped.size === 0) return fallbackProjects(query, input.ledger, 'retrieval');
+  if (grouped.size === 0) return noEvidence();
+  // Preserve threshold-qualified direct evidence; vector relevance fills the remaining slots.
   const selected = [...grouped.entries()]
     .sort((left, right) => (
-      right[1].score - left[1].score
+      Number(ranks.get(right[0])?.level === 'direct')
+        - Number(ranks.get(left[0])?.level === 'direct')
+      || right[1].score - left[1].score
       || (projectOrder.get(left[0] as ProjectSlug) ?? Number.MAX_SAFE_INTEGER)
         - (projectOrder.get(right[0] as ProjectSlug) ?? Number.MAX_SAFE_INTEGER)
     ))

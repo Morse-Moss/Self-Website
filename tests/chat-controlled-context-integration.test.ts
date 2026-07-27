@@ -110,12 +110,12 @@ function rankedVector(first: number, second: number): string {
 
 async function seedFailureChainKnowledge(): Promise<void> {
   const seeds = [
-    { id: 'fixture-digital-morse-a', slug: 'digital-morse', first: 1, second: 0 },
-    { id: 'fixture-digital-morse-b', slug: 'digital-morse', first: 0.999, second: 0.01 },
-    { id: 'fixture-deep-research', slug: 'deep-research', first: 0.99, second: 0.07 },
-    { id: 'fixture-content-agent', slug: 'content-agent', first: 0.96, second: 0.2 },
-    { id: 'fixture-auto-operations', slug: 'auto-operations', first: 0.8, second: 0.6 },
-    { id: 'fixture-ai-leadgen', slug: 'ai-leadgen', first: 0.7, second: 0.714 },
+    { id: 'fixture-deep-research', slug: 'deep-research', first: 1, second: 0 },
+    { id: 'fixture-content-agent', slug: 'content-agent', first: 0.999, second: 0.02 },
+    { id: 'fixture-auto-operations', slug: 'auto-operations', first: 0.995, second: 0.05 },
+    { id: 'fixture-digital-morse-a', slug: 'digital-morse', first: 0.98, second: 0.15 },
+    { id: 'fixture-digital-morse-b', slug: 'digital-morse', first: 0.979, second: 0.16 },
+    { id: 'fixture-ai-leadgen', slug: 'ai-leadgen', first: 0.9, second: 0.4 },
   ] as const;
   for (const seed of seeds) {
     const project = siteContent.projects.find((candidate) => candidate.slug === seed.slug);
@@ -259,7 +259,9 @@ class FailureChainProvider implements AiProvider {
 
   async *streamAnswer(request: AnswerRequest): AsyncIterable<AnswerEvent> {
     this.requests.push(request);
-    const admitted = controlledContextFailureChain.expectedEvidence.map(({ projectSlug }) => {
+    const step = controlledContextFailureChain.steps[this.requests.length - 1];
+    assert.ok(step);
+    const admitted = step.expectedEvidence.map(({ projectSlug }) => {
       const project = siteContent.projects.find((candidate) => candidate.slug === projectSlug);
       assert.ok(project, projectSlug);
       assert.match(request.instructions, new RegExp(project.name, 'u'));
@@ -879,7 +881,7 @@ test('V2.2 replays the five-turn recruitment failure chain with one bounded task
       conversationId = meta.conversationId;
       assert.deepEqual(
         meta.sources.map((source) => source.href),
-        controlledContextFailureChain.expectedEvidence.map(({ projectSlug }) => `/works#${projectSlug}`),
+        step.expectedEvidence.map(({ projectSlug }) => `/works#${projectSlug}`),
       );
 
       const stored = await pool.query<{
@@ -908,7 +910,7 @@ test('V2.2 replays the five-turn recruitment failure chain with one bounded task
       taskIds.push(row.context_scope_id);
       assert.deepEqual(
         row.context_manifest.evidence_ids,
-        controlledContextFailureChain.expectedEvidence.map(({ projectSlug }) => `project:${projectSlug}`),
+        step.expectedEvidence.map(({ projectSlug }) => `project:${projectSlug}`),
       );
       assert.equal(row.context_manifest.packet_hmac_key_id, digest.keyId);
       assert.match(row.context_manifest.packet_hmac_sha256, /^[0-9a-f]{64}$/u);
@@ -929,7 +931,7 @@ test('V2.2 replays the five-turn recruitment failure chain with one bounded task
       }>;
       assert.deepEqual(
         projected.map((item) => item.projectSlug),
-        controlledContextFailureChain.expectedEvidence.map((item) => item.projectSlug),
+        step.expectedEvidence.map((item) => item.projectSlug),
       );
       assert.ok(projected.every((item) => (
         item.evidenceLevel === 'direct' || item.evidenceLevel === 'transferable'
@@ -937,10 +939,10 @@ test('V2.2 replays the five-turn recruitment failure chain with one bounded task
       if (index === controlledContextFailureChain.steps.length - 1) {
         assert.deepEqual(
           projected.map((item) => ({ projectSlug: item.projectSlug, level: item.evidenceLevel })),
-          controlledContextFailureChain.expectedEvidence,
+          step.expectedEvidence,
         );
       }
-      for (const forbidden of controlledContextFailureChain.forbiddenProjectSlugs) {
+      for (const forbidden of step.forbiddenProjectSlugs) {
         assert.doesNotMatch(providerRequest.instructions, new RegExp(forbidden, 'u'));
       }
     }
@@ -964,7 +966,8 @@ test('V2.2 replays the five-turn recruitment failure chain with one bounded task
       .map((event) => event.text)
       .join('');
     assert.doesNotMatch(visible, /没有可核验资料|无法核验/u);
-    for (const { projectSlug } of controlledContextFailureChain.expectedEvidence) {
+    const finalStep = controlledContextFailureChain.steps.at(-1)!;
+    for (const { projectSlug } of finalStep.expectedEvidence) {
       const project = siteContent.projects.find((candidate) => candidate.slug === projectSlug);
       assert.ok(project);
       assert.match(visible, new RegExp(project.name, 'u'));
