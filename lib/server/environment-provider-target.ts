@@ -31,6 +31,10 @@ export interface AdminEnvironmentProviderTarget {
   userAgent: string | null;
 }
 
+export function isEnvironmentTargetKey(value: string): value is EnvironmentTargetKey {
+  return value === 'primary' || value === 'fallback-1' || value === 'fallback-2';
+}
+
 function configuredBaseUrlMode(
   baseUrl: string,
   outboundPolicy: ProviderOutboundPolicy,

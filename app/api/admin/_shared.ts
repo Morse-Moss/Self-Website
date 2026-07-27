@@ -44,11 +44,13 @@ export function adminProviderError(error: unknown) {
   if (error.code === 'AI_CONFIG_NOT_FOUND') return adminInvalid('AI_CONFIG_INVALID', 404);
   const status = error.code === 'AI_CONFIG_CONFLICT' || error.code === 'AI_CONFIG_IN_USE'
     || error.code === 'AI_CONFIG_TEST_REQUIRED' || error.code === 'AI_CONFIG_HISTORY_RETAINED'
-    || error.code === 'AI_CONFIG_TARGET_DELETED'
+    || error.code === 'AI_CONFIG_TARGET_DELETED' || error.code === 'AI_CONFIG_ENVIRONMENT_CHANGED'
+    || error.code === 'AI_CONFIG_TAKEOVER_EXISTS'
     ? 409
     : error.code === 'AI_CONFIG_RATE_LIMITED'
       ? 429
       : error.code === 'AI_CONFIG_UNAVAILABLE' || error.code === 'AI_CONFIG_SECRET_UNAVAILABLE'
+          || error.code === 'AI_CONFIG_ENVIRONMENT_UNAVAILABLE'
           || error.code.startsWith('AI_CONFIG_KEY_')
         ? 503
         : 400;

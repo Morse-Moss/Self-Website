@@ -25,6 +25,7 @@ const routePaths = [
   'app/api/admin/providers/models/[modelId]/route.ts',
   'app/api/admin/providers/models/[modelId]/test/route.ts',
   'app/api/admin/providers/runtime/environment/[targetKey]/test/route.ts',
+  'app/api/admin/providers/runtime/environment/[targetKey]/takeover/route.ts',
   'app/api/admin/providers/routes/activate/route.ts',
   'app/api/admin/providers/events/route.ts',
 ] as const;
@@ -38,6 +39,7 @@ let eventsRoute: typeof import('../app/api/admin/providers/events/route.ts');
 let activateRoute: typeof import('../app/api/admin/providers/routes/activate/route.ts');
 let modelTestRoute: typeof import('../app/api/admin/providers/models/[modelId]/test/route.ts');
 let modelRoute: typeof import('../app/api/admin/providers/models/[modelId]/route.ts');
+let takeoverRoute: typeof import('../app/api/admin/providers/runtime/environment/[targetKey]/takeover/route.ts');
 
 async function migrate(connectionString: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
@@ -99,7 +101,16 @@ before(async () => {
     OPENAI_CHAT_PROTOCOL: 'responses',
     OPENAI_EMBEDDING_MODEL: 'embedding-model',
   });
-  [sessionRoute, runtimeRoute, providersRoute, eventsRoute, activateRoute, modelTestRoute, modelRoute] = await Promise.all([
+  [
+    sessionRoute,
+    runtimeRoute,
+    providersRoute,
+    eventsRoute,
+    activateRoute,
+    modelTestRoute,
+    modelRoute,
+    takeoverRoute,
+  ] = await Promise.all([
     import('../app/api/admin/session/route.ts'),
     import('../app/api/admin/providers/runtime/route.ts'),
     import('../app/api/admin/providers/route.ts'),
@@ -107,6 +118,7 @@ before(async () => {
     import('../app/api/admin/providers/routes/activate/route.ts'),
     import('../app/api/admin/providers/models/[modelId]/test/route.ts'),
     import('../app/api/admin/providers/models/[modelId]/route.ts'),
+    import('../app/api/admin/providers/runtime/environment/[targetKey]/takeover/route.ts'),
   ]);
 });
 
@@ -137,6 +149,11 @@ test('all provider routes are node-only, private, strict, and reuse shared admin
   assert.match(shared, /reauthenticateAdminPassword/u);
   assert.match(shared, /Cache-Control.*no-store/su);
   assert.match(shared, /AI_CONFIG_RATE_LIMITED/u);
+  const takeover = fs.readFileSync(path.resolve(
+    'app/api/admin/providers/runtime/environment/[targetKey]/takeover/route.ts',
+  ), 'utf8');
+  assert.match(takeover, /isEnvironmentTargetKey/u);
+  assert.doesNotMatch(takeover, /targetKey as/u);
 });
 
 test('visitor access is rejected and authenticated read responses are no-store and redacted', async () => {
@@ -215,6 +232,258 @@ test('an unavailable provider master key is a redacted 503', async () => {
     assert.deepEqual(await response.json(), { ok: false, error: 'AI_CONFIG_UNAVAILABLE' });
   } finally {
     process.env.MORSE_PROVIDER_CONFIG_KEY = configuredKey;
+  }
+});
+
+test('environment takeover API is authenticated, replayable, conflict-safe, and fully redacted', async () => {
+  const login = await sessionRoute.POST(request('/api/admin/session', {
+    body: { password }, method: 'POST', origin: allowedOrigin,
+  }));
+  const cookie = cookieFrom(login);
+  assert.ok(cookie);
+  const originalApiKey = process.env.OPENAI_API_KEY;
+  const originalBaseUrl = process.env.OPENAI_BASE_URL;
+  const inheritedKey = 'environment-inherited-zq7x';
+  const changedInheritedKey = 'environment-changed-wk8z';
+  const submittedKey = 'submitted-private-jv9q';
+  const configuredUrl = 'https://environment.example/v1/private-path-rk9w';
+  const unsafeConfiguredUrl = `${configuredUrl}?token=query-secret-pm7v`;
+  const evidence: string[] = [];
+  const capturedLogs: string[] = [];
+  const originalError = console.error;
+  const originalWarn = console.warn;
+  console.error = (...args: unknown[]) => { capturedLogs.push(args.map(String).join(' ')); };
+  console.warn = (...args: unknown[]) => { capturedLogs.push(args.map(String).join(' ')); };
+  process.env.OPENAI_API_KEY = inheritedKey;
+  process.env.OPENAI_BASE_URL = configuredUrl;
+
+  const firstRequestId = '22222222-2222-4222-8222-222222222221';
+  const secondRequestId = '22222222-2222-4222-8222-222222222222';
+  const thirdRequestId = '22222222-2222-4222-8222-222222222223';
+  const fourthRequestId = '22222222-2222-4222-8222-222222222224';
+  const model = {
+    displayName: 'Editable API model',
+    inputUsdPerMillion: null,
+    maxOutputTokens: 1200,
+    modelId: 'gpt-editable-api',
+    outputUsdPerMillion: null,
+    protocol: 'responses',
+    reasoningEffort: 'high',
+  };
+
+  async function responseText(response: Response): Promise<string> {
+    const text = await response.text();
+    evidence.push(text);
+    return text;
+  }
+
+  async function takeover(
+    targetKey: string,
+    body: Record<string, unknown>,
+    input: { cookie?: string; origin?: string } = { cookie, origin: allowedOrigin },
+  ) {
+    return takeoverRoute.POST(request(
+      `/api/admin/providers/runtime/environment/${targetKey}/takeover`,
+      {
+        body,
+        cookie: input.cookie,
+        method: 'POST',
+        origin: input.origin,
+      },
+    ), { params: Promise.resolve({ targetKey }) });
+  }
+
+  async function draftCounts() {
+    return (await pool.query<{
+      connections: number;
+      models: number;
+      takeovers: number;
+    }>(`SELECT
+      (SELECT count(*) FROM ai_connections)::integer AS connections,
+      (SELECT count(*) FROM ai_model_presets)::integer AS models,
+      (SELECT count(*) FROM ai_environment_takeovers)::integer AS takeovers`)).rows[0];
+  }
+
+  let encryptedNeedles: string[] = [];
+  try {
+    const runtimeResponse = await runtimeRoute.GET(request('/api/admin/providers/runtime', { cookie }));
+    const runtimeText = await responseText(runtimeResponse);
+    const runtime = JSON.parse(runtimeText) as {
+      environmentTargets: Array<{
+        baseUrlMode: string;
+        configDigest: string;
+        environmentTargetKey: string;
+      }>;
+    };
+    const primary = runtime.environmentTargets.find(
+      (target) => target.environmentTargetKey === 'primary',
+    );
+    assert.ok(primary);
+    assert.equal(primary.baseUrlMode, 'server_reusable');
+    const validBody = {
+      apiKey: submittedKey,
+      baseUrl: null,
+      expectedConfigDigest: primary.configDigest,
+      firstModel: model,
+      name: 'Editable API primary',
+      password,
+      requestId: firstRequestId,
+      reuseKeyAcrossOrigin: false,
+      userAgent: 'Morse/API',
+    };
+
+    const unauthenticated = await takeover('primary', validBody, { origin: allowedOrigin });
+    assert.equal(unauthenticated.status, 401);
+    assert.equal(unauthenticated.headers.get('cache-control'), 'no-store');
+    await responseText(unauthenticated);
+    const missingOrigin = await takeover('primary', validBody, { cookie });
+    assert.equal(missingOrigin.status, 403);
+    await responseText(missingOrigin);
+    const wrongOrigin = await takeover('primary', validBody, {
+      cookie,
+      origin: 'https://wrong-origin.example',
+    });
+    assert.equal(wrongOrigin.status, 403);
+    await responseText(wrongOrigin);
+    const wrongPassword = await takeover('primary', { ...validBody, password: 'wrong' });
+    assert.equal(wrongPassword.status, 401);
+    await responseText(wrongPassword);
+    assert.deepEqual(await draftCounts(), { connections: 0, models: 0, takeovers: 0 });
+
+    const unknownBody = await takeover('primary', { ...validBody, unexpected: true });
+    assert.equal(unknownBody.status, 400);
+    await responseText(unknownBody);
+    const invalidTarget = await takeover('fallback-9', validBody);
+    assert.equal(invalidTarget.status, 400);
+    await responseText(invalidTarget);
+
+    process.env.OPENAI_API_KEY = changedInheritedKey;
+    const changed = await takeover('primary', validBody);
+    assert.equal(changed.status, 409);
+    assert.deepEqual(JSON.parse(await responseText(changed)), {
+      error: 'AI_CONFIG_ENVIRONMENT_CHANGED',
+      ok: false,
+    });
+    process.env.OPENAI_API_KEY = inheritedKey;
+
+    const created = await takeover('primary', validBody);
+    assert.equal(created.status, 200);
+    assert.equal(created.headers.get('cache-control'), 'no-store');
+    const createdText = await responseText(created);
+    const createdBody = JSON.parse(createdText) as {
+      connectionSeriesId: string;
+      connectionVersion: number;
+      modelSeriesId: string;
+      modelVersion: number;
+      takeoverId: string;
+    };
+    assert.deepEqual(Object.keys(createdBody), [
+      'connectionSeriesId',
+      'connectionVersion',
+      'modelSeriesId',
+      'modelVersion',
+      'takeoverId',
+    ]);
+    assert.equal(createdBody.connectionVersion, 1);
+    assert.equal(createdBody.modelVersion, 1);
+    const afterCreate = await draftCounts();
+    assert.deepEqual(afterCreate, { connections: 1, models: 1, takeovers: 1 });
+
+    const replay = await takeover('primary', validBody);
+    assert.equal(replay.status, 200);
+    const replayText = await responseText(replay);
+    assert.equal(replayText, createdText);
+    assert.deepEqual(await draftCounts(), afterCreate);
+
+    const conflict = await takeover('primary', { ...validBody, requestId: secondRequestId });
+    assert.equal(conflict.status, 409);
+    assert.deepEqual(JSON.parse(await responseText(conflict)), {
+      error: 'AI_CONFIG_TAKEOVER_EXISTS',
+      ok: false,
+    });
+    assert.deepEqual(await draftCounts(), afterCreate);
+
+    const unavailable = await takeover('fallback-2', {
+      ...validBody,
+      expectedConfigDigest: 'a'.repeat(64),
+      requestId: thirdRequestId,
+    });
+    assert.equal(unavailable.status, 503);
+    assert.deepEqual(JSON.parse(await responseText(unavailable)), {
+      error: 'AI_CONFIG_ENVIRONMENT_UNAVAILABLE',
+      ok: false,
+    });
+
+    process.env.OPENAI_BASE_URL = unsafeConfiguredUrl;
+    const unsafeRuntimeResponse = await runtimeRoute.GET(request('/api/admin/providers/runtime', { cookie }));
+    const unsafeRuntimeText = await responseText(unsafeRuntimeResponse);
+    const unsafeRuntime = JSON.parse(unsafeRuntimeText) as {
+      environmentTargets: Array<{
+        baseUrlMode: string;
+        configDigest: string;
+        environmentTargetKey: string;
+      }>;
+    };
+    const unsafePrimary = unsafeRuntime.environmentTargets.find(
+      (target) => target.environmentTargetKey === 'primary',
+    );
+    assert.ok(unsafePrimary);
+    assert.equal(unsafePrimary.baseUrlMode, 'replacement_required');
+    const invalidReuse = await takeover('primary', {
+      ...validBody,
+      expectedConfigDigest: unsafePrimary.configDigest,
+      requestId: fourthRequestId,
+    });
+    assert.equal(invalidReuse.status, 400);
+    assert.deepEqual(JSON.parse(await responseText(invalidReuse)), {
+      error: 'AI_CONFIG_INVALID',
+      ok: false,
+    });
+    assert.deepEqual(await draftCounts(), afterCreate);
+
+    const encrypted = await pool.query<{
+      ciphertext_base64: string;
+      ciphertext_hex: string;
+      tag_base64: string;
+      tag_hex: string;
+    }>(`SELECT encode(connection.api_key_ciphertext, 'base64') AS ciphertext_base64,
+              encode(connection.api_key_ciphertext, 'hex') AS ciphertext_hex,
+              encode(connection.api_key_tag, 'base64') AS tag_base64,
+              encode(connection.api_key_tag, 'hex') AS tag_hex
+         FROM ai_environment_takeovers takeover
+         JOIN ai_connections connection
+           ON connection.id = takeover.initial_connection_version_id
+        WHERE takeover.id = $1`, [createdBody.takeoverId]);
+    encryptedNeedles = Object.values(encrypted.rows[0]);
+    evidence.push((await pool.query<{ raw: string }>(
+      `SELECT COALESCE(json_agg(event ORDER BY id), '[]'::json)::text AS raw
+         FROM ai_config_events event`,
+    )).rows[0].raw);
+  } finally {
+    console.error = originalError;
+    console.warn = originalWarn;
+    if (originalApiKey === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = originalApiKey;
+    if (originalBaseUrl === undefined) delete process.env.OPENAI_BASE_URL;
+    else process.env.OPENAI_BASE_URL = originalBaseUrl;
+  }
+
+  evidence.push(...capturedLogs);
+  const serializedEvidence = evidence.join('\n');
+  for (const needle of [
+    inheritedKey,
+    inheritedKey.slice(-4),
+    changedInheritedKey,
+    changedInheritedKey.slice(-4),
+    submittedKey,
+    submittedKey.slice(-4),
+    configuredUrl,
+    'private-path-rk9w',
+    unsafeConfiguredUrl,
+    'query-secret-pm7v',
+    ...encryptedNeedles,
+  ]) {
+    assert.equal(serializedEvidence.includes(needle), false, `leaked sensitive value: ${needle}`);
   }
 });
 
