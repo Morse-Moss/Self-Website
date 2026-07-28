@@ -310,6 +310,7 @@ test('loadServerConfig parses independent context packet rollout, budgets, and d
   assert.equal(disabled.contextPacketEnabled, false);
   assert.equal(disabled.contextCanaryPercent, 0);
   assert.deepEqual([...disabled.contextCanaryInviteIds], []);
+  assert.deepEqual([...disabled.contextCanaryInviteLabels], []);
   assert.equal(disabled.contextTokenBudget, 12_000);
   assert.equal(disabled.jdContextTokenBudget, 24_000);
   assert.equal(disabled.contextPacketDigest, null);
@@ -320,6 +321,7 @@ test('loadServerConfig parses independent context packet rollout, budgets, and d
     MORSE_CHAT_CONTEXT_PACKET_ENABLED: 'true',
     MORSE_CHAT_CONTEXT_CANARY_PERCENT: '0',
     MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS: inviteId,
+    MORSE_CHAT_CONTEXT_CANARY_INVITE_LABELS: 'HR interview,Internal QA,HR interview',
     MORSE_CHAT_CONTEXT_TOKEN_BUDGET: '12000',
     MORSE_JD_CONTEXT_TOKEN_BUDGET: '24000',
     MORSE_CONTEXT_PACKET_DIGEST_KEY: digestKey,
@@ -327,6 +329,7 @@ test('loadServerConfig parses independent context packet rollout, budgets, and d
   });
   assert.equal(enabled.contextPacketEnabled, true);
   assert.deepEqual([...enabled.contextCanaryInviteIds], [inviteId]);
+  assert.deepEqual([...enabled.contextCanaryInviteLabels], ['HR interview', 'Internal QA']);
   assert.equal(enabled.contextPacketDigest?.key.equals(Buffer.alloc(32, 17)), true);
   assert.equal(enabled.contextPacketDigest?.keyId, 'context-key-v1');
 });
@@ -344,6 +347,17 @@ test('context packet config fails closed for invalid rollout, budget, or digest 
     { MORSE_CHAT_CONTEXT_PACKET_ENABLED: 'maybe' },
     { MORSE_CHAT_CONTEXT_CANARY_PERCENT: '101' },
     { MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS: 'not-a-uuid' },
+    { MORSE_CHAT_CONTEXT_CANARY_INVITE_LABELS: 'HR interview\nInjected' },
+    { MORSE_CHAT_CONTEXT_CANARY_INVITE_LABELS: '\tHR interview' },
+    { MORSE_CHAT_CONTEXT_CANARY_INVITE_LABELS: 'HR interview\n' },
+    { MORSE_CHAT_CONTEXT_CANARY_INVITE_LABELS: 'HR interview\r' },
+    { MORSE_CHAT_CONTEXT_CANARY_INVITE_LABELS: 'HR interview,,Internal QA' },
+    {
+      MORSE_CHAT_CONTEXT_CANARY_INVITE_LABELS: Array.from(
+        { length: 101 },
+        (_, index) => `label-${index}`,
+      ).join(','),
+    },
     { MORSE_CHAT_CONTEXT_TOKEN_BUDGET: '999' },
     { MORSE_JD_CONTEXT_TOKEN_BUDGET: '11999' },
     { MORSE_CONTEXT_PACKET_DIGEST_KEY: Buffer.alloc(31).toString('base64') },
@@ -366,6 +380,7 @@ test('.env.example keeps context packet disabled and documents non-secret contro
     'MORSE_CHAT_CONTEXT_PACKET_ENABLED=false',
     'MORSE_CHAT_CONTEXT_CANARY_PERCENT=0',
     'MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS=',
+    'MORSE_CHAT_CONTEXT_CANARY_INVITE_LABELS=',
     'MORSE_CHAT_CONTEXT_TOKEN_BUDGET=12000',
     'MORSE_JD_CONTEXT_TOKEN_BUDGET=24000',
     'MORSE_CONTEXT_PACKET_DIGEST_KEY_ID=',

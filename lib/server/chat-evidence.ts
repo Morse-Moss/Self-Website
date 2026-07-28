@@ -1,5 +1,6 @@
 import type { ChatRouteDecision } from './chat-route-policy.ts';
 import { chatProjectReferences } from './chat-projects.ts';
+import { approvedProjectCatalogSources } from './chat-project-evidence.ts';
 import {
   assessCapability,
   assessCapabilities,
@@ -202,10 +203,11 @@ export async function resolveChatEvidence(
       };
     }
     case 'grounded': {
-      if (input.route.reasonCode === 'portfolio_project_collection_query') {
+      if (input.route.reasonCode === 'portfolio_project_collection_query'
+        || input.route.reasonCode === 'project_experience_query') {
         return {
           capability: null,
-          knowledge: input.projectKnowledge?.() ?? [],
+          knowledge: input.projectKnowledge?.() ?? approvedProjectCatalogSources(),
           search: undefined,
         };
       }

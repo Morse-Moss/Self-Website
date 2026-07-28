@@ -107,6 +107,13 @@ test('semantic resolver distinguishes catalog, fit, named project, capability, a
     ['你做过数字 Morse 项目吗？', null, 'named_project_fact', 'personal_named_project_query', true],
     ['你熟悉 PostgreSQL 吗？', null, 'capability_fact', 'personal_capability_query', false],
     ['你做过支付系统吗？', null, 'unsupported_personal_history', 'personal_history_query', false],
+    [
+      '这份岗位不是招单纯会用 AI 工具的人。请讲一个你真正落地过的 AI 项目：原来是什么业务流程，你具体做了什么，最后产生了什么结果？',
+      null,
+      'project_catalog',
+      'project_experience_query',
+      false,
+    ],
   ] as const;
 
   for (const [message, frame, intent, reasonCode, requiresEmbedding] of cases) {
@@ -120,6 +127,44 @@ test('semantic resolver distinguishes catalog, fit, named project, capability, a
   assert.equal(resolve('你做过哪些项目？').resolved.semantic.evidencePlan[0], 'approved_project_catalog');
   assert.equal(resolve('你做过数字 Morse 项目吗？').resolved.semantic.referent?.ref, 'digital-morse');
   assert.equal(resolve('你熟悉 PostgreSQL 吗？').resolved.semantic.referent?.ref, 'postgresql');
+  const experience = resolve('请分享一个你做过的 AI Agent 项目，讲清楚问题、动作和结果。');
+  assert.deepEqual(experience.resolved.semantic.evidencePlan, ['approved_project_catalog']);
+  assert.equal(experience.resolved.semantic.taskAction, 'temporary');
+  assert.equal(experience.candidateFrame, null);
+  for (const message of [
+    '请介绍一下你做过的一个 AI 项目，重点说说你的职责和最终结果。',
+    '介绍一个你参与过的人工智能项目，说明你的职责和产出。',
+  ]) {
+    const synonym = resolve(message);
+    assert.equal(synonym.resolved.semantic.intent, 'project_catalog', message);
+    assert.equal(synonym.resolved.legacyRoute.reasonCode, 'project_experience_query', message);
+    assert.deepEqual(synonym.resolved.semantic.evidencePlan, ['approved_project_catalog'], message);
+  }
+  assert.notEqual(
+    resolve('你认为应该如何介绍一个 AI 项目？').resolved.legacyRoute.reasonCode,
+    'project_experience_query',
+  );
+  for (const message of [
+    '一般团队在介绍一个 AI 项目时，需要说明哪些业务问题、实现和验证结果？',
+    '面试时应该从哪些问题、实现和结果介绍一个 AI 项目？',
+    '请讲一个行业里的 AI 项目案例，说明问题、实现和结果。',
+    '请讲一个行业里真正落地过的 AI 项目案例，说明问题、实现和结果。',
+    '请分享一个竞争对手做过的 AI Agent 项目，讲清楚问题、动作和结果。',
+    '请介绍一个我们团队做过的 AI 项目，说明业务流程和最终结果。',
+    '请举例一个公开报道里落地过的 AI 项目案例。',
+    '请讲一个一般团队真正落地过的 AI 项目案例。',
+    '请分享一个某个团队做过的 AI Agent 项目。',
+    '请介绍一个朋友参与过的 AI 项目案例。',
+    '请讲一个创业公司完成过的 AI 项目案例。',
+    '请讲一个你朋友做过的 AI 项目案例。',
+    '请讲一个你的团队落地过的 AI 项目案例。',
+    '怎样从问题、实现和结果三个方面介绍一个 AI 项目？',
+  ]) {
+    const generic = resolve(message);
+    assert.notEqual(generic.resolved.legacyRoute.reasonCode, 'project_experience_query', message);
+    assert.notEqual(generic.resolved.semantic.intent, 'project_catalog', message);
+    assert.notDeepEqual(generic.resolved.semantic.evidencePlan, ['approved_project_catalog'], message);
+  }
 });
 
 test('explicit conversational follow-up keeps exactly the adjacent completed turn', () => {
@@ -494,4 +539,31 @@ test('temporary chat leaves a captured legacy bridge untouched', () => {
   assert.equal(result.resolved.semantic.taskAction, 'temporary');
   assert.equal(result.candidateFrame, null);
   assert.equal(result.legacyBridgeStatus, 'captured');
+});
+
+test('project experience keeps its explicit intent when the first V2.2 turn bridges legacy history', () => {
+  const message = '请讲一个真正落地过的 AI 项目，说明原流程、具体动作和结果。';
+  const legacyTurn = completedTurn({
+    user: { id: '61', role: 'user', text: message },
+    assistant: { id: '62', role: 'assistant', text: '旧链路回答' },
+  });
+  const result = resolveChatSemanticTurn({
+    request: normalizeChatRequest({
+      message,
+      mode: 'interviewer',
+      audienceIntent: 'recruiter',
+    }),
+    ledger,
+    conversationId: CONVERSATION_ID,
+    currentUserMessageId: '63',
+    currentFrame: null,
+    discourseContext: null,
+    legacyBridge: [legacyTurn],
+    taskIdFactory: () => NEXT_TASK_ID,
+  });
+
+  assert.equal(result.resolved.semantic.intent, 'project_catalog');
+  assert.equal(result.resolved.legacyRoute.reasonCode, 'project_experience_query');
+  assert.equal(result.resolved.semantic.taskAction, 'temporary');
+  assert.equal(result.candidateFrame, null);
 });

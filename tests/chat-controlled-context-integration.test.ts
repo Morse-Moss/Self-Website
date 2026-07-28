@@ -25,8 +25,10 @@ import { insertRunningInteraction } from '../lib/server/interaction-log.ts';
 import { hashSecret } from '../lib/server/security.ts';
 import type { SearchProvider } from '../lib/server/search-provider.ts';
 import { siteContent } from '../lib/site-content.ts';
+import { matchChatProjectSlugs } from '../lib/server/chat-projects.ts';
 import { encodeTurnMessage } from '../lib/server/turn-codec.ts';
 import { controlledContextFailureChain } from './fixtures/controlled-context-failure-chain.ts';
+import { hrInterviewEightTurnChain } from './fixtures/hr-interview-eight-turn-chain.ts';
 import {
   createDisposablePostgresDatabase,
   type DisposablePostgresDatabase,
@@ -122,13 +124,15 @@ async function seedFailureChainKnowledge(): Promise<void> {
     assert.ok(project, seed.slug);
     await pool.query(
       `INSERT INTO knowledge_documents (id, title, source_path, checksum)
-       VALUES ($1,$2,$3,$4)`,
+       VALUES ($1,$2,$3,$4)
+       ON CONFLICT (id) DO NOTHING`,
       [seed.id, project.name, `tests/fixtures/${seed.id}.md`, seed.id.padEnd(64, '0')],
     );
     await pool.query(
       `INSERT INTO knowledge_chunks
-        (id, document_id, ordinal, content, embedding, metadata)
-       VALUES ($1,$2,0,$3,$4::vector,$5::jsonb)`,
+         (id, document_id, ordinal, content, embedding, metadata)
+       VALUES ($1,$2,0,$3,$4::vector,$5::jsonb)
+       ON CONFLICT (id) DO NOTHING`,
       [
         `${seed.id}-chunk`,
         seed.id,
@@ -162,6 +166,7 @@ function contextConfig(
     contextPacketEnabled: true,
     contextCanaryPercent: 0,
     contextCanaryInviteIds: new Set([fixture.inviteId]),
+    contextCanaryInviteLabels: new Set(),
     contextTokenBudget: 12_000,
     jdContextTokenBudget: 24_000,
     contextPacketDigest: digest,
@@ -182,6 +187,7 @@ class ControlledAnswerProvider implements AiProvider {
   readonly started: Promise<void>;
   private readonly fail: boolean;
   private readonly restoredAnswer: boolean;
+  private readonly singleProjectAnswer: boolean;
   private readonly waitForRelease: boolean;
   private markStarted!: () => void;
   private releaseAnswer!: () => void;
@@ -190,10 +196,12 @@ class ControlledAnswerProvider implements AiProvider {
   constructor(options: {
     fail?: boolean;
     restoredAnswer?: boolean;
+    singleProjectAnswer?: boolean;
     waitForRelease?: boolean;
   } = {}) {
     this.fail = options.fail ?? false;
     this.restoredAnswer = options.restoredAnswer ?? false;
+    this.singleProjectAnswer = options.singleProjectAnswer ?? false;
     this.waitForRelease = options.waitForRelease ?? false;
     this.started = new Promise((resolve) => { this.markStarted = resolve; });
     this.released = new Promise((resolve) => { this.releaseAnswer = resolve; });
@@ -224,17 +232,18 @@ class ControlledAnswerProvider implements AiProvider {
     const admitted = siteContent.projects.filter((project) => (
       request.instructions.includes(project.name)
     )).slice(0, 3);
-    const answer = admitted.length > 0
+    const selected = this.singleProjectAnswer ? admitted.slice(0, 1) : admitted;
+    const answer = selected.length > 0
       ? this.restoredAnswer
         ? [
             'Current RAG delivery requirements map to independently audited evidence:',
-            ...admitted.map((project, index) => (
+            ...selected.map((project, index) => (
               `${project.name} demonstrates relevant product evaluation and delivery. [来源${index + 1}]`
             )),
           ].join('\n')
         : [
             'For this AI Product Manager role, the strongest audited evidence is:',
-            ...admitted.map((project, index) => (
+            ...selected.map((project, index) => (
               `${project.name} supports RAG product design and delivery. [来源${index + 1}]`
             )),
           ].join('\n')
@@ -286,6 +295,39 @@ class FailureChainProvider implements AiProvider {
   }
 }
 
+class HrInterviewRegressionProvider implements AiProvider {
+  readonly requests: AnswerRequest[] = [];
+
+  async embed(inputs: string[]): Promise<number[][]> {
+    return inputs.map(() => {
+      const vector = new Array<number>(EMBEDDING_DIMENSIONS).fill(0);
+      vector[0] = 1;
+      return vector;
+    });
+  }
+
+  async *streamAnswer(request: AnswerRequest): AsyncIterable<AnswerEvent> {
+    this.requests.push(request);
+    const evidenceBlock = request.instructions.match(
+      /<approved_evidence>([\s\S]*?)<\/approved_evidence>/u,
+    )?.[1];
+    const admitted = evidenceBlock
+      ? JSON.parse(evidenceBlock) as Array<{ projectSlug?: string }>
+      : [];
+    const selectedIndex = admitted.findIndex((item) => (
+      item.projectSlug === 'ai-leadgen' || item.projectSlug === 'auto-operations'
+    ));
+    const selected = selectedIndex >= 0
+      ? siteContent.projects.find((project) => project.slug === admitted[selectedIndex].projectSlug)
+      : null;
+    const answer = selected
+      ? `我有可核验的相关项目经验：${selected.name}覆盖业务流程拆解、自动化编排和结果验证。[来源${selectedIndex + 1}]`
+      : '我会先基于当前岗位信息判断业务目标、交付边界和验证方式。';
+    yield { type: 'delta', text: answer };
+    yield { type: 'done', usage: { inputTokens: 72, outputTokens: 28 } };
+  }
+}
+
 class ExternalCurrentProvider implements AiProvider {
   readonly requests: AnswerRequest[] = [];
 
@@ -313,6 +355,363 @@ async function collectChat(input: Parameters<typeof runChat>[0]): Promise<ChatSe
   for await (const event of runChat(input)) events.push(event);
   return events;
 }
+
+test('an exact HR interview label upgrades an existing full-invite session from legacy to V2.2', async () => {
+  const fixture = await createFixture('HR interview');
+  const firstTurnId = randomUUID();
+  const firstProvider = new ControlledAnswerProvider();
+  try {
+    const firstEvents = await collectChat({
+      pool,
+      provider: coordinatedProvider(firstProvider),
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        message: '请讲一个真正落地过的 AI 项目，说明原流程、具体动作和结果。',
+        turnId: firstTurnId,
+      }),
+      config: contextConfig(fixture, {
+        contextCanaryInviteIds: new Set(),
+        contextCanaryInviteLabels: new Set(),
+      }),
+      now: fixtureNow,
+    });
+    const meta = firstEvents.find((event) => event.type === 'meta');
+    assert.equal(meta?.type, 'meta');
+    if (meta?.type !== 'meta') return;
+
+    const secondTurnId = randomUUID();
+    const secondProvider = new ControlledAnswerProvider({ singleProjectAnswer: true });
+    const secondEvents = await collectChat({
+      pool,
+      provider: coordinatedProvider(secondProvider),
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        message: '这份岗位不是招单纯会用 AI 工具的人。请讲一个你真正落地过的 AI 项目：原来是什么业务流程，你具体做了什么，最后产生了什么结果？',
+        conversationId: meta.conversationId,
+        turnId: secondTurnId,
+      }),
+      config: contextConfig(fixture, {
+        contextCanaryInviteIds: new Set(),
+        contextCanaryInviteLabels: new Set(['HR interview']),
+      }),
+      now: new Date(fixtureNow.getTime() + 1_000),
+    });
+    assert.equal(secondProvider.requests.length, 1);
+    assert.match(secondProvider.requests[0].instructions, /只选择一个/);
+    assert.match(secondProvider.requests[0].instructions, /原始业务问题/);
+    assert.match(secondProvider.requests[0].instructions, /本人职责/);
+    assert.match(secondProvider.requests[0].instructions, /关键决策/);
+    assert.match(secondProvider.requests[0].instructions, /系统结构/);
+    assert.match(secondProvider.requests[0].instructions, /验证结果/);
+    assert.match(secondProvider.requests[0].instructions, /事实边界/);
+    assert.doesNotMatch(
+      secondProvider.requests[0].instructions,
+      /完整列出本轮证据中的全部公开项目/,
+    );
+    const secondAnswer = secondEvents
+      .filter((event): event is Extract<ChatServiceEvent, { type: 'delta' }> => event.type === 'delta')
+      .map((event) => event.text)
+      .join('');
+    assert.equal(matchChatProjectSlugs(secondAnswer).length, 1);
+    assert.doesNotMatch(secondAnswer, /没有可核验|无法核验/u);
+
+    const stored = await pool.query<{
+      assignment: string;
+      first_pipeline: string;
+      max_sessions: number;
+      second_intent: string;
+      second_pipeline: string;
+      session_count: number;
+    }>(
+      `SELECT conversation.context_pipeline_assignment AS assignment,
+              first_turn.execution_pipeline AS first_pipeline,
+              second_turn.execution_pipeline AS second_pipeline,
+              second_turn.semantic_intent AS second_intent,
+              invite.session_count, invite.max_sessions
+         FROM conversations AS conversation
+         JOIN interaction_turns AS first_turn ON first_turn.id = $2
+         JOIN interaction_turns AS second_turn ON second_turn.id = $3
+         JOIN access_sessions AS session ON session.id = conversation.access_session_id
+         JOIN invite_codes AS invite ON invite.id = session.invite_code_id
+        WHERE conversation.id = $1`,
+      [meta.conversationId, firstTurnId, secondTurnId],
+    );
+    assert.deepEqual(stored.rows[0], {
+      assignment: 'context_packet_v22',
+      first_pipeline: 'legacy_v2',
+      second_pipeline: 'context_packet_v22',
+      second_intent: 'project_catalog',
+      session_count: 1,
+      max_sessions: 1,
+    });
+  } finally {
+    await cleanupFixture(fixture);
+  }
+});
+
+test('the screenshot HR chain upgrades legacy history into one JD-backed V2.2 task', async () => {
+  const fixture = await createFixture('HR interview');
+  const legacyTurnIds: string[] = [];
+  const upgradedTaskIds: string[] = [];
+  let conversationId: string | null = null;
+  try {
+    await seedFailureChainKnowledge();
+    for (const [index, step] of hrInterviewEightTurnChain.slice(0, 5).entries()) {
+      const turnId = randomUUID();
+      legacyTurnIds.push(turnId);
+      const events = await collectChat({
+        pool,
+        provider: coordinatedProvider(new ControlledAnswerProvider()),
+        accessSessionId: fixture.accessSessionId,
+        request: normalizeChatRequest({
+          workflow: 'chat',
+          message: step.message,
+          mode: 'interviewer',
+          audienceIntent: 'recruiter',
+          conversationId,
+          turnId,
+        }),
+        config: contextConfig(fixture, {
+          contextCanaryInviteIds: new Set(),
+          contextCanaryInviteLabels: new Set(),
+        }),
+        now: new Date(fixtureNow.getTime() + index * 1_000),
+      });
+      const meta = events.find((event) => event.type === 'meta');
+      assert.equal(meta?.type, 'meta', step.message);
+      if (meta?.type !== 'meta') return;
+      conversationId ??= meta.conversationId;
+      assert.equal(meta.conversationId, conversationId, step.message);
+      const stored = await pool.query<{ execution_pipeline: string; status: string }>(
+        'SELECT status, execution_pipeline FROM interaction_turns WHERE id = $1',
+        [turnId],
+      );
+      assert.deepEqual(stored.rows[0], {
+        status: 'completed',
+        execution_pipeline: 'legacy_v2',
+      }, step.message);
+    }
+
+    assert.ok(conversationId);
+    for (const [offset, step] of hrInterviewEightTurnChain.slice(5).entries()) {
+      const turnId = randomUUID();
+      const provider = new HrInterviewRegressionProvider();
+      const events = await collectChat({
+        pool,
+        provider: coordinatedProvider(provider),
+        accessSessionId: fixture.accessSessionId,
+        request: normalizeChatRequest({
+          workflow: 'chat',
+          message: step.message,
+          mode: 'interviewer',
+          audienceIntent: 'recruiter',
+          conversationId,
+          turnId,
+        }),
+        config: contextConfig(fixture, {
+          contextCanaryInviteIds: new Set(),
+          contextCanaryInviteLabels: new Set(['HR interview']),
+        }),
+        now: new Date(fixtureNow.getTime() + (offset + 5) * 1_000),
+      });
+      const meta = events.find((event) => event.type === 'meta');
+      assert.equal(meta?.type, 'meta', step.message);
+      if (meta?.type !== 'meta') return;
+      assert.equal(meta.conversationId, conversationId, step.message);
+      assert.equal(provider.requests.length, 1, step.message);
+      assert.ok(provider.requests[0].execution?.integrity, step.message);
+
+      const stored = await pool.query<{
+        context_manifest: {
+          context_build_status: string;
+          evidence_ids: string[];
+          included_layers: string[];
+          legacy_bridge_source_turn_ids: string[];
+          legacy_bridge_status: string;
+          projected_slot_kinds: string[];
+        };
+        context_scope_id: string;
+        discourse_action: string;
+        execution_pipeline: string;
+        semantic_intent: string;
+        status: string;
+        task_action: string;
+      }>(
+        `SELECT status, execution_pipeline, semantic_intent, discourse_action,
+                task_action, context_scope_id::text, context_manifest
+           FROM interaction_turns
+          WHERE id = $1`,
+        [turnId],
+      );
+      const row = stored.rows[0];
+      assert.equal(row.status, 'completed', step.message);
+      assert.equal(row.execution_pipeline, 'context_packet_v22', step.message);
+      assert.equal(row.semantic_intent, 'project_fit', step.message);
+      assert.equal(row.discourse_action, 'follow_up', step.message);
+      assert.equal(row.task_action, 'continue', step.message);
+      assert.equal(row.context_manifest.context_build_status, 'built', step.message);
+      assert.ok(row.context_manifest.evidence_ids.length > 0, step.message);
+      assert.ok(row.context_manifest.included_layers.includes('task_frame'), step.message);
+      assert.ok(row.context_manifest.included_layers.includes('task_inputs'), step.message);
+      assert.ok(row.context_manifest.projected_slot_kinds.includes('job_description'), step.message);
+      assert.ok(meta.sources.length > 0, step.message);
+      if (offset === 0) {
+        assert.equal(row.context_manifest.legacy_bridge_status, 'consumed', step.message);
+        assert.deepEqual(row.context_manifest.legacy_bridge_source_turn_ids, [...legacyTurnIds].reverse(), step.message);
+      }
+      upgradedTaskIds.push(row.context_scope_id);
+
+      const visible = events
+        .filter((event): event is Extract<ChatServiceEvent, { type: 'delta' }> => event.type === 'delta')
+        .map((event) => event.text)
+        .join('');
+      assert.ok(
+        matchChatProjectSlugs(visible).some((slug) => (
+          slug === 'ai-leadgen' || slug === 'auto-operations'
+        )),
+        step.message,
+      );
+      assert.doesNotMatch(visible, /没有可核验|无法核验|请.*(?:JD|岗位).*(?:发|提供|补充)/u, step.message);
+    }
+
+    assert.equal(new Set(upgradedTaskIds).size, 1);
+    const finalState = await pool.query<{
+      assignment: string;
+      consumed_bridge_count: number;
+      frame_count: number;
+      jd_slot_count: number;
+      max_sessions: number;
+      session_count: number;
+      task_id: string;
+      task_kind: string;
+    }>(
+      `SELECT conversation.context_pipeline_assignment AS assignment,
+              frame.task_id::text, frame.task_kind,
+              invite.session_count, invite.max_sessions,
+              (SELECT count(*)::integer FROM conversation_context_task_state AS candidate
+                WHERE candidate.conversation_id = conversation.id) AS frame_count,
+              (SELECT count(*)::integer FROM conversation_context_slot_refs AS slot
+                WHERE slot.conversation_id = conversation.id
+                  AND slot.task_id = frame.task_id
+                  AND slot.slot_kind = 'job_description') AS jd_slot_count,
+              (SELECT count(*)::integer FROM conversation_context_legacy_bridge_turns AS bridge
+                WHERE bridge.conversation_id = conversation.id
+                  AND bridge.status = 'consumed') AS consumed_bridge_count
+         FROM conversations AS conversation
+         JOIN conversation_context_task_state AS frame
+           ON frame.conversation_id = conversation.id
+         JOIN access_sessions AS session ON session.id = conversation.access_session_id
+         JOIN invite_codes AS invite ON invite.id = session.invite_code_id
+        WHERE conversation.id = $1`,
+      [conversationId],
+    );
+    assert.deepEqual(finalState.rows[0], {
+      assignment: 'context_packet_v22',
+      task_id: upgradedTaskIds[0],
+      task_kind: 'recruitment_evaluation',
+      session_count: 1,
+      max_sessions: 1,
+      frame_count: 1,
+      jd_slot_count: 2,
+      consumed_bridge_count: legacyTurnIds.length,
+    });
+  } finally {
+    await cleanupFixture(fixture);
+  }
+});
+
+test('context label matching is case-sensitive and remains additive to the UUID allowlist', async (t) => {
+  for (const label of ['hr interview', 'HR Interview', 'general']) {
+    await t.test(label, async () => {
+      const fixture = await createFixture(label);
+      const turnId = randomUUID();
+      try {
+        await collectChat({
+          pool,
+          provider: coordinatedProvider(new ControlledAnswerProvider()),
+          accessSessionId: fixture.accessSessionId,
+          request: normalizeChatRequest({
+            message: '请讲一个真正落地过的 AI 项目，说明原流程、具体动作和结果。',
+            turnId,
+          }),
+          config: contextConfig(fixture, {
+            contextCanaryInviteIds: new Set(),
+            contextCanaryInviteLabels: new Set(['HR interview']),
+          }),
+          now: fixtureNow,
+        });
+        const stored = await pool.query<{ execution_pipeline: string }>(
+          'SELECT execution_pipeline FROM interaction_turns WHERE id = $1',
+          [turnId],
+        );
+        assert.deepEqual(stored.rows[0], { execution_pipeline: 'legacy_v2' });
+      } finally {
+        await cleanupFixture(fixture);
+      }
+    });
+  }
+
+  await t.test('static UUID allowlist', async () => {
+    const fixture = await createFixture('ordinary invite');
+    const turnId = randomUUID();
+    try {
+      await collectChat({
+        pool,
+        provider: coordinatedProvider(new ControlledAnswerProvider()),
+        accessSessionId: fixture.accessSessionId,
+        request: normalizeChatRequest({
+          message: '请讲一个真正落地过的 AI 项目，说明原流程、具体动作和结果。',
+          turnId,
+        }),
+        config: contextConfig(fixture, {
+          contextCanaryInviteIds: new Set([fixture.inviteId]),
+          contextCanaryInviteLabels: new Set(['HR interview']),
+        }),
+        now: fixtureNow,
+      });
+      const stored = await pool.query<{ execution_pipeline: string }>(
+        'SELECT execution_pipeline FROM interaction_turns WHERE id = $1',
+        [turnId],
+      );
+      assert.deepEqual(stored.rows[0], { execution_pipeline: 'context_packet_v22' });
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
+
+  await t.test('diagnosis remains on its legacy pipeline', async () => {
+    const fixture = await createFixture('HR interview');
+    const turnId = randomUUID();
+    try {
+      await collectChat({
+        pool,
+        provider: coordinatedProvider(new ControlledAnswerProvider()),
+        accessSessionId: fixture.accessSessionId,
+        request: normalizeChatRequest({
+          workflow: 'diagnosis',
+          diagnosis: {
+            problem: '客服知识库回答不稳定',
+            goal: '形成可验证的改进方案',
+          },
+          audienceIntent: 'collaboration',
+          turnId,
+        }),
+        config: contextConfig(fixture, {
+          contextCanaryInviteIds: new Set(),
+          contextCanaryInviteLabels: new Set(['HR interview']),
+        }),
+        now: fixtureNow,
+      });
+      const stored = await pool.query<{ execution_pipeline: string }>(
+        'SELECT execution_pipeline FROM interaction_turns WHERE id = $1',
+        [turnId],
+      );
+      assert.deepEqual(stored.rows[0], { execution_pipeline: 'legacy_v2' });
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
+});
 
 function jdRequest(input: {
   conversationId?: string | null;
@@ -997,6 +1396,129 @@ test('V2.2 replays the five-turn recruitment failure chain with one bounded task
   }
 });
 
+test('an exact eight-turn HR interview chain keeps one recruitment task with JD-backed project follow-ups', async () => {
+  const fixture = await createFixture('HR interview');
+  const provider = new HrInterviewRegressionProvider();
+  const taskIds: string[] = [];
+  const taskTrace: Array<{
+    discourseAction: string;
+    semanticIntent: string;
+    taskAction: string;
+    taskId: string;
+    turn: number;
+  }> = [];
+  let conversationId: string | null = null;
+  try {
+    await seedFailureChainKnowledge();
+    for (const [index, step] of hrInterviewEightTurnChain.entries()) {
+      const turnId = randomUUID();
+      const events = await collectChat({
+        pool,
+        provider: coordinatedProvider(provider),
+        accessSessionId: fixture.accessSessionId,
+        request: normalizeChatRequest({
+          workflow: 'chat',
+          message: step.message,
+          mode: 'interviewer',
+          audienceIntent: 'recruiter',
+          conversationId,
+          turnId,
+        }),
+        config: contextConfig(fixture, {
+          contextCanaryInviteIds: new Set(),
+          contextCanaryInviteLabels: new Set(['HR interview']),
+        }),
+        now: new Date(fixtureNow.getTime() + index * 1_000),
+      });
+      const meta = events.find((event) => event.type === 'meta');
+      assert.equal(meta?.type, 'meta', step.message);
+      if (meta?.type !== 'meta') return;
+      conversationId ??= meta.conversationId;
+      assert.equal(meta.conversationId, conversationId, step.message);
+
+      const stored = await pool.query<{
+        context_manifest: {
+          context_build_status: string;
+          evidence_ids: string[];
+          included_layers: string[];
+          projected_slot_kinds: string[];
+        };
+        context_scope_id: string;
+        discourse_action: string;
+        execution_pipeline: string;
+        semantic_intent: string;
+        status: string;
+        task_action: string;
+      }>(
+        `SELECT status, execution_pipeline, semantic_intent, discourse_action,
+                task_action, context_scope_id::text, context_manifest
+           FROM interaction_turns
+          WHERE id = $1`,
+        [turnId],
+      );
+      const row = stored.rows[0];
+      assert.equal(row.status, 'completed', step.message);
+      assert.equal(row.execution_pipeline, 'context_packet_v22', step.message);
+      assert.match(row.context_scope_id, /^[0-9a-f-]{36}$/u, step.message);
+      taskIds.push(row.context_scope_id);
+      taskTrace.push({
+        discourseAction: row.discourse_action,
+        semanticIntent: row.semantic_intent,
+        taskAction: row.task_action,
+        taskId: row.context_scope_id,
+        turn: index + 1,
+      });
+
+      const visible = events
+        .filter((event): event is Extract<ChatServiceEvent, { type: 'delta' }> => event.type === 'delta')
+        .map((event) => event.text)
+        .join('');
+      if (step.requireEvidence) {
+        assert.equal(row.context_manifest.context_build_status, 'built', step.message);
+        assert.ok(row.context_manifest.evidence_ids.length > 0, step.message);
+        assert.ok(meta.sources.length > 0, step.message);
+      }
+      if (step.requireFollowUp) {
+        assert.equal(row.semantic_intent, 'project_fit', step.message);
+        assert.equal(row.discourse_action, 'follow_up', step.message);
+        assert.equal(row.task_action, 'continue', step.message);
+        assert.ok(row.context_manifest.included_layers.includes('task_frame'), step.message);
+        assert.ok(row.context_manifest.included_layers.includes('task_inputs'), step.message);
+        assert.ok(row.context_manifest.projected_slot_kinds.includes('job_description'), step.message);
+        assert.ok(
+          matchChatProjectSlugs(visible).some((slug) => (
+            slug === 'ai-leadgen' || slug === 'auto-operations'
+          )),
+          step.message,
+        );
+        assert.doesNotMatch(visible, /没有可核验|无法核验|请.*(?:JD|岗位).*(?:发|提供|补充)/u);
+      }
+    }
+
+    assert.deepEqual(
+      taskTrace.slice(0, 2).map((item) => ({
+        discourseAction: item.discourseAction,
+        semanticIntent: item.semanticIntent,
+        taskAction: item.taskAction,
+      })),
+      [
+        { discourseAction: 'one_shot', semanticIntent: 'general_conversation', taskAction: 'temporary' },
+        { discourseAction: 'one_shot', semanticIntent: 'general_conversation', taskAction: 'temporary' },
+      ],
+    );
+    assert.equal(
+      new Set(taskIds.slice(2)).size,
+      1,
+      JSON.stringify(taskTrace),
+    );
+    assert.notEqual(taskIds[0], taskIds[1]);
+    assert.notEqual(taskIds[1], taskIds[2]);
+    assert.ok(provider.requests.length >= 5);
+  } finally {
+    await cleanupFixture(fixture);
+  }
+});
+
 test('V2.2 freezes controlled search evidence into the signed external-current Context Packet', async () => {
   const fixture = await createFixture('context-v22-external-current');
   const turnId = randomUUID();
@@ -1348,7 +1870,7 @@ test('each legacy override isolates V2.2 payload state and locks only after succ
   ] as const;
   for (const variant of variants) {
     await t.test(variant.name, async () => {
-      const fixture = await createFixture(`context-v22-${variant.name}`);
+      const fixture = await createFixture('HR interview');
       const oldMarker = `OLD_V22_JD_${variant.expectedPipeline}`;
       const firstProvider = new ControlledAnswerProvider();
       try {
@@ -1376,7 +1898,11 @@ test('each legacy override isolates V2.2 payload state and locks only after succ
             marker: overrideMarker,
             turnId: overrideTurnId,
           }),
-          config: contextConfig(fixture, variant.overrides),
+          config: contextConfig(fixture, {
+            ...variant.overrides,
+            contextCanaryInviteIds: new Set(),
+            contextCanaryInviteLabels: new Set(['HR interview']),
+          }),
           now: new Date(fixtureNow.getTime() + 1_000),
         });
         const overrideVisible = overrideEvents

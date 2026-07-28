@@ -332,13 +332,20 @@ function validateControlledProjectEvidence(
   reasons: ReasonSet,
   complete: boolean,
 ): void {
-  if (!complete || !['project_fit', 'jd_match'].includes(input.semanticIntent ?? '')) return;
+  const projectExperience = input.route?.reasonCode === 'project_experience_query';
+  if (!complete || (
+    !projectExperience
+    && !['project_fit', 'jd_match'].includes(input.semanticIntent ?? '')
+  )) return;
   const approved = new Set(input.approvedProjectSlugs ?? []);
   if (approved.size === 0) return;
   const mentioned = matchChatProjectSlugs(input.answer);
+  if (projectExperience && mentioned.filter((slug) => approved.has(slug)).length !== 1) {
+    reasons.add('answer_not_direct');
+  }
   if (!mentioned.some((slug) => approved.has(slug))) reasons.add('answer_not_direct');
   if (mentioned.some((slug) => !approved.has(slug))) reasons.add('unsupported_evidence_upgrade');
-  if (/(?:没有|暂无|不存在)(?:任何|相关)?(?:可核验|公开)?(?:的)?(?:项目)?(?:资料|证据)|(?:无法|不能)(?:核验|确认)(?:任何|相关)?(?:项目|项目经验|资料|证据)/iu.test(input.answer)) {
+  if (/(?:没有|暂无|不存在)(?:任何|相关)?(?:可核验|公开)?(?:的)?(?:项目)?(?:资料|证据)|(?:没有|暂无|不存在).{0,28}(?:可核验|公开).{0,36}(?:项目|项目经验|项目经历)|(?:无法|不能).{0,20}(?:核验|确认).{0,24}(?:项目|项目经验|项目经历|资料|证据)/iu.test(input.answer)) {
     reasons.add('unsupported_evidence_upgrade');
   }
 }

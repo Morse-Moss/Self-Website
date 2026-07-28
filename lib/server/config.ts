@@ -115,6 +115,27 @@ function uuidList(env: Env, name: string): ReadonlySet<string> {
   return unique;
 }
 
+function exactLabelList(env: Env, name: string): ReadonlySet<string> {
+  const configured = env[name];
+  if (configured && /[\u0000-\u001f\u007f]/u.test(configured)) {
+    throw new Error(`${name} must contain comma-separated labels without control characters.`);
+  }
+  const raw = configured?.trim();
+  if (!raw) return new Set();
+  const values = raw.split(',').map((value) => value.trim());
+  if (values.length > 100 || values.some((value) => value.length === 0)) {
+    throw new Error(`${name} must contain between 1 and 100 non-empty comma-separated labels.`);
+  }
+  const unique = new Set<string>();
+  for (const value of values) {
+    if (value.length > 160 || /[\u0000-\u001f\u007f]/u.test(value)) {
+      throw new Error(`${name} must contain comma-separated labels without control characters.`);
+    }
+    unique.add(value);
+  }
+  return unique;
+}
+
 function contextPacketDigest(
   env: Env,
   enabled: boolean,
@@ -399,6 +420,10 @@ export function loadServerConfig(env: Env = process.env) {
     100,
   );
   const contextCanaryInviteIds = uuidList(env, 'MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS');
+  const contextCanaryInviteLabels = exactLabelList(
+    env,
+    'MORSE_CHAT_CONTEXT_CANARY_INVITE_LABELS',
+  );
   const contextTokenBudget = boundedPositiveInteger(
     env,
     'MORSE_CHAT_CONTEXT_TOKEN_BUDGET',
@@ -501,6 +526,7 @@ export function loadServerConfig(env: Env = process.env) {
     contextPacketEnabled,
     contextCanaryPercent,
     contextCanaryInviteIds,
+    contextCanaryInviteLabels,
     contextTokenBudget,
     jdContextTokenBudget,
     contextPacketDigest: contextPacketDigestConfig,

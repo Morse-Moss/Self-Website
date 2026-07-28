@@ -118,6 +118,31 @@ function isProjectCollectionQuestion(message: string): boolean {
   return /(?:有|做过|完成过|负责过|还做过)(?:的)?(?:哪些|哪一些|什么)(?:其他|别的)?(?:项目|作品)(?!管理|经验|能力|证据)|(?:其他|别的)(?:项目|作品).{0,6}(?:有哪些|是什么|呢)|(?:项目|作品).{0,6}(?:有哪些|有哪一些)|(?:介绍|说说|聊聊).{0,8}(?:你|你的|morse|摩斯).{0,8}(?:项目|作品)(?!管理|经验)/iu.test(message);
 }
 
+function isProjectExperienceNarrativeQuestion(request: NormalizedChatRequest): boolean {
+  const message = request.message;
+  const aiDelivery = /(?:AI|人工智能|Agent|智能化|自动化).{0,24}(?:项目|案例)|(?:项目|案例).{0,24}(?:AI|人工智能|Agent|智能化|自动化)/iu.test(message);
+  const narrativeRequest = /(?:请)?(?:讲|分享|介绍|说说|聊聊|举例)/iu.test(message)
+    && /(?:一个|一项|一次)/iu.test(message);
+  const methodologyQuestion = /(?:如何|怎么|怎样)(?:来)?(?:介绍|讲述|分享)|(?:介绍|讲述|分享).{0,24}(?:应该|应当)(?:如何|怎么|怎样)/iu.test(message);
+  const deliveryVerb = /(?:做过|参与过|负责过|落地过|交付过|完成过|实现过)/iu.exec(message);
+  const deliveryPrefix = deliveryVerb ? message.slice(0, deliveryVerb.index) : '';
+  const normalizedDeliveryPrefix = normalize(deliveryPrefix);
+  const selfDelivery = /(?:你本人|你|本人|morse|摩斯)(?:真正|真实|实际|亲自|确实|的确|曾经|以前|之前)?$/iu.test(
+    normalizedDeliveryPrefix,
+  );
+  const implicitInterviewDelivery = request.mode === 'interviewer'
+    && request.audienceIntent === 'recruiter'
+    && deliveryVerb !== null
+    && /^(?:请)?(?:讲|分享|介绍|说说|聊聊|举例)(?:一下)?(?:一个|一项|一次)?(?:真正|真实|实际|确实)?$/u.test(
+      normalizedDeliveryPrefix,
+    );
+  const pastDelivery = selfDelivery || implicitInterviewDelivery;
+  return aiDelivery
+    && narrativeRequest
+    && !methodologyQuestion
+    && pastDelivery;
+}
+
 function isStableGeneralConversation(message: string): boolean {
   if (/^(?:你好|嗨|hello|hi|谢谢|多谢|再见)/iu.test(message)) return true;
   if (/(?:吃饭|吃什么|近况|最近忙|怎么看|什么是|是什么|如何|怎么|怎样|为什么|建议|职场|同事|分歧|兴趣|感受)/iu.test(message)) {
@@ -330,6 +355,17 @@ export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
       topicRef: projectTopic(message),
       evidenceClass: 'direct',
       requiresEmbedding: true,
+    });
+  }
+  if (isProjectExperienceNarrativeQuestion(input.request)) {
+    return decision({
+      routeKind: 'grounded',
+      reasonCode: 'project_experience_query',
+      topicKind: 'project',
+      topicRef: null,
+      evidenceClass: 'direct',
+      release: 'complete',
+      requiresEmbedding: false,
     });
   }
   if (isProjectCollectionQuestion(message)) {

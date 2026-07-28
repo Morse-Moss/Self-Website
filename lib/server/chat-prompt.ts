@@ -117,6 +117,9 @@ function answerObjective(route: ChatRouteDecision): string {
   if (route.reasonCode === 'portfolio_project_collection_query') {
     return '完整列出本轮证据中的全部公开项目（包括经审核脱敏展示的企业案例），并用一句话说明每个项目解决的问题；不得补充未在本轮证据中的项目。';
   }
+  if (route.reasonCode === 'project_experience_query') {
+    return '只选择一个最能直接回答问题的审核项目，按原始业务问题、本人职责、关键决策、系统结构、验证结果和事实边界讲清楚；重点回答本人具体做了什么及最终产生了什么结果，不得把团队或未来计划冒充个人已完成结果，也不要完整列出全部项目。';
+  }
   switch (route.routeKind) {
     case 'conversation': return '第一段自然、直接地回答问题，不谈项目或资料。';
     case 'external_current': return '直接给出已核验的当前信息；无法核验时明确说明。';

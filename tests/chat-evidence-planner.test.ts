@@ -124,6 +124,16 @@ test('project catalog returns the complete audited catalog without embedding', a
   assert.deepEqual(result.knowledge.map((item) => item.projectSlug), siteContent.projects.map((project) => project.slug));
   assert.deepEqual(deps.calls, { embed: 0, retrieve: 0, limits: [] });
   assert.ok(result.knowledge.every((item) => item.evidenceLevel === 'direct'));
+  for (const label of [
+    '原始业务问题：',
+    '本人职责：',
+    '关键决策：',
+    '系统结构：',
+    '验证结果：',
+    '事实边界：',
+  ]) {
+    assert.match(result.knowledge[0].content, new RegExp(label));
+  }
 });
 
 test('project fit over-fetches 15 chunks and returns stable top three unique audited projects', async () => {

@@ -223,6 +223,30 @@ test('project collection evidence returns the full catalog without semantic depe
   assert.deepEqual(calls.counts(), { embed: 0, retrieve: 0, search: 0 });
 });
 
+test('project experience evidence uses the complete shared audited catalog without semantic dependencies', async () => {
+  const calls = input(route('grounded', {
+    reasonCode: 'project_experience_query',
+    topicKind: 'project',
+    topicRef: null,
+    evidenceClass: 'direct',
+    release: 'complete',
+    requiresEmbedding: false,
+  }), '请讲一个真正落地过的 AI 项目，说明原流程、具体动作和结果。');
+  const result = await resolveChatEvidence(calls);
+
+  assert.deepEqual(
+    result.knowledge.map((source) => source.projectSlug),
+    siteContent.projects.map((project) => project.slug),
+  );
+  assert.match(result.knowledge[0].content, /原始业务问题：/);
+  assert.match(result.knowledge[0].content, /本人职责：/);
+  assert.match(result.knowledge[0].content, /关键决策：/);
+  assert.match(result.knowledge[0].content, /系统结构：/);
+  assert.match(result.knowledge[0].content, /验证结果：/);
+  assert.match(result.knowledge[0].content, /事实边界：/);
+  assert.deepEqual(calls.counts(), { embed: 0, retrieve: 0, search: 0 });
+});
+
 test('an inherited project follow-up anchors the embedding query to the persisted project', async () => {
   const calls = input(route('grounded', {
     reasonCode: 'anaphoric_project_followup',

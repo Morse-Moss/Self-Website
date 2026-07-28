@@ -140,12 +140,14 @@
 
 1. 冻结并上传 Git commit 归档，核对本地/远端 SHA-256；切换前确认 `/opt/revolution/current`、五容器 identity/health/restart count、migration manifest、41 documents / 48 chunks、活动 Provider route、零长事务、PostgreSQL TLS 与回滚镜像。`001-011` 进入首次迁移路径，`001-012` 且 release 不含新 migration 进入 correction 路径；其他 manifest 立即停止。
 2. 仅首次迁移路径停止 Web/Worker，创建 `/opt/revolution/shared/backups/pre-<release>-<UTC>.dump`，要求非空、mode `0600` 且记录 SHA-256，再使用 `--no-deps` 执行 migration `012`、grants 和 runtime 权限验证。correction 路径只校验现有 pre-release 备份可读、manifest 与 grants，不重复停写、备份、migration 或 ingest。migration 前向追加，不执行 down migration。
-3. 在 `/opt/revolution/shared/secrets/context_packet_digest_key` 生成独立 32-byte Secret，owner `1001:1001`、mode `0600`，只挂载给 Web。共享环境设置 `MORSE_CONTEXT_PACKET_DIGEST_KEY_ID`、12k/24k 预算、Context Packet enabled、canary percent `0` 与空白名单。
+3. 在 `/opt/revolution/shared/secrets/context_packet_digest_key` 生成独立 32-byte Secret，owner `1001:1001`、mode `0600`，只挂载给 Web。共享环境设置 `MORSE_CONTEXT_PACKET_DIGEST_KEY_ID`、12k/24k 预算、Context Packet enabled、canary percent `0`、空 UUID 白名单与空标签白名单。
 4. 只构建/重建 Web、Worker，不运行 ingest，不重建 DB、Embedding、Edge。空白名单下先验证 ready、manifest `001-012`、grants、固定 Mock 失败链、公网 smoke、容器身份和错误日志。
 5. 创建一个 1 小时、最多 1 个 Session 的专用测试邀请码，只把其非敏感 UUID 写入 `MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS`，百分比始终保持 `0`，只重启 Web。逐轮重放 `tests/fixtures/controlled-context-failure-chain.ts` 中已脱敏的 5 条消息，不得合并、增补、改写或用其他问题替代；每轮来源按当次真实 BGE 分数与 direct-first 规则核验，不得假设固定 Top-3。最多发送 5 次真实 Provider 主回答。
-6. 只记录脱敏 manifest、Task Frame 状态、来源 ID、attempt 状态/时延及同 turn packet/request HMAC 一致性，不记录原始问答、邀请码明文、Provider payload、Key 或 URL。完成后停用邀请码、清空白名单、保持 percent `0`，只重启 Web并复验全部健康与日志门禁。
+6. 只记录脱敏 manifest、Task Frame 状态、来源 ID、attempt 状态/时延及同 turn packet/request HMAC 一致性，不记录原始问答、邀请码明文、Provider payload、Key 或 URL。完成后停用邀请码、清空 UUID/标签白名单、保持 percent `0`，只重启 Web并复验全部健康与日志门禁。
 
-异常时只关闭 `MORSE_CHAT_CONTEXT_PACKET_ENABLED`、清空白名单并重启 Web；保留 migration `012`、Secret 和数据。回滚镜像必须识别 `001-012`；禁止使用 pre-012 镜像，当前 correction 的最低兼容回滚 release 是 `9c13490`。未经新的当前授权，停止在单邀请码 canary，不进入 10% 或更高灰度。
+定向 HR 发布使用额外的大小写敏感标签白名单：保留既有 `MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS`，将 `MORSE_CHAT_CONTEXT_CANARY_INVITE_LABELS` 精确设置为 `HR interview`。因此部署后新创建的同标签 invite 不再依赖下一次静态 UUID 重算；已有未过期 Session 即使 invite 已满额也继续准入。该配置不授权代理发送真实问题，本次回答观察由用户亲自触发。
+
+异常时只关闭 `MORSE_CHAT_CONTEXT_PACKET_ENABLED`、清空 UUID/标签白名单并重启 Web；保留 migration `012`、Secret 和数据。回滚镜像必须识别 `001-012`；禁止使用 pre-012 镜像，当前 correction 的最低兼容回滚 release 是 `9c13490`。未经新的当前授权，停止在单邀请码 canary，不进入 10% 或更高灰度。
 
 ## 发布边界
 

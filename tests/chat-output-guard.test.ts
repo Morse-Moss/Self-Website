@@ -415,6 +415,40 @@ test('controlled project fit applies recruitment and admitted-evidence guards in
   }).ok, true);
 });
 
+test('project experience answers use exactly one admitted project and cannot refuse available evidence', () => {
+  const input = {
+    route: groundedRoute({
+      reasonCode: 'project_experience_query',
+      topicKind: 'project',
+      topicRef: null,
+      release: 'complete',
+      requiresEmbedding: false,
+    }),
+    semanticIntent: 'project_catalog' as const,
+    approvedProjectSlugs: ['content-agent', 'auto-operations', 'digital-morse'],
+    workflow: 'chat' as const,
+    question: '请介绍一下你做过的一个 AI 项目，重点说说你的职责和最终结果。',
+    sourceCount: 3,
+  };
+
+  assert.equal(inspectChatAnswer({
+    ...input,
+    answer: '我选择数字摩斯：我负责把作品集、RAG 与对话工作流连成可验证系统，并完成生产部署。[来源3]',
+  }).ok, true);
+  assert.ok(inspectChatAnswer({
+    ...input,
+    answer: '内容创作 Agent 系统负责内容生产，自动运营 Agent 系统负责运营编排，数字摩斯负责 RAG 对话。[来源1][来源2][来源3]',
+  }).reasons.includes('answer_not_direct'));
+  assert.ok(inspectChatAnswer({
+    ...input,
+    answer: 'AI 外贸获客系统是我最有代表性的项目。[来源1]',
+  }).reasons.includes('unsupported_evidence_upgrade'));
+  assert.ok(inspectChatAnswer({
+    ...input,
+    answer: '我目前没有可核验的具体 AI 项目经历。',
+  }).reasons.includes('unsupported_evidence_upgrade'));
+});
+
 test('generic project questions reject meta-only evidence templates', () => {
   const result = inspectChatAnswer({
     answer: '我会根据公开资料保持诚实表达，并保留可核验来源。',

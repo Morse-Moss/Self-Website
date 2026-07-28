@@ -71,6 +71,7 @@ export async function POST(request: NextRequest) {
         contextPacketEnabled: config.contextPacketEnabled,
         contextCanaryPercent: config.contextCanaryPercent,
         contextCanaryInviteIds: config.contextCanaryInviteIds,
+        contextCanaryInviteLabels: config.contextCanaryInviteLabels,
         contextTokenBudget: config.contextTokenBudget,
         jdContextTokenBudget: config.jdContextTokenBudget,
         contextPacketDigest: config.contextPacketDigest,

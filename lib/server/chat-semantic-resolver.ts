@@ -507,6 +507,9 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
   } else if (completing) {
     intent = currentFrame?.evidenceFocus.topicKind === 'jd' ? 'jd_match' : 'project_fit';
     reasonCode = 'recruitment_task_complete';
+  } else if (baseRoute.reasonCode === 'project_experience_query') {
+    intent = 'project_catalog';
+    reasonCode = baseRoute.reasonCode;
   } else if (isProjectCatalog(message)) {
     intent = 'project_catalog';
     reasonCode = 'portfolio_project_collection_query';

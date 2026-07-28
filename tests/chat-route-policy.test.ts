@@ -12,8 +12,12 @@ import { chatCapabilityPolicy, siteContent } from '../lib/site-content.ts';
 
 const ledger = compileCapabilityLedger(siteContent, chatCapabilityPolicy);
 
-function request(message: string, audienceIntent: 'general' | 'recruiter' = 'general') {
-  return normalizeChatRequest({ message, audienceIntent });
+function request(
+  message: string,
+  audienceIntent: 'general' | 'recruiter' = 'general',
+  mode: 'general' | 'interviewer' = 'general',
+) {
+  return normalizeChatRequest({ message, audienceIntent, mode });
 }
 
 function projectAnchor(topicRef: string): RouteAnchor {
@@ -169,6 +173,49 @@ test('an unsupported named project claim remains unavailable personal history', 
   assert.equal(decision.reasonCode, 'personal_history_query');
   assert.equal(decision.evidenceClass, 'unavailable');
   assert.equal(decision.requiresEmbedding, false);
+});
+
+test('an open-ended AI project delivery narrative uses audited project evidence', () => {
+  for (const message of [
+    '这份岗位不是招单纯会用 AI 工具的人。请讲一个你真正落地过的 AI 项目：原来是什么业务流程，你具体做了什么，最后产生了什么结果？',
+    '请分享一个你做过的 AI Agent 项目，讲清楚问题、动作和结果。',
+    '请讲一个真正落地过的 AI 项目，说明原流程、具体动作和结果。',
+    '请介绍一下你做过的一个 AI 项目，重点说说你的职责和最终结果。',
+    '介绍一个你参与过的人工智能项目，说明你的职责和产出。',
+  ]) {
+    const decision = routeChatTurn({ request: request(message, 'recruiter', 'interviewer'), ledger });
+
+    assert.equal(decision.routeKind, 'grounded', message);
+    assert.equal(decision.reasonCode, 'project_experience_query', message);
+    assert.equal(decision.topicKind, 'project', message);
+    assert.equal(decision.topicRef, null, message);
+    assert.equal(decision.evidenceClass, 'direct', message);
+    assert.equal(decision.release, 'complete', message);
+    assert.equal(decision.requiresEmbedding, false, message);
+  }
+
+  for (const message of [
+    '你做过支付系统吗？',
+    '你有什么项目管理经验？',
+    '你认为应该如何介绍一个 AI 项目？',
+    '一般团队在介绍一个 AI 项目时，需要说明哪些业务问题、实现和验证结果？',
+    '面试时应该从哪些问题、实现和结果介绍一个 AI 项目？',
+    '请讲一个行业里的 AI 项目案例，说明问题、实现和结果。',
+    '请讲一个行业里真正落地过的 AI 项目案例，说明问题、实现和结果。',
+    '请分享一个竞争对手做过的 AI Agent 项目，讲清楚问题、动作和结果。',
+    '请介绍一个我们团队做过的 AI 项目，说明业务流程和最终结果。',
+    '请举例一个公开报道里落地过的 AI 项目案例。',
+    '请讲一个一般团队真正落地过的 AI 项目案例。',
+    '请分享一个某个团队做过的 AI Agent 项目。',
+    '请介绍一个朋友参与过的 AI 项目案例。',
+    '请讲一个创业公司完成过的 AI 项目案例。',
+    '请讲一个你朋友做过的 AI 项目案例。',
+    '请讲一个你的团队落地过的 AI 项目案例。',
+    '怎样从问题、实现和结果三个方面介绍一个 AI 项目？',
+  ]) {
+    const decision = routeChatTurn({ request: request(message, 'recruiter', 'interviewer'), ledger });
+    assert.notEqual(decision.reasonCode, 'project_experience_query', message);
+  }
 });
 
 test('project management experience is not mistaken for the public project catalog', () => {

@@ -4,10 +4,17 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**RECRUITMENT_BARE_RECHECK_DEPLOYED_UNOBSERVED / HR_ALLOWLIST_6 / PERCENT_0**
+**HR_PROJECT_NARRATIVE_LOCAL_READY / PRODUCTION_STILL_2220759 / PERCENT_0**
 
 ## next_allowed_pointer
-当前生产应用运行 `2220759`。招聘裸追问修复已部署，Context Packet 为 enabled、percent `0`，精确 `HR interview` 白名单为 capacity-eligible invite 与未过期 Session 所属 invite 的并集，共 6 个。Agent 未代替用户发送真实面试问题；下一步由用户使用现有 HR invite 亲自提问，再按实际对话证据判断回答质量。未经新的当前授权，不进入百分比灰度，也不自动创建邀请码或重放真实问题。
+当前生产应用仍运行 `2220759`，尚不包含项目经历路由与动态标签准入修复；用户刚创建的 `HR interview` invite 不在部署时冻结的 6 个 UUID 中，实际问题因此走入 `legacy_v2 / personal_history_query / unavailable`。修复已在本地通过验证并进入 CRITICAL 双审查，下一步是完成 scoped commit/push 和 Web-only 部署，将标签精确设置为 `HR interview`、percent 保持 `0`。部署完成前不要再次测试；Agent 不代替用户发送真实问题，不进入百分比灰度。
+
+## HR 项目经历拒答修复（2026-07-28，待部署）
+
+- 生产根因：失败 turn 在服务端被记录为 `legacy_v2 / personal_fact / personal_history_query / unavailable`。对应 invite 创建于静态 UUID allowlist 冻结之后，虽精确标记为 `HR interview`，但运行 Web 不支持标签准入，因此没有进入 Context Packet V2.2。
+- 修复：新增大小写敏感的 `MORSE_CHAT_CONTEXT_CANARY_INVITE_LABELS`，与既有 UUID 白名单取并集；精确 `HR interview` Session 在下一轮可从 legacy 升级到 V2.2，满额 invite 的未过期 Session 仍然有效。项目经历问法进入 `project_experience_query`，只选择一个审核项目，并提供原始业务问题、本人职责、关键决策、系统结构、验证结果和事实边界。
+- Verification：全量非数据库测试 `842/842`、受影响边界 `179/179`、Controlled Context PostgreSQL `29/29`、生产契约 `12/12`、typecheck、scoped ESLint、33-route production build 与 `git diff --check` 通过。八轮假 Provider 回归证明前两轮保持 temporary 隔离，第 3–8 轮使用同一个招聘 Task，后三轮均为 `project_fit / follow_up / continue` 并保留 JD 与审核项目证据。
+- Boundary：验证未调用真实 Chat/Embedding/Search/Provider，未发送真实面试问题，未修改生产、数据库、语料、Provider route 或非 Web 服务；`.github/` 保持未触碰。
 
 ## 招聘裸追问修复与 HR 定向发布（2026-07-28）
 

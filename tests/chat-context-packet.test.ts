@@ -274,6 +274,40 @@ test('project catalog retains all audited projects while ranked project fit rema
   assert.equal(fit.packet.approvedEvidence.length, 3);
 });
 
+test('project experience packet requires one complete audited delivery narrative', () => {
+  const experienceResolved = resolved('project_catalog');
+  experienceResolved.semantic.reasonCodes = ['project_experience_query'];
+  experienceResolved.legacyRoute = {
+    ...experienceResolved.legacyRoute,
+    routeKind: 'grounded',
+    reasonCode: 'project_experience_query',
+    topicKind: 'project',
+    evidenceClass: 'direct',
+    release: 'complete',
+    requiresEmbedding: false,
+  };
+  const built = buildContextPacket({
+    resolved: experienceResolved,
+    currentInput: '请讲一个真正落地过的 AI 项目，说明原流程、具体动作和结果。',
+    currentUserMessageId: '21',
+    projection: projection({ discourse: null, history: [], evidence: [evidence('digital-morse')] }),
+    tokenBudget: 12_000,
+    digestKey: KEY,
+    digestKeyId: KEY_ID,
+    reasoningEffort: null,
+  });
+
+  const instructions = built.normal.request.baseInstructions;
+  assert.match(instructions, /只选择一个/);
+  assert.match(instructions, /原始业务问题/);
+  assert.match(instructions, /本人职责/);
+  assert.match(instructions, /关键决策/);
+  assert.match(instructions, /系统结构/);
+  assert.match(instructions, /验证结果/);
+  assert.match(instructions, /事实边界/);
+  assert.doesNotMatch(instructions, /完整列出本轮证据中的全部公开项目/);
+});
+
 test('budget eviction removes oldest whole history turns before evidence', () => {
   const history = [
     turn('55555555-5555-4555-8555-555555555555', 'A'.repeat(900)),

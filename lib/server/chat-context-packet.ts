@@ -117,7 +117,11 @@ function renderData(value: unknown): string {
 }
 
 function responseContract(resolved: ResolvedChatTurn): string {
-  const evidenceLevels = resolved.semantic.intent === 'external_current'
+  const projectExperience = resolved.legacyRoute.reasonCode === 'project_experience_query'
+    || resolved.semantic.reasonCodes.includes('project_experience_query');
+  const evidenceLevels = projectExperience
+    ? '只选择一个最能直接回答问题的审核项目，按原始业务问题、本人职责、关键决策、系统结构、验证结果和事实边界讲清楚；重点回答本人具体做了什么及最终产生了什么结果，不得把团队或未来计划冒充个人已完成结果，也不要完整列出全部公开项目。'
+    : resolved.semantic.intent === 'external_current'
     ? '只使用本轮受控搜索结果；必须显示外部来源并说明检索时间边界；不得用搜索结果补造 Morse 的个人事实。'
     : resolved.semantic.intent === 'project_fit'
     || resolved.semantic.intent === 'jd_match'

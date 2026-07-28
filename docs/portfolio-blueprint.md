@@ -403,4 +403,4 @@
 - **上下文合同**：API 不发送无界“全部历史”。服务端以 Current Input、紧邻 completed discourse、结构化 Task Frame、同任务 completed-only history 和 Approved Evidence 组成有界 Context Packet；Final Projection 白名单决定每层是否准入，预算不足时按整轮淘汰，不切断消息。
 - **RAG 定位**：RAG 继续使用 BGE + pgvector，只为当前语义 intent 选择审核公开项目证据；Task Frame 管理任务连续性，RAG 不承担会话记忆。assistant 历史只帮助语言承接，不能升级为事实证据；项目目录、唯一项目锁定和项目适配使用独立证据计划。
 - **安全与完整性**：普通 Chat/JD 预算为 12k/24k；canonical packet 与 generation request 使用独立 Web-only HMAC。每个 Provider attempt 必须在网络调用前记录同 turn 一致的 builder/key/packet/request digest，manifest 只保留受约束 ID、枚举、计数和分数，不保留原始问答、JD、Provider payload 或 Secret。
-- **状态与发布**：migration `012` 为 additive、forward-only。上线先以 Context Packet percent `0` 和空白名单部署，再只对白名单中的一个测试邀请码运行最多 5 次真实主回答；完成后停用邀请码、清空白名单并保持 percent `0`。扩大灰度不属于本轮授权。
+- **状态与发布**：migration `012` 为 additive、forward-only。上线先以 Context Packet percent `0` 和空白 UUID/标签白名单部署；定向 HR 发布可通过大小写敏感的 `HR interview` 标签与既有 UUID 并集准入，满额但仍有未过期 Session 的 invite 不能被排除。真实问题必须由用户明确发起，代理不得代发；扩大灰度不属于本轮授权。

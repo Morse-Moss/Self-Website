@@ -6,6 +6,7 @@ import type {
 import type { KnowledgeSource } from '../contracts/chat-runtime.ts';
 import type { Project, ProjectSlug } from '../contracts/site-content.ts';
 import { siteContent } from '../site-content.ts';
+import { approvedProjectSource } from './chat-project-evidence.ts';
 import {
   assessCapabilities,
   assessCapability,
@@ -48,34 +49,6 @@ function auditedProject(slug: string): Project | null {
   return siteContent.projects.find((project) => project.slug === slug) ?? null;
 }
 
-function structuredProjectSource(
-  project: Project,
-  level: 'direct' | 'transferable',
-  options: { score?: number; retrievedContent?: string; topicIds?: string[] } = {},
-): KnowledgeSource {
-  const details = [
-    project.summary,
-    `审核能力：${project.capabilities.join('、')}`,
-    `个人职责：${project.caseStudy.role}`,
-    project.caseStudy.evidence.length > 0
-      ? `审核证据：${project.caseStudy.evidence.join('；')}`
-      : '',
-    options.retrievedContent ? `相关审核片段：${options.retrievedContent}` : '',
-  ].filter(Boolean);
-  return {
-    chunkId: `project:${project.slug}`,
-    documentId: `project-${project.slug}`,
-    title: project.name,
-    sourcePath: `content/site-content.json#projects.${project.slug}`,
-    href: `/works#${project.slug}`,
-    content: details.join('\n'),
-    score: options.score ?? 1,
-    projectSlug: project.slug,
-    topicIds: [...new Set([project.slug, ...(options.topicIds ?? [])])],
-    evidenceLevel: level,
-  };
-}
-
 function identitySource(): KnowledgeSource {
   return {
     chunkId: 'about:identity',
@@ -106,7 +79,7 @@ function capabilitySource(
   if (reference.projectSlug) {
     const project = auditedProject(reference.projectSlug);
     if (project) {
-      return structuredProjectSource(project, level, {
+      return approvedProjectSource(project, level, {
         topicIds: [reference.capabilityId],
         retrievedContent: `${reference.label}：${reference.sourceText}`,
       });
@@ -214,7 +187,7 @@ function fallbackProjects(
     .flatMap(([slug, rank]) => {
       const project = auditedProject(slug);
       return project
-        ? [structuredProjectSource(project, rank.level, { topicIds: [...rank.topicIds] })]
+        ? [approvedProjectSource(project, rank.level, { topicIds: [...rank.topicIds] })]
         : [];
     });
   return {
@@ -265,7 +238,7 @@ async function rankedProjects(input: PlanChatEvidenceInput): Promise<PlannedChat
     const project = auditedProject(slug);
     if (!project) return [];
     const deterministic = ranks.get(slug);
-    return [structuredProjectSource(project, deterministic?.level ?? 'transferable', {
+    return [approvedProjectSource(project, deterministic?.level ?? 'transferable', {
       score: retrieved.score,
       retrievedContent: retrieved.content,
       topicIds: deterministic ? [...deterministic.topicIds] : [],
@@ -283,7 +256,7 @@ async function rankedProjects(input: PlanChatEvidenceInput): Promise<PlannedChat
 }
 
 function directProjects(): PlannedChatEvidence {
-  const knowledge = siteContent.projects.map((project) => structuredProjectSource(project, 'direct'));
+  const knowledge = siteContent.projects.map((project) => approvedProjectSource(project, 'direct'));
   return {
     knowledge,
     admissions: knowledge.map(admission),
@@ -318,7 +291,7 @@ export async function planChatEvidence(input: PlanChatEvidenceInput): Promise<Pl
           admissions: [{ evidenceId: null, level: 'unavailable', projectSlug: null, capabilityId: null }],
         };
       }
-      const knowledge = [structuredProjectSource(project, 'direct')];
+      const knowledge = [approvedProjectSource(project, 'direct')];
       return { knowledge, admissions: knowledge.map(admission), retrievalScores: [], degradedReason: null };
     }
     case 'capability_fact': {

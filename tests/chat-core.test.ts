@@ -244,6 +244,34 @@ test('project collection instructions require the complete approved public catal
   assert.match(instructions, /不得补充未在本轮证据中的项目/);
 });
 
+test('project experience instructions select one audited project and answer the delivery narrative', () => {
+  const instructions = buildV2SystemInstructions({
+    route: {
+      routeKind: 'grounded',
+      reasonCode: 'project_experience_query',
+      topicKind: 'project',
+      topicRef: null,
+      evidenceClass: 'direct',
+      inheritedFromTurnId: null,
+      release: 'complete',
+      requiresEmbedding: false,
+      requiresSearch: false,
+      deterministicReply: null,
+    },
+    question: '请讲一个真正落地过的 AI 项目，说明原流程、具体动作和结果。',
+    sources: [source],
+  });
+
+  assert.match(instructions, /只选择一个/);
+  assert.match(instructions, /原始业务问题/);
+  assert.match(instructions, /本人职责/);
+  assert.match(instructions, /关键决策/);
+  assert.match(instructions, /系统结构/);
+  assert.match(instructions, /验证结果/);
+  assert.match(instructions, /事实边界/);
+  assert.doesNotMatch(instructions, /完整列出本轮证据中的全部公开项目/);
+});
+
 test('v2 instructions lead with stable persona and policy blocks before per-turn blocks', () => {
   const groundedRoute = {
     routeKind: 'grounded' as const,

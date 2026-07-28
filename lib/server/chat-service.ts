@@ -98,6 +98,7 @@ import {
   type CapabilityAssessment,
 } from './capability-evidence.ts';
 import { resolveChatEvidence } from './chat-evidence.ts';
+import { approvedProjectCatalogSources } from './chat-project-evidence.ts';
 import { buildV2SystemInstructions } from './chat-prompt.ts';
 import { buildSafeChatAnswer } from './chat-safe-answer.ts';
 import {
@@ -187,6 +188,7 @@ export interface ChatServiceConfig {
   contextPacketEnabled?: boolean;
   contextCanaryPercent?: number;
   contextCanaryInviteIds?: ReadonlySet<string>;
+  contextCanaryInviteLabels?: ReadonlySet<string>;
   contextTokenBudget?: number;
   jdContextTokenBudget?: number;
   contextPacketDigest?: ContextPacketDigestConfig | null;
@@ -344,6 +346,7 @@ function legacyExecutionPipeline(behavior: ChatBehavior): ContextExecutionPipeli
 function contextCanarySelected(input: {
   accessSessionId: string;
   inviteCodeId: string;
+  inviteLabel: string;
   config: ChatServiceConfig;
 }): boolean {
   const canaryPercent = input.config.contextCanaryPercent ?? 0;
@@ -353,6 +356,7 @@ function contextCanarySelected(input: {
     throw new RangeError('contextCanaryPercent must be an integer between 0 and 100.');
   }
   if (input.config.contextCanaryInviteIds?.has(input.inviteCodeId.toLowerCase())) return true;
+  if (input.config.contextCanaryInviteLabels?.has(input.inviteLabel)) return true;
   return stableChatCanaryBucket(input.accessSessionId) < canaryPercent;
 }
 
@@ -361,6 +365,7 @@ function selectExecutionPipeline(input: {
   assignment: ContextPipelineAssignment;
   behavior: ChatBehavior;
   inviteCodeId: string;
+  inviteLabel: string;
   request: NormalizedChatRequest;
   config: ChatServiceConfig;
 }): ContextExecutionPipeline {
@@ -1243,6 +1248,7 @@ async function reserveTurnInTransaction(input: {
         assignment: contextAssignment,
         behavior,
         inviteCodeId: session.invite_code_id,
+        inviteLabel: session.invite_label,
         request: input.request,
         config: input.config,
       });
@@ -2620,7 +2626,7 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
         question: effectiveQuery,
         ledger: capabilityLedger,
         identityKnowledge: () => [identityKnowledgeSource()],
-        projectKnowledge: () => approvedSafeKnowledge('project'),
+        projectKnowledge: approvedProjectCatalogSources,
         async embed(query) {
           try {
             const [embedding] = await input.provider.embed([query], input.signal);

@@ -51,7 +51,7 @@ npm run production:worker
 - 三个 Chat 节点共享 `OPENAI_CHAT_MODEL`、`OPENAI_CHAT_PROTOCOL`、`OPENAI_REASONING_EFFORT` 和兼容 User-Agent。切换顺序固定为主节点、备用 1、备用 2，只在尚未输出正文时发生；已有部分回答或访客停止后不再切换。每个节点仍受单节点总超时约束，整次切换共享“单节点总超时 × 节点数”的上限。Embedding 继续使用独立配置。
 - 数据库 Provider 配置使用独立 32-byte 随机主密钥执行 AES-256-GCM 加密。生产只接受 `MORSE_PROVIDER_CONFIG_KEY_FILE` 和正整数 `MORSE_PROVIDER_CONFIG_KEY_VERSION`；直接值 `MORSE_PROVIDER_CONFIG_KEY`、mock origin 和私网 HTTP Provider override 均 fail closed。该 Secret 只挂载给 Web，Worker、Migration、Ingest 与 edge 不得读取。
 - Chat v2 灰度变量均为服务端配置，不得增加 `NEXT_PUBLIC_` 前缀。生产预检按运行时解析规则验证布尔值、0-100 整数 canary 和规范 UUID 列表；备用节点缺 key 或缺 URL、未解析引用和尖括号占位值均 fail closed，预检不调用 Provider，也不回显 UUID、Provider URL 或 key。
-- Controlled Context Packet 使用独立服务端开关 `MORSE_CHAT_CONTEXT_PACKET_ENABLED`、独立 `MORSE_CHAT_CONTEXT_CANARY_PERCENT` 和 UUID 白名单 `MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS`，不得复用 Chat v2 灰度变量。普通 Chat 与 JD 的输入预算分别固定为 `MORSE_CHAT_CONTEXT_TOKEN_BUDGET=12000` 和 `MORSE_JD_CONTEXT_TOKEN_BUDGET=24000`。
+- Controlled Context Packet 使用独立服务端开关 `MORSE_CHAT_CONTEXT_PACKET_ENABLED`、独立 `MORSE_CHAT_CONTEXT_CANARY_PERCENT`、UUID 白名单 `MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS` 和大小写敏感的精确标签白名单 `MORSE_CHAT_CONTEXT_CANARY_INVITE_LABELS`，不得复用 Chat v2 灰度变量。UUID 与标签是并集；标签命中的当前 Session 即使其 invite 已满额也可继续使用，percent 仍可保持 `0`。普通 Chat 与 JD 的输入预算分别固定为 `MORSE_CHAT_CONTEXT_TOKEN_BUDGET=12000` 和 `MORSE_JD_CONTEXT_TOKEN_BUDGET=24000`。
 - Context Packet HMAC 使用独立、解码后至少 32 bytes 的随机 Secret。生产只接受 Web 内的 `MORSE_CONTEXT_PACKET_DIGEST_KEY_FILE=/run/secrets/context_packet_digest_key` 和非敏感版本标识 `MORSE_CONTEXT_PACKET_DIGEST_KEY_ID`；不得使用直接值、复用 Provider/Admin/invite 密钥，Worker、Migration、Ingest 与 edge 均不得挂载该 Secret。
 - 私密简历默认使用 `MORSE_RESUME_ENABLED=false`。生产首次发布必须保持关闭，完成 migration `003`、私有卷初始化、最小 grants、健康检查和回滚检查后，才可在单独授权下启用。
 - 启用私密简历时，Web 还必须获得 `MORSE_RESUME_STORAGE_DIR`、`MORSE_RESUME_ENCRYPTION_KEY_FILE`、`MORSE_RESUME_KEY_VERSION`、`MORSE_RESUME_FINGERPRINT_SECRET`、`MORSE_RESUME_TRUSTED_PROXY_HOPS` 和独立 `MORSE_RESUME_COOKIE`。生产禁止使用直接值 `MORSE_RESUME_ENCRYPTION_KEY`；加密密钥只通过名为 `resume_encryption_key` 的部署 Secret 文件挂载给 Web。
@@ -109,16 +109,16 @@ npm run production:worker
 
 ### 4.3 Controlled Context Packet disabled-first 灰度
 
-该灰度独立于 Chat v2。每次只变更 Context Packet 自身开关、百分比或 UUID 白名单，并只重启 Web；Chat v2、Provider route、safe mode、hedging、RAG 和私密简历状态不得被顺带修改。
+该灰度独立于 Chat v2。每次只变更 Context Packet 自身开关、百分比、UUID 白名单或精确标签白名单，并只重启 Web；Chat v2、Provider route、safe mode、hedging、RAG 和私密简历状态不得被顺带修改。
 
 1. migration `012` 只做前向追加。registry 仍为 `001-011` 的首次部署，先在受控停写窗口停止 Web/Worker、确认无长事务并创建可校验备份，再用 `docker compose run --rm --no-deps migration` 和 grants 应用。registry 已为 `001-012` 且 release 不含新 migration 的 correction 只核对现有可读备份、manifest 与 grants，禁止为发布仪式重复停写、备份或 migration。任何路径都禁止 down migration、删除新表/列或伪造 registry。
-2. 生成独立 32-byte Web-only HMAC Secret，owner/mode 按部署平台固定为应用 UID/GID `1001:1001` 与 `0600`；设置 key ID、12k/24k 预算、`MORSE_CHAT_CONTEXT_PACKET_ENABLED=true`、`MORSE_CHAT_CONTEXT_CANARY_PERCENT=0` 和空白名单后构建并只重建 Web/Worker。
+2. 生成独立 32-byte Web-only HMAC Secret，owner/mode 按部署平台固定为应用 UID/GID `1001:1001` 与 `0600`；设置 key ID、12k/24k 预算、`MORSE_CHAT_CONTEXT_PACKET_ENABLED=true`、`MORSE_CHAT_CONTEXT_CANARY_PERCENT=0`、空 UUID 白名单和空标签白名单后构建并只重建 Web/Worker。
 3. 在 Context Packet 白名单为空且百分比为 `0` 时先验证 migration manifest、grants、live/ready、release smoke、容器身份、错误日志和无 Provider 的固定失败链。公开知识未变化时禁止为发布仪式重跑 ingest。
 4. 创建一个专用测试邀请码，只把其非敏感 invite UUID 写入 `MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS`，保持百分比始终为 `0`，只重启 Web。该 canary 必须逐轮重放 `tests/fixtures/controlled-context-failure-chain.ts` 中已脱敏的 5 条消息，不得合并、增补、改写或用其他问题替代；每轮来源按当次真实 BGE 分数与 direct-first 规则核验，不得假设固定 Top-3。最多发起 5 次真实 Provider 主回答，不得额外开启百分比流量。
 5. 观察只保存 case ID、pipeline/semantic/task 状态、来源 ID、脱敏 manifest、attempt 数/状态/时延，以及同 turn 的 packet/request HMAC 一致性；不得保存邀请码明文、原始问答、Provider payload、Key、Base URL 或私密简历内容。
 6. canary 结束后停用邀请码、清空 Context Packet 白名单并保持百分比 `0`，只重启 Web，再复验 live/ready/release smoke、容器 identity/restart count 和新 Web 启动后的错误日志。未经新的当前授权，不进入 10% 或更高灰度。
 
-获得定向 HR 测试授权后，可以在 percent 仍为 `0` 时把白名单设置为两个集合的精确并集：标签严格等于 `HR interview` 且 active、未过期、仍有 Session 容量的 invite ID，以及标签严格等于 `HR interview` 且拥有未过期 Session 的 invite ID。后者即使 invite 已满额也必须保留。变更必须使用环境文件 CAS、只重启 Web、比较变更前后两个集合，并且不得回显 UUID、邀请码明文或个人信息。定向启用本身不授权自动发送真实问题；真实问答由用户发起并单独观察。
+获得定向 HR 测试授权后，可以在 percent 仍为 `0` 时保留既有 UUID 白名单，并将 `MORSE_CHAT_CONTEXT_CANARY_INVITE_LABELS` 精确设置为 `HR interview`。运行时会把标签严格等于 `HR interview` 且 active、未过期、仍有 Session 容量的 invite，以及标签严格等于 `HR interview` 且拥有未过期 Session 的 invite 纳入同一准入并集；后者即使 invite 已满额也必须保留。标签匹配大小写敏感，不使用模糊匹配。变更必须使用环境文件 CAS、只重启 Web、比较变更前后的 UUID/标签配置，并且不得回显 UUID、邀请码明文或个人信息。定向启用本身不授权自动发送真实问题；真实问答由用户发起并单独观察。
 
 migration `012` 应用后，回滚只先设置 `MORSE_CHAT_CONTEXT_PACKET_ENABLED=false`、清空白名单并只重启 Web；保留 migration、HMAC Secret 和数据。任何回滚镜像都必须识别 migration manifest `001-012`，禁止切回 pre-012 镜像。
 
