@@ -136,6 +136,57 @@ function capabilityEvidence(assessments: readonly CapabilityAssessment[]): Plann
   };
 }
 
+function rankedCapabilitySources(query: string, ledger: CapabilityLedger): KnowledgeSource[] {
+  const grouped = new Map<string, {
+    source: KnowledgeSource;
+    content: Set<string>;
+    topicIds: Set<string>;
+  }>();
+  for (const assessment of assessCapabilities(query, ledger)) {
+    const references = [
+      ...assessment.direct.map((reference) => ({ level: 'direct' as const, reference })),
+      ...assessment.transferable.map((reference) => ({ level: 'transferable' as const, reference })),
+    ].filter(({ reference }) => reference.projectSlug === null);
+    for (const { level, reference } of references) {
+      const source = capabilitySource(reference, level);
+      const key = reference.projectSlug ?? source.documentId;
+      const group = grouped.get(key) ?? {
+        source: { ...source, chunkId: `${source.documentId}:ledger:jd` },
+        content: new Set<string>(),
+        topicIds: new Set<string>(),
+      };
+      group.content.add(source.content);
+      group.topicIds.add(reference.capabilityId);
+      if (assessment.capabilityId) group.topicIds.add(assessment.capabilityId);
+      if (level === 'direct') group.source.evidenceLevel = 'direct';
+      grouped.set(key, group);
+    }
+    const first = references[0];
+    if (assessment.boundaryText && assessment.label && first) {
+      const source = capabilitySource(first.reference, first.level);
+      grouped.get(first.reference.projectSlug ?? source.documentId)?.content.add(
+        `${assessment.label}：${assessment.boundaryText}`,
+      );
+    }
+  }
+  return [...grouped.values()].map((group) => ({
+    ...group.source,
+    content: [...group.content].join('；'),
+    topicIds: [...group.topicIds],
+  }));
+}
+
+function mergeRankedCapabilitySources(
+  projects: readonly KnowledgeSource[],
+  query: string,
+  ledger: CapabilityLedger,
+): KnowledgeSource[] {
+  return [
+    ...projects.map((source) => ({ ...source })),
+    ...rankedCapabilitySources(query, ledger),
+  ];
+}
+
 function evidenceQuery(input: PlanChatEvidenceInput): string {
   const slots = input.frame?.slots
     .map((slot) => slot.text)
@@ -181,7 +232,7 @@ function fallbackProjects(
   degradedReason: 'embedding' | 'retrieval',
 ): PlannedChatEvidence {
   const ranks = deterministicProjectRanks(query, ledger);
-  const knowledge = [...ranks.entries()]
+  const projects = [...ranks.entries()]
     .sort((left, right) => (
       right[1].score - left[1].score
       || (projectOrder.get(left[0] as ProjectSlug) ?? Number.MAX_SAFE_INTEGER)
@@ -193,6 +244,7 @@ function fallbackProjects(
         ? [approvedProjectSource(project, rank.level, { topicIds: [...rank.topicIds] })]
         : [];
     });
+  const knowledge = mergeRankedCapabilitySources(projects, query, ledger);
   return {
     knowledge,
     admissions: knowledge.map(admission),
@@ -248,7 +300,6 @@ async function rankedProjects(input: PlanChatEvidenceInput): Promise<PlannedChat
       grouped.set(source.projectSlug, source);
     }
   }
-  if (grouped.size === 0) return noEvidence();
   // Preserve threshold-qualified direct evidence; vector relevance fills the remaining slots.
   const selected = [...grouped.entries()]
     .sort((left, right) => (
@@ -258,7 +309,7 @@ async function rankedProjects(input: PlanChatEvidenceInput): Promise<PlannedChat
       || (projectOrder.get(left[0] as ProjectSlug) ?? Number.MAX_SAFE_INTEGER)
         - (projectOrder.get(right[0] as ProjectSlug) ?? Number.MAX_SAFE_INTEGER)
     ));
-  const knowledge = selected.flatMap(([slug, retrieved]) => {
+  const projects = selected.flatMap(([slug, retrieved]) => {
     const project = auditedProject(slug);
     if (!project) return [];
     const deterministic = ranks.get(slug);
@@ -268,6 +319,7 @@ async function rankedProjects(input: PlanChatEvidenceInput): Promise<PlannedChat
       topicIds: deterministic ? [...deterministic.topicIds] : [],
     })];
   });
+  const knowledge = mergeRankedCapabilitySources(projects, query, input.ledger);
   return {
     knowledge,
     admissions: knowledge.map(admission),

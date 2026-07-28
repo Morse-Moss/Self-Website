@@ -219,6 +219,57 @@ test('JD match applies the same direct-first ordering before filling by retrieva
   ]);
 });
 
+test('JD match keeps audited resume capability evidence alongside ranked projects', async () => {
+  const deps = dependencies([
+    source('content-agent', 0.91),
+    source('digital-morse', 0.88),
+  ]);
+  const currentInput = '要求使用 Claude Code 或 Cursor 独立交付网站，并负责上线维护。';
+  const result = await planChatEvidence({
+    resolved: resolved('jd_match'),
+    currentInput,
+    frame: frame([slot('job_description', currentInput)]),
+    ledger,
+    embed: deps.embed,
+    retrieve: deps.retrieve,
+  });
+
+  assert.deepEqual(
+    result.knowledge.filter((item) => item.projectSlug).map((item) => item.projectSlug),
+    ['content-agent', 'digital-morse'],
+  );
+  const resumeEvidence = result.knowledge.find((item) => item.documentId === 'resume-facts');
+  assert.ok(resumeEvidence);
+  assert.match(resumeEvidence.content, /使用 Claude Code、Codex、WorkBuddy 完成开发/u);
+  assert.ok(resumeEvidence.topicIds?.includes('claude-code'));
+  assert.equal(resumeEvidence.topicIds?.includes('cursor'), false);
+  assert.ok(result.admissions.some((item) => item.evidenceId === resumeEvidence.chunkId));
+});
+
+test('JD match keeps audited resume capability evidence when no project qualifies', async () => {
+  const deps = dependencies([
+    source('digital-morse', 0.44),
+    source('content-agent', 0.43),
+  ]);
+  const currentInput = '要求使用 Claude Code 或 Cursor 独立交付网站。';
+  const result = await planChatEvidence({
+    resolved: resolved('jd_match'),
+    currentInput,
+    frame: frame([slot('job_description', currentInput)]),
+    ledger,
+    embed: deps.embed,
+    retrieve: deps.retrieve,
+  });
+
+  assert.deepEqual(result.knowledge.filter((item) => item.projectSlug), []);
+  const resumeEvidence = result.knowledge.find((item) => item.documentId === 'resume-facts');
+  assert.ok(resumeEvidence);
+  assert.ok(resumeEvidence.topicIds?.includes('claude-code'));
+  assert.equal(resumeEvidence.topicIds?.includes('cursor'), false);
+  assert.deepEqual(result.retrievalScores, []);
+  assert.equal(result.degradedReason, null);
+});
+
 test('multi-topic JD retrieval embeds complete smaller sections so one relevant requirement can admit evidence', async () => {
   const calls = { queries: [] as string[], retrieve: 0 };
   const currentInput = [
@@ -248,7 +299,10 @@ test('multi-topic JD retrieval embeds complete smaller sections so one relevant 
   assert.ok(calls.queries.length > 1);
   assert.equal(calls.queries.join(''), currentInput);
   assert.equal(calls.retrieve, calls.queries.length);
-  assert.deepEqual(result.knowledge.map((item) => item.projectSlug), ['digital-morse']);
+  assert.deepEqual(
+    result.knowledge.filter((item) => item.projectSlug).map((item) => item.projectSlug),
+    ['digital-morse'],
+  );
 });
 
 test('more than three direct projects remain present in deterministic retrieval order', async () => {
@@ -268,7 +322,7 @@ test('more than three direct projects remain present in deterministic retrieval 
     retrieve: deps.retrieve,
   });
 
-  assert.deepEqual(result.knowledge.map((item) => item.projectSlug), [
+  assert.deepEqual(result.knowledge.filter((item) => item.projectSlug).map((item) => item.projectSlug), [
     'auto-operations',
     'ai-leadgen',
     'content-agent',

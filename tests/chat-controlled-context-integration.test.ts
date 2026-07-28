@@ -1762,6 +1762,66 @@ test('V2.2 replays the five-turn recruitment failure chain with one bounded task
   }
 });
 
+test('recruiter-chat JD projects audited Claude Code evidence into V2.2', async () => {
+  const fixture = await createFixture('HR interview');
+  const provider = new ControlledAnswerProvider();
+  let conversationId: string | null = null;
+  try {
+    await seedFailureChainKnowledge();
+    for (const [index, message] of [
+      '请介绍与岗位最相关的项目和能力证据。',
+      [
+        '岗位：跨境电商产品经理（Vibe Coding 方向）',
+        '岗位背景：不是传统代码机器，而是使用 AI 快速完成业务闭环。',
+        '岗位要求：不要求深奥底层代码，需要使用 Claude Code 或 Cursor 独立交付网站。',
+        '工作内容：接手前后端，完成 Bug 修复、功能迭代和上线维护。',
+      ].join('\n'),
+    ].entries()) {
+      const events = await collectChat({
+        pool,
+        provider: coordinatedProvider(provider),
+        accessSessionId: fixture.accessSessionId,
+        request: normalizeChatRequest({
+          workflow: 'chat',
+          message,
+          mode: 'interviewer',
+          audienceIntent: 'recruiter',
+          conversationId,
+          turnId: randomUUID(),
+        }),
+        config: contextConfig(fixture, {
+          contextCanaryInviteIds: new Set(),
+          contextCanaryInviteLabels: new Set(['HR interview']),
+        }),
+        now: new Date(fixtureNow.getTime() + index * 1_000),
+      });
+      const meta = events.find((event) => event.type === 'meta');
+      assert.equal(meta?.type, 'meta');
+      if (meta?.type !== 'meta') return;
+      conversationId ??= meta.conversationId;
+      assert.equal(meta.conversationId, conversationId);
+    }
+
+    assert.equal(provider.requests.length, 2);
+    const evidenceBlock = provider.requests[1].instructions.match(
+      /<approved_evidence>([\s\S]*?)<\/approved_evidence>/u,
+    )?.[1];
+    assert.ok(evidenceBlock);
+    const evidence = JSON.parse(evidenceBlock) as Array<{
+      content: string;
+      documentId: string;
+      topicIds: string[];
+    }>;
+    const resumeEvidence = evidence.find((item) => item.documentId === 'resume-facts');
+    assert.ok(resumeEvidence);
+    assert.match(resumeEvidence.content, /使用 Claude Code、Codex、WorkBuddy 完成开发/u);
+    assert.ok(resumeEvidence.topicIds.includes('claude-code'));
+    assert.equal(resumeEvidence.topicIds.includes('cursor'), false);
+  } finally {
+    await cleanupFixture(fixture);
+  }
+});
+
 test('an exact eight-turn HR interview chain keeps one recruitment task with JD-backed project follow-ups', async () => {
   const fixture = await createFixture('HR interview');
   const provider = new HrInterviewRegressionProvider();

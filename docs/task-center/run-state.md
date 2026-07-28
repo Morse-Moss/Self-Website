@@ -4,10 +4,10 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**HR_RECRUITER_JD_FIX_LOCAL_VERIFIED / REDEPLOY_PENDING / PRODUCTION_0C7F56A**
+**HR_JD_CAPABILITY_EVIDENCE_FIX_LOCAL_VERIFIED / REDEPLOY_PENDING / PRODUCTION_E746EA4**
 
 ## next_allowed_pointer
-当前生产应用运行 `0c7f56a`，显式 `JD 匹配` 的完整 JD 已真实通过，但实际 HR 路径“招聘入口 -> 完整 JD”仍暴露同类边界：生产 turn `222aeccb` 被错误标为 `chat / recruiter / jd_match / correction / wait`，来源与 evidence 均为 0。第二次本地修复已将完整 JD 数据判定前置到所有 workflow，保留显式任务切换和普通纠正/清空行为，并逐字保存完整 JD slot。下一步只允许精确 commit/push 这次 resolver、回归测试和收尾知识文件，冻结归档并只重建 Web/Worker；发布后使用全新 `HR interview` 单 Session 邀请重新执行真实招聘入口、完整 JD 与 10 个追问。任一轮答非所问、无证据、编造、5xx 或拒答时立即停止并检查该 turn 元数据，不在失败历史上盲目重试。
+当前生产应用运行 `e746ea4`，实际 HR 路径“招聘入口 -> 完整 JD”已修复路由：生产 turn `02f72745` 为 `context_packet_v22 / jd_match / follow_up / continue`，召回 5 个项目来源和 5 个 evidence，并逐字保存完整 JD。但真实回答错误声称审核资料未披露 Claude Code，和 `content/site-content.json` 的直接 resume fact 冲突。第三次本地修复已让 V2.2 JD 规划器在语义项目证据之外合并命中的非项目审核能力证据；Claude Code 进入 direct evidence，Cursor 仍保持无证据边界，项目检索门槛不变。下一步只允许精确 commit/push 规划器、回归测试和收尾知识文件，冻结归档并只重建 Web/Worker；发布后停用当前测试资源，使用全新 `HR interview` 单 Session 邀请重新执行招聘入口、完整 JD 与 10 个追问。任一轮答非所问、无证据、编造、5xx 或拒答时立即停止并检查该 turn 元数据，不在失败历史上盲目重试。
 
 ## HR JD 正文与证据召回修复（2026-07-29，待部署）
 - 根因 1：显式 `jd_match` 请求仍对完整 JD 正文运行 correction/switch/completion/clear 检测，普通岗位描述中的“不、不是、不只”会把首轮误判为纠正或清空，因而没有创建 JD Task Frame。
@@ -22,6 +22,12 @@
 - Root cause：上一修复只在 `workflow=jd_match` 时把正文视为数据；`workflow=chat / audience=recruiter` 的真实访客路径仍先运行 correction/completion/clear 检测。JD 中的普通否定与“完成”等岗位用语因此覆盖了已经成立的 JD 信号。
 - Fix：先根据完整文本、当前招聘 Task 和 workflow 判定 `jdLike`；JD 数据不再触发 correction/completion/clear，显式“换个岗位”仍执行 switch，非 JD 的真实纠正、清空和完成指令保持原行为。所有 `jd_match` intent 都把当前输入逐字保存为 JD slot，避免只截取最后一个“岗位要求”段落。
 - Verification：新增生产形状回归先红后绿；受影响边界 `44/44`、完整 unit、PostgreSQL integration `343/343`、typecheck、33-route build、scoped ESLint 和 `git diff --check` 通过。
+
+## HR JD 能力证据补全（2026-07-29，待三次部署）
+- Production observation：release `e746ea4` 的真实招聘入口为 `project_fit / new_task / create`，5 个来源和 evidence；完整 JD 为 `jd_match / follow_up / continue`，5 个项目来源和 evidence，路由问题已关闭。但回答称“现有资料未披露 Claude Code”，与审核事实源中“使用 Claude Code、Codex、WorkBuddy 完成开发、检查、测试、部署和维护”的 direct resume fact 冲突。
+- Root cause：V2.2 `rankedProjects()` 只保留带 `projectSlug` 的项目证据。JD 能力台账能正确识别 Claude Code direct 与 Cursor unavailable，但没有 projectSlug 的审核 resume fact 在 Context Packet 前被静默丢弃；旧 V2 JD 路径已有该类能力补充，V2.2 未吸收。
+- Fix：项目仍必须通过现有向量相关性门槛；另外只合并 JD 命中的非项目审核能力来源，按 document 聚合内容与 topic，避免重复。无项目通过门槛或检索降级时仍保留该审核能力来源，不增加模型、历史、输出或 Provider attempt 限制。
+- Verification：新增规划器回归先红后绿，证明 Claude Code resume evidence 进入来源且 Cursor 不被误报；新增零合格项目回归先红后绿，证明不伪造项目时仍保留审核能力事实；生产形状 PostgreSQL integration 证明完整 recruiter-chat JD 的 V2.2 `<approved_evidence>` 含该 direct evidence。规划器 `14/14`、生产形状 integration `1/1`、完整 unit `903/903`、PostgreSQL integration `344/344`、typecheck、33-route build、scoped ESLint、`git diff --check` 与敏感模式扫描均通过。
 
 ## HR 项目经历拒答修复（2026-07-28，待部署）
 

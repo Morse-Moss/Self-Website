@@ -2,11 +2,11 @@
 
 > Date: 2026-07-29
 > Mode: `GOAL / CRITICAL / DEPLOYED`
-> Status: `PRODUCTION_FAILURE_OBSERVED / SECOND_FIX_LOCAL_VERIFIED / REDEPLOY_PENDING`
+> Status: `SECOND_FIX_DEPLOYED / CAPABILITY_EVIDENCE_FAILURE_OBSERVED / THIRD_FIX_LOCAL_VERIFIED / REDEPLOY_PENDING`
 
 ## Scope
 
-- Baseline and current production release before deployment: `acecafc` on `master` and `origin/master`.
+- Baseline release at task intake: `acecafc`; current production release: `e746ea4` on `master` and `origin/master`.
 - Owned implementation: explicit JD semantic control isolation, recruitment retrieval chunking, and readiness resolution of the active Provider runtime.
 - Owned tests and operations knowledge: focused regressions, readiness/deployment contracts, two production runbooks, and the active Task Center pointer.
 - Excluded and untouched: `.github/`, `revolution-bc27857.tar.gz`, the absorbed `codex/dynamic-context` worktree, external repositories, production secrets, raw Provider payloads, invite codes, and Session values.
@@ -53,6 +53,20 @@
 - The new production-shaped regression failed before the correction and passes after it with `jd_match / follow_up / continue`, the existing Task ID, and an exact full-text JD slot.
 - Fresh verification after the second correction: affected boundary `44/44`, full unit suite passed, PostgreSQL integration `343/343`, typecheck passed, 33-route production build passed, scoped ESLint passed, and `git diff --check` passed.
 
+## Second Deployment And Quality Observation
+
+- Commit `e746ea4` was pushed to `origin/master`, archived as 19,654,200 bytes with SHA-256 `d533b568684eabfcbed8769d5ac2f7376d0109bec056d416164e92561415260c`, and deployed to `/opt/revolution/releases/e746ea4/revolution` by rebuilding only Web and Worker.
+- Public health, protected 401 boundaries and `release:smoke` passed. Web and Worker point to the new release; DB, Embedding and Edge identities stayed unchanged; all five containers are healthy with restart count 0. Schema is `001-013`, knowledge is 41 documents / 48 chunks, active route revision 3 has two digest-V2 high-reasoning targets with no context-window or output limit, and fresh error/5xx counts are zero.
+- A new three-hour, one-Session, exact-label `HR interview` invite was redeemed in a cache-busted Edge tab. The recruiter starter completed as `project_fit / new_task / create` with five sources and evidence. The exact 682-character JD completed as `jd_match / follow_up / continue`, retained the JD slot, and had five project sources and evidence.
+- The routing defect is therefore closed, but answer-quality acceptance stopped on that JD turn. The answer incorrectly said the audited material did not disclose Claude Code, although the approved site content has direct resume evidence for Claude Code, Codex and WorkBuddy use.
+
+## Third Correction
+
+- Root cause: the V2.2 ranked-project planner discarded capability evidence without a `projectSlug`. Capability matching correctly classified Claude Code as direct and Cursor as unavailable, but the approved resume fact never reached `<approved_evidence>`. The legacy V2 JD path already supplemented this evidence; V2.2 did not.
+- Correction: preserve the existing semantic relevance gate for projects, then merge only non-project approved capability sources matched by the JD. Sources are grouped by audited document and topic to avoid duplication, and the same source survives zero qualified projects, embedding degradation, or retrieval degradation. Missing Cursor evidence remains missing and cannot be promoted from Claude Code.
+- Failure-first planner regressions failed because `resume-facts` was absent, then passed after the correction both with ranked projects and with no threshold-qualified project. A production-shaped PostgreSQL integration proves a recruiter-chat JD projects the Claude Code resume fact into V2.2 while excluding Cursor from its evidence topics.
+- Fresh exit evidence: planner `14/14`, targeted PostgreSQL integration `1/1`, full unit suite `903/903`, PostgreSQL integration `344/344`, typecheck, scoped ESLint, 33-route production build, `git diff --check`, and the owned-diff sensitive-pattern scan all passed.
+
 ## Review Gate
 
 - Independent CRITICAL quality and compliance agents repeatedly failed at the shared Responses gateway with HTTP 502 before returning a verdict.
@@ -61,4 +75,4 @@
 
 ## Next Action
 
-Commit and push the second correction, redeploy the frozen commit to Web and Worker, expire the failed test invite/session, then run a fresh isolated recruiter conversation with the complete JD and ten follow-up questions. Update this receipt to `PRODUCTION_OBSERVED` only if every answer and its turn metadata pass.
+Commit and push the third correction's exact scope, redeploy the frozen commit to Web and Worker, expire the current test invite/session, then run a fresh isolated recruiter conversation with the complete JD and ten follow-up questions. Update this receipt to `PRODUCTION_OBSERVED` only if every answer and its turn metadata pass.
