@@ -112,7 +112,7 @@ npm run production:worker
 该灰度独立于 Chat v2。每次只变更 Context Packet 自身开关、百分比、UUID 白名单或精确标签白名单，并只重启 Web；Chat v2、Provider route、safe mode、hedging、RAG 和私密简历状态不得被顺带修改。
 
 1. migration `012` 只做前向追加。registry 仍为 `001-011` 的首次部署，先在受控停写窗口停止 Web/Worker、确认无长事务并创建可校验备份，再用 `docker compose run --rm --no-deps migration` 和 grants 应用。registry 已为 `001-012` 且 release 不含新 migration 的 correction 只核对现有可读备份、manifest 与 grants，禁止为发布仪式重复停写、备份或 migration。任何路径都禁止 down migration、删除新表/列或伪造 registry。
-2. 生成独立 32-byte Web-only HMAC Secret，owner/mode 按部署平台固定为应用 UID/GID `1001:1001` 与 `0600`；设置 key ID、12k/24k 预算、`MORSE_CHAT_CONTEXT_PACKET_ENABLED=true`、`MORSE_CHAT_CONTEXT_CANARY_PERCENT=0`、空 UUID 白名单和空标签白名单后构建并只重建 Web/Worker。
+2. 生成独立 32-byte Web-only HMAC Secret，owner/mode 按部署平台固定为应用 UID/GID `1001:1001` 与 `0600`；设置 key ID、`MORSE_CHAT_CONTEXT_PACKET_ENABLED=true`、`MORSE_CHAT_CONTEXT_CANARY_PERCENT=0`、空 UUID 白名单和空标签白名单后构建并只重建 Web/Worker。migration `013` 启用动态上下文时，不再配置 12k/24k 或其他应用层输入、历史、检索、attempt、输出固定上限。
 3. 在 Context Packet 白名单为空且百分比为 `0` 时先验证 migration manifest、grants、live/ready、release smoke、容器身份、错误日志和无 Provider 的固定失败链。公开知识未变化时禁止为发布仪式重跑 ingest。
 4. 创建一个专用测试邀请码，只把其非敏感 invite UUID 写入 `MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS`，保持百分比始终为 `0`，只重启 Web。该 canary 必须逐轮重放 `tests/fixtures/controlled-context-failure-chain.ts` 中已脱敏的 5 条消息，不得合并、增补、改写或用其他问题替代；每轮来源按当次真实 BGE 分数与 direct-first 规则核验，不得假设固定 Top-3。最多发起 5 次真实 Provider 主回答，不得额外开启百分比流量。
 5. 观察只保存 case ID、pipeline/semantic/task 状态、来源 ID、脱敏 manifest、attempt 数/状态/时延，以及同 turn 的 packet/request HMAC 一致性；不得保存邀请码明文、原始问答、Provider payload、Key、Base URL 或私密简历内容。
@@ -122,7 +122,15 @@ npm run production:worker
 
 migration `012` 应用后，回滚只先设置 `MORSE_CHAT_CONTEXT_PACKET_ENABLED=false`、清空白名单并只重启 Web；保留 migration、HMAC Secret 和数据。任何回滚镜像都必须识别 migration manifest `001-012`，禁止切回 pre-012 镜像。
 
-### 4.4 私密简历运维
+### 4.4 Dynamic Provider Context migration 013
+
+1. 先发布同一冻结提交的 013-aware Web/Worker，并在 schema `012`、`MORSE_DYNAMIC_PROVIDER_CONTEXT_ENABLED=false` 下证明 live、ready、release smoke 和无外呼双协议回放通过；失败时在迁移前恢复旧指针与镜像。
+2. 停止 Web/Worker 写入、确认无长事务并创建非空可校验备份；migration `013` 连续执行两次，第二次必须为 no-op。随后重新执行 grants，确认 registry 为 `001-013`、Web/Worker 使用不同数据库角色并通过权限探针。
+3. 设置 `MORSE_DYNAMIC_PROVIDER_CONTEXT_ENABLED=true`，删除 `MORSE_HISTORY_MESSAGE_LIMIT`、`MORSE_CHAT_CONTEXT_TOKEN_BUDGET`、`MORSE_JD_CONTEXT_TOKEN_BUDGET`、`MORSE_RETRIEVAL_LIMIT`、`MORSE_PROVIDER_MAX_ATTEMPTS` 和旧的固定 `MORSE_MAX_OUTPUT_TOKENS`；除非已核实目标模型能力，否则上下文窗口和输出能力字段保持未配置。
+4. 只重建 Web/Worker，执行 Responses 与 Chat Completions 的 schema-013 无外呼回放，再进行已授权的真实 Provider HR 对话。观测只保存计数、状态、时延和脱敏类别，不保存原始问题、JD、回答、摘要、Provider payload、凭证或会话值。
+5. migration `013` 后的回滚只能关闭动态上下文并使用已验证的 013-aware feature-off 镜像；禁止切回 pre-013 镜像、删除新表或修改 migration registry。schema 问题必须前向修复。
+
+### 4.5 私密简历运维
 
 - 公开入口只显示授权状态；真实 PDF 只通过 `GET /api/resume/file` 在有效简历 Session 下解密返回。响应必须保持 `Content-Type: application/pdf`、`Cache-Control: private, no-store`、`X-Content-Type-Options: nosniff` 和内联 disposition。
 - 管理员在 `/admin` 上传最终 PDF、创建一人一码的简历邀请或停用邀请。明文邀请码只在创建响应中出现一次；停用后关联简历 Session 下一次请求立即失效。聊天邀请码与简历邀请码互不升级权限。

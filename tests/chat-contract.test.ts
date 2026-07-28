@@ -55,6 +55,10 @@ test('chat contract keeps the current stable and service error allowlists exact'
     'RETRIEVAL_UNAVAILABLE',
     'PROVIDER_UNAVAILABLE',
     'PROVIDER_INCOMPLETE',
+    'CONTEXT_LIMIT_EXCEEDED',
+    'CONTEXT_WINDOW_UNKNOWN',
+    'OUTPUT_TRUNCATED',
+    'CONTEXT_COMPACTION_FAILED',
     'CONVERSATION_BUSY',
     'CONVERSATION_INVALID',
     'CONVERSATION_MODE_MISMATCH',
@@ -70,6 +74,10 @@ test('chat contract keeps the current stable and service error allowlists exact'
     'RETRIEVAL_UNAVAILABLE',
     'PROVIDER_UNAVAILABLE',
     'PROVIDER_INCOMPLETE',
+    'CONTEXT_LIMIT_EXCEEDED',
+    'CONTEXT_WINDOW_UNKNOWN',
+    'OUTPUT_TRUNCATED',
+    'CONTEXT_COMPACTION_FAILED',
   ]);
   assert.deepEqual(RECOVERABLE_CHAT_ERROR_CODES, [
     'RETRIEVAL_UNAVAILABLE',

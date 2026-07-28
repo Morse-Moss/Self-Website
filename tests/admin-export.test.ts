@@ -116,16 +116,24 @@ test('JSON export projects a stable whitelist and preserves Unicode, structured 
       title: '公开证据',
       href: '/works/example',
       providerRawPayload: 'nested-provider-secret-must-not-export',
+      summaryText: 'summary-canary-must-not-export',
+      sourceTurnIds: ['source-turn-canary-must-not-export'],
     }],
     diagnosis: {
       problem: '信息不完整',
       goal: '形成方案',
       token: 'nested-token-secret-must-not-export',
+      providerFailureMessage: 'raw-provider-message-must-not-export',
     },
     cookie: 'cookie-secret-must-not-export',
     token: 'token-secret-must-not-export',
     apiKey: 'api-key-secret-must-not-export',
     providerRawPayload: { raw: 'provider-secret-must-not-export' },
+    summaryText: 'summary-canary-must-not-export',
+    sourceTurnIds: ['source-turn-canary-must-not-export'],
+    sourceTurnSha256: 'source-hash-canary-must-not-export',
+    summaryRequestHmacSha256: 'summary-hmac-canary-must-not-export',
+    providerFailureMessage: 'raw-provider-message-must-not-export',
   };
 
   const encoded = await collectAdminExport('json', [secretRecord]);
@@ -147,7 +155,7 @@ test('JSON export projects a stable whitelist and preserves Unicode, structured 
   });
   assert.doesNotMatch(
     text,
-    /cookie-secret|token-secret|api-key-secret|provider-secret|providerRawPayload|apiKey/,
+    /cookie-secret|token-secret|api-key-secret|provider-secret|providerRawPayload|apiKey|summary-canary|source-turn-canary|source-hash-canary|summary-hmac-canary|raw-provider-message|summaryText|sourceTurnIds|sourceTurnSha256|summaryRequestHmacSha256|providerFailureMessage/,
   );
 });
 

@@ -435,7 +435,15 @@ export function loadServerConfig(env: Env = process.env) {
     env,
     'MORSE_CHAT_CONTEXT_CANARY_INVITE_LABELS',
   );
-  const contextPacketDigestConfig = contextPacketDigest(env, contextPacketEnabled);
+  const dynamicProviderContextEnabled = booleanSetting(
+    env,
+    'MORSE_DYNAMIC_PROVIDER_CONTEXT_ENABLED',
+    false,
+  );
+  const contextPacketDigestConfig = contextPacketDigest(
+    env,
+    contextPacketEnabled || dynamicProviderContextEnabled,
+  );
   const providerProtocolEventTimeoutMs = positiveNumber(
     env,
     'MORSE_PROVIDER_PROTOCOL_EVENT_TIMEOUT_MS',
@@ -505,6 +513,7 @@ export function loadServerConfig(env: Env = process.env) {
     providerConcurrency: positiveInteger(env, 'MORSE_PROVIDER_CONCURRENCY', 4),
     chatContextWindowTokens: optionalPositiveInteger(env, 'MORSE_CHAT_CONTEXT_WINDOW_TOKENS'),
     maxOutputTokens: optionalPositiveInteger(env, 'MORSE_MAX_OUTPUT_TOKENS'),
+    dynamicProviderContextEnabled,
     chatEnabled: booleanSetting(env, 'MORSE_CHAT_ENABLED', true),
     chatV2Enabled: booleanSetting(env, 'MORSE_CHAT_V2_ENABLED', false),
     chatV2CanaryPercent,

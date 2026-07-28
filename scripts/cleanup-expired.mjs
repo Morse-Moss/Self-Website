@@ -26,7 +26,7 @@ export async function cleanupExpired({
   lockName = CLEANUP_LOCK_NAME,
 } = {}) {
   if (!pool) throw new Error('CLEANUP_POOL_REQUIRED');
-  const cleanupNow = cleanupTimestamp(now instanceof Date ? now.toISOString() : String(now));
+  const requestedCleanupNow = cleanupTimestamp(now instanceof Date ? now.toISOString() : String(now));
   const client = await pool.connect();
   let transactionOpen = false;
   try {
@@ -42,6 +42,35 @@ export async function cleanupExpired({
       return { skipped: true };
     }
 
+    const schemaState = await client.query(
+      `SELECT clock_timestamp() AS cleanup_at,
+              to_regprocedure('public.cleanup_expired_chat_history_compactions()') IS NOT NULL
+                AS compaction_cleanup_available`,
+    );
+    const schemaStateRow = schemaState.rows[0];
+    if (!schemaStateRow?.cleanup_at) throw new Error('CLEANUP_PRIVATE_HISTORY_RESULT_INVALID');
+    const compactionCleanupAvailable = schemaStateRow.compaction_cleanup_available === true;
+    let cleanupNow = cleanupTimestamp(String(schemaStateRow.cleanup_at), () => new Date(requestedCleanupNow));
+    let deletedCompactions = 0;
+    let deletedSummaryAttempts = 0;
+    if (compactionCleanupAvailable) {
+      const privateHistory = await client.query(
+        `SELECT cutoff AS cleanup_at, deleted_compactions, deleted_attempts
+           FROM cleanup_expired_chat_history_compactions()`,
+      );
+      const privateHistoryRow = privateHistory.rows[0];
+      if (!privateHistoryRow?.cleanup_at) throw new Error('CLEANUP_PRIVATE_HISTORY_RESULT_INVALID');
+      cleanupNow = cleanupTimestamp(String(privateHistoryRow.cleanup_at));
+      deletedCompactions = Number(privateHistoryRow.deleted_compactions);
+      deletedSummaryAttempts = Number(privateHistoryRow.deleted_attempts);
+    }
+    if (
+      !Number.isSafeInteger(deletedCompactions)
+      || deletedCompactions < 0
+      || !Number.isSafeInteger(deletedSummaryAttempts)
+      || deletedSummaryAttempts < 0
+    ) throw new Error('CLEANUP_PRIVATE_HISTORY_RESULT_INVALID');
+
     const interactionSearches = await client.query(
       'DELETE FROM interaction_searches WHERE delete_after <= $1::timestamptz',
       [cleanupNow],
@@ -51,11 +80,45 @@ export async function cleanupExpired({
       [cleanupNow],
     );
     const interactionTurns = await client.query(
-      'DELETE FROM interaction_turns WHERE delete_after <= $1::timestamptz',
+      compactionCleanupAvailable
+        ? `DELETE FROM interaction_turns AS turn
+        WHERE turn.delete_after <= $1::timestamptz
+          AND NOT EXISTS (
+            SELECT 1
+              FROM chat_history_summary_attempts AS attempt
+             WHERE attempt.interaction_turn_id = turn.id
+               AND attempt.delete_after > $1::timestamptz
+          )
+          AND NOT EXISTS (
+            SELECT 1
+              FROM conversation_history_compactions AS compaction
+             WHERE compaction.conversation_id = turn.conversation_id
+               AND compaction.delete_after > $1::timestamptz
+          )`
+        : `DELETE FROM interaction_turns AS turn
+            WHERE turn.delete_after <= $1::timestamptz`,
       [cleanupNow],
     );
     const sessions = await client.query(
-      'DELETE FROM access_sessions WHERE expires_at <= $1::timestamptz',
+      compactionCleanupAvailable
+        ? `DELETE FROM access_sessions AS session
+        WHERE session.expires_at <= $1::timestamptz
+          AND NOT EXISTS (
+            SELECT 1
+              FROM chat_history_summary_attempts AS attempt
+              JOIN interaction_turns AS turn ON turn.id = attempt.interaction_turn_id
+             WHERE turn.access_session_id = session.id
+               AND attempt.delete_after > $1::timestamptz
+          )
+          AND NOT EXISTS (
+            SELECT 1
+              FROM conversation_history_compactions AS compaction
+              JOIN conversations AS conversation ON conversation.id = compaction.conversation_id
+             WHERE conversation.access_session_id = session.id
+               AND compaction.delete_after > $1::timestamptz
+          )`
+        : `DELETE FROM access_sessions AS session
+            WHERE session.expires_at <= $1::timestamptz`,
       [cleanupNow],
     );
     const invites = await client.query(
@@ -132,6 +195,8 @@ export async function cleanupExpired({
     await client.query('COMMIT');
     transactionOpen = false;
     return {
+      deletedCompactions,
+      deletedSummaryAttempts,
       deletedSessions: sessions.rowCount ?? 0,
       deactivatedInvites: invites.rowCount ?? 0,
       deletedInteractionSearches: interactionSearches.rowCount ?? 0,
@@ -159,8 +224,8 @@ export async function cleanupExpired({
  * @param {{env?: Record<string, string|undefined>, logger?: Pick<Console, 'log'|'error'>}} [input]
  */
 export async function main({ env = process.env, logger = console } = {}) {
-  const connectionString = env.DATABASE_URL?.trim();
-  if (!connectionString) throw new Error('DATABASE_URL is required.');
+  const connectionString = env.DATABASE_URL_WORKER?.trim();
+  if (!connectionString) throw new Error('DATABASE_URL_WORKER is required.');
   const pool = createDatabasePool(connectionString, { env, role: 'worker' });
   try {
     const summary = await cleanupExpired({

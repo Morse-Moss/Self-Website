@@ -13,6 +13,7 @@ import {
 const databaseEnv = {
   NODE_ENV: 'production',
   DATABASE_URL: 'postgresql://runtime:password@db.internal/revolution',
+  DATABASE_URL_WORKER: 'postgresql://worker:password@db.internal/revolution',
   MORSE_DATABASE_SSL_MODE: 'verify-full',
   MORSE_DATABASE_SSL_CA: '-----BEGIN CERTIFICATE-----\ntest-ca\n-----END CERTIFICATE-----',
 };
@@ -101,6 +102,34 @@ test('production preflight validates only the configuration owned by each role',
     alertsEnabled: null,
     role: 'ingest',
   });
+});
+
+test('worker production preflight requires its role-specific URL and exact database username', () => {
+  assert.deepEqual(validateProductionRole('worker', {
+    ...databaseEnv,
+    DATABASE_URL: undefined,
+    MORSE_ALERTS_ENABLED: 'false',
+  }), {
+    alertsEnabled: false,
+    role: 'worker',
+  });
+  for (const DATABASE_URL_WORKER of [
+    undefined,
+    'postgresql://runtime:password@db.internal/revolution',
+    'postgresql://worker-shadow:password@db.internal/revolution',
+  ]) {
+    assert.throws(
+      () => validateProductionRole('worker', {
+        ...databaseEnv,
+        DATABASE_URL_WORKER,
+        MORSE_ALERTS_ENABLED: 'false',
+      }),
+      (error: unknown) => (
+        error instanceof ProductionConfigError
+        && error.code === 'PRODUCTION_WORKER_DATABASE_IDENTITY_INVALID'
+      ),
+    );
+  }
 });
 
 test('non-web production roles never load private resume configuration', () => {

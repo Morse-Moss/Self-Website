@@ -56,6 +56,7 @@ test('loadServerConfig parses access, provider, lifecycle, and optional pricing 
   assert.equal(config.providerConcurrency, 3);
   assert.equal(config.chatContextWindowTokens, null);
   assert.equal(config.maxOutputTokens, null);
+  assert.equal(config.dynamicProviderContextEnabled, false);
   assert.equal('providerMaxAttempts' in config, false);
   assert.equal(config.chatEnabled, true);
   assert.equal(config.sseHeartbeatMs, 15_000);
@@ -84,6 +85,27 @@ test('v2 timing defaults are bounded and ordered', () => {
   assert.equal(config.providerStageTimeoutMs, 80_000);
   assert.equal(config.chatTurnTimeoutMs, 90_000);
   assert.equal('providerMaxAttempts' in config, false);
+});
+
+test('dynamic Provider context is an explicit strict feature gate', () => {
+  assert.equal(loadServerConfig({
+    ...completeEnv,
+    NODE_ENV: 'test',
+    MORSE_DYNAMIC_PROVIDER_CONTEXT_ENABLED: 'true',
+    MORSE_CONTEXT_PACKET_DIGEST_KEY: Buffer.alloc(32, 19).toString('base64'),
+    MORSE_CONTEXT_PACKET_DIGEST_KEY_ID: 'dynamic-context-test-v1',
+  }).dynamicProviderContextEnabled, true);
+  assert.equal(loadServerConfig({
+    ...completeEnv,
+    MORSE_DYNAMIC_PROVIDER_CONTEXT_ENABLED: 'false',
+  }).dynamicProviderContextEnabled, false);
+  assert.throws(
+    () => loadServerConfig({
+      ...completeEnv,
+      MORSE_DYNAMIC_PROVIDER_CONTEXT_ENABLED: '1',
+    }),
+    /MORSE_DYNAMIC_PROVIDER_CONTEXT_ENABLED/u,
+  );
 });
 
 test('v2 timing rejects unordered deadlines', () => {

@@ -161,7 +161,7 @@ test('retrieveKnowledge returns citable pgvector evidence ordered by cosine scor
   assert.doesNotMatch(JSON.stringify(sources), /content[\\/]drafts|E:\\/i);
 });
 
-test('local evidence sufficiency rejects a non-empty low-similarity retrieval', {
+test('retrieval filters low similarity and sufficiency rejects non-empty low scores', {
   skip: !pool,
 }, async () => {
   const stored = await pool!.query<{ embedding: string }>(
@@ -179,9 +179,11 @@ test('local evidence sufficiency rejects a non-empty low-similarity retrieval', 
     3,
   );
 
-  assert.ok(unrelated.length > 0, 'fixture must prove that a non-empty database always returns rows');
+  const belowThreshold = matching.map((source) => ({ ...source, score: 0.44 }));
+
+  assert.deepEqual(unrelated, []);
   assert.equal(hasSufficientLocalEvidence(matching), true);
-  assert.equal(hasSufficientLocalEvidence(unrelated), false);
+  assert.equal(hasSufficientLocalEvidence(belowThreshold), false);
 });
 
 test('retrieveKnowledge returns at most one citation per public document', {

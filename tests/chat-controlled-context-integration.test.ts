@@ -10,7 +10,9 @@ import type {
   AiProvider,
   AnswerEvent,
   AnswerRequest,
+  ProviderAttempt,
 } from '../lib/server/ai-provider.ts';
+import { ProviderRunError } from '../lib/server/ai-provider.ts';
 import { redeemInvite } from '../lib/server/access.ts';
 import { normalizeChatRequest } from '../lib/server/chat-core.ts';
 import {
@@ -176,6 +178,251 @@ function contextConfig(
     ...overrides,
   };
 }
+
+test('legacy v1, legacy v2 and context-packet v2.2 share one complete canonical source', async () => {
+  await seedFailureChainKnowledge();
+  const scopedMessages = [
+    '你的数字 Morse 怎么实现 RAG？',
+    '数字 Morse 为什么这样设计？',
+    '数字 Morse 的 RAG 设计再展开讲讲。',
+  ] as const;
+  for (const pipeline of ['legacy_v1', 'legacy_v2', 'context_packet_v22'] as const) {
+    const fixture = await createFixture(`unified-${pipeline}`);
+    const provider = new ControlledAnswerProvider();
+    let conversationId: string | null = null;
+    const turnIds: string[] = [];
+    try {
+      for (let index = 0; index < 3; index += 1) {
+        const turnId = randomUUID();
+        turnIds.push(turnId);
+        const message = pipeline === 'context_packet_v22'
+          ? controlledContextFailureChain.steps[[0, 1, 3][index]].message
+          : scopedMessages[index];
+        const events = await collectChat({
+          pool,
+          provider: coordinatedProvider(provider),
+          accessSessionId: fixture.accessSessionId,
+          request: normalizeChatRequest({
+            workflow: 'chat',
+            message: `${message} marker-${pipeline}-${index}`,
+            mode: 'interviewer',
+            audienceIntent: 'recruiter',
+            conversationId,
+            turnId,
+          }),
+          config: contextConfig(fixture, {
+            chatV2Enabled: pipeline !== 'legacy_v1',
+            contextPacketEnabled: pipeline === 'context_packet_v22',
+            contextCanaryPercent: pipeline === 'context_packet_v22' ? 100 : 0,
+            contextCanaryInviteIds: new Set([fixture.inviteId]),
+            dynamicProviderContextEnabled: true,
+          }),
+          now: fixtureNow,
+        });
+        const meta = events.find((event) => event.type === 'meta');
+        assert.equal(meta?.type, 'meta');
+        if (meta?.type !== 'meta') return;
+        conversationId = meta.conversationId;
+
+        if (index === 1) {
+          const completedAt = new Date('2026-07-27T05:01:00.000Z');
+          if (pipeline === 'legacy_v2') {
+            const activeTask = await pool.query<{ task_id: string }>(
+              `SELECT task_id::text
+                 FROM conversation_task_state
+                WHERE conversation_id = $1
+                  AND status <> 'completed'`,
+              [conversationId],
+            );
+            assert.equal(activeTask.rows.length, 1, 'legacy_v2 seeded active task');
+            const aligned = await pool.query(
+              `UPDATE interaction_turns
+                  SET task_id = $1, completed_at = $2
+                WHERE id = ANY($3::uuid[])
+                  AND status = 'completed'
+                  AND execution_pipeline = 'legacy_v2'`,
+              [activeTask.rows[0].task_id, completedAt, turnIds],
+            );
+            assert.equal(aligned.rowCount, 2, 'legacy_v2 seeded same-scope turns');
+            const scopes = await pool.query<{ aligned_count: number; scope_count: number }>(
+              `SELECT count(*)::integer AS aligned_count,
+                      count(DISTINCT task_id)::integer AS scope_count
+                 FROM interaction_turns
+                WHERE id = ANY($1::uuid[])
+                  AND task_id = $2`,
+              [turnIds, activeTask.rows[0].task_id],
+            );
+            assert.equal(scopes.rows[0].aligned_count, 2, 'legacy_v2 two seeded turns');
+            assert.equal(scopes.rows[0].scope_count, 1, 'legacy_v2 one seeded scope');
+          } else if (pipeline === 'legacy_v1') {
+            const aligned = await pool.query(
+              `UPDATE interaction_turns
+                  SET completed_at = $1
+                WHERE id = ANY($2::uuid[])
+                  AND status = 'completed'
+                  AND execution_pipeline = 'legacy_v1'`,
+              [completedAt, turnIds],
+            );
+            assert.equal(aligned.rowCount, 2, 'legacy_v1 seeded completed turns');
+          } else {
+            const aligned = await pool.query(
+              `UPDATE conversation_context_completed_turns
+                  SET completed_at = $1
+                WHERE conversation_id = $2
+                  AND turn_id = ANY($3::uuid[])`,
+              [completedAt, conversationId, turnIds],
+            );
+            assert.equal(aligned.rowCount, 2, 'context_packet_v22 seeded completed turns');
+            const scopes = await pool.query<{ scope_count: number }>(
+              `SELECT count(DISTINCT context_scope_id)::integer AS scope_count
+                 FROM conversation_context_completed_turns
+                WHERE conversation_id = $1
+                  AND turn_id = ANY($2::uuid[])`,
+              [conversationId, turnIds],
+            );
+            assert.equal(scopes.rows[0].scope_count, 1, 'context_packet_v22 one seeded scope');
+          }
+        }
+      }
+
+      assert.equal(provider.requests.length, 3, pipeline);
+      const finalRequest = provider.requests.at(-1)!;
+      assert.ok(finalRequest.preparedOutboundBody, pipeline);
+      const integrity = await pool.query<{
+        generation_variant_id: string | null;
+        generation_request_v2_hmac_sha256: string | null;
+        target_config_digest_version: number | null;
+      }>(
+        `SELECT generation_variant_id::text, generation_request_v2_hmac_sha256,
+                target_config_digest_version
+           FROM interaction_provider_attempts
+          WHERE interaction_turn_id = $1`,
+        [turnIds.at(-1)],
+      );
+      assert.equal(integrity.rows.length, 1, pipeline);
+      assert.match(integrity.rows[0].generation_variant_id ?? '', /^[0-9a-f-]{36}$/u, pipeline);
+      assert.match(
+        integrity.rows[0].generation_request_v2_hmac_sha256 ?? '',
+        /^[0-9a-f]{64}$/u,
+        pipeline,
+      );
+      assert.equal(integrity.rows[0].target_config_digest_version, 1, pipeline);
+      const finalPayload = [
+        finalRequest.instructions,
+        ...finalRequest.messages.map((message) => message.content),
+      ].join('\n');
+      if (pipeline === 'context_packet_v22') {
+        assert.match(finalRequest.instructions, /<task_frame>/u);
+        assert.match(finalRequest.instructions, /<task_inputs>/u);
+        assert.match(finalRequest.instructions, /<approved_evidence>/u);
+      }
+      for (let index = 0; index < 3; index += 1) {
+        const occurrences = finalPayload.split(`marker-${pipeline}-${index}`).length - 1;
+        if (index < 2) assert.equal(occurrences, 1, `${pipeline} history marker ${index}`);
+        else assert.ok(occurrences >= 1, `${pipeline} current marker ${index}`);
+      }
+      assert.ok(
+        finalPayload.indexOf(`marker-${pipeline}-0`) < finalPayload.indexOf(`marker-${pipeline}-1`),
+        `${pipeline} history marker order`,
+      );
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  }
+});
+
+test('legacy JD and diagnosis keep their structured current prompt after completed history', async () => {
+  const scenarios = [
+    {
+      name: 'jd_match',
+      requiredTags: ['<job_description>', '<approved_evidence>'],
+      firstRequest: () => normalizeChatRequest({
+        workflow: 'jd_match',
+        jobDescription: 'PRIOR_JD_CONTEXT product discovery and delivery.',
+        mode: 'interviewer',
+        audienceIntent: 'recruiter',
+        conversationId: null,
+        turnId: randomUUID(),
+      }),
+      nextRequest: (conversationId: string) => normalizeChatRequest({
+        workflow: 'jd_match',
+        jobDescription: 'CURRENT_JD_PAYLOAD RAG evaluation and production ownership.',
+        mode: 'interviewer',
+        audienceIntent: 'recruiter',
+        conversationId,
+        turnId: randomUUID(),
+      }),
+      currentMarker: 'CURRENT_JD_PAYLOAD',
+    },
+    {
+      name: 'diagnosis',
+      requiredTags: ['<diagnosis_fields>'],
+      firstRequest: () => normalizeChatRequest({
+        workflow: 'diagnosis',
+        diagnosis: { problem: 'PRIOR_DIAGNOSIS_CONTEXT' },
+        audienceIntent: 'collaboration',
+        conversationId: null,
+        turnId: randomUUID(),
+      }),
+      nextRequest: (conversationId: string) => normalizeChatRequest({
+        workflow: 'diagnosis',
+        diagnosis: { goal: 'CURRENT_DIAGNOSIS_PAYLOAD' },
+        audienceIntent: 'collaboration',
+        conversationId,
+        turnId: randomUUID(),
+      }),
+      currentMarker: 'CURRENT_DIAGNOSIS_PAYLOAD',
+    },
+  ] as const;
+
+  for (const scenario of scenarios) {
+    const fixture = await createFixture(`structured-history-${scenario.name}`);
+    const provider = new ControlledAnswerProvider();
+    try {
+      const firstEvents = await collectChat({
+        pool,
+        provider: coordinatedProvider(provider),
+        accessSessionId: fixture.accessSessionId,
+        request: scenario.firstRequest(),
+        config: contextConfig(fixture, {
+          chatV2Enabled: false,
+          contextPacketEnabled: false,
+          dynamicProviderContextEnabled: true,
+        }),
+        now: fixtureNow,
+      });
+      const meta = firstEvents.find((event) => event.type === 'meta');
+      assert.equal(meta?.type, 'meta', scenario.name);
+      if (meta?.type !== 'meta') continue;
+
+      await collectChat({
+        pool,
+        provider: coordinatedProvider(provider),
+        accessSessionId: fixture.accessSessionId,
+        request: scenario.nextRequest(meta.conversationId),
+        config: contextConfig(fixture, {
+          chatV2Enabled: false,
+          contextPacketEnabled: false,
+          dynamicProviderContextEnabled: true,
+        }),
+        now: fixtureNow,
+      });
+
+      assert.equal(provider.requests.length, 2, scenario.name);
+      const preparedBody = provider.requests[1].preparedOutboundBody;
+      assert.ok(preparedBody, scenario.name);
+      const serialized = JSON.stringify(preparedBody);
+      for (const tag of scenario.requiredTags) assert.match(serialized, new RegExp(tag, 'u'));
+      assert.equal(
+        serialized.split(scenario.currentMarker).length - 1,
+        1,
+        `${scenario.name} current payload occurrence`,
+      );
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  }
+});
 
 class ControlledAnswerProvider implements AiProvider {
   readonly requests: AnswerRequest[] = [];
@@ -345,11 +592,134 @@ function coordinatedProvider(inner: AiProvider): AiProvider {
   return new FailoverAiProvider(inner, [inner], 90_000);
 }
 
+function terminalFailureAttempt(
+  failure: NonNullable<ProviderAttempt['failure']>,
+): ProviderAttempt {
+  return {
+    attemptIndex: 0,
+    completedAt: fixtureNow,
+    configDigest: '0'.repeat(64),
+    configDigestVersion: 1,
+    connectionDisplayName: 'Terminal failure fixture',
+    connectionVersionId: null,
+    contextWindowTokens: failure.contextWindowTokens,
+    costComplete: false,
+    errorCode: 'PROVIDER_RESPONSE_FAILED',
+    failure,
+    firstByteLatencyMs: null,
+    firstModelTextMs: null,
+    firstProtocolEventMs: null,
+    firstUserVisibleMs: null,
+    generationMode: 'normal',
+    inputUsdPerMillion: null,
+    knownCostUsd: null,
+    launchKind: 'primary',
+    modelDisplayName: 'Terminal model',
+    modelId: 'terminal-model',
+    modelVersionId: null,
+    maxOutputTokens: null,
+    outputUsdPerMillion: null,
+    position: 0,
+    protocol: 'responses',
+    reasoningEffort: null,
+    routeRevisionId: null,
+    sourceType: 'environment',
+    startedAt: fixtureNow,
+    status: 'failed',
+    totalLatencyMs: 1,
+    usage: null,
+    usageComplete: false,
+  };
+}
+
+class TerminalProviderFailure implements AiProvider {
+  private readonly error: ProviderRunError;
+
+  constructor(error: ProviderRunError) {
+    this.error = error;
+  }
+
+  async embed(inputs: string[]): Promise<number[][]> {
+    return inputs.map(() => new Array<number>(EMBEDDING_DIMENSIONS).fill(0));
+  }
+
+  async *streamAnswer(): AsyncIterable<AnswerEvent> {
+    throw this.error;
+  }
+}
+
 async function collectChat(input: Parameters<typeof runChat>[0]): Promise<ChatServiceEvent[]> {
   const events: ChatServiceEvent[] = [];
   for await (const event of runChat(input)) events.push(event);
   return events;
 }
+
+test('terminal context failures map to stable public codes after fallback exhaustion', async () => {
+  const scenarios: Array<{
+    error: ProviderRunError;
+    expected: ConstructorParameters<typeof ChatServiceError>[0];
+  }> = [
+    {
+      error: new ProviderRunError('CONTEXT_PROTECTED_PAYLOAD_TOO_LARGE', []),
+      expected: 'CONTEXT_LIMIT_EXCEEDED',
+    },
+    {
+      error: new ProviderRunError('PROVIDER_RESPONSE_FAILED', [terminalFailureAttempt({
+        category: 'context_overflow',
+        reason: 'context_length_exceeded',
+        httpStatus: 400,
+        inputTokens: null,
+        outputTokens: null,
+        contextWindowTokens: null,
+      })]),
+      expected: 'CONTEXT_WINDOW_UNKNOWN',
+    },
+    {
+      error: new ProviderRunError('PROVIDER_RESPONSE_INCOMPLETE', [terminalFailureAttempt({
+        category: 'output_truncated',
+        reason: 'length',
+        httpStatus: 200,
+        inputTokens: 3_000,
+        outputTokens: 1_000,
+        contextWindowTokens: 8_192,
+      })]),
+      expected: 'OUTPUT_TRUNCATED',
+    },
+    {
+      error: new ProviderRunError('CONTEXT_SUMMARY_NOT_SMALLER', []),
+      expected: 'CONTEXT_COMPACTION_FAILED',
+    },
+  ];
+
+  for (const [index, scenario] of scenarios.entries()) {
+    const fixture = await createFixture(`terminal-context-${index}`);
+    try {
+      await assert.rejects(
+        collectChat({
+          pool,
+          provider: new TerminalProviderFailure(scenario.error),
+          accessSessionId: fixture.accessSessionId,
+          request: normalizeChatRequest({
+            workflow: 'chat',
+            message: '今天吃什么？',
+            turnId: randomUUID(),
+          }),
+          config: contextConfig(fixture, {
+            chatV2Enabled: false,
+            contextPacketEnabled: false,
+            dynamicProviderContextEnabled: false,
+          }),
+          now: fixtureNow,
+        }),
+        (error: unknown) => error instanceof ChatServiceError
+          && error.code === scenario.expected,
+        scenario.expected,
+      );
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  }
+});
 
 test('an exact HR interview label upgrades an existing full-invite session from legacy to V2.2', async () => {
   const fixture = await createFixture('HR interview');
@@ -1201,6 +1571,7 @@ test('a successful legacy override permanently locks a V2.2 conversation without
         contextPacketEnabled: false,
         contextPacketDigest: null,
         chatV2Enabled: false,
+        dynamicProviderContextEnabled: false,
       }),
       now: new Date(fixtureNow.getTime() + 2_000),
     });
@@ -1240,7 +1611,7 @@ test('a successful legacy override permanently locks a V2.2 conversation without
   }
 });
 
-test('V2.2 replays the five-turn recruitment failure chain with one bounded task and audited Top-3 evidence', async () => {
+test('V2.2 replays the five-turn recruitment failure chain with one bounded task and all qualified audited evidence', async () => {
   const fixture = await createFixture('context-v22-five-turn-failure-chain');
   const provider = new FailureChainProvider();
   const coordinated = coordinatedProvider(provider);
@@ -1637,6 +2008,7 @@ test('V2.2 compensates an invalid legacy bridge with a stable redacted terminal 
       config: contextConfig(fixture, {
         contextPacketEnabled: false,
         contextPacketDigest: null,
+        dynamicProviderContextEnabled: false,
       }),
       now: fixtureNow,
     });
@@ -1752,6 +2124,7 @@ test('V2.2 running-turn recovery revalidates an invalid legacy bridge after rese
       config: contextConfig(fixture, {
         contextPacketEnabled: false,
         contextPacketDigest: null,
+        dynamicProviderContextEnabled: false,
       }),
       now: fixtureNow,
     });
@@ -1897,6 +2270,7 @@ test('each legacy override isolates V2.2 payload state and locks only after succ
             ...variant.overrides,
             contextCanaryInviteIds: new Set(),
             contextCanaryInviteLabels: new Set(['HR interview']),
+            dynamicProviderContextEnabled: false,
           }),
           now: new Date(fixtureNow.getTime() + 1_000),
         });
@@ -1948,7 +2322,7 @@ test('each legacy override isolates V2.2 payload state and locks only after succ
             marker: `RESTORED_${variant.expectedPipeline}`,
             turnId: restoredTurnId,
           }),
-          config: contextConfig(fixture),
+          config: contextConfig(fixture, { dynamicProviderContextEnabled: false }),
           now: new Date(fixtureNow.getTime() + 2_000),
         });
         assert.equal(restoredProvider.requests.length, 1);
@@ -2012,6 +2386,7 @@ test('failed and stopped legacy overrides do not lock or close an active V2.2 fr
           config: contextConfig(fixture, {
             contextPacketEnabled: false,
             contextPacketDigest: null,
+            dynamicProviderContextEnabled: false,
           }),
           now: new Date(fixtureNow.getTime() + 1_000),
           signal: abortController.signal,

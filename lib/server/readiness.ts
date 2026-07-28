@@ -17,7 +17,8 @@ export type ReadinessErrorCode =
   | 'READINESS_DATABASE_UNAVAILABLE'
   | 'READINESS_MIGRATIONS_INCOMPLETE'
   | 'READINESS_KNOWLEDGE_EMPTY'
-  | 'READINESS_AI_CONFIG_UNAVAILABLE';
+  | 'READINESS_AI_CONFIG_UNAVAILABLE'
+  | 'READINESS_DYNAMIC_CONTEXT_UNAVAILABLE';
 
 export class ReadinessError extends Error {
   readonly code: ReadinessErrorCode;
@@ -37,6 +38,10 @@ function manifestsMatch(
     entry.version === expected[index].version
     && entry.checksum === expected[index].checksum
   ));
+}
+
+function schema012Manifest(expected: MigrationManifestEntry[]): MigrationManifestEntry[] {
+  return expected.filter((entry) => BigInt(entry.version) <= 12n);
 }
 
 function validateRuntime(env: Env): void {
@@ -77,6 +82,7 @@ export interface ReadinessInput {
 export async function assertApplicationReady(input: ReadinessInput = {}): Promise<void> {
   const env = input.env ?? process.env;
   validateRuntime(env);
+  const dynamicProviderContextEnabled = env.MORSE_DYNAMIC_PROVIDER_CONTEXT_ENABLED?.trim() === 'true';
   let expectedMigrations: MigrationManifestEntry[];
   try {
     expectedMigrations = input.expectedMigrations ?? await readMigrationManifest();
@@ -90,7 +96,14 @@ export async function assertApplicationReady(input: ReadinessInput = {}): Promis
     const migrations = await pool.query(
       'SELECT version, checksum FROM schema_migrations ORDER BY version',
     );
-    if (!manifestsMatch(migrations.rows as MigrationManifestEntry[], expectedMigrations)) {
+    const actualMigrations = migrations.rows as MigrationManifestEntry[];
+    const current = manifestsMatch(actualMigrations, expectedMigrations);
+    const schema012 = manifestsMatch(actualMigrations, schema012Manifest(expectedMigrations));
+    if (dynamicProviderContextEnabled && !current) {
+      if (schema012) throw new ReadinessError('READINESS_DYNAMIC_CONTEXT_UNAVAILABLE');
+      throw new ReadinessError('READINESS_MIGRATIONS_INCOMPLETE');
+    }
+    if (!dynamicProviderContextEnabled && !current && !schema012) {
       throw new ReadinessError('READINESS_MIGRATIONS_INCOMPLETE');
     }
     const knowledge = await pool.query(
@@ -126,6 +139,39 @@ export async function assertApplicationReady(input: ReadinessInput = {}): Promis
     } catch (error) {
       if (error instanceof ReadinessError) throw error;
       throw new ReadinessError('READINESS_AI_CONFIG_UNAVAILABLE');
+    }
+    if (dynamicProviderContextEnabled) {
+      try {
+        const dynamicContext = await pool.query(
+          `SELECT
+             to_regclass('public.conversation_history_compactions') IS NOT NULL
+             AND to_regclass('public.chat_history_summary_attempts') IS NOT NULL
+             AND EXISTS (
+               SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'ai_model_presets'
+                  AND column_name = 'context_window_tokens'
+             )
+             AND EXISTS (
+               SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'ai_route_targets'
+                  AND column_name = 'config_digest_version'
+             )
+             AND has_table_privilege(current_user, 'conversation_history_compactions', 'SELECT')
+             AND has_table_privilege(current_user, 'conversation_history_compactions', 'INSERT')
+             AND NOT has_table_privilege(current_user, 'conversation_history_compactions', 'UPDATE')
+             AND NOT has_table_privilege(current_user, 'conversation_history_compactions', 'DELETE')
+             AS dynamic_context_ready`,
+        );
+        const ready = dynamicContext.rows[0] as { dynamic_context_ready?: unknown } | undefined;
+        if (ready?.dynamic_context_ready !== true) {
+          throw new ReadinessError('READINESS_DYNAMIC_CONTEXT_UNAVAILABLE');
+        }
+      } catch (error) {
+        if (error instanceof ReadinessError) throw error;
+        throw new ReadinessError('READINESS_DYNAMIC_CONTEXT_UNAVAILABLE');
+      }
     }
   } catch (error) {
     if (error instanceof ReadinessError) throw error;

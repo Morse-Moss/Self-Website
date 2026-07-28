@@ -1,30 +1,28 @@
 import type { TokenUsage } from './budget.ts';
 import type { ChatExecutionBudget } from './chat-execution-budget.ts';
 import type {
+  CanonicalAnswerSourceV2,
+  CanonicalContextPacketV2,
   CanonicalGenerationRequestV2,
+  GenerationTargetBindingV2,
   GenerationRequestIntegrity,
   GenerationRequestIntegrityV2,
   GenerationVariantV2,
+  TaskHistorySummaryLayer,
 } from '../contracts/chat-context.ts';
 import type {
   AiConfigDigestVersion,
+  AnswerReasoningEffort,
   ModelCapabilities,
 } from './ai-config.ts';
-import type { PreparedTargetContext } from './chat-context-coordinator.ts';
 import type { SanitizedProviderFailure } from './provider-failure.ts';
+
+export type { AnswerReasoningEffort } from './ai-config.ts';
 
 export interface AiMessage {
   role: 'user' | 'assistant';
   content: string;
 }
-
-export type AnswerReasoningEffort =
-  | 'none'
-  | 'minimal'
-  | 'low'
-  | 'medium'
-  | 'high'
-  | 'xhigh';
 
 export interface AnswerRequest {
   instructions: string;
@@ -68,8 +66,23 @@ export interface AnswerExecutionOptions {
   onAttempt(event: ProviderAttemptEvent): Promise<void>;
 }
 
+export interface PreparedTargetAnswerContext {
+  variant: GenerationVariantV2;
+  target: GenerationTargetBindingV2;
+  historyView: {
+    rawHistory: CanonicalAnswerSourceV2['completeHistory'];
+    summary: TaskHistorySummaryLayer | null;
+    consumedTurnIds: readonly string[];
+    compactionArtifactIds: readonly string[];
+  };
+  packet: CanonicalContextPacketV2;
+  packetHmacKeyId: string;
+  packetHmacSha256: string;
+  summaryAttemptIds: readonly string[];
+}
+
 export interface PreparedTargetAnswer {
-  context: PreparedTargetContext;
+  context: PreparedTargetAnswerContext;
   request: AnswerRequest;
   outboundBody: Readonly<Record<string, unknown>>;
   generationRequest: CanonicalGenerationRequestV2;

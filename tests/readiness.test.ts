@@ -21,7 +21,9 @@ const validAdminPasswordHash = [
 
 const providerKeyDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'readiness-provider-key-'));
 const providerKeyFile = path.join(providerKeyDirectory, 'provider.key');
+const contextDigestKeyFile = path.join(providerKeyDirectory, 'context-digest.key');
 fs.writeFileSync(providerKeyFile, `${Buffer.alloc(32, 14).toString('base64')}\n`, 'utf8');
+fs.writeFileSync(contextDigestKeyFile, `${Buffer.alloc(32, 15).toString('base64')}\n`, 'utf8');
 after(() => fs.rmSync(providerKeyDirectory, { force: true, recursive: true }));
 
 const runtimeEnv = {
@@ -53,12 +55,15 @@ const manifest = [
 function poolWith(options: {
   chunks?: number;
   configThrows?: boolean;
+  dynamicContextReady?: boolean;
   migrations?: typeof manifest;
+  queries?: string[];
   runtimeRows?: unknown[];
   throws?: boolean;
 } = {}) {
   return {
     async query(sql: string) {
+      options.queries?.push(sql);
       if (options.throws) throw new Error('private database failure');
       if (sql.includes('schema_migrations')) {
         return { rows: options.migrations ?? manifest };
@@ -79,6 +84,9 @@ function poolWith(options: {
           targets_readable: true,
         }] };
       }
+      if (sql.includes('dynamic_context_ready')) {
+        return { rows: [{ dynamic_context_ready: options.dynamicContextReady ?? true }] };
+      }
       throw new Error(`unexpected query: ${sql}`);
     },
   };
@@ -90,6 +98,65 @@ test('readiness accepts valid runtime config, exact migrations and non-empty kno
     expectedMigrations: manifest,
     pool: poolWith(),
   }));
+});
+
+test('feature-off readiness accepts schema 012 or 013 without referencing 013 objects', async () => {
+  const expected = Array.from({ length: 13 }, (_, index) => ({
+    version: String(index + 1).padStart(3, '0'),
+    checksum: String(index + 1).repeat(64).slice(0, 64),
+  }));
+  for (const actual of [expected.slice(0, 12), expected]) {
+    const queries: string[] = [];
+    await assert.doesNotReject(assertApplicationReady({
+      env: { ...runtimeEnv, MORSE_DYNAMIC_PROVIDER_CONTEXT_ENABLED: 'false' },
+      expectedMigrations: expected,
+      pool: poolWith({ migrations: actual, queries }),
+    }));
+    assert.doesNotMatch(
+      queries.join('\n'),
+      /conversation_history_compactions|chat_history_summary_attempts|context_window_tokens|config_digest_version/u,
+    );
+  }
+});
+
+test('feature-on readiness fails closed when migration 013 or dynamic-context grants are unavailable', async () => {
+  const expected = Array.from({ length: 13 }, (_, index) => ({
+    version: String(index + 1).padStart(3, '0'),
+    checksum: String(index + 1).repeat(64).slice(0, 64),
+  }));
+  const enabledEnv = {
+    ...runtimeEnv,
+    MORSE_DYNAMIC_PROVIDER_CONTEXT_ENABLED: 'true',
+    MORSE_CONTEXT_PACKET_DIGEST_KEY_FILE: contextDigestKeyFile,
+    MORSE_CONTEXT_PACKET_DIGEST_KEY_ID: 'readiness-context-v1',
+  };
+  for (const pool of [
+    poolWith({ migrations: expected.slice(0, 12) }),
+    poolWith({ migrations: expected, dynamicContextReady: false }),
+  ]) {
+    await assert.rejects(
+      assertApplicationReady({ env: enabledEnv, expectedMigrations: expected, pool }),
+      (error: unknown) => {
+        assert.ok(error instanceof ReadinessError);
+        assert.equal(error.code, 'READINESS_DYNAMIC_CONTEXT_UNAVAILABLE');
+        return true;
+      },
+    );
+  }
+  const queries: string[] = [];
+  await assert.doesNotReject(assertApplicationReady({
+    env: enabledEnv,
+    expectedMigrations: expected,
+    pool: poolWith({ migrations: expected, dynamicContextReady: true, queries }),
+  }));
+  const dynamicContextQuery = queries.find((sql) => sql.includes('dynamic_context_ready'));
+  assert.ok(dynamicContextQuery);
+  assert.match(dynamicContextQuery, /public\.conversation_history_compactions/u);
+  assert.match(dynamicContextQuery, /has_table_privilege\(current_user, 'conversation_history_compactions', 'SELECT'\)/u);
+  assert.match(dynamicContextQuery, /has_table_privilege\(current_user, 'conversation_history_compactions', 'INSERT'\)/u);
+  assert.match(dynamicContextQuery, /has_table_privilege\(current_user, 'conversation_history_compactions', 'UPDATE'\)/u);
+  assert.match(dynamicContextQuery, /has_table_privilege\(current_user, 'conversation_history_compactions', 'DELETE'\)/u);
+  assert.doesNotMatch(dynamicContextQuery, /(?:public\.)?chat_history_compactions/u);
 });
 
 test('readiness validates enabled resume config in local and production runtimes', async () => {

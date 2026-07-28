@@ -1139,7 +1139,7 @@ async function runVisitorScenarios({
   checks.add('serial-provider-failover');
   checks.add('switching-recovery');
 
-  openAiProxy.rejectNextEmbeddings(1);
+  openAiProxy.setFailAnswers(true);
   await setControlledValue(page, '#morse-message', STATIC_EVIDENCE_QUERY);
   await click(page, '[data-action="send"]');
   await waitFor(page, `(() => {
@@ -1156,6 +1156,7 @@ async function runVisitorScenarios({
     const button = assistant?.querySelector('button');
     return button instanceof HTMLButtonElement && !button.disabled;
   })()`, 'retry:enabled');
+  openAiProxy.setFailAnswers(false);
   await click(page, `${SELECTORS.chatTranscript} article[data-message-role="assistant"]:last-of-type button:not(:disabled)`);
   await waitFor(page, `(() => {
     const assistants = [...document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)})];
@@ -1431,7 +1432,7 @@ async function runMobileVisitor({
     return assistants.at(-1)?.getAttribute('data-stream-state') === 'done';
   })()`, 'mobile:switching-recovered');
 
-  openAiProxy.rejectNextEmbeddings(1);
+  openAiProxy.setFailAnswers(true);
   await setControlledValue(page, '#morse-message', STATIC_EVIDENCE_QUERY);
   await click(page, '[data-action="send"]');
   await waitFor(page, `(() => {
@@ -1447,6 +1448,7 @@ async function runMobileVisitor({
     const button = assistant?.querySelector('button');
     return button instanceof HTMLButtonElement && !button.disabled;
   })()`, 'mobile:retry-enabled');
+  openAiProxy.setFailAnswers(false);
   await click(page, `${SELECTORS.chatTranscript} article[data-message-role="assistant"]:last-of-type button:not(:disabled)`);
   await waitFor(page, `(() => {
     const assistants = [...document.querySelectorAll(${JSON.stringify(`${SELECTORS.chatTranscript} article[data-message-role="assistant"]`)})];
@@ -1876,6 +1878,7 @@ export async function runS10MockE2E() {
       MORSE_CHAT_ENABLED: 'true',
       MORSE_CHAT_V2_ENABLED: 'true',
       MORSE_CHAT_V2_CANARY_PERCENT: '100',
+      MORSE_CHAT_WINDOW_MAX_MESSAGES: '100',
       MORSE_CHAT_HEDGED_FAILOVER_ENABLED: 'false',
       MORSE_SEARCH_ENABLED: 'true',
       MORSE_SEARCH_PROVIDER: 'bocha',

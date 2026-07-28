@@ -19,7 +19,7 @@ controls:
   execution: STAGED
   risk: CRITICAL
   delivery: DEPLOYED
-state: EXECUTE
+state: CLOSEOUT
 preset: null
 scope:
   owned:
@@ -75,14 +75,14 @@ approvals:
     evidence: current planning-only instruction
   - action: local implementation, disposable PostgreSQL, tests and scoped commits
     policy_id: BOUNDED_PREAUTH
-    decision: approval-required
+    decision: allowed
     bounds: becomes allowed only when the user switches reasoning level and explicitly resumes execution in this task; no external side effect
-    evidence: user paused execution until the reasoning-level switch
+    evidence: user explicitly resumed this task after the planning-only pause
   - action: push, aimorse.tech deployment, production migration/grants/env mutation and real Provider canary
     policy_id: BOUNDED_PREAUTH
-    decision: approval-required
+    decision: allowed
     bounds: aimorse.tech only; backup first; no raw Provider payload persistence; canary maximum 12 answer calls and 12 summary calls; stop on any zero-tolerance signal
-    evidence: earlier deploy request is paused by the later planning-only gate and becomes active only with an explicit execution resume
+    evidence: earlier explicit modify-and-deploy request was resumed in this task after the planning-only gate
 verification:
   focused:
     - node --env-file-if-exists=.env.local --test tests/dynamic-context-red.test.ts tests/chat-core.test.ts tests/jd-match.test.ts tests/diagnosis.test.ts tests/chat-ui-contract.test.ts tests/chat-semantic-resolver.test.ts tests/chat-evidence-planner.test.ts tests/chat-context-packet.test.ts tests/context-state-integration.test.ts tests/retrieval-query.test.ts tests/rag-integration.test.ts tests/local-embedding-contract.test.ts
@@ -133,7 +133,7 @@ sources:
   - E:/Evolution/skills/morse-development-mode/references/verification-matrix.md read 2026-07-28
   - E:/Evolution/skills/morse-dev-sop/SKILL.md read 2026-07-28
   - D:/codex/skills/writing-plans/SKILL.md read 2026-07-28
-workspace: E:/Revolution/.worktrees/dynamic-context, codex/dynamic-context, f932a9a903e07564bb3aeef9015bd0515e883ac5, only the untracked plan file after plan creation
+workspace: E:/Revolution/.worktrees/dynamic-context, codex/dynamic-context, HEAD 5d463b1a94b45f139e0db8fd53fde13c6da4a641, base f932a9a903e07564bb3aeef9015bd0515e883ac5, bound implementation/evidence diff b93c753d21f0cb45358b98cb9e9e7bed6ff4f300 across 109 files excluding this mutable plan and the local receipt
 project_commands:
   - npm run typecheck
   - npm test
@@ -1351,7 +1351,7 @@ schema-012 feature-on image: readiness fails closed before chat
 
 Add `MORSE_DB_WORKER_PASSWORD_FILE`, `db_worker_password`, role `worker`, and a protected `DATABASE_URL_WORKER` whose PostgreSQL user is exactly `worker`. Fresh initialization creates the role. Existing-instance grants idempotently create/alter it from a psql variable supplied by the mounted secret. Compose gives Web `DATABASE_URL_RUNTIME` and Worker `DATABASE_URL_WORKER`; neither process receives the other's password file.
 
-The Worker role receives these exact existing privileges: `SELECT,DELETE` on `interaction_searches`, `diagnoses`, `interaction_turns`, `access_sessions`, `admin_sessions`, `access_attempts`, `ai_config_events`, `usage_events`, `service_incidents` and `resume_sessions`; `SELECT,UPDATE` on `invite_codes` and `resume_invites`; `SELECT,UPDATE,DELETE` on `alert_outbox`; `SELECT,INSERT,DELETE` on `resume_access_events`; `SELECT` on `resume_documents`; and only the sequence access required by `resume_access_events` inserts. After 013 it receives column-level `SELECT` only on `chat_history_summary_attempts(interaction_turn_id, delete_after)` and `conversation_history_compactions(conversation_id, delete_after)` for parent-retention predicates, plus `EXECUTE` on `cleanup_expired_chat_history_compactions()`. It receives no summary text/source-column access, no Provider config Secret and no direct compaction-table mutation privilege.
+The Worker role receives these exact existing privileges: `SELECT,DELETE` on `interaction_searches`, `diagnoses`, `interaction_turns`, `access_sessions`, `admin_sessions`, `access_attempts`, `ai_config_events`, `usage_events`, `service_incidents` and `resume_sessions`; `SELECT,UPDATE` on `invite_codes` and `resume_invites`; `SELECT,UPDATE,DELETE` on `alert_outbox`; `SELECT,INSERT,DELETE` on `resume_access_events`; `SELECT` on `resume_documents`; column-level `SELECT` on `conversations(id, access_session_id)` required by the session-retention join; and only the sequence access required by `resume_access_events` inserts. After 013 it receives column-level `SELECT` only on `chat_history_summary_attempts(interaction_turn_id, delete_after)` and `conversation_history_compactions(conversation_id, delete_after)` for parent-retention predicates, plus `EXECUTE` on `cleanup_expired_chat_history_compactions()`. It receives no summary text/source-column access, no Provider config Secret and no direct compaction-table mutation privilege.
 
 - [ ] **Step 3: Apply the exact compaction privilege matrix**
 
@@ -1379,7 +1379,7 @@ $$;
 
 - [ ] **Step 4: Call compaction cleanup only through the function**
 
-Inside the existing retention transaction, call the compaction function immediately after acquiring the advisory lock and before any interaction/session parent delete:
+Inside the existing retention transaction, immediately after acquiring the advisory lock perform one schema-compatibility probe using `to_regprocedure` plus the database clock. On schema 013, call the compaction function immediately after that probe and before any interaction/session parent delete; on schema 012 feature-off, use the probe's database timestamp as the single cutoff and do not reference migration-013 tables or functions again:
 
 ```sql
 SELECT cleanup_at, deleted_compactions, deleted_attempts
@@ -1670,6 +1670,6 @@ Write the dated production closeout with absorbed/pushed/deployed commits, point
 
 ## Resume Pointer
 
-Current: `EXECUTE / TASK_8_UNIFIED_PIPELINES / RED`.
-Last verified: Tasks 2-7 are GREEN on 2026-07-28 and preserved in the current checkpoint commit. Task 7 passes its planned six-file suite at 72/72 with PostgreSQL and actual SSE decoding; `npm run typecheck` and `git diff --check` pass. Six targets plus one numeric-overflow retry produce global attempts 1 through 7, preparation and summary work do not consume answer attempts, terminal-only buffering prevents pre-retry delta leakage, and V2 variant/target/failure metadata mirrors exactly while V1 rows remain readable. No real Provider call, production migration or deployment occurred.
-Next action: write and run Task 8 RED integration for schema-012 feature-off plus complete canonical-source routing through the coordinator for legacy V1, legacy V2 and context-packet V2.2.
+Current: `CLOSEOUT / KNOWLEDGE_RECONCILIATION / RELEASE_AUTHORIZED`.
+Last verified: the local receipt at `docs/verify/release/dynamic-provider-context-local-closeout-2026-07-28.md` binds the current 109-file implementation/evidence diff to HEAD `5d463b1a94b45f139e0db8fd53fde13c6da4a641` and records the complete `1239/1239` suite, 33-route build, evaluation/schema/visual matrices, focused S10 `33/33`, clean diff check and classified privacy scan. Controller-separated compliance/spec checks passed `111/111`, quality-core checks passed `122/122`, and the database-backed Chat integration rerun passed `88/88` with zero skips. Independent reviewer calls remain unavailable because the healthy shared Responses proxy forwards a malformed encrypted-content request and receives upstream 400, then exposes 502; this degraded assurance is recorded and is not represented as an independent PASS. No real Provider call, production migration, absorption, push or deployment has occurred.
+Next action: finish scoped knowledge reconciliation, commit the exact owned diff, absorb into clean `master`, push the frozen commit, then execute the schema-012 feature-off gate, backup/migration-013/grants, enablement, mock replay and authorized ten-question real HR observation.

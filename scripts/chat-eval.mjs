@@ -106,6 +106,10 @@ const completeDiagnosis = {
   constraints: '外部服务失败必须回退到文字与站内证据',
   expectedTimeline: '本轮先完成文字对话',
 };
+const uncappedJobDescription = (
+  '岗位职责：建设 Agent、RAG、Provider 失败恢复与评测体系。'
+  + '任职要求：TypeScript、PostgreSQL、Docker Compose；Kubernetes 生产经验优先。\n'
+).repeat(160);
 
 const evaluationMutation = process.env.MORSE_CHAT_EVAL_MUTATION || null;
 const allowedMutations = new Set([
@@ -264,8 +268,8 @@ function requestFor(item) {
     return {
       ...common,
       workflow: 'jd_match',
-      jobDescription: item.jobDescriptionFixture === 'max'
-        ? 'J'.repeat(12_000)
+      jobDescription: item.jobDescriptionFixture === 'uncapped'
+        ? uncappedJobDescription
         : item.jobDescription ?? item.query,
     };
   }
@@ -772,16 +776,7 @@ function evaluateMultiTurnRoute(item) {
 
 function evaluateRejectedRequest(item) {
   let request;
-  if (item.requestScenario === 'oversized-jd') {
-    request = {
-      workflow: 'jd_match',
-      jobDescription: 'J'.repeat(12_001),
-      mode: 'general',
-      audienceIntent: 'recruiter',
-      conversationId: null,
-      turnId: null,
-    };
-  } else if (item.requestScenario === 'chat-with-jd') {
+  if (item.requestScenario === 'chat-with-jd') {
     request = {
       workflow: 'chat',
       message: item.query,
@@ -808,6 +803,21 @@ function evaluateRejectedRequest(item) {
   } catch (error) {
     return error instanceof Error && error.message.includes(item.expectedErrorFragment);
   }
+}
+
+function evaluateAcceptedLongRequest() {
+  const normalized = normalizeChatRequest({
+    workflow: 'jd_match',
+    jobDescription: uncappedJobDescription,
+    mode: 'general',
+    audienceIntent: 'recruiter',
+    conversationId: null,
+    turnId: null,
+  });
+  return uncappedJobDescription.length > 12_000
+    && normalized.workflow === 'jd_match'
+    && normalized.message === uncappedJobDescription
+    && normalized.jobDescription === uncappedJobDescription;
 }
 
 async function evaluateNotificationDedupe(item) {
@@ -860,6 +870,7 @@ async function evaluateCase(item) {
   if (item.expectedBehavior === 'reject-url') return normalizePublicHttpsUrl(item.url) === null;
   if (item.expectedBehavior === 'route-search') return evaluateSearchRoute(item);
   if (item.expectedBehavior === 'degrade-search') return evaluateSearchDegradation(item);
+  if (item.expectedBehavior === 'accept-long-request') return evaluateAcceptedLongRequest();
   if (item.expectedBehavior === 'reject-request') return evaluateRejectedRequest(item);
   if (item.expectedBehavior === 'dedupe-notification') return evaluateNotificationDedupe(item);
   if (item.expectedBehavior === 'route-policy') return evaluateRoutePolicy(item);

@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { readChatSse } from '../lib/client/chat-sse.ts';
-import { isAutoReplayChatError } from '../lib/client/chat-errors.ts';
+import {
+  isAutoReplayChatError,
+  normalizeChatErrorCode,
+  publicErrorMessage,
+} from '../lib/client/chat-errors.ts';
 import type {
   AiProvider,
   AnswerRequest,
@@ -339,5 +343,25 @@ test('automatic replay uses only the narrow transient error set', () => {
     'CONVERSATION_INVALID',
     'CONVERSATION_MODE_MISMATCH',
     'CHAT_STOPPED',
+    'CONTEXT_LIMIT_EXCEEDED',
+    'CONTEXT_WINDOW_UNKNOWN',
+    'OUTPUT_TRUNCATED',
+    'CONTEXT_COMPACTION_FAILED',
   ]) assert.equal(isAutoReplayChatError(code), false, code);
+});
+
+test('dynamic context failures keep stable client codes and dedicated public copy', () => {
+  for (const code of [
+    'CONTEXT_LIMIT_EXCEEDED',
+    'CONTEXT_WINDOW_UNKNOWN',
+    'OUTPUT_TRUNCATED',
+    'CONTEXT_COMPACTION_FAILED',
+  ] as const) {
+    assert.equal(normalizeChatErrorCode(new Error(code)), code);
+    assert.notEqual(
+      publicErrorMessage(code),
+      publicErrorMessage('CHAT_UNAVAILABLE'),
+      code,
+    );
+  }
 });

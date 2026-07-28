@@ -59,6 +59,7 @@ export async function POST(request: NextRequest) {
         chatWindowMaxMessages: config.chatWindowMaxMessages,
         interactionRetentionDays: config.interactionRetentionDays,
         tokenRates: config.tokenRates,
+        dynamicProviderContextEnabled: config.dynamicProviderContextEnabled,
         searchEnabled: config.searchEnabled,
         maxSearchesPerSession: config.maxSearchesPerSession,
         providerName: 'openai',

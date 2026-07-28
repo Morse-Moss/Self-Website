@@ -37,6 +37,8 @@ interface CleanupCounts {
   deletedInteractionTurns: number;
   deletedServiceIncidents: number;
   deletedSessions: number;
+  deletedCompactions: number;
+  deletedSummaryAttempts: number;
   deletedUsageEvents: number;
 }
 
@@ -67,7 +69,7 @@ async function runCleanup(
   privateFixtures: string[],
 ): Promise<CleanupCounts> {
   const result = await runScript(cleanupRunner, {
-    DATABASE_URL: connectionString,
+    DATABASE_URL_WORKER: connectionString,
     MORSE_CLEANUP_NOW: cleanupNow,
   });
   assert.equal(result.code, 0, result.stderr);
@@ -81,7 +83,18 @@ async function runCleanup(
   return counts;
 }
 
+async function readDatabaseNow(connectionString: string): Promise<Date> {
+  return withPostgresClient(connectionString, async (client) => {
+    const result = await client.query<{ cleanup_at: Date }>(
+      'SELECT clock_timestamp() AS cleanup_at',
+    );
+    return result.rows[0].cleanup_at;
+  });
+}
+
 const zeroCounts: CleanupCounts = {
+  deletedCompactions: 0,
+  deletedSummaryAttempts: 0,
   deletedSessions: 0,
   deactivatedInvites: 0,
   deletedInteractionSearches: 0,
@@ -173,9 +186,6 @@ test('same-turn stopped and failed retries preserve the first problem retention 
 
 test('cleanup enforces the 12-hour and 10-day retention boundaries idempotently', async () => {
   const database = await createDisposablePostgresDatabase();
-  const firstCleanupAt = '2035-01-10T12:00:00.000Z';
-  const tenDayCleanupAt = '2035-01-11T12:00:00.000Z';
-  const interactionCreatedAt = '2035-01-01T12:00:00.000Z';
   const inviteId = randomUUID();
   const sessionId = randomUUID();
   const conversationId = randomUUID();
@@ -201,6 +211,12 @@ test('cleanup enforces the 12-hour and 10-day retention boundaries idempotently'
       DATABASE_URL: database.connectionString,
     });
     assert.equal(migration.code, 0, migration.stderr);
+    const cleanupNow = await readDatabaseNow(database.connectionString);
+    const firstCleanupAt = cleanupNow.toISOString();
+    const expiredAt = new Date(cleanupNow.getTime() - 60_000);
+    const runtimeCreatedAt = new Date(cleanupNow.getTime() - 12 * 60 * 60_000);
+    const interactionCreatedAt = new Date(cleanupNow.getTime() - 9 * 24 * 60 * 60_000);
+    const interactionDeleteAfter = new Date(interactionCreatedAt.getTime() + 10 * 24 * 60 * 60_000);
 
     await withPostgresClient(database.connectionString, async (client) => {
       await client.query(
@@ -212,7 +228,7 @@ test('cleanup enforces the 12-hour and 10-day retention boundaries idempotently'
         `INSERT INTO invite_codes
           (id, code_hash, label, active, expires_at, max_sessions, session_count)
          VALUES ($1, $2, 'retention invite', true, $3, 3, 1)`,
-        [inviteId, 'a'.repeat(64), '2035-01-10T11:59:00.000Z'],
+        [inviteId, 'a'.repeat(64), expiredAt],
       );
       await client.query(
         `INSERT INTO access_sessions
@@ -222,8 +238,8 @@ test('cleanup enforces the 12-hour and 10-day retention boundaries idempotently'
           sessionId,
           inviteId,
           'b'.repeat(64),
-          '2035-01-10T11:59:00.000Z',
-          '2035-01-10T00:00:00.000Z',
+          expiredAt,
+          runtimeCreatedAt,
         ],
       );
       await client.query(
@@ -233,14 +249,14 @@ test('cleanup enforces the 12-hour and 10-day retention boundaries idempotently'
         [
           conversationId,
           sessionId,
-          '2035-01-10T11:59:00.000Z',
-          '2035-01-10T00:00:00.000Z',
+          expiredAt,
+          runtimeCreatedAt,
         ],
       );
       await client.query(
         `INSERT INTO conversation_messages (conversation_id, role, content, created_at)
          VALUES ($1, 'user', $2, $3)`,
-        [conversationId, privateFixtures[0], '2035-01-10T00:00:00.000Z'],
+        [conversationId, privateFixtures[0], runtimeCreatedAt],
       );
       await client.query(
         `INSERT INTO interaction_turns
@@ -254,7 +270,7 @@ test('cleanup enforces the 12-hour and 10-day retention boundaries idempotently'
           privateFixtures[1],
           privateFixtures[2],
           interactionCreatedAt,
-          tenDayCleanupAt,
+          interactionDeleteAfter,
         ],
       );
       await client.query(
@@ -267,7 +283,7 @@ test('cleanup enforces the 12-hour and 10-day retention boundaries idempotently'
           privateFixtures[3],
           JSON.stringify([{ title: privateFixtures[4] }]),
           interactionCreatedAt,
-          tenDayCleanupAt,
+          interactionDeleteAfter,
         ],
       );
       await client.query(
@@ -283,7 +299,7 @@ test('cleanup enforces the 12-hour and 10-day retention boundaries idempotently'
           JSON.stringify({ detail: privateFixtures[6] }),
           privateFixtures[5],
           interactionCreatedAt,
-          tenDayCleanupAt,
+          interactionDeleteAfter,
         ],
       );
       await client.query(
@@ -292,8 +308,8 @@ test('cleanup enforces the 12-hour and 10-day retention boundaries idempotently'
         [
           adminSessionId,
           'c'.repeat(64),
-          '2035-01-09T12:00:00.000Z',
-          '2035-01-10T11:59:00.000Z',
+          runtimeCreatedAt,
+          expiredAt,
         ],
       );
       await client.query(
@@ -302,8 +318,8 @@ test('cleanup enforces the 12-hour and 10-day retention boundaries idempotently'
          VALUES ('retention-alert', 'retention', $1::jsonb, 'pending', $2, $3, $2, $2)`,
         [
           JSON.stringify({ body: privateFixtures[7] }),
-          '2035-01-09T12:00:00.000Z',
-          '2035-01-10T11:59:00.000Z',
+          runtimeCreatedAt,
+          expiredAt,
         ],
       );
       await client.query(
@@ -312,8 +328,8 @@ test('cleanup enforces the 12-hour and 10-day retention boundaries idempotently'
          VALUES ('invite', $1, false, $2, $3)`,
         [
           'd'.repeat(64),
-          '2035-01-10T11:00:00.000Z',
-          '2035-01-10T11:59:00.000Z',
+          runtimeCreatedAt,
+          expiredAt,
         ],
       );
     });
@@ -390,8 +406,31 @@ test('cleanup enforces the 12-hour and 10-day retention boundaries idempotently'
       zeroCounts,
     );
 
+    await withPostgresClient(database.connectionString, async (client) => {
+      const expiredCreatedAt = new Date(cleanupNow.getTime() - 11 * 24 * 60 * 60_000);
+      const expiredDeleteAfter = new Date(expiredCreatedAt.getTime() + 10 * 24 * 60 * 60_000);
+      await client.query(
+        `UPDATE interaction_searches
+            SET created_at = $2, delete_after = $3
+          WHERE id = $1`,
+        [searchId, expiredCreatedAt, expiredDeleteAfter],
+      );
+      await client.query(
+        `UPDATE diagnoses
+            SET created_at = $2, completed_at = $2, delete_after = $3
+          WHERE id = $1`,
+        [diagnosisId, expiredCreatedAt, expiredDeleteAfter],
+      );
+      await client.query(
+        `UPDATE interaction_turns
+            SET created_at = $2, completed_at = $2, delete_after = $3
+          WHERE id = $1`,
+        [turnId, expiredCreatedAt, expiredDeleteAfter],
+      );
+    });
+
     assert.deepEqual(
-      await runCleanup(database.connectionString, tenDayCleanupAt, privateFixtures),
+      await runCleanup(database.connectionString, firstCleanupAt, privateFixtures),
       {
         ...zeroCounts,
         deletedInteractionSearches: 1,
@@ -412,7 +451,7 @@ test('cleanup enforces the 12-hour and 10-day retention boundaries idempotently'
       assert.equal((await client.query('SELECT id FROM knowledge_documents WHERE id = $1', [documentId])).rowCount, 1);
     });
     assert.deepEqual(
-      await runCleanup(database.connectionString, tenDayCleanupAt, privateFixtures),
+      await runCleanup(database.connectionString, firstCleanupAt, privateFixtures),
       zeroCounts,
     );
   } finally {
@@ -422,8 +461,6 @@ test('cleanup enforces the 12-hour and 10-day retention boundaries idempotently'
 
 test('cleanup removes usage events after 10 days and recovered incidents after 90 days', async () => {
   const database = await createDisposablePostgresDatabase();
-  const cleanupAt = '2035-06-01T00:00:00.000Z';
-  const cleanupTime = new Date(cleanupAt).getTime();
   const dayMs = 24 * 60 * 60 * 1000;
 
   try {
@@ -431,6 +468,8 @@ test('cleanup removes usage events after 10 days and recovered incidents after 9
       DATABASE_URL: database.connectionString,
     });
     assert.equal(migration.code, 0, migration.stderr);
+    const cleanupAt = await readDatabaseNow(database.connectionString);
+    const cleanupTime = cleanupAt.getTime();
 
     await withPostgresClient(database.connectionString, async (client) => {
       await client.query(
@@ -441,7 +480,7 @@ test('cleanup removes usage events after 10 days and recovered incidents after 9
            ('openai-compatible', 'usage-young-fixture', 1, 1, 0, $3)`,
         [
           new Date(cleanupTime - 11 * dayMs),
-          new Date(cleanupTime - 10 * dayMs),
+          new Date(cleanupTime - 10 * dayMs - 60_000),
           new Date(cleanupTime - 9 * dayMs),
         ],
       );
@@ -465,7 +504,7 @@ test('cleanup removes usage events after 10 days and recovered incidents after 9
       );
     });
 
-    const first = await runCleanup(database.connectionString, cleanupAt, []);
+    const first = await runCleanup(database.connectionString, cleanupAt.toISOString(), []);
     assert.equal(first.deletedUsageEvents, 2);
     assert.equal(first.deletedServiceIncidents, 1);
 
@@ -481,7 +520,7 @@ test('cleanup removes usage events after 10 days and recovered incidents after 9
     });
 
     assert.deepEqual(
-      await runCleanup(database.connectionString, cleanupAt, []),
+      await runCleanup(database.connectionString, cleanupAt.toISOString(), []),
       zeroCounts,
     );
   } finally {
@@ -492,9 +531,6 @@ test('cleanup removes usage events after 10 days and recovered incidents after 9
 test('resume retention removes expired sessions and old events without deleting current ciphertext', async () => {
   const database = await createDisposablePostgresDatabase();
   const storageDir = await mkdtemp(path.join(os.tmpdir(), 'revolution-resume-retention-'));
-  const now = new Date('2035-02-01T00:00:00.000Z');
-  const oldTime = new Date(now.getTime() - 2 * 24 * 60 * 60_000);
-  const youngTime = new Date(now.getTime() - 60 * 60_000);
   const currentName = `${randomUUID()}.morsepdf`;
   const retiredName = `${randomUUID()}.morsepdf`;
   const orphanName = `${randomUUID()}.morsepdf`;
@@ -507,6 +543,9 @@ test('resume retention removes expired sessions and old events without deleting 
   try {
     const migration = await runScript(migrationRunner, { DATABASE_URL: database.connectionString });
     assert.equal(migration.code, 0, migration.stderr);
+    const now = await readDatabaseNow(database.connectionString);
+    const oldTime = new Date(now.getTime() - 2 * 24 * 60 * 60_000);
+    const youngTime = new Date(now.getTime() - 60 * 60_000);
     for (const name of [currentName, retiredName, orphanName, youngOrphanName, oldTempName, youngTempName]) {
       await writeFile(path.join(storageDir, name), 'ciphertext-fixture');
     }

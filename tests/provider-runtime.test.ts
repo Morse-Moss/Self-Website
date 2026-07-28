@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 
@@ -26,14 +28,17 @@ import { createDisposablePostgresDatabase } from './postgres-test-utils.ts';
 const { Pool } = pg;
 const repoRoot = path.resolve('.');
 const migrationRunner = path.join(repoRoot, 'scripts', 'migrate-db.mjs');
+const migrationSourceDirectory = path.join(repoRoot, 'db', 'migrations');
 const key = Buffer.alloc(32, 29);
 const runtimeNow = new Date('2026-07-21T04:00:00.000Z');
 
-async function migrate(connectionString: string): Promise<void> {
+async function migrate(connectionString: string, migrationsDirectory?: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
+    const env = { ...process.env, DATABASE_URL: connectionString };
+    if (migrationsDirectory) env.MORSE_MIGRATIONS_DIR = migrationsDirectory;
     const child = spawn(process.execPath, [migrationRunner], {
       cwd: repoRoot,
-      env: { ...process.env, DATABASE_URL: connectionString },
+      env,
       stdio: ['ignore', 'ignore', 'pipe'],
     });
     let stderr = '';
@@ -45,6 +50,20 @@ async function migrate(connectionString: string): Promise<void> {
       else reject(new Error(stderr || `migration exited ${code}`));
     });
   });
+}
+
+async function migrationsThrough012(): Promise<string> {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'revolution-provider-runtime-012-'));
+  const entries = await fs.readdir(migrationSourceDirectory, { withFileTypes: true });
+  await Promise.all(entries
+    .filter((entry) => entry.isFile()
+      && /^\d{3}_.+\.sql$/u.test(entry.name)
+      && entry.name.slice(0, 3) <= '012')
+    .map((entry) => fs.copyFile(
+      path.join(migrationSourceDirectory, entry.name),
+      path.join(directory, entry.name),
+    )));
+  return directory;
 }
 
 const environmentConfig = {
@@ -196,6 +215,51 @@ class FailedTelemetryProvider extends TelemetryProvider {
   }
 }
 
+class HookedTelemetryProvider extends TelemetryProvider {
+  override async *streamAnswer(request: AnswerRequest): AsyncIterable<AnswerEvent> {
+    const execution = request.execution;
+    if (!execution) throw new Error('v2 execution hooks are required');
+    const attempt = {
+      ...this.attempts[1],
+      attemptIndex: 0,
+      executionId: execution.executionId,
+      attemptNo: 1,
+      launchKind: 'primary' as const,
+      position: 0,
+    };
+    await execution.onAttempt({
+      type: 'started',
+      attemptNo: 1,
+      providerAlias: 'primary',
+      launchKind: 'primary',
+      generationMode: 'normal',
+      startedAt: attempt.startedAt,
+      startDelayMs: 0,
+    });
+    await execution.onAttempt({
+      type: 'completed',
+      attemptNo: 1,
+      providerAlias: 'primary',
+      durationMs: attempt.totalLatencyMs,
+      winner: true,
+      errorCode: null,
+      usage: attempt.usage,
+      estimatedCostUsd: attempt.knownCostUsd,
+    });
+    yield { type: 'attempt', attempt };
+    yield { type: 'delta', text: 'Schema 012 routed answer' };
+    yield {
+      type: 'done',
+      attempts: [attempt],
+      costComplete: true,
+      knownCostUsd: attempt.knownCostUsd,
+      usage: attempt.usage,
+      usageComplete: true,
+      winner: { ...attempt, attemptIndex: 0 },
+    };
+  }
+}
+
 class StoppedTelemetryProvider extends TelemetryProvider {
   readonly stoppedAttempt = providerAttempt({
     attemptIndex: 0,
@@ -222,6 +286,8 @@ class StoppedTelemetryProvider extends TelemetryProvider {
 }
 
 class PartiallyObservedStoppedProvider extends TelemetryProvider {
+  readonly secondAttemptStarted: Promise<void>;
+  private readonly markSecondAttemptStarted: () => void;
   readonly completedAttempt = providerAttempt({
     attemptIndex: 0,
     position: 0,
@@ -231,6 +297,13 @@ class PartiallyObservedStoppedProvider extends TelemetryProvider {
     inputRate: '1',
     outputRate: '2',
   });
+
+  constructor() {
+    super();
+    let markSecondAttemptStarted!: () => void;
+    this.secondAttemptStarted = new Promise((resolve) => { markSecondAttemptStarted = resolve; });
+    this.markSecondAttemptStarted = markSecondAttemptStarted;
+  }
 
   override async *streamAnswer(
     request: AnswerRequest,
@@ -266,6 +339,7 @@ class PartiallyObservedStoppedProvider extends TelemetryProvider {
       startedAt: new Date(runtimeNow.getTime() + 100),
       startDelayMs: 100,
     });
+    this.markSecondAttemptStarted();
     yield { type: 'delta', text: 'Partial routed answer' };
     await new Promise<void>((resolve) => {
       if (signal?.aborted) resolve();
@@ -409,7 +483,11 @@ test('runtime resolver freezes one active database route and fails closed on dig
       MORSE_PROVIDER_CONFIG_KEY: key.toString('base64'),
       MORSE_PROVIDER_CONFIG_KEY_VERSION: '1',
     };
-    const runtime = await resolveProviderRuntime(pool, environmentConfig, { env });
+    const dynamicEnvironmentConfig = {
+      ...environmentConfig,
+      dynamicProviderContextEnabled: true,
+    };
+    const runtime = await resolveProviderRuntime(pool, dynamicEnvironmentConfig, { env });
     assert.notEqual(runtime.routeRevisionId, null);
     assert.deepEqual(runtime.targets.map((target) => ({
       configDigestVersion: target.configDigestVersion,
@@ -465,7 +543,7 @@ test('runtime resolver freezes one active database route and fails closed on dig
     await pool.query('ALTER TABLE ai_model_presets ENABLE TRIGGER ai_model_presets_immutable_update');
     await pool.query('ALTER TABLE ai_route_targets ENABLE TRIGGER ai_route_targets_immutable_update');
     await assert.rejects(
-      resolveProviderRuntime(pool, environmentConfig, { env }),
+      resolveProviderRuntime(pool, dynamicEnvironmentConfig, { env }),
       (error: unknown) => (error as { code?: string }).code === 'AI_CONFIG_UNAVAILABLE',
     );
     await pool.query('ALTER TABLE ai_connections DISABLE TRIGGER ai_connections_immutable_update');
@@ -494,7 +572,7 @@ test('runtime resolver freezes one active database route and fails closed on dig
     );
     await pool.query('ALTER TABLE ai_connections ENABLE TRIGGER ai_connections_immutable_update');
     await assert.rejects(
-      resolveProviderRuntime(pool, environmentConfig, { env }),
+      resolveProviderRuntime(pool, dynamicEnvironmentConfig, { env }),
       (error: unknown) => (error as { code?: string }).code === 'AI_CONFIG_UNAVAILABLE',
     );
     await pool.query('ALTER TABLE ai_connections DISABLE TRIGGER ai_connections_immutable_update');
@@ -509,7 +587,7 @@ test('runtime resolver freezes one active database route and fails closed on dig
       [connectionVersionId],
     );
     await assert.rejects(
-      resolveProviderRuntime(pool, environmentConfig, { env }),
+      resolveProviderRuntime(pool, dynamicEnvironmentConfig, { env }),
       (error: unknown) => (error as { code?: string }).code === 'AI_CONFIG_UNAVAILABLE',
     );
     await pool.query('ALTER TABLE ai_connections DISABLE TRIGGER ai_connections_immutable_update');
@@ -532,12 +610,155 @@ test('runtime resolver freezes one active database route and fails closed on dig
     );
     await pool.query('ALTER TABLE ai_route_targets ENABLE TRIGGER ai_route_targets_immutable_update');
     await assert.rejects(
-      resolveProviderRuntime(pool, environmentConfig, { env }),
+      resolveProviderRuntime(pool, dynamicEnvironmentConfig, { env }),
       (error: unknown) => (error as { code?: string }).code === 'AI_CONFIG_UNAVAILABLE',
     );
   } finally {
     await pool.end();
     await database.dispose();
+  }
+});
+
+test('omitted and false dynamic-context flags resolve an active v1 route on schema 012', async () => {
+  const database = await createDisposablePostgresDatabase();
+  const migrationsDirectory = await migrationsThrough012();
+  await migrate(database.connectionString, migrationsDirectory);
+  const pool = new Pool({ connectionString: database.connectionString });
+  try {
+    const routeId = randomUUID();
+    const digest = createRuntimeConfigDigestV1({
+      apiKey: environmentConfig.openaiApiKey,
+      baseUrl: environmentConfig.openaiBaseUrl,
+      maxOutputTokens: environmentConfig.maxOutputTokens,
+      modelId: environmentConfig.chatModel,
+      protocol: environmentConfig.chatProtocol,
+      reasoningEffort: environmentConfig.reasoningEffort,
+      userAgent: environmentConfig.openaiUserAgent,
+    }, key);
+    await pool.query('BEGIN');
+    await pool.query(
+      `INSERT INTO ai_route_revisions
+        (id, revision_number, activation_kind, activated_at)
+       VALUES ($1, 1, 'activate', now())`,
+      [routeId],
+    );
+    await pool.query(
+      `INSERT INTO ai_route_targets
+        (route_revision_id, position, source_type, environment_target_key,
+         connection_display_name, model_display_name, model_id, protocol, config_digest)
+       VALUES ($1, 0, 'environment', 'primary', 'Environment primary',
+               'gpt-environment', 'gpt-environment', 'responses', $2)`,
+      [routeId, digest],
+    );
+    await pool.query(
+      `UPDATE ai_runtime_state
+          SET active_route_revision_id = $1, lock_version = lock_version + 1, updated_at = now()
+        WHERE id = true`,
+      [routeId],
+    );
+    await pool.query('COMMIT');
+
+    for (const config of [
+      environmentConfig,
+      { ...environmentConfig, dynamicProviderContextEnabled: false },
+    ]) {
+      const runtime = await resolveProviderRuntime(pool, config, {
+        env: {
+          NODE_ENV: 'test',
+          MORSE_PROVIDER_CONFIG_KEY: key.toString('base64'),
+          MORSE_PROVIDER_CONFIG_KEY_VERSION: '1',
+        },
+      });
+      assert.equal(runtime.routeRevisionId, routeId);
+      assert.deepEqual(runtime.targets.map((target) => ({
+        configDigestVersion: target.configDigestVersion,
+        contextWindowTokens: target.contextWindowTokens,
+        maxOutputTokens: target.maxOutputTokens,
+        reasoningEffort: target.reasoningEffort,
+      })), [{
+        configDigestVersion: 1,
+        contextWindowTokens: null,
+        maxOutputTokens: null,
+        reasoningEffort: null,
+      }]);
+    }
+  } finally {
+    await pool.end();
+    await database.dispose();
+    await fs.rm(migrationsDirectory, { force: true, recursive: true });
+  }
+});
+
+test('omitted and false dynamic-context flags keep legacy v2 chat on schema 012', async () => {
+  const database = await createDisposablePostgresDatabase();
+  const migrationsDirectory = await migrationsThrough012();
+  await migrate(database.connectionString, migrationsDirectory);
+  const pool = new Pool({ connectionString: database.connectionString });
+  const accessSessionId = randomUUID();
+  const inviteId = randomUUID();
+  try {
+    const vector = `[${[1, ...Array.from({ length: 1_535 }, () => 0)].join(',')}]`;
+    await pool.query(
+      `INSERT INTO knowledge_documents (id, title, source_path, checksum)
+       VALUES ('runtime-feature-off-doc', 'Runtime feature off', 'runtime-feature-off.md', $1)`,
+      ['d'.repeat(64)],
+    );
+    await pool.query(
+      `INSERT INTO knowledge_chunks
+        (id, document_id, ordinal, content, embedding, metadata)
+       VALUES ('runtime-feature-off-chunk', 'runtime-feature-off-doc', 0,
+               'Runtime feature-off evidence', $1::vector,
+               '{"title":"Runtime feature off","sourcePath":"runtime-feature-off.md","href":"/works/content-agent"}'::jsonb)`,
+      [vector],
+    );
+    await pool.query(
+      `INSERT INTO invite_codes
+        (id, code_hash, label, active, expires_at, max_sessions, session_count)
+       VALUES ($1, $2, 'runtime-feature-off', true, $3, 1, 1)`,
+      [inviteId, 'e'.repeat(64), new Date('2026-07-22T04:00:00.000Z')],
+    );
+    await pool.query(
+      `INSERT INTO access_sessions
+        (id, invite_code_id, token_hash, expires_at, message_count, created_at, last_seen_at)
+       VALUES ($1, $2, $3, $4, 0, $5, $5)`,
+      [
+        accessSessionId,
+        inviteId,
+        'f'.repeat(64),
+        new Date('2026-07-22T04:00:00.000Z'),
+        runtimeNow,
+      ],
+    );
+    for (const dynamicProviderContextEnabled of [undefined, false]) {
+      const events = [];
+      for await (const event of runChat({
+        pool,
+        provider: new HookedTelemetryProvider(),
+        accessSessionId,
+        request: {
+          message: 'Explain runtime feature-off routing.',
+          mode: 'general',
+          audienceIntent: 'general',
+          workflow: 'chat',
+          conversationId: null,
+          turnId: randomUUID(),
+        },
+        config: {
+          ...chatServiceConfig,
+          chatV2Enabled: true,
+          chatV2CanaryPercent: 100,
+          ...(dynamicProviderContextEnabled === undefined
+            ? {}
+            : { dynamicProviderContextEnabled }),
+        },
+        now: runtimeNow,
+      })) events.push(event);
+      assert.equal(events.at(-1)?.type, 'done');
+    }
+  } finally {
+    await pool.end();
+    await database.dispose();
+    await fs.rm(migrationsDirectory, { force: true, recursive: true });
   }
 });
 
@@ -1013,9 +1234,10 @@ test('v2 stopped compensation keeps completeness false when an active attempt ha
     );
 
     const controller = new AbortController();
+    const provider = new PartiallyObservedStoppedProvider();
     const iterator = runChat({
       pool,
-      provider: new PartiallyObservedStoppedProvider(),
+      provider,
       accessSessionId: sessionId,
       request: {
         message: '你好，聊聊职场沟通。',
@@ -1033,17 +1255,17 @@ test('v2 stopped compensation keeps completeness false when an active attempt ha
       now: runtimeNow,
       signal: controller.signal,
     })[Symbol.asyncIterator]();
-    while (true) {
-      const next = await iterator.next();
-      if (next.done) throw new Error('expected partial output');
-      if (next.value.type === 'delta') break;
-    }
-    controller.abort(new DOMException('Stopped', 'AbortError'));
-    await assert.rejects(async () => {
+    const terminal = (async () => {
       while (!(await iterator.next()).done) {
-        // Drain through terminal compensation.
+        // Drain until the stopped terminal state is observed.
       }
-    }, (error: unknown) => (error as { name?: string }).name === 'AbortError');
+    })();
+    await provider.secondAttemptStarted;
+    controller.abort(new DOMException('Stopped', 'AbortError'));
+    await assert.rejects(
+      terminal,
+      (error: unknown) => (error as { name?: string }).name === 'AbortError',
+    );
 
     const attempts = await pool.query<{
       status: string;

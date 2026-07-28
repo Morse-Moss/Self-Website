@@ -1077,7 +1077,9 @@ export async function getProviderRuntimeSummary(
   pool: Pool,
   options: AdminProviderServiceOptions,
 ) {
-  const route = await readActiveRouteRaw(pool);
+  const route = await readActiveRouteRaw(pool, {
+    dynamicProviderContextEnabled: options.runtimeConfig.dynamicProviderContextEnabled === true,
+  });
   const configuredEnvironmentTargets = environmentTargets(options);
   const [testStates, activeTakeovers] = await Promise.all([
     readProviderTestStates(pool, [

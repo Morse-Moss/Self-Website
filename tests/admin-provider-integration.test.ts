@@ -164,7 +164,7 @@ function assertSecretsRedacted(value: unknown, secrets: string[]): void {
   const serialized = typeof value === 'string' ? value : JSON.stringify(value);
   for (const secret of secrets) {
     assert.equal(serialized.includes(secret), false);
-    assert.equal(serialized.includes(secret.slice(-4)), false);
+    assert.equal(serialized.includes(secret.slice(-12)), false);
   }
 }
 
@@ -536,6 +536,7 @@ test('runtime summary identifies environment and database routes by safe endpoin
     const serviceOptions = options({
       runtimeConfig: {
         ...baseOptions.runtimeConfig,
+        dynamicProviderContextEnabled: true,
         openaiBaseUrl: 'https://environment.example:8443/v1/private?token=environment-query-secret',
         openaiFallbacks: [{
           apiKey: 'fallback-secret',

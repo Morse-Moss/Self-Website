@@ -1,9 +1,15 @@
 import { createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
-import type { AnswerReasoningEffort } from './ai-provider.ts';
-
 type Env = Record<string, string | undefined>;
+
+export type AnswerReasoningEffort =
+  | 'none'
+  | 'minimal'
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'xhigh';
 
 export const AI_CONFIG_PUBLIC_ERROR_CODES = [
   'AI_CONFIG_UNAVAILABLE',

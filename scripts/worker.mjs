@@ -116,7 +116,7 @@ export async function runWorker({
 export async function main({ env = process.env, logger = console, fetcher = fetch } = {}) {
   const preflight = validateProductionRole('worker', env);
   const workerConfig = loadWorkerConfig(env);
-  const pool = createDatabasePool(env.DATABASE_URL, { env, role: 'worker' });
+  const pool = createDatabasePool(env.DATABASE_URL_WORKER, { env, role: 'worker' });
   const controller = new AbortController();
   const stop = () => controller.abort();
   process.once('SIGINT', stop);

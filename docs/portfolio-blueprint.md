@@ -402,5 +402,6 @@
 - **需求权威**：详细设计为 `docs/superpowers/specs/2026-07-27-digital-morse-controlled-context-design.md`，实施与发布状态由同名 V2.2 plan 和 release closeout 维护。本节覆盖 S10 中仅依赖 route-filtered history 的旧上下文实现，不改变十天分析保留和公开知识边界。
 - **上下文合同**：API 不发送无界“全部历史”。服务端以 Current Input、紧邻 completed discourse、结构化 Task Frame、同任务 completed-only history 和 Approved Evidence 组成有界 Context Packet；Final Projection 白名单决定每层是否准入，预算不足时按整轮淘汰，不切断消息。
 - **RAG 定位**：RAG 继续使用 BGE + pgvector，只为当前语义 intent 选择审核公开项目证据；Task Frame 管理任务连续性，RAG 不承担会话记忆。assistant 历史只帮助语言承接，不能升级为事实证据；项目目录、唯一项目锁定和项目适配使用独立证据计划。
-- **安全与完整性**：普通 Chat/JD 预算为 12k/24k；canonical packet 与 generation request 使用独立 Web-only HMAC。每个 Provider attempt 必须在网络调用前记录同 turn 一致的 builder/key/packet/request digest，manifest 只保留受约束 ID、枚举、计数和分数，不保留原始问答、JD、Provider payload 或 Secret。
+- **安全与完整性**：Chat、JD、诊断、已批准证据与同作用域完整历史不设置应用层字符数、消息数或固定 token 预算；只有目标模型返回可验证的上下文窗口溢出时，才允许按最老完整轮次生成私有摘要，并始终保留当前输入、Task Frame、任务输入和全部已批准证据。canonical packet 与 generation request 使用独立 Web-only HMAC。每个 Provider attempt 必须在网络调用前记录同 turn 一致的 builder/key/packet/request digest，manifest 只保留受约束 ID、枚举、计数和分数，不保留原始问答、JD、摘要、Provider payload 或 Secret。
+- **动态上下文发布边界**：migration `013` 为 additive、forward-only；Web 仅可读写自身的摘要尝试和压缩产物，Worker 只通过受限清理函数删除过期私有数据。013 生效后仅允许使用已验证的 013-aware 镜像；回滚必须关闭 `MORSE_DYNAMIC_PROVIDER_CONTEXT_ENABLED`，不得切回 pre-013 镜像或删除迁移记录。
 - **状态与发布**：migration `012` 为 additive、forward-only。上线先以 Context Packet percent `0` 和空白 UUID/标签白名单部署；定向 HR 发布可通过大小写敏感的 `HR interview` 标签与既有 UUID 并集准入，满额但仍有未过期 Session 的 invite 不能被排除。真实问题必须由用户明确发起，代理不得代发；扩大灰度不属于本轮授权。

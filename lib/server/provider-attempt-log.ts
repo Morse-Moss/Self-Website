@@ -245,6 +245,7 @@ async function recordStartedEvent(
   event: Extract<ProviderAttemptEvent, { type: 'started' }>,
   deleteAfter: Date,
   integrity: GenerationRequestIntegrity | null,
+  dynamicProviderContextEnabled = false,
 ): Promise<void> {
   const generationMode = event.generationMode ?? 'normal';
   if (generationMode !== 'normal') integrityMismatch();
@@ -253,13 +254,15 @@ async function recordStartedEvent(
   const v1 = integrity && !isIntegrityV2(integrity)
     ? integrity as GenerationRequestIntegrityV1
     : null;
+  if (!dynamicProviderContextEnabled && v2) integrityMismatch();
   if (Boolean(v2) !== Boolean(event.generationVariantTrigger)) integrityMismatch();
   await client.query(
     'SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))',
     [`revolution:provider-attempt-integrity:v1:${key.interactionTurnId}`],
   );
   const result = await client.query(
-    `INSERT INTO chat_provider_attempts
+    dynamicProviderContextEnabled
+      ? `INSERT INTO chat_provider_attempts
       (interaction_turn_id, execution_id, attempt_no, provider_alias, launch_kind,
        generation_mode, context_builder_version, packet_hmac_key_id,
        packet_hmac_sha256, generation_overlay_version,
@@ -272,8 +275,17 @@ async function recordStartedEvent(
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
              'started', false, $12, $13, $14, $15, $16, $17, $18, $19,
              $20, $21, $22, $23, $24, $25)
-     ON CONFLICT (interaction_turn_id, execution_id, attempt_no) DO NOTHING`,
-    [
+     ON CONFLICT (interaction_turn_id, execution_id, attempt_no) DO NOTHING`
+      : `INSERT INTO chat_provider_attempts
+        (interaction_turn_id, execution_id, attempt_no, provider_alias, launch_kind,
+         generation_mode, context_builder_version, packet_hmac_key_id,
+         packet_hmac_sha256, generation_overlay_version,
+         generation_request_hmac_sha256, status, winner, start_delay_ms,
+         started_at, delete_after)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+               'started', false, $12, $13, $14)
+       ON CONFLICT (interaction_turn_id, execution_id, attempt_no) DO NOTHING`,
+    dynamicProviderContextEnabled ? [
       key.interactionTurnId,
       key.executionId,
       event.attemptNo,
@@ -299,11 +311,27 @@ async function recordStartedEvent(
       v2?.target.maxOutputTokens ?? null,
       v2?.target.reasoningEffort ?? null,
       v2?.generationRequestHmacSha256 ?? null,
+    ] : [
+      key.interactionTurnId,
+      key.executionId,
+      event.attemptNo,
+      event.providerAlias,
+      event.launchKind,
+      generationMode,
+      integrity?.contextBuilderVersion ?? null,
+      integrity?.packetHmacKeyId ?? null,
+      integrity?.packetHmacSha256 ?? null,
+      v1?.generationOverlayVersion ?? null,
+      v1?.generationRequestHmacSha256 ?? null,
+      event.startDelayMs,
+      event.startedAt,
+      deleteAfter,
     ],
   );
   if (result.rowCount !== 1) {
     const existing = await client.query<AttemptIntegrityRow>(
-      `SELECT attempt_no, provider_alias, launch_kind, generation_mode,
+      dynamicProviderContextEnabled
+        ? `SELECT attempt_no, provider_alias, launch_kind, generation_mode,
               context_builder_version, packet_hmac_key_id, packet_hmac_sha256,
               generation_overlay_version, generation_request_hmac_sha256,
               generation_variant_id::text, generation_variant_revision,
@@ -311,6 +339,21 @@ async function recordStartedEvent(
               target_config_digest, target_model_id, target_protocol,
               target_context_window_tokens, target_max_output_tokens,
               target_reasoning_effort, generation_request_v2_hmac_sha256,
+              start_delay_ms, started_at, delete_after
+         FROM chat_provider_attempts
+        WHERE interaction_turn_id = $1 AND execution_id = $2 AND attempt_no = $3
+        FOR UPDATE`
+        : `SELECT attempt_no, provider_alias, launch_kind, generation_mode,
+              context_builder_version, packet_hmac_key_id, packet_hmac_sha256,
+              generation_overlay_version, generation_request_hmac_sha256,
+              NULL::text AS generation_variant_id,
+              NULL::integer AS generation_variant_revision,
+              NULL::text AS generation_variant_trigger,
+              NULL::smallint AS target_config_digest_version,
+              NULL::text AS target_config_digest, NULL::text AS target_model_id,
+              NULL::text AS target_protocol, NULL::integer AS target_context_window_tokens,
+              NULL::integer AS target_max_output_tokens, NULL::text AS target_reasoning_effort,
+              NULL::text AS generation_request_v2_hmac_sha256,
               start_delay_ms, started_at, delete_after
          FROM chat_provider_attempts
         WHERE interaction_turn_id = $1 AND execution_id = $2 AND attempt_no = $3
@@ -395,13 +438,15 @@ async function recordTerminalEvent(
   client: PoolClient,
   key: ProviderAttemptKey,
   event: Extract<ProviderAttemptEvent, { type: ProviderAttemptTerminalStatus }>,
+  dynamicProviderContextEnabled = false,
 ): Promise<void> {
   if (event.type === 'failed' && !event.errorCode) {
     throw new Error('Failed provider attempts require a stable error code.');
   }
   const failure = event.failure ?? null;
   const result = await client.query(
-    `UPDATE chat_provider_attempts
+    dynamicProviderContextEnabled
+      ? `UPDATE chat_provider_attempts
         SET status = $4,
             winner = $5,
             duration_ms = $6,
@@ -420,8 +465,22 @@ async function recordTerminalEvent(
         AND execution_id = $2
         AND attempt_no = $3
         AND provider_alias = $17
-        AND (status IN ('started', 'streaming') OR status = $4)`,
-    [
+        AND (status IN ('started', 'streaming') OR status = $4)`
+      : `UPDATE chat_provider_attempts
+          SET status = $4,
+              winner = $5,
+              duration_ms = $6,
+              error_code = $7,
+              input_tokens = $8,
+              output_tokens = $9,
+              estimated_cost_usd = $10,
+              completed_at = started_at + ($6::integer * interval '1 millisecond')
+        WHERE interaction_turn_id = $1
+          AND execution_id = $2
+          AND attempt_no = $3
+          AND provider_alias = $11
+          AND (status IN ('started', 'streaming') OR status = $4)`,
+    dynamicProviderContextEnabled ? [
       key.interactionTurnId,
       key.executionId,
       event.attemptNo,
@@ -439,6 +498,18 @@ async function recordTerminalEvent(
       failure?.outputTokens ?? null,
       failure?.contextWindowTokens ?? null,
       event.providerAlias,
+    ] : [
+      key.interactionTurnId,
+      key.executionId,
+      event.attemptNo,
+      event.type,
+      event.winner,
+      event.durationMs,
+      event.errorCode,
+      event.usage?.inputTokens ?? null,
+      event.usage?.outputTokens ?? null,
+      event.estimatedCostUsd ?? null,
+      event.providerAlias,
     ],
   );
   if (result.rowCount !== 1) {
@@ -452,7 +523,9 @@ export async function recordProviderAttemptEvent(
   event: ProviderAttemptEvent,
   deleteAfter: Date,
   integrity: GenerationRequestIntegrity | null = null,
+  input: { dynamicProviderContextEnabled?: boolean } = {},
 ): Promise<void> {
+  const dynamicProviderContextEnabled = input.dynamicProviderContextEnabled === true;
   validateAttemptIdentity(key, event);
   if (event.type === 'started') {
     if (event.integrity && integrity && !integritiesMatch(event.integrity, integrity)) {
@@ -464,6 +537,7 @@ export async function recordProviderAttemptEvent(
       event,
       deleteAfter,
       event.integrity ?? integrity,
+      dynamicProviderContextEnabled,
     ));
     return;
   }
@@ -477,7 +551,7 @@ export async function recordProviderAttemptEvent(
     await recordMilestoneEvent(client, key, event);
     return;
   }
-  await recordTerminalEvent(client, key, event);
+  await recordTerminalEvent(client, key, event, dynamicProviderContextEnabled);
 }
 
 export async function summarizeProviderAttempts(

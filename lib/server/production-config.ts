@@ -88,7 +88,23 @@ function privateHttpUrl(value: string | undefined): URL | null {
 }
 
 function validateDatabase(env: Env, role: ProductionRole): void {
-  const connectionString = env.DATABASE_URL?.trim();
+  const connectionString = (
+    role === 'worker' ? env.DATABASE_URL_WORKER : env.DATABASE_URL
+  )?.trim();
+  if (role === 'worker') {
+    try {
+      const databaseUrl = new URL(connectionString ?? '');
+      if (decodeURIComponent(databaseUrl.username) !== 'worker') {
+        fail('PRODUCTION_WORKER_DATABASE_IDENTITY_INVALID');
+      }
+    } catch (error) {
+      if (
+        error instanceof ProductionConfigError
+        && error.code === 'PRODUCTION_WORKER_DATABASE_IDENTITY_INVALID'
+      ) throw error;
+      fail('PRODUCTION_WORKER_DATABASE_IDENTITY_INVALID');
+    }
+  }
   if (!connectionString) fail('PRODUCTION_DATABASE_CONFIG_INVALID');
   try {
     createDatabasePoolConfig(connectionString, { env, role });

@@ -33,8 +33,11 @@ import {
   type AiMessage,
   type AiProvider,
   type AnswerEvent,
+  type AnswerRequest,
+  type PreparedTargetAnswer,
   type ProviderAttempt,
   type ProviderAttemptEvent,
+  type ProviderTargetSnapshot,
   type ProviderWinner,
 } from './ai-provider.ts';
 import { enqueueAlert } from './alert-service.ts';
@@ -62,10 +65,26 @@ import {
 import {
   buildCanonicalAnswerSourceV2,
   buildContextPacket,
+  buildTargetGenerationRequestV2,
   ContextPacketBuildError,
+  stableSerialize,
   type BuiltContextPacket,
   type ContextPacketDigestConfig,
 } from './chat-context-packet.ts';
+import {
+  prepareTargetContext,
+  type PreparedTargetContext,
+} from './chat-context-coordinator.ts';
+import {
+  completeHistorySummaryAttempt,
+  findReusableHistoryCompaction,
+  startHistorySummaryAttempt,
+  terminateHistorySummaryAttempt,
+  type CompleteHistorySummaryAttemptInput,
+  type CompactionReuseKey,
+  type StartHistorySummaryAttemptInput,
+  type TerminateHistorySummaryAttemptInput,
+} from './chat-history-compaction.ts';
 import { projectFinalContext } from './chat-context-projection.ts';
 import { planChatEvidence, type PlannedChatEvidence } from './chat-evidence-planner.ts';
 import {
@@ -103,6 +122,10 @@ import {
 import { resolveChatEvidence } from './chat-evidence.ts';
 import { approvedProjectCatalogSources } from './chat-project-evidence.ts';
 import { buildV2SystemInstructions } from './chat-prompt.ts';
+import {
+  buildOpenAIChatCompletionsBody,
+  buildOpenAIResponsesBody,
+} from './openai-provider.ts';
 import { buildSafeChatAnswer } from './chat-safe-answer.ts';
 import {
   completeInteraction,
@@ -180,6 +203,7 @@ export interface ChatServiceConfig {
   chatWindowMaxMessages?: number;
   interactionRetentionDays: number;
   tokenRates: TokenRates | null;
+  dynamicProviderContextEnabled?: boolean;
   searchEnabled?: boolean;
   maxSearchesPerSession?: number;
   providerName?: string;
@@ -929,6 +953,140 @@ function canonicalHistoryMessages(turns: readonly CompletedContextTurn[]): AiMes
   ]);
 }
 
+function estimateDynamicContextTokens(value: string): number {
+  const cjk = value.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu)?.length ?? 0;
+  const other = value.replace(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu, '').length;
+  return Math.max(1, cjk + Math.ceil(other / 4));
+}
+
+function legacyCurrentMessages(source: CanonicalAnswerSourceV2): AiMessage[] {
+  const layer = source.taskInputs.find((input) => input.kind === 'legacy_current_messages');
+  if (!layer || !Array.isArray(layer.messages)) {
+    return [{ role: 'user', content: source.currentInput }];
+  }
+  const messages = layer.messages.flatMap((candidate): AiMessage[] => {
+    if (!candidate || typeof candidate !== 'object') return [];
+    const record = candidate as Record<string, unknown>;
+    return (record.role === 'user' || record.role === 'assistant')
+      && typeof record.content === 'string'
+      ? [{ role: record.role, content: record.content }]
+      : [];
+  });
+  return messages.length > 0 ? messages : [{ role: 'user', content: source.currentInput }];
+}
+
+function preparedContextMessages(
+  source: CanonicalAnswerSourceV2,
+  prepared: PreparedTargetContext,
+): AiMessage[] {
+  const summary = prepared.historyView.summary;
+  return [
+    ...(summary ? [{
+      role: 'user' as const,
+      content: `<task_history_summary>${Buffer.from(stableSerialize(summary)).toString('utf8')}</task_history_summary>`,
+    }] : []),
+    ...canonicalHistoryMessages(prepared.historyView.rawHistory),
+    ...legacyCurrentMessages(source),
+  ];
+}
+
+function buildPreparedTargetAnswer(input: {
+  source: CanonicalAnswerSourceV2;
+  prepared: PreparedTargetContext;
+  digest: ContextPacketDigestConfig;
+}): PreparedTargetAnswer {
+  const messages = preparedContextMessages(input.source, input.prepared);
+  const request: AnswerRequest = {
+    instructions: input.source.trustedInstructions,
+    messages,
+    maxOutputTokens: input.prepared.target.maxOutputTokens,
+    reasoningEffort: input.prepared.target.reasoningEffort ?? undefined,
+  };
+  const bodyConfig = {
+    chatModel: input.prepared.target.modelId,
+    maxOutputTokens: input.prepared.target.maxOutputTokens,
+    reasoningEffort: input.prepared.target.reasoningEffort ?? undefined,
+  };
+  const outboundBody = input.prepared.target.protocol === 'responses'
+    ? buildOpenAIResponsesBody(request, bodyConfig)
+    : buildOpenAIChatCompletionsBody(request, bodyConfig);
+  const generation = buildTargetGenerationRequestV2({
+    variant: input.prepared.variant,
+    packetHmacKeyId: input.prepared.packetHmacKeyId,
+    packetHmacSha256: input.prepared.packetHmacSha256,
+    instructions: request.instructions,
+    messages,
+    reasoningEffort: input.prepared.target.reasoningEffort,
+    maxOutputTokens: input.prepared.target.maxOutputTokens,
+    outboundBody,
+    digestKey: input.digest.key,
+  });
+  return {
+    context: input.prepared,
+    request,
+    outboundBody,
+    generationRequest: generation.request,
+    integrity: {
+      version: 2,
+      contextBuilderVersion: CONTEXT_BUILDER_VERSION,
+      generationVariantId: input.prepared.variant.id,
+      generationVariantRevision: input.prepared.variant.revision,
+      target: input.prepared.target,
+      packetHmacKeyId: input.prepared.packetHmacKeyId,
+      packetHmacSha256: input.prepared.packetHmacSha256,
+      generationRequestHmacSha256: generation.generationRequestHmacSha256,
+    },
+  };
+}
+
+async function summarizeTargetHistory(
+  provider: AiProvider,
+  request: AnswerRequest,
+  signal: AbortSignal,
+) {
+  let text = '';
+  let usage: TokenUsage | null = null;
+  try {
+    for await (const event of provider.streamAnswer(request, signal)) {
+      if (event.type === 'delta') text += event.text;
+      if (event.type === 'done') {
+        usage = event.usage;
+        if (text.trim()) {
+          return {
+            status: 'completed' as const,
+            text,
+            inputTokens: usage?.inputTokens ?? null,
+            outputTokens: usage?.outputTokens ?? null,
+            errorCode: null,
+          };
+        }
+        return {
+          status: 'failed' as const,
+          text: null,
+          inputTokens: usage?.inputTokens ?? null,
+          outputTokens: usage?.outputTokens ?? null,
+          errorCode: 'CONTEXT_SUMMARY_FAILED',
+        };
+      }
+    }
+  } catch {
+    return {
+      status: signal.aborted ? 'cancelled' as const : 'failed' as const,
+      text: null,
+      inputTokens: null,
+      outputTokens: null,
+      errorCode: null,
+    };
+  }
+  return {
+    status: signal.aborted ? 'cancelled' as const : 'failed' as const,
+    text: null,
+    inputTokens: null,
+    outputTokens: null,
+    errorCode: null,
+  };
+}
+
 async function loadTurnDiagnosis(input: {
   client: PoolClient;
   accessSessionId: string;
@@ -1591,7 +1749,9 @@ async function completeTurn(input: {
     );
     const assistantMessageId = assistantMessage.rows[0].id;
     if (routed) {
-      await replaceProviderAttempts(input.client, input.turn.turnId, input.attempts);
+      await replaceProviderAttempts(input.client, input.turn.turnId, input.attempts, {
+        dynamicProviderContextEnabled: input.config.dynamicProviderContextEnabled === true,
+      });
     }
     if (routed && !summarizedV2) {
       for (const attempt of input.attempts) {
@@ -1723,7 +1883,9 @@ async function completeTurn(input: {
       const completed = await loadCompletedInteraction(input.pool, input.turn.turnId)
         .catch(() => null);
       const attemptsMatch = completed?.answer === input.answer
-        ? await providerAttemptsMatch(input.pool, input.turn.turnId, input.attempts)
+        ? await providerAttemptsMatch(input.pool, input.turn.turnId, input.attempts, {
+            dynamicProviderContextEnabled: input.config.dynamicProviderContextEnabled === true,
+          })
             .catch(() => false)
         : false;
       const taskStateOk = !taskStateWriteRequired
@@ -1944,7 +2106,9 @@ async function compensateTurnOnce(input: CompensationInput): Promise<Compensatio
 
     const aggregate = aggregateProviderAttempts(input.attempts);
     if (input.attempts.length > 0) {
-      await replaceProviderAttempts(input.client, input.turn.turnId, input.attempts);
+      await replaceProviderAttempts(input.client, input.turn.turnId, input.attempts, {
+        dynamicProviderContextEnabled: input.config.dynamicProviderContextEnabled === true,
+      });
     }
     if (input.attempts.length > 0 && input.turn.behavior !== 'v2') {
       for (const attempt of input.attempts) {
@@ -2078,8 +2242,39 @@ async function compensateTurn(input: CompensationInput): Promise<boolean> {
   }
 }
 
+function dynamicContextTerminalCode(error: unknown): ChatServiceErrorCode | null {
+  if (!(error instanceof ProviderRunError)) return null;
+  if (error.code === 'CONTEXT_PROTECTED_PAYLOAD_TOO_LARGE'
+    || error.code === 'CONTEXT_TARGET_INELIGIBLE') {
+    return 'CONTEXT_LIMIT_EXCEEDED';
+  }
+  if (error.code === 'CONTEXT_SUMMARY_FAILED'
+    || error.code === 'CONTEXT_SUMMARY_CANCELLED'
+    || error.code === 'CONTEXT_SUMMARY_NOT_SMALLER') {
+    return 'CONTEXT_COMPACTION_FAILED';
+  }
+  const failures = error.attempts.flatMap((attempt) => attempt.failure ? [attempt.failure] : []);
+  if (failures.some((failure) => failure.category === 'output_truncated')) {
+    return 'OUTPUT_TRUNCATED';
+  }
+  if (failures.some((failure) => (
+    failure.category === 'context_overflow' && failure.contextWindowTokens === null
+  ))) {
+    return 'CONTEXT_WINDOW_UNKNOWN';
+  }
+  return null;
+}
+
 function providerPhaseError(error: unknown): RuntimePhaseError {
   const code = dependencyErrorCode(error);
+  const dynamicContextCode = dynamicContextTerminalCode(error);
+  if (dynamicContextCode) {
+    return new RuntimePhaseError(
+      dynamicContextCode,
+      code ?? dynamicContextCode,
+      error,
+    );
+  }
   if (code && /^PROVIDER_[A-Z_]+$/u.test(code)) {
     const publicCode = code.includes('INCOMPLETE')
       ? 'PROVIDER_INCOMPLETE'
@@ -2312,6 +2507,9 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
   let providerWinner: ProviderWinner | null = null;
   let failure: TerminalFailure | null = null;
   let preparedContext: PreparedContextTurn | null = null;
+  let canonicalSource: CanonicalAnswerSourceV2 | null = null;
+  let canonicalHistory: CompletedContextTurn[] = [];
+  let canonicalContextScopeId: string | null = null;
   let contextTerminal: ContextTerminalState | null = null;
 
   try {
@@ -2400,6 +2598,7 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
         resolved: preparedContext.resolution.resolved,
         manifest: preparedContext.manifest,
       };
+      canonicalSource = preparedContext.canonicalSource;
       turn.messages = preparedContext.builtPacket?.normal.request.messages
         ?? [{ role: 'user', content: input.request.message }];
     } else if (turn.behavior === 'v2') {
@@ -2434,29 +2633,26 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
         && v2Route.topicRef === v2TaskState.topicRef
         ? v2TaskState.taskId
         : null;
-      const completedHistory = canonicalHistoryMessages(await loadCanonicalAnswerHistory(
-        lockClient,
-        {
+      canonicalContextScopeId = continuingTaskId;
+      canonicalHistory = await loadCanonicalAnswerHistory(lockClient, {
           conversationId: turn.conversationId,
           ownerPipeline: 'legacy_v2',
           contextScopeId: continuingTaskId,
           includeConversation: v2Route.routeKind === 'conversation',
-        },
-      ));
+        });
+      const completedHistory = canonicalHistoryMessages(canonicalHistory);
       turn.messages = [
         ...completedHistory,
         { role: 'user', content: input.request.message },
       ];
     } else if (turn.behavior === 'v1') {
-      const completedHistory = canonicalHistoryMessages(await loadCanonicalAnswerHistory(
-        lockClient,
-        {
+      canonicalHistory = await loadCanonicalAnswerHistory(lockClient, {
           conversationId: turn.conversationId,
           ownerPipeline: 'legacy_v1',
           contextScopeId: null,
           includeConversation: true,
-        },
-      ));
+        });
+      const completedHistory = canonicalHistoryMessages(canonicalHistory);
       turn.messages = [
         ...completedHistory,
         { role: 'user', content: input.request.message },
@@ -2666,7 +2862,7 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
       workflowSystemBoundary(input.request, turn.diagnosis),
     ].filter(Boolean).join('\n\n');
 
-    if (turn.behavior === 'v1') {
+    if (turn.behavior === 'v1' && input.config.dynamicProviderContextEnabled !== true) {
       legacyAnswerIterator = input.provider.streamAnswer({
         instructions,
         reasoningEffort: route.reasoningEffort,
@@ -2869,6 +3065,40 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
           knowledge,
           turn.diagnosis,
         );
+    const dynamicProviderContextEnabled = input.config.dynamicProviderContextEnabled === true;
+    if (dynamicProviderContextEnabled && !canonicalSource) {
+      if (turn.userMessageId === null) throw new Error('CONTEXT_USER_MESSAGE_MISSING');
+      const historyMessageCount = canonicalHistory.length * 2;
+      const currentMessages = requestWorkflow(input.request) === 'chat'
+        ? messages.slice(historyMessageCount)
+        : messages;
+      const approvedEvidence: Array<Record<string, unknown>> = [
+        ...knowledge.map((source) => ({ ...source })),
+        ...(search?.status === 'completed'
+          ? search.results.map((result) => ({ ...result, kind: 'controlled_search' }))
+          : []),
+      ];
+      canonicalSource = buildCanonicalAnswerSourceV2({
+        ownerPipeline: turn.executionPipeline === 'legacy_v1'
+          ? 'legacy_v1'
+          : 'legacy_v2',
+        conversationId: turn.conversationId,
+        interactionTurnId: turn.turnId,
+        contextScopeId: canonicalContextScopeId,
+        currentUserMessageId: turn.userMessageId,
+        currentInput: input.request.message,
+        trustedInstructions: instructions,
+        taskFrame: null,
+        taskInputs: [{ kind: 'legacy_current_messages', messages: currentMessages }],
+        approvedEvidence,
+        completeHistory: canonicalHistory,
+        reasoningEffort: route.reasoningEffort ?? null,
+        releasePolicy: route.release,
+      });
+    }
+    if (dynamicProviderContextEnabled && (!canonicalSource || !input.config.contextPacketDigest)) {
+      throw new Error('CONTEXT_PACKET_DIGEST_CONFIG_INVALID');
+    }
     const deleteAfter = new Date(
       startedAt.getTime() + input.config.interactionRetentionDays * MILLISECONDS_PER_DAY,
     );
@@ -2881,22 +3111,31 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
       turnTimeoutMs: input.config.chatTurnTimeoutMs,
       providerTimeoutMs: input.config.providerStageTimeoutMs,
     });
+    const generationVariantId = randomUUID();
+    let summaryCallIndex = 0;
+    const dynamicSource = canonicalSource;
+    const dynamicDigest = input.config.contextPacketDigest ?? null;
     answerIterator = runChatAnswer({
       budget: executionBudget,
       now: () => Date.now(),
       releasePolicy: route.release,
       generate({ remainingProviderMs }) {
         const executionId = randomUUID();
-        const contextRequest = preparedContext?.builtPacket?.normal ?? null;
+        const contextRequest = dynamicProviderContextEnabled
+          ? null
+          : preparedContext?.builtPacket?.normal ?? null;
+        const coordinatedExecution = currentTurn.behavior === 'v2'
+          || dynamicProviderContextEnabled;
         return input.provider.streamAnswer({
           instructions: contextRequest?.request.baseInstructions ?? instructions,
           reasoningEffort: contextRequest
             ? contextRequest.request.reasoningEffort ?? undefined
             : route.reasoningEffort,
           messages: contextRequest?.request.messages ?? messages,
-          execution: currentTurn.behavior === 'v2'
+          execution: coordinatedExecution
             ? {
                 executionId,
+                ...(dynamicProviderContextEnabled ? { generationVariantId } : {}),
                 releasePolicy: route.release,
                 minimumBufferCharacters: 1,
                 totalTimeoutMs: remainingProviderMs,
@@ -2907,6 +3146,82 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
                 modelTextTimeoutMs: input.config.providerModelTextTimeoutMs,
                 hedgingEnabled: false,
                 delaysMs: [0],
+                ...(dynamicProviderContextEnabled && dynamicSource && dynamicDigest ? {
+                  async prepareTarget({
+                    target,
+                    provider,
+                    variantId,
+                    revision,
+                    trigger,
+                    numericOverflow,
+                    signal,
+                    deadlineMs,
+                  }: {
+                    target: ProviderTargetSnapshot;
+                    provider: AiProvider;
+                    variantId: string;
+                    revision: number;
+                    trigger: 'initial' | 'numeric_preflight' | 'provider_numeric_overflow';
+                    numericOverflow: import('./provider-failure.ts').SanitizedProviderFailure | null;
+                    signal: AbortSignal;
+                    deadlineMs: number;
+                  }) {
+                    const overflow = numericOverflow?.category === 'context_overflow'
+                      && numericOverflow.contextWindowTokens !== null
+                      ? {
+                          category: 'context_overflow' as const,
+                          contextWindowTokens: numericOverflow.contextWindowTokens,
+                          inputTokens: numericOverflow.inputTokens,
+                          outputTokens: numericOverflow.outputTokens,
+                        }
+                      : null;
+                    const prepared = await prepareTargetContext({
+                      source: dynamicSource,
+                      target,
+                      variantId,
+                      revision,
+                      trigger,
+                      numericOverflow: overflow,
+                      signal,
+                      deadlineMs,
+                      summarize: (request, summarySignal) => (
+                        summarizeTargetHistory(provider, request, summarySignal)
+                      ),
+                    }, {
+                      digest: dynamicDigest,
+                      estimateTokens: estimateDynamicContextTokens,
+                      now: clock,
+                      createId: randomUUID,
+                      nextSummaryCallIndex: () => {
+                        summaryCallIndex += 1;
+                        return summaryCallIndex;
+                      },
+                      store: {
+                        findReusable: (value) => findReusableHistoryCompaction(
+                          input.pool,
+                          value as CompactionReuseKey,
+                        ),
+                        start: (value) => startHistorySummaryAttempt(
+                          input.pool,
+                          value as StartHistorySummaryAttemptInput,
+                        ),
+                        complete: (value) => completeHistorySummaryAttempt(
+                          input.pool,
+                          value as CompleteHistorySummaryAttemptInput,
+                        ),
+                        terminate: (value) => terminateHistorySummaryAttempt(
+                          input.pool,
+                          value as TerminateHistorySummaryAttemptInput,
+                        ),
+                      },
+                    });
+                    return buildPreparedTargetAnswer({
+                      source: dynamicSource,
+                      prepared,
+                      digest: dynamicDigest,
+                    });
+                  },
+                } : {}),
                 async reserveHedgedAttempt(event) {
                   try {
                     return await reserveHedgedProviderAttempt(
@@ -2935,6 +3250,10 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
                       event,
                       deleteAfter,
                       contextRequest?.integrity ?? null,
+                      {
+                        dynamicProviderContextEnabled:
+                          input.config.dynamicProviderContextEnabled === true,
+                      },
                     );
                   } catch (error) {
                     throw new RuntimePhaseError(

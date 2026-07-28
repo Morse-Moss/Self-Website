@@ -205,7 +205,7 @@ test('production launcher rejects invalid worker settings before announcing read
     encoding: 'utf8',
     env: {
       NODE_ENV: 'production',
-      DATABASE_URL: 'postgresql://runtime@db.internal/revolution',
+      DATABASE_URL_WORKER: 'postgresql://worker@db.internal/revolution',
       MORSE_DATABASE_SSL_MODE: 'require',
       MORSE_ALERTS_ENABLED: 'false',
       MORSE_ALERT_DISPATCH_LIMIT: '0',

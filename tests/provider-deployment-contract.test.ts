@@ -79,8 +79,64 @@ test('runtime can create and release environment takeovers but cannot delete his
   for (const privilege of ['SELECT', 'INSERT', 'UPDATE']) {
     assert.match(
       verification,
-      new RegExp(`\\('ai_environment_takeovers', '${privilege}'\\)`, 'u'),
+      new RegExp(`\\('runtime', 'ai_environment_takeovers', '${privilege}'\\)`, 'u'),
     );
   }
-  assert.match(verification, /\('ai_environment_takeovers', 'DELETE'\)/u);
+  assert.match(verification, /\('runtime', 'ai_environment_takeovers', 'DELETE'\)/u);
+});
+
+test('production topology gives the worker a distinct database principal and secret', () => {
+  const compose = fs.readFileSync(composePath, 'utf8');
+  const environment = fs.readFileSync(envPath, 'utf8');
+  const roles = fs.readFileSync(path.resolve('deploy/postgres/init/01-roles.sh'), 'utf8');
+  const web = compose.match(/\n  web:[\s\S]*?\n  worker:/u)?.[0] ?? '';
+  const worker = compose.match(/\n  worker:[\s\S]*?\n  grants:/u)?.[0] ?? '';
+  const db = compose.match(/\n  db:[\s\S]*?\n  resume-storage-init:/u)?.[0] ?? '';
+
+  assert.match(environment, /^DATABASE_URL_WORKER=postgresql:\/\/worker@127\.0\.0\.1:55432\/revolution$/mu);
+  assert.match(web, /DATABASE_URL: \$\{DATABASE_URL_RUNTIME\}/u);
+  assert.match(worker, /DATABASE_URL_WORKER: \$\{DATABASE_URL_WORKER\}/u);
+  assert.doesNotMatch(worker, /DATABASE_URL_RUNTIME|db_runtime_password/u);
+  assert.match(db, /MORSE_DB_WORKER_PASSWORD_FILE: \/run\/secrets\/db_worker_password/u);
+  assert.match(db, /- db_worker_password/u);
+  assert.match(compose, /^  db_worker_password:\r?\n    file: \.\/deploy\/secrets\/db_worker_password$/mu);
+
+  assert.match(roles, /worker_password=.*db_worker_password/u);
+  assert.match(roles, /CREATE ROLE worker LOGIN/u);
+  assert.match(roles, /ALTER ROLE worker PASSWORD :'worker_password' NOSUPERUSER/u);
+  assert.match(roles, /GRANT CONNECT ON DATABASE revolution TO[^;]*\bworker\b/u);
+});
+
+test('schema-aware grants enforce the exact runtime and worker compaction boundary', () => {
+  const grants = fs.readFileSync(path.resolve('deploy/postgres/grant-runtime.sql'), 'utf8');
+  const verification = fs.readFileSync(privilegePath, 'utf8');
+  const compose = fs.readFileSync(composePath, 'utf8');
+  const grantsService = compose.match(/\n  grants:[\s\S]*?\n  edge:/u)?.[0] ?? '';
+
+  assert.match(grants, /to_regclass\('public\.conversation_history_compactions'\)/u);
+  assert.match(grants, /to_regclass\('public\.chat_history_summary_attempts'\)/u);
+  assert.match(grants, /REVOKE ALL ON public\.conversation_history_compactions, public\.chat_history_summary_attempts FROM runtime, worker/u);
+  assert.match(grants, /GRANT SELECT, INSERT ON public\.conversation_history_compactions TO runtime/u);
+  assert.match(grants, /GRANT SELECT, INSERT, UPDATE ON public\.chat_history_summary_attempts TO runtime/u);
+  assert.match(grants, /GRANT SELECT \(interaction_turn_id, delete_after\) ON public\.chat_history_summary_attempts TO worker/u);
+  assert.match(grants, /GRANT SELECT \(conversation_id, delete_after\) ON public\.conversation_history_compactions TO worker/u);
+  assert.match(grants, /GRANT EXECUTE ON FUNCTION public\.cleanup_expired_chat_history_compactions\(\) TO worker/u);
+  assert.match(grants, /GRANT SELECT \(id, access_session_id\) ON TABLE conversations TO worker/u);
+  assert.match(grants, /REVOKE ALL ON FUNCTION public\.purge_chat_session_for_privacy\(uuid\) FROM PUBLIC, runtime, worker/u);
+  assert.doesNotMatch(
+    grants,
+    /GRANT[^;]*\b(?:INSERT|UPDATE|DELETE)\b[^;]*chat_history[^;]*TO worker/iu,
+  );
+
+  for (const token of [
+    'conversation_history_compactions',
+    'chat_history_summary_attempts',
+    'cleanup_expired_chat_history_compactions',
+    'purge_chat_session_for_privacy',
+    'procedure.proowner',
+    'migration.rolsuper',
+  ]) assert.match(verification, new RegExp(token.replace('.', '\\.'), 'u'));
+  assert.match(grantsService, /db_worker_password/u);
+  assert.match(grantsService, /verify-ai-config-runtime\.sql/u);
+  assert.match(grantsService, /grant-runtime\.sql[\s\S]*verify-ai-config-runtime\.sql/u);
 });

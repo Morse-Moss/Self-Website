@@ -47,7 +47,7 @@ test('v2 routing has no Provider fallback judge or route-classifier prompt', asy
   assert.doesNotMatch(source, /llmFallbackIntentPrompt/u);
 });
 
-const inviteCode = 'm3-chat-service-invite';
+const inviteCode = `m3-chat-service-invite-${inviteId}`;
 const now = new Date('2026-07-13T03:00:00.000Z');
 let accessSessionId = '';
 let queryEmbedding: number[] = [];
@@ -1961,7 +1961,7 @@ test('runChat aborts embedding before the first token and records a stopped turn
     provider,
     accessSessionId: fixture.accessSessionId,
     request: {
-      message: 'Stop before the first token.',
+      message: 'How did you build Digital Morse RAG?',
       mode: 'general',
       audienceIntent: 'general',
       conversationId: null,
@@ -5374,8 +5374,7 @@ test('a later segment matching an offline quality rule remains visible without r
       || (event.type === 'status' && String(event.stage) === 'switching')
     ));
     assert.deepEqual(answerEvents, [
-      { type: 'delta', text: 'Kubernetes is an orchestration system. ' },
-      { type: 'delta', text: 'AGENTS.md.' },
+      { type: 'delta', text: 'Kubernetes is an orchestration system. AGENTS.md.' },
     ]);
 
     let visible = '';

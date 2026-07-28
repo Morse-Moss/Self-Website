@@ -18,12 +18,14 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD_FILE: /run/secrets/db_admin_password
       MORSE_DB_RUNTIME_PASSWORD_FILE: /run/secrets/db_runtime_password
+      MORSE_DB_WORKER_PASSWORD_FILE: /run/secrets/db_worker_password
       MORSE_DB_MIGRATION_PASSWORD_FILE: /run/secrets/db_migration_password
       MORSE_DB_INGEST_PASSWORD_FILE: /run/secrets/db_ingest_password
       MORSE_DB_BACKUP_PASSWORD_FILE: /run/secrets/db_backup_password
     secrets:
       - db_admin_password
       - db_runtime_password
+      - db_worker_password
       - db_migration_password
       - db_ingest_password
       - db_backup_password
@@ -186,7 +188,7 @@ services:
       - .env.production
     environment:
       NODE_ENV: production
-      DATABASE_URL: ${DATABASE_URL_RUNTIME}
+      DATABASE_URL_WORKER: ${DATABASE_URL_WORKER}
       MORSE_DATABASE_SSL_MODE: require
       MORSE_LOCAL_RELEASE_SMOKE: "false"
       MORSE_DATABASE_POOL_MAX: ${MORSE_WORKER_POOL_MAX:-3}
@@ -216,16 +218,19 @@ services:
     logging: *default-logging
     environment:
       PGPASSWORD_FILE: /run/secrets/db_admin_password
+      MORSE_DB_WORKER_PASSWORD_FILE: /run/secrets/db_worker_password
     secrets:
       - db_admin_password
+      - db_worker_password
     volumes:
       - ./deploy/postgres/grant-runtime.sql:/grant-runtime.sql:ro
+      - ./deploy/postgres/verify-ai-config-runtime.sql:/verify-ai-config-runtime.sql:ro
     depends_on:
       db:
         condition: service_healthy
     networks:
       - internal
-    command: ["sh", "-eu", "-c", "export PGPASSWORD=\"$(cat /run/secrets/db_admin_password)\"; psql --host=db --username=postgres --dbname=revolution --file=/grant-runtime.sql"]
+    command: ["sh", "-eu", "-c", "export PGPASSWORD=\"$(cat /run/secrets/db_admin_password)\"; worker_password=\"$(tr -d '\\r\\n' < /run/secrets/db_worker_password)\"; case \"$$worker_password\" in ''|*[!A-Za-z0-9_-]*) exit 1;; esac; psql --host=db --username=postgres --dbname=revolution --set=worker_password=\"$$worker_password\" --file=/grant-runtime.sql; psql --host=db --username=postgres --dbname=revolution --file=/verify-ai-config-runtime.sql"]
 
   edge:
     image: caddy:2.10-alpine
@@ -264,6 +269,8 @@ secrets:
     file: ./deploy/secrets/db_admin_password
   db_runtime_password:
     file: ./deploy/secrets/db_runtime_password
+  db_worker_password:
+    file: ./deploy/secrets/db_worker_password
   db_migration_password:
     file: ./deploy/secrets/db_migration_password
   db_ingest_password:

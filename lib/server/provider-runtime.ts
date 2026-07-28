@@ -29,6 +29,7 @@ export interface ProviderRuntimeConfig {
   chatModel: string;
   chatProtocol: AiChatProtocol;
   chatContextWindowTokens: number | null;
+  dynamicProviderContextEnabled?: boolean;
   embeddingApiKey: string;
   embeddingBaseUrl: string | undefined;
   embeddingDimensions: number;
@@ -180,14 +181,31 @@ function environmentTarget(
   };
 }
 
-async function databaseRows(pool: Pool, ids: string[]): Promise<Map<string, DatabaseTargetRow>> {
+async function databaseRows(
+  pool: Pool,
+  ids: string[],
+  dynamicProviderContextEnabled: boolean,
+): Promise<Map<string, DatabaseTargetRow>> {
   if (ids.length === 0) return new Map();
   const result = await pool.query<DatabaseTargetRow>(
-    `SELECT m.id::text AS model_version_id, m.model_id,
+    dynamicProviderContextEnabled
+      ? `SELECT m.id::text AS model_version_id, m.model_id,
             m.display_name AS model_display_name, m.protocol, m.reasoning_effort,
             m.context_window_tokens, m.max_output_tokens,
             m.input_usd_per_million::text, m.output_usd_per_million::text,
             m.config_digest_version, m.config_digest, m.deleted_at,
+            c.id::text AS connection_version_id, c.series_id::text AS connection_series_id,
+            c.display_name AS connection_display_name, c.base_url, c.user_agent,
+            c.api_key_ciphertext, c.api_key_iv, c.api_key_tag, c.key_version,
+            c.deleted_at AS connection_deleted_at, c.secret_destroyed_at
+       FROM ai_model_presets m
+       JOIN ai_connections c ON c.id = m.connection_version_id
+      WHERE m.id = ANY($1::uuid[])`
+      : `SELECT m.id::text AS model_version_id, m.model_id,
+            m.display_name AS model_display_name, m.protocol, m.reasoning_effort,
+            NULL::integer AS context_window_tokens, m.max_output_tokens,
+            m.input_usd_per_million::text, m.output_usd_per_million::text,
+            1::smallint AS config_digest_version, m.config_digest, m.deleted_at,
             c.id::text AS connection_version_id, c.series_id::text AS connection_series_id,
             c.display_name AS connection_display_name, c.base_url, c.user_agent,
             c.api_key_ciphertext, c.api_key_iv, c.api_key_tag, c.key_version,
@@ -206,7 +224,8 @@ export async function resolveProviderRuntime(
   input: { env?: Record<string, string | undefined> } = {},
 ): Promise<ProviderRuntimeSnapshot> {
   try {
-    const route = await readActiveRouteRaw(pool);
+    const dynamicProviderContextEnabled = config.dynamicProviderContextEnabled === true;
+    const route = await readActiveRouteRaw(pool, { dynamicProviderContextEnabled });
     const policy = createProviderOutboundPolicy(input.env ?? process.env);
     if (!route) {
       const targets = environmentNodes(config).map((node, position) => (
@@ -223,6 +242,7 @@ export async function resolveProviderRuntime(
     const rows = await databaseRows(
       pool,
       route.targets.flatMap((target) => target.databaseModelVersionId ?? []),
+      dynamicProviderContextEnabled,
     );
     const envNodes = environmentNodes(config);
     const targets = route.targets.map((target): ResolvedChatTarget => {

@@ -10,6 +10,7 @@ import {
 } from '../contracts/chat-context.ts';
 import type {
   AnswerRequest,
+  PreparedTargetAnswerContext,
   ProviderTargetSnapshot,
 } from './ai-provider.ts';
 import {
@@ -101,20 +102,7 @@ export interface TargetContextCoordinatorDependencies {
   store: HistoryCompactionStoreAdapter;
 }
 
-export interface PreparedTargetContext {
-  variant: GenerationVariantV2;
-  target: GenerationTargetBindingV2;
-  historyView: {
-    rawHistory: CanonicalAnswerSourceV2['completeHistory'];
-    summary: TaskHistorySummaryLayer | null;
-    consumedTurnIds: readonly string[];
-    compactionArtifactIds: readonly string[];
-  };
-  packet: CanonicalContextPacketV2;
-  packetHmacKeyId: string;
-  packetHmacSha256: string;
-  summaryAttemptIds: readonly string[];
-}
+export type PreparedTargetContext = PreparedTargetAnswerContext;
 
 function bindTarget(
   target: ProviderTargetSnapshot,

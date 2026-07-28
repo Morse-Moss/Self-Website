@@ -43,6 +43,23 @@ test('cleanup deletes expired AI config events in the locked transaction and rep
     async query(sql: string) {
       queries.push(sql);
       if (sql.includes('pg_try_advisory_xact_lock')) return { rows: [{ acquired: true }] };
+      if (sql.includes('to_regprocedure')) {
+        return {
+          rows: [{
+            cleanup_at: '2035-01-01T00:00:00.000Z',
+            compaction_cleanup_available: true,
+          }],
+        };
+      }
+      if (sql.includes('cleanup_expired_chat_history_compactions')) {
+        return {
+          rows: [{
+            cleanup_at: '2035-01-01T00:00:00.000Z',
+            deleted_compactions: '0',
+            deleted_attempts: '0',
+          }],
+        };
+      }
       return { rowCount: sql.includes('DELETE FROM ai_config_events') ? 2 : 0, rows: [] };
     },
     release() {},
@@ -57,6 +74,98 @@ test('cleanup deletes expired AI config events in the locked transaction and rep
   const deleteIndex = queries.findIndex((query) => query.includes('DELETE FROM ai_config_events'));
   assert.ok(deleteIndex > queries.findIndex((query) => query.includes('pg_try_advisory_xact_lock')));
   assert.ok(deleteIndex < queries.indexOf('COMMIT'));
+});
+
+test('cleanup uses the database compaction cutoff before retaining or deleting parent rows', async () => {
+  const queries: Array<{ sql: string; values: readonly unknown[] }> = [];
+  const cleanupAt = '2035-01-02T03:04:05.000Z';
+  const client = {
+    async query(sql: string, values: readonly unknown[] = []) {
+      queries.push({ sql, values });
+      if (sql.includes('pg_try_advisory_xact_lock')) return { rows: [{ acquired: true }] };
+      if (sql.includes('to_regprocedure')) {
+        return { rows: [{ cleanup_at: cleanupAt, compaction_cleanup_available: true }] };
+      }
+      if (sql.includes('cleanup_expired_chat_history_compactions')) {
+        return {
+          rows: [{
+            cleanup_at: cleanupAt,
+            deleted_compactions: '2',
+            deleted_attempts: '1',
+          }],
+        };
+      }
+      return { rowCount: 0, rows: [] };
+    },
+    release() {},
+  };
+
+  const result = await cleanupExpired({
+    now: new Date('2030-01-01T00:00:00.000Z'),
+    pool: { async connect() { return client; } },
+  });
+
+  const lockIndex = queries.findIndex(({ sql }) => sql.includes('pg_try_advisory_xact_lock'));
+  const compactionCleanupIndex = queries.findIndex(
+    ({ sql }) => (
+      sql.includes('cleanup_expired_chat_history_compactions') && !sql.includes('to_regprocedure')
+    ),
+  );
+  const schemaProbeIndex = queries.findIndex(({ sql }) => sql.includes('to_regprocedure'));
+  const turnDeleteIndex = queries.findIndex(({ sql }) => /DELETE FROM interaction_turns AS turn/u.test(sql));
+  const sessionDeleteIndex = queries.findIndex(({ sql }) => /DELETE FROM access_sessions AS session/u.test(sql));
+
+  assert.equal(schemaProbeIndex, lockIndex + 1);
+  assert.equal(compactionCleanupIndex, schemaProbeIndex + 1);
+  assert.ok(turnDeleteIndex > compactionCleanupIndex);
+  assert.ok(sessionDeleteIndex > turnDeleteIndex);
+  assert.match(queries[turnDeleteIndex].sql, /chat_history_summary_attempts/u);
+  assert.match(queries[turnDeleteIndex].sql, /conversation_history_compactions/u);
+  assert.match(queries[sessionDeleteIndex].sql, /chat_history_summary_attempts/u);
+  assert.match(queries[sessionDeleteIndex].sql, /conversation_history_compactions/u);
+  assert.deepEqual(queries[turnDeleteIndex].values, [cleanupAt]);
+  assert.deepEqual(queries[sessionDeleteIndex].values, [cleanupAt]);
+  assert.equal(
+    queries.some(({ sql }) => /DELETE FROM (?:chat_history_summary_attempts|conversation_history_compactions)/u.test(sql)),
+    false,
+  );
+  assert.equal(result.deletedCompactions, 2);
+  assert.equal(result.deletedSummaryAttempts, 1);
+});
+
+test('schema 012 cleanup uses the database clock without referencing migration 013 tables', async () => {
+  const queries: Array<{ sql: string; values: readonly unknown[] }> = [];
+  const cleanupAt = '2035-01-03T03:04:05.000Z';
+  const client = {
+    async query(sql: string, values: readonly unknown[] = []) {
+      queries.push({ sql, values });
+      if (sql.includes('pg_try_advisory_xact_lock')) return { rows: [{ acquired: true }] };
+      if (sql.includes('to_regprocedure')) {
+        return { rows: [{ cleanup_at: cleanupAt, compaction_cleanup_available: false }] };
+      }
+      if (/chat_history_|cleanup_expired_chat_history_compactions/u.test(sql)) {
+        throw new Error('schema 012 private object referenced');
+      }
+      return { rowCount: 0, rows: [] };
+    },
+    release() {},
+  };
+
+  const result = await cleanupExpired({
+    now: new Date('2030-01-01T00:00:00.000Z'),
+    pool: { async connect() { return client; } },
+  });
+
+  assert.equal(result.deletedCompactions, 0);
+  assert.equal(result.deletedSummaryAttempts, 0);
+  const turnDelete = queries.find(({ sql }) => /DELETE FROM interaction_turns AS turn/u.test(sql));
+  const sessionDelete = queries.find(({ sql }) => /DELETE FROM access_sessions AS session/u.test(sql));
+  assert.deepEqual(turnDelete?.values, [cleanupAt]);
+  assert.deepEqual(sessionDelete?.values, [cleanupAt]);
+  assert.doesNotMatch(
+    queries.filter(({ sql }) => !sql.includes('to_regprocedure')).map(({ sql }) => sql).join('\n'),
+    /chat_history_/u,
+  );
 });
 
 test('worker configuration requires an explicit alert mode and uses frozen intervals', () => {

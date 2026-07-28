@@ -29,6 +29,18 @@ export function publicErrorMessage(code?: string): string {
   if (code === 'PROVIDER_UNAVAILABLE' || code === 'PROVIDER_INCOMPLETE') {
     return '回答流中断了,本次未扣减对话次数。';
   }
+  if (code === 'CONTEXT_LIMIT_EXCEEDED') {
+    return '这次对话内容超过了当前模型可处理的范围。请缩小问题范围后重试。';
+  }
+  if (code === 'CONTEXT_WINDOW_UNKNOWN') {
+    return '当前模型没有提供可确认的上下文容量，无法安全整理历史后继续。请稍后重试。';
+  }
+  if (code === 'OUTPUT_TRUNCATED') {
+    return '模型输出在完成前被截断，本次未扣减对话次数。请缩小问题范围后重试。';
+  }
+  if (code === 'CONTEXT_COMPACTION_FAILED') {
+    return '历史对话整理未完成，本次未扣减对话次数。请稍后重试。';
+  }
   if (code === 'CONVERSATION_BUSY') {
     return '上一轮还在处理,本次未扣减对话次数。可以稍后重试本次问题。';
   }

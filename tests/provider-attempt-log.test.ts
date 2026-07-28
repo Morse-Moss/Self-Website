@@ -540,6 +540,7 @@ test('v2 attempts allow target-bound variants but reject drift when replaying on
       digestCharacter: '2',
       modelId: 'model-fallback',
     });
+    const dynamicContext = { dynamicProviderContextEnabled: true };
     const client = await pool.connect();
     try {
       const key = { interactionTurnId, executionId };
@@ -552,7 +553,7 @@ test('v2 attempts allow target-bound variants but reject drift when replaying on
         startedAt,
         startDelayMs: 0,
         generationMode: 'normal',
-      } as never, deleteAfter, first);
+      } as never, deleteAfter, first, dynamicContext);
       await recordProviderAttemptEvent(client, key, {
         type: 'started',
         attemptNo: 2,
@@ -562,7 +563,7 @@ test('v2 attempts allow target-bound variants but reject drift when replaying on
         startedAt: new Date(startedAt.getTime() + 1),
         startDelayMs: 0,
         generationMode: 'normal',
-      } as never, deleteAfter, second);
+      } as never, deleteAfter, second, dynamicContext);
 
       await recordProviderAttemptEvent(client, key, {
         type: 'started',
@@ -573,7 +574,7 @@ test('v2 attempts allow target-bound variants but reject drift when replaying on
         startedAt: new Date(startedAt.getTime() + 1),
         startDelayMs: 0,
         generationMode: 'normal',
-      } as never, deleteAfter, second);
+      } as never, deleteAfter, second, dynamicContext);
 
       await assert.rejects(
         recordProviderAttemptEvent(client, key, {
@@ -588,7 +589,7 @@ test('v2 attempts allow target-bound variants but reject drift when replaying on
         } as never, deleteAfter, {
           ...second,
           generationRequestHmacSha256: 'f'.repeat(64),
-        }),
+        }, dynamicContext),
         /PROVIDER_ATTEMPT_INTEGRITY_MISMATCH/,
       );
     } finally {
@@ -654,6 +655,7 @@ test('terminal v2 projection mirrors variant target and sanitized failure metada
       outputTokens: 0,
       contextWindowTokens: 8_192,
     };
+    const dynamicContext = { dynamicProviderContextEnabled: true };
     let projectedAttempt: ProviderAttempt | null = null;
     const client = await pool.connect();
     try {
@@ -667,7 +669,7 @@ test('terminal v2 projection mirrors variant target and sanitized failure metada
         startedAt,
         startDelayMs: 0,
         generationMode: 'normal',
-      }, deleteAfter, integrity);
+      }, deleteAfter, integrity, dynamicContext);
       await recordProviderAttemptEvent(client, key, {
         type: 'failed',
         attemptNo: 4,
@@ -677,7 +679,7 @@ test('terminal v2 projection mirrors variant target and sanitized failure metada
         errorCode: 'PROVIDER_RESPONSE_FAILED',
         usage: { inputTokens: 8_192, outputTokens: 0 },
         failure,
-      } as never, deleteAfter);
+      } as never, deleteAfter, null, dynamicContext);
 
       const attempt = {
         attemptIndex: 3,
@@ -719,7 +721,7 @@ test('terminal v2 projection mirrors variant target and sanitized failure metada
         integrity,
       } as unknown as ProviderAttempt;
       projectedAttempt = attempt;
-      await replaceProviderAttempts(client, turnId, [attempt]);
+      await replaceProviderAttempts(client, turnId, [attempt], dynamicContext);
     } finally {
       client.release();
     }
@@ -757,11 +759,11 @@ test('terminal v2 projection mirrors variant target and sanitized failure metada
       provider_context_window_tokens: failure.contextWindowTokens,
     });
     assert.ok(projectedAttempt);
-    assert.equal(await providerAttemptsMatch(pool, turnId, [projectedAttempt]), true);
+    assert.equal(await providerAttemptsMatch(pool, turnId, [projectedAttempt], dynamicContext), true);
     assert.equal(await providerAttemptsMatch(pool, turnId, [{
       ...projectedAttempt,
       failure: { ...failure, httpStatus: 413 },
-    }]), false);
+    }], dynamicContext), false);
   } finally {
     await pool.end();
     await database.dispose();

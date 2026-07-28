@@ -729,6 +729,7 @@ export async function insertAiConfigEvent(
 
 export async function readActiveRouteRaw(
   client: Queryable,
+  input: { dynamicProviderContextEnabled?: boolean } = {},
 ): Promise<AiRouteRevisionSnapshot | null> {
   const revision = await client.query<{
     id: string | null;
@@ -762,8 +763,18 @@ export async function readActiveRouteRaw(
     reasoning_effort: import('./ai-provider.ts').AnswerReasoningEffort | null;
     output_usd_per_million: string | null;
     source_type: 'database' | 'environment';
-  }>(
-    `SELECT target.position, target.source_type, target.database_model_version_id,
+  }>(input.dynamicProviderContextEnabled !== true
+    ? `SELECT target.position, target.source_type, target.database_model_version_id,
+            model.series_id::text AS database_model_series_id, target.environment_target_key,
+            target.connection_display_name, target.model_display_name, target.model_id,
+            target.protocol, target.config_digest, 1::smallint AS config_digest_version,
+            NULL::integer AS context_window_tokens, NULL::integer AS max_output_tokens,
+            NULL::text AS reasoning_effort,
+            target.input_usd_per_million::text, target.output_usd_per_million::text
+       FROM ai_route_targets target
+       LEFT JOIN ai_model_presets model ON model.id = target.database_model_version_id
+      WHERE target.route_revision_id = $1 ORDER BY target.position`
+    : `SELECT target.position, target.source_type, target.database_model_version_id,
             model.series_id::text AS database_model_series_id, target.environment_target_key,
             target.connection_display_name, target.model_display_name, target.model_id,
             target.protocol, target.config_digest, target.config_digest_version,

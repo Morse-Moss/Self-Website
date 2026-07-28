@@ -53,6 +53,7 @@ async function seedTurn(input: {
   usedSearch?: boolean;
   badcase?: boolean;
   accessSessionId?: string;
+  conversationId?: string;
   inviteLabel?: string | null;
   createdAt: Date;
   deleteAfter: Date;
@@ -71,7 +72,7 @@ async function seedTurn(input: {
     [
       id,
       input.accessSessionId ?? randomUUID(),
-      randomUUID(),
+      input.conversationId ?? randomUUID(),
       input.workflow,
       input.question,
       input.answer ?? null,
@@ -293,6 +294,117 @@ test('getAdminTurn returns raw analysis detail with joined search and diagnosis 
   assert.equal(diagnosis?.diagnosis?.fields.problem, '需要整理需求');
   assert.equal(diagnosis?.search, null);
   assert.equal(await getAdminTurn(pool, randomUUID(), now), null);
+});
+
+test('admin list and detail never expose private compaction or raw summary-attempt fields', async () => {
+  const privateSessionId = randomUUID();
+  const privateConversationId = randomUUID();
+  const privateTurnId = randomUUID();
+  const summaryAttemptId = randomUUID();
+  const summaryVariantId = randomUUID();
+  const summaryCanary = 'PRIVATE_SUMMARY_CANARY_MUST_NOT_LEAK';
+  const rawFailureCanary = 'RAW_PROVIDER_MESSAGE_CANARY_MUST_NOT_LEAK';
+
+  await pool.query(
+    `INSERT INTO access_sessions
+      (id, invite_code_id, token_hash, expires_at, created_at, last_seen_at)
+     VALUES ($1, $2, $3, $4, $5, $5)`,
+    [
+      privateSessionId,
+      trackedInviteId,
+      'c'.repeat(64),
+      new Date(now.getTime() + 12 * 60 * 60 * 1000),
+      now,
+    ],
+  );
+  await pool.query(
+    `INSERT INTO conversations
+      (id, access_session_id, mode, expires_at, created_at, updated_at)
+     VALUES ($1, $2, 'general', $3, $4, $4)`,
+    [
+      privateConversationId,
+      privateSessionId,
+      new Date(now.getTime() + 12 * 60 * 60 * 1000),
+      now,
+    ],
+  );
+  await seedTurn({
+    id: privateTurnId,
+    workflow: 'chat',
+    status: 'completed',
+    question: 'privacy boundary fixture',
+    answer: 'public answer',
+    accessSessionId: privateSessionId,
+    conversationId: privateConversationId,
+    createdAt: new Date(now.getTime() - 20 * 60 * 1000),
+    deleteAfter: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+  });
+  await pool.query(
+    `INSERT INTO chat_history_summary_attempts
+      (id, conversation_id, interaction_turn_id, owner_pipeline, call_index,
+       generation_variant_id, generation_variant_revision, trigger_reason,
+       summary_instruction_version, source_turn_ids, source_turn_sha256,
+       target_config_digest_version, target_config_digest, target_model_id,
+       target_protocol, target_context_window_tokens, target_reasoning_effort,
+       summary_request_hmac_key_id, summary_request_hmac_sha256,
+       status, started_at, delete_after)
+     VALUES ($1,$2,$3,'legacy_v1',0,$4,1,'numeric_preflight',
+       'task-history-summary-v1',ARRAY[$3]::uuid[],$5,1,$6,'gpt-v1',
+       'responses',128000,'high','context-key-v1',$7,'started',$8::timestamptz,
+       $8::timestamptz + interval '10 days')`,
+    [
+      summaryAttemptId,
+      privateConversationId,
+      privateTurnId,
+      summaryVariantId,
+      'd'.repeat(64),
+      'e'.repeat(64),
+      'f'.repeat(64),
+      new Date(now.getTime() - 10 * 60 * 1000),
+    ],
+  );
+  await pool.query(
+    `UPDATE chat_history_summary_attempts
+        SET status = 'completed', completed_at = started_at + interval '1 minute',
+            input_tokens = 50, output_tokens = 10
+      WHERE id = $1`,
+    [summaryAttemptId],
+  );
+  await pool.query(
+    `INSERT INTO conversation_history_compactions
+      (id, conversation_id, owner_pipeline, source_turn_ids, source_turn_sha256,
+       summary_text, summary_attempt_id, trigger_reason, summary_instruction_version,
+       target_config_digest_version, target_config_digest, target_model_id,
+       target_protocol, target_context_window_tokens, target_reasoning_effort,
+       generation_variant_id, generation_variant_revision, created_at, delete_after)
+     VALUES ($1,$2,'legacy_v1',ARRAY[$3]::uuid[],$4,$5,$6,'numeric_preflight',
+       'task-history-summary-v1',1,$7,'gpt-v1','responses',128000,'high',$8,1,
+       $9::timestamptz,$9::timestamptz + interval '10 days')`,
+    [
+      randomUUID(),
+      privateConversationId,
+      privateTurnId,
+      'd'.repeat(64),
+      `${summaryCanary} ${rawFailureCanary}`,
+      summaryAttemptId,
+      'e'.repeat(64),
+      summaryVariantId,
+      new Date(now.getTime() - 8 * 60 * 1000),
+    ],
+  );
+
+  const list = await listAdminTurns(pool, { now, page: 1, limit: 20 });
+  const detail = await getAdminTurn(pool, privateTurnId, now);
+  const serialized = JSON.stringify({
+    detail,
+    listItem: list.items.find((item) => item.id === privateTurnId),
+  });
+
+  assert.doesNotMatch(serialized, new RegExp(`${summaryCanary}|${rawFailureCanary}`, 'u'));
+  assert.doesNotMatch(
+    serialized,
+    /summary_text|summaryText|source_turn_ids|sourceTurnIds|source_turn_sha256|sourceTurnSha256|summary_attempt_id|summaryAttemptId|summary_request_hmac|summaryRequestHmac|provider_failure_message|providerFailureMessage/u,
+  );
 });
 
 test('invite attribution survives deletion of the visitor session', async () => {

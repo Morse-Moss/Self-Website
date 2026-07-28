@@ -571,6 +571,7 @@ async function loadAuthorityAttemptIntegrity(
   client: PoolClient,
   turnId: string,
   attempt: ProviderAttempt,
+  dynamicProviderContextEnabled: boolean,
 ): Promise<AuthorityAttemptMetadata> {
   if (!attempt.executionId && attempt.attemptNo === undefined) {
     if (attempt.integrity) throw new Error('PROVIDER_ATTEMPT_INTEGRITY_MISMATCH');
@@ -580,7 +581,8 @@ async function loadAuthorityAttemptIntegrity(
     throw new Error('PROVIDER_ATTEMPT_INTEGRITY_MISMATCH');
   }
   const result = await client.query<AuthorityAttemptIntegrityRow>(
-    `SELECT generation_mode, context_builder_version, packet_hmac_key_id,
+    dynamicProviderContextEnabled
+      ? `SELECT generation_mode, context_builder_version, packet_hmac_key_id,
             packet_hmac_sha256, generation_overlay_version,
             generation_request_hmac_sha256, generation_variant_id::text,
             generation_variant_revision, generation_variant_trigger,
@@ -589,6 +591,24 @@ async function loadAuthorityAttemptIntegrity(
             target_reasoning_effort, provider_failure_category, provider_failure_reason,
             provider_http_status, provider_input_tokens, provider_output_tokens,
             provider_context_window_tokens, generation_request_v2_hmac_sha256, status
+       FROM chat_provider_attempts
+      WHERE interaction_turn_id = $1
+        AND execution_id = $2
+        AND attempt_no = $3`
+      : `SELECT generation_mode, context_builder_version, packet_hmac_key_id,
+            packet_hmac_sha256, generation_overlay_version,
+            generation_request_hmac_sha256, NULL::text AS generation_variant_id,
+            NULL::integer AS generation_variant_revision,
+            NULL::text AS generation_variant_trigger,
+            NULL::smallint AS target_config_digest_version,
+            NULL::text AS target_config_digest, NULL::text AS target_model_id,
+            NULL::text AS target_protocol, NULL::integer AS target_context_window_tokens,
+            NULL::integer AS target_max_output_tokens, NULL::text AS target_reasoning_effort,
+            NULL::text AS provider_failure_category, NULL::text AS provider_failure_reason,
+            NULL::smallint AS provider_http_status, NULL::integer AS provider_input_tokens,
+            NULL::integer AS provider_output_tokens,
+            NULL::integer AS provider_context_window_tokens,
+            NULL::text AS generation_request_v2_hmac_sha256, status
        FROM chat_provider_attempts
       WHERE interaction_turn_id = $1
         AND execution_id = $2
@@ -603,7 +623,10 @@ async function loadAuthorityAttemptIntegrity(
   const authority = authorityIntegrity(row);
   if (!integrityMatches(authority.integrity, attempt.integrity ?? null)
     || authority.trigger !== (attempt.generationVariantTrigger ?? null)
-    || !failureMatches(authority.failure, attempt.failure ?? null)) {
+    || !failureMatches(
+      authority.failure,
+      dynamicProviderContextEnabled ? attempt.failure ?? null : null,
+    )) {
     throw new Error('PROVIDER_ATTEMPT_INTEGRITY_MISMATCH');
   }
   return authority;
@@ -613,7 +636,9 @@ export async function replaceProviderAttempts(
   client: PoolClient,
   turnId: string,
   attempts: ProviderAttempt[],
+  input: { dynamicProviderContextEnabled?: boolean } = {},
 ): Promise<void> {
+  const dynamicProviderContextEnabled = input.dynamicProviderContextEnabled === true;
   const locked = await client.query(
     'SELECT id FROM interaction_turns WHERE id = $1 FOR UPDATE',
     [turnId],
@@ -625,14 +650,20 @@ export async function replaceProviderAttempts(
     [turnId],
   );
   for (const attempt of attempts) {
-    const authority = await loadAuthorityAttemptIntegrity(client, turnId, attempt);
+    const authority = await loadAuthorityAttemptIntegrity(
+      client,
+      turnId,
+      attempt,
+      dynamicProviderContextEnabled,
+    );
     const integrity = authority.integrity;
     const v2 = integrity && 'version' in integrity ? integrity : null;
     const v1 = integrity && !('version' in integrity) ? integrity : null;
     const failure = authority.failure;
     const deleteAfter = new Date(attempt.startedAt.getTime() + 10 * 24 * 60 * 60 * 1000);
     await client.query(
-      `INSERT INTO interaction_provider_attempts
+      dynamicProviderContextEnabled
+        ? `INSERT INTO interaction_provider_attempts
         (interaction_turn_id, attempt_index, route_revision_id, target_position,
          source_type, connection_version_id, model_version_id,
          connection_display_name, model_display_name, model_id, protocol,
@@ -652,8 +683,22 @@ export async function replaceProviderAttempts(
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,
                $17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,
                 $30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,
-                $44,$45,$46,$47,$48,$49,$50,$51)`,
-      [
+                $44,$45,$46,$47,$48,$49,$50,$51)`
+        : `INSERT INTO interaction_provider_attempts
+          (interaction_turn_id, attempt_index, route_revision_id, target_position,
+           source_type, connection_version_id, model_version_id,
+           connection_display_name, model_display_name, model_id, protocol,
+           config_digest, launch_kind, generation_mode, status, error_code,
+           first_byte_latency_ms, first_protocol_event_ms, first_model_text_ms,
+           first_user_visible_ms, total_latency_ms,
+           input_tokens, output_tokens, usage_complete, known_cost_usd, cost_complete,
+           created_at, completed_at, delete_after,
+           context_builder_version, packet_hmac_key_id, packet_hmac_sha256,
+           generation_overlay_version, generation_request_hmac_sha256)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,
+                 $17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,
+                 $30,$31,$32,$33,$34)`,
+      dynamicProviderContextEnabled ? [
         turnId,
         attempt.attemptIndex,
         attempt.routeRevisionId,
@@ -705,6 +750,41 @@ export async function replaceProviderAttempts(
         failure?.outputTokens ?? null,
         failure?.reason ?? null,
         v2?.generationRequestHmacSha256 ?? null,
+      ] : [
+        turnId,
+        attempt.attemptIndex,
+        attempt.routeRevisionId,
+        attempt.position,
+        attempt.sourceType,
+        attempt.connectionVersionId,
+        attempt.modelVersionId,
+        attempt.connectionDisplayName,
+        attempt.modelDisplayName,
+        attempt.modelId,
+        attempt.protocol,
+        attempt.configDigest,
+        attempt.launchKind,
+        attempt.generationMode,
+        attempt.status,
+        attempt.errorCode,
+        attempt.firstByteLatencyMs,
+        attempt.firstProtocolEventMs,
+        attempt.firstModelTextMs,
+        attempt.firstUserVisibleMs,
+        attempt.totalLatencyMs,
+        attempt.usage?.inputTokens ?? null,
+        attempt.usage?.outputTokens ?? null,
+        attempt.usageComplete,
+        attempt.knownCostUsd,
+        attempt.costComplete,
+        attempt.startedAt,
+        attempt.completedAt,
+        deleteAfter,
+        integrity?.contextBuilderVersion ?? null,
+        integrity?.packetHmacKeyId ?? null,
+        integrity?.packetHmacSha256 ?? null,
+        v1?.generationOverlayVersion ?? null,
+        v1?.generationRequestHmacSha256 ?? null,
       ],
     );
   }
@@ -714,6 +794,7 @@ export async function providerAttemptsMatch(
   pool: Pool,
   turnId: string,
   expected: ProviderAttempt[],
+  input: { dynamicProviderContextEnabled?: boolean } = {},
 ): Promise<boolean> {
   const result = await pool.query<{
     attempt_index: number;
@@ -765,8 +846,32 @@ export async function providerAttemptsMatch(
     target_position: number;
     total_latency_ms: number;
     usage_complete: boolean;
-  }>(
-    `SELECT attempt_index, route_revision_id::text, target_position, source_type,
+  }>(input.dynamicProviderContextEnabled !== true
+    ? `SELECT attempt_index, route_revision_id::text, target_position, source_type,
+            connection_version_id::text, model_version_id::text,
+            connection_display_name, model_display_name, model_id, protocol,
+            config_digest, launch_kind, generation_mode, status, error_code,
+            context_builder_version, packet_hmac_key_id, packet_hmac_sha256,
+            generation_overlay_version, generation_request_hmac_sha256,
+            NULL::text AS generation_variant_id, NULL::integer AS generation_variant_revision,
+            NULL::text AS generation_variant_trigger,
+            NULL::smallint AS target_config_digest_version,
+            NULL::text AS target_config_digest, NULL::text AS target_model_id,
+            NULL::text AS target_protocol, NULL::integer AS target_context_window_tokens,
+            NULL::integer AS target_max_output_tokens, NULL::text AS target_reasoning_effort,
+            NULL::text AS provider_failure_category, NULL::text AS provider_failure_reason,
+            NULL::smallint AS provider_http_status, NULL::integer AS provider_input_tokens,
+            NULL::integer AS provider_output_tokens,
+            NULL::integer AS provider_context_window_tokens,
+            NULL::text AS generation_request_v2_hmac_sha256,
+            first_byte_latency_ms, first_protocol_event_ms, first_model_text_ms,
+            first_user_visible_ms, total_latency_ms,
+            input_tokens, output_tokens, usage_complete, known_cost_usd::text,
+            cost_complete, created_at AS started_at, completed_at
+       FROM interaction_provider_attempts
+      WHERE interaction_turn_id = $1
+      ORDER BY attempt_index`
+    : `SELECT attempt_index, route_revision_id::text, target_position, source_type,
             connection_version_id::text, model_version_id::text,
             connection_display_name, model_display_name, model_id, protocol,
             config_digest, launch_kind, generation_mode, status, error_code,

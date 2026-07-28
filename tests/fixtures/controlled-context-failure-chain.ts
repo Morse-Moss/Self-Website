@@ -14,12 +14,16 @@ const broadRoleEvidence = [
   { projectSlug: 'deep-research', level: 'transferable' },
   { projectSlug: 'content-agent', level: 'transferable' },
   { projectSlug: 'auto-operations', level: 'transferable' },
+  { projectSlug: 'digital-morse', level: 'transferable' },
+  { projectSlug: 'ai-leadgen', level: 'transferable' },
 ] as const;
 
 const ragRoleEvidence = [
   { projectSlug: 'digital-morse', level: 'direct' },
   { projectSlug: 'deep-research', level: 'transferable' },
   { projectSlug: 'content-agent', level: 'transferable' },
+  { projectSlug: 'auto-operations', level: 'transferable' },
+  { projectSlug: 'ai-leadgen', level: 'transferable' },
 ] as const;
 
 export const controlledContextFailureChain = {
@@ -30,7 +34,7 @@ export const controlledContextFailureChain = {
       taskAction: 'create',
       discourseAction: 'new_task',
       expectedEvidence: broadRoleEvidence,
-      forbiddenProjectSlugs: ['digital-morse', 'ai-leadgen'],
+      forbiddenProjectSlugs: [],
     },
     {
       message: '不是这样的，公司不是示例科技，而是示例云科技，备注 STALE_CORRECTION_DETAIL，继续看匹配项目。',
@@ -38,7 +42,7 @@ export const controlledContextFailureChain = {
       taskAction: 'continue',
       discourseAction: 'correction',
       expectedEvidence: broadRoleEvidence,
-      forbiddenProjectSlugs: ['digital-morse', 'ai-leadgen'],
+      forbiddenProjectSlugs: [],
     },
     {
       message: 'AI Product Manager，需要设计 RAG 产品、评测方案并推动跨团队交付',
@@ -46,7 +50,7 @@ export const controlledContextFailureChain = {
       taskAction: 'continue',
       discourseAction: 'follow_up',
       expectedEvidence: ragRoleEvidence,
-      forbiddenProjectSlugs: ['auto-operations', 'ai-leadgen'],
+      forbiddenProjectSlugs: [],
     },
     {
       message: '你有什么相关的项目经验吗？',
@@ -54,7 +58,7 @@ export const controlledContextFailureChain = {
       taskAction: 'continue',
       discourseAction: 'follow_up',
       expectedEvidence: ragRoleEvidence,
-      forbiddenProjectSlugs: ['auto-operations', 'ai-leadgen'],
+      forbiddenProjectSlugs: [],
     },
     {
       message: '就按这个岗位给出最终结论并结束',
@@ -62,7 +66,7 @@ export const controlledContextFailureChain = {
       taskAction: 'complete',
       discourseAction: 'follow_up',
       expectedEvidence: ragRoleEvidence,
-      forbiddenProjectSlugs: ['auto-operations', 'ai-leadgen'],
+      forbiddenProjectSlugs: [],
     },
   ] satisfies ControlledContextFailureChainStep[],
   staleMarkers: ['STALE_CORRECTION_DETAIL', '示例科技'] as const,
