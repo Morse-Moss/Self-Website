@@ -27,6 +27,7 @@ test('schema compatibility smoke is exact-image, isolated, mock-only and cleanup
   assert.match(source, /\/api\/health\/ready/u);
   assert.match(source, /schema[\s\S]*012[\s\S]*feature[\s\S]*on[\s\S]*503/iu);
   assert.match(source, /Buffer\.alloc\(32,\s*\d+\)\.toString\(['"]base64['"]\)/u);
+  assert.match(source, /process\.platform\s*!==\s*['"]win32['"][\s\S]*fs\.chown\(target,\s*999,\s*999\)/u);
   assert.doesNotMatch(source, /MORSE_CONTEXT_PACKET_DIGEST_KEY=s13-context-digest-key/u);
   assert.match(source, /finally/u);
   assert.match(source, /S13_[A-Z0-9_-]+/u);

@@ -155,6 +155,9 @@ function bindMount(source, target, readOnly = true) {
 async function writeSecret(directory, name, value) {
   const target = path.join(directory, name);
   await fs.writeFile(target, `${value}\n`, { encoding: 'utf8', mode: 0o600 });
+  if (process.platform !== 'win32') {
+    await fs.chown(target, 999, 999);
+  }
 }
 
 async function waitForPostgres(container) {
