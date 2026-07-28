@@ -7,7 +7,10 @@ import { test } from 'node:test';
 import pg from 'pg';
 
 import { createConnectionWithModel } from '../lib/server/ai-config-store.ts';
-import { createRuntimeConfigDigest } from '../lib/server/ai-config.ts';
+import {
+  createRuntimeConfigDigest,
+  createRuntimeConfigDigestV1,
+} from '../lib/server/ai-config.ts';
 import {
   ProviderRunError,
   type AiProvider,
@@ -54,6 +57,7 @@ const environmentConfig = {
   chatModel: 'gpt-environment',
   chatProtocol: 'responses' as const,
   reasoningEffort: 'high' as const,
+  chatContextWindowTokens: 128_000,
   maxOutputTokens: 600,
   tokenRates: { inputUsdPerMillion: 1, outputUsdPerMillion: 2 },
   embeddingApiKey: 'embedding-key',
@@ -68,8 +72,6 @@ const environmentConfig = {
 
 const chatServiceConfig: ChatServiceConfig = {
   maxMessagesPerSession: 2,
-  historyMessageLimit: 12,
-  retrievalLimit: 3,
   interactionRetentionDays: 10,
   tokenRates: null,
   chatV2Enabled: false,
@@ -78,8 +80,6 @@ const chatServiceConfig: ChatServiceConfig = {
   contextPacketEnabled: false,
   contextCanaryPercent: 0,
   contextCanaryInviteIds: new Set<string>(),
-  contextTokenBudget: 12_000,
-  jdContextTokenBudget: 24_000,
   contextPacketDigest: null,
   hedgedFailoverEnabled: false,
   chatSafeMode: false,
@@ -88,7 +88,6 @@ const chatServiceConfig: ChatServiceConfig = {
   providerModelTextTimeoutMs: 40_000,
   providerStageTimeoutMs: 80_000,
   chatTurnTimeoutMs: 90_000,
-  providerMaxAttempts: 2,
 };
 
 function providerAttempt(input: {
@@ -106,8 +105,10 @@ function providerAttempt(input: {
     attemptIndex: input.attemptIndex,
     completedAt,
     configDigest: String(input.position + 1).repeat(64),
+    configDigestVersion: 2,
     connectionDisplayName: `Connection ${input.position}`,
     connectionVersionId: null,
+    contextWindowTokens: null,
     costComplete: true,
     errorCode: input.status === 'failed'
       ? 'PROVIDER_UNAVAILABLE'
@@ -126,9 +127,11 @@ function providerAttempt(input: {
     modelDisplayName: `Model ${input.position}`,
     modelId: `model-${input.position}`,
     modelVersionId: null,
+    maxOutputTokens: null,
     outputUsdPerMillion: input.outputRate,
     position: input.position,
     protocol: 'responses',
+    reasoningEffort: null,
     routeRevisionId: null,
     sourceType: 'environment',
     startedAt,
@@ -289,19 +292,31 @@ test('runtime resolver preserves environment routing when no database route is a
     const runtime = await resolveProviderRuntime(pool, environmentConfig, { env: {} });
     assert.equal(runtime.routeRevisionId, null);
     assert.deepEqual(runtime.targets.map((target) => ({
+      configDigestVersion: target.configDigestVersion,
+      contextWindowTokens: target.contextWindowTokens,
+      maxOutputTokens: target.maxOutputTokens,
       position: target.position,
+      reasoningEffort: target.reasoningEffort,
       sourceType: target.sourceType,
       modelId: target.modelId,
       connectionDisplayName: target.connectionDisplayName,
     })), [
       {
+        configDigestVersion: 2,
+        contextWindowTokens: 128_000,
+        maxOutputTokens: 600,
         position: 0,
+        reasoningEffort: 'high',
         sourceType: 'environment',
         modelId: 'gpt-environment',
         connectionDisplayName: 'Environment primary',
       },
       {
+        configDigestVersion: 2,
+        contextWindowTokens: 128_000,
+        maxOutputTokens: 600,
         position: 1,
+        reasoningEffort: 'high',
         sourceType: 'environment',
         modelId: 'gpt-environment',
         connectionDisplayName: 'Environment fallback 1',
@@ -330,6 +345,7 @@ test('runtime resolver freezes one active database route and fails closed on dig
           userAgent: 'Morse-Database/1.0',
         },
         model: {
+          contextWindowTokens: 128_000,
           displayName: 'Database model',
           inputUsdPerMillion: '3',
           maxOutputTokens: 1_024,
@@ -340,10 +356,19 @@ test('runtime resolver freezes one active database route and fails closed on dig
         },
       }, { key, keyVersion: 1 });
       modelVersionId = created.modelVersionId;
-      const model = await client.query<{ config_digest: string }>(
-        'SELECT config_digest FROM ai_model_presets WHERE id = $1',
+      const model = await client.query<{
+        config_digest: string;
+        config_digest_version: number;
+        context_window_tokens: number | null;
+        max_output_tokens: number | null;
+        reasoning_effort: string | null;
+      }>(
+        `SELECT config_digest, config_digest_version, context_window_tokens,
+                max_output_tokens, reasoning_effort
+           FROM ai_model_presets WHERE id = $1`,
         [modelVersionId],
       );
+      assert.equal(model.rows[0].config_digest_version, 2);
       const route = await client.query<{ id: string }>(
         `INSERT INTO ai_route_revisions
           (id, revision_number, activation_kind, activated_at, actor_admin_session_id)
@@ -354,10 +379,19 @@ test('runtime resolver freezes one active database route and fails closed on dig
         `INSERT INTO ai_route_targets
           (route_revision_id, position, source_type, database_model_version_id,
            connection_display_name, model_display_name, model_id, protocol, config_digest,
+           config_digest_version, context_window_tokens, max_output_tokens, reasoning_effort,
            input_usd_per_million, output_usd_per_million)
          VALUES ($1, 0, 'database', $2, 'Database connection', 'Database model',
-                 'gpt-database', 'chat_completions', $3, 3, 6)`,
-        [route.rows[0].id, modelVersionId, model.rows[0].config_digest],
+                 'gpt-database', 'chat_completions', $3, $4, $5, $6, $7, 3, 6)`,
+        [
+          route.rows[0].id,
+          modelVersionId,
+          model.rows[0].config_digest,
+          model.rows[0].config_digest_version,
+          model.rows[0].context_window_tokens,
+          model.rows[0].max_output_tokens,
+          model.rows[0].reasoning_effort,
+        ],
       );
       await client.query(
         `UPDATE ai_runtime_state
@@ -378,19 +412,27 @@ test('runtime resolver freezes one active database route and fails closed on dig
     const runtime = await resolveProviderRuntime(pool, environmentConfig, { env });
     assert.notEqual(runtime.routeRevisionId, null);
     assert.deepEqual(runtime.targets.map((target) => ({
+      configDigestVersion: target.configDigestVersion,
       connectionVersionId: target.connectionVersionId,
+      contextWindowTokens: target.contextWindowTokens,
+      maxOutputTokens: target.maxOutputTokens,
       modelVersionId: target.modelVersionId,
       modelId: target.modelId,
       protocol: target.protocol,
       inputUsdPerMillion: target.inputUsdPerMillion,
       outputUsdPerMillion: target.outputUsdPerMillion,
+      reasoningEffort: target.reasoningEffort,
     })), [{
+      configDigestVersion: 2,
       connectionVersionId: runtime.targets[0].connectionVersionId,
+      contextWindowTokens: 128_000,
+      maxOutputTokens: 1_024,
       modelVersionId,
       modelId: 'gpt-database',
       protocol: 'chat_completions',
       inputUsdPerMillion: '3.000000',
       outputUsdPerMillion: '6.000000',
+      reasoningEffort: 'medium',
     }]);
 
     const connectionVersionId = runtime.targets[0].connectionVersionId;
@@ -493,6 +535,160 @@ test('runtime resolver freezes one active database route and fails closed on dig
       resolveProviderRuntime(pool, environmentConfig, { env }),
       (error: unknown) => (error as { code?: string }).code === 'AI_CONFIG_UNAVAILABLE',
     );
+  } finally {
+    await pool.end();
+    await database.dispose();
+  }
+});
+
+test('runtime resolver reads legacy v1 database and environment routes without borrowing capabilities', async () => {
+  const database = await createDisposablePostgresDatabase();
+  await migrate(database.connectionString);
+  const pool = new Pool({ connectionString: database.connectionString });
+  try {
+    const client = await pool.connect();
+    let databaseRouteId = '';
+    let modelVersionId = '';
+    try {
+      await client.query('BEGIN');
+      const created = await createConnectionWithModel(client, {
+        connection: {
+          apiKey: 'legacy-database-secret',
+          baseUrl: 'https://legacy-database.example/v1',
+          displayName: 'Legacy database connection',
+          userAgent: 'Morse-Legacy/1.0',
+        },
+        model: {
+          contextWindowTokens: null,
+          displayName: 'Legacy database model',
+          inputUsdPerMillion: null,
+          maxOutputTokens: 777,
+          modelId: 'legacy-database-model',
+          outputUsdPerMillion: null,
+          protocol: 'responses',
+          reasoningEffort: 'low',
+        },
+      }, { key, keyVersion: 1 });
+      modelVersionId = created.modelVersionId;
+      const legacyDigest = createRuntimeConfigDigestV1({
+        apiKey: 'legacy-database-secret',
+        baseUrl: 'https://legacy-database.example/v1',
+        maxOutputTokens: 777,
+        modelId: 'legacy-database-model',
+        protocol: 'responses',
+        reasoningEffort: 'low',
+        userAgent: 'Morse-Legacy/1.0',
+      }, key);
+      await client.query('ALTER TABLE ai_model_presets DISABLE TRIGGER ai_model_presets_immutable_update');
+      await client.query(
+        `UPDATE ai_model_presets
+            SET config_digest = $2, config_digest_version = 1, context_window_tokens = NULL
+          WHERE id = $1`,
+        [modelVersionId, legacyDigest],
+      );
+      await client.query('ALTER TABLE ai_model_presets ENABLE TRIGGER ai_model_presets_immutable_update');
+      const route = await client.query<{ id: string }>(
+        `INSERT INTO ai_route_revisions
+          (id, revision_number, activation_kind, activated_at, actor_admin_session_id)
+         VALUES ($1, 1, 'activate', now(), $2) RETURNING id::text`,
+        [randomUUID(), '10000000-0000-4000-8000-000000000001'],
+      );
+      databaseRouteId = route.rows[0].id;
+      await client.query(
+        `INSERT INTO ai_route_targets
+          (route_revision_id, position, source_type, database_model_version_id,
+           connection_display_name, model_display_name, model_id, protocol, config_digest)
+         VALUES ($1, 0, 'database', $2, 'Legacy database connection',
+                 'Legacy database model', 'legacy-database-model', 'responses', $3)`,
+        [databaseRouteId, modelVersionId, legacyDigest],
+      );
+      await client.query(
+        `UPDATE ai_runtime_state
+            SET active_route_revision_id = $1, lock_version = lock_version + 1, updated_at = now()
+          WHERE id = true`,
+        [databaseRouteId],
+      );
+      await client.query('COMMIT');
+    } finally {
+      client.release();
+    }
+
+    const env = {
+      NODE_ENV: 'test',
+      MORSE_PROVIDER_CONFIG_KEY: key.toString('base64'),
+      MORSE_PROVIDER_CONFIG_KEY_VERSION: '1',
+    };
+    const legacyDatabase = await resolveProviderRuntime(pool, {
+      ...environmentConfig,
+      chatContextWindowTokens: 999_999,
+      maxOutputTokens: 888,
+      reasoningEffort: 'xhigh',
+    }, { env });
+    assert.equal(legacyDatabase.routeRevisionId, databaseRouteId);
+    assert.deepEqual(legacyDatabase.targets.map((target) => ({
+      configDigestVersion: target.configDigestVersion,
+      contextWindowTokens: target.contextWindowTokens,
+      maxOutputTokens: target.maxOutputTokens,
+      reasoningEffort: target.reasoningEffort,
+    })), [{
+      configDigestVersion: 1,
+      contextWindowTokens: null,
+      maxOutputTokens: null,
+      reasoningEffort: null,
+    }]);
+
+    const environmentV1Digest = createRuntimeConfigDigestV1({
+      apiKey: environmentConfig.openaiApiKey,
+      baseUrl: environmentConfig.openaiBaseUrl,
+      maxOutputTokens: environmentConfig.maxOutputTokens,
+      modelId: environmentConfig.chatModel,
+      protocol: environmentConfig.chatProtocol,
+      reasoningEffort: environmentConfig.reasoningEffort,
+      userAgent: environmentConfig.openaiUserAgent,
+    }, key);
+    const environmentRouteId = randomUUID();
+    const environmentClient = await pool.connect();
+    try {
+      await environmentClient.query('BEGIN');
+      await environmentClient.query(
+        `INSERT INTO ai_route_revisions
+          (id, revision_number, previous_active_revision_id, activation_kind,
+           activated_at, actor_admin_session_id)
+         VALUES ($1, 2, $2, 'rollback', now(), $3)`,
+        [environmentRouteId, databaseRouteId, '10000000-0000-4000-8000-000000000001'],
+      );
+      await environmentClient.query(
+        `INSERT INTO ai_route_targets
+          (route_revision_id, position, source_type, environment_target_key,
+           connection_display_name, model_display_name, model_id, protocol, config_digest)
+         VALUES ($1, 0, 'environment', 'primary', 'Environment primary',
+                 'gpt-environment', 'gpt-environment', 'responses', $2)`,
+        [environmentRouteId, environmentV1Digest],
+      );
+      await environmentClient.query(
+        `UPDATE ai_runtime_state
+            SET active_route_revision_id = $1, lock_version = lock_version + 1, updated_at = now()
+          WHERE id = true`,
+        [environmentRouteId],
+      );
+      await environmentClient.query('COMMIT');
+    } finally {
+      environmentClient.release();
+    }
+
+    const legacyEnvironment = await resolveProviderRuntime(pool, environmentConfig, { env });
+    assert.equal(legacyEnvironment.routeRevisionId, environmentRouteId);
+    assert.deepEqual(legacyEnvironment.targets.map((target) => ({
+      configDigestVersion: target.configDigestVersion,
+      contextWindowTokens: target.contextWindowTokens,
+      maxOutputTokens: target.maxOutputTokens,
+      reasoningEffort: target.reasoningEffort,
+    })), [{
+      configDigestVersion: 1,
+      contextWindowTokens: null,
+      maxOutputTokens: null,
+      reasoningEffort: null,
+    }]);
   } finally {
     await pool.end();
     await database.dispose();

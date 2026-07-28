@@ -309,8 +309,6 @@ test('web production accepts context packet only with a Web-owned key file', () 
     MORSE_CHAT_CONTEXT_PACKET_ENABLED: 'true',
     MORSE_CHAT_CONTEXT_CANARY_PERCENT: '0',
     MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS: chatV2CanaryInviteId,
-    MORSE_CHAT_CONTEXT_TOKEN_BUDGET: '12000',
-    MORSE_JD_CONTEXT_TOKEN_BUDGET: '24000',
     MORSE_CONTEXT_PACKET_DIGEST_KEY_FILE: contextPacketKeyFile,
     MORSE_CONTEXT_PACKET_DIGEST_KEY_ID: 'context-key-v1',
   };

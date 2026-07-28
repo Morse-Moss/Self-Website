@@ -1,23 +1,32 @@
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 
 import {
   CONTEXT_BUILDER_VERSION,
   CONTEXT_PIPELINE_VERSION,
   CONTEXT_PROJECTION_VERSION,
+  CANONICAL_ANSWER_SOURCE_VERSION,
+  type CanonicalAnswerSourceV2,
   type CanonicalContextPacket,
+  type CanonicalContextPacketV2,
   type CanonicalGenerationRequest,
+  type CanonicalGenerationRequestV2,
   type CompletedContextTurn,
   type ContextChatMessage,
   type ContextLayerName,
   type ContextPacketManifest,
   type ContextProjection,
   type ContextReasoningEffort,
+  type GenerationTargetBindingV2,
+  type GenerationVariantV2,
   type GenerationRequestIntegrity,
   type ResolvedChatTurn,
 } from '../contracts/chat-context.ts';
 
 const CONTEXT_DOMAIN = Buffer.from('morse/context-packet/v1\0', 'utf8');
 const GENERATION_DOMAIN = Buffer.from('morse/generation-request/v1\0', 'utf8');
+const CONTEXT_V2_DOMAIN = Buffer.from('morse/context-packet/v2\0', 'utf8');
+const GENERATION_V2_DOMAIN = Buffer.from('morse/generation-request/v2\0', 'utf8');
+const SUMMARY_REQUEST_V1_DOMAIN = Buffer.from('morse/history-summary-request/v1\0', 'utf8');
 const LAYER_ORDER: readonly ContextLayerName[] = [
   'current_input',
   'discourse_context',
@@ -114,6 +123,30 @@ function escapeData(value: string): string {
 
 function renderData(value: unknown): string {
   return escapeData(Buffer.from(stableSerialize(value)).toString('utf8'));
+}
+
+export function completedTurnsSha256(turns: readonly CompletedContextTurn[]): string {
+  return createHash('sha256').update(stableSerialize(turns)).digest('hex');
+}
+
+export function renderHistorySummaryInput(input: {
+  previousSummary: string | null;
+  turns: readonly CompletedContextTurn[];
+}): string {
+  const blocks = [
+    input.previousSummary === null
+      ? ''
+      : `<previous_task_history_summary>${renderData(input.previousSummary)}</previous_task_history_summary>`,
+    `<completed_turns>${renderData(input.turns)}</completed_turns>`,
+  ];
+  return blocks.filter(Boolean).join('\n');
+}
+
+export function historySummaryRequestHmac(input: {
+  digestKey: Buffer;
+  value: unknown;
+}): string {
+  return hmac(input.digestKey, SUMMARY_REQUEST_V1_DOMAIN, stableSerialize(input.value));
 }
 
 function responseContract(resolved: ResolvedChatTurn): string {
@@ -239,12 +272,6 @@ function buildGenerationRequest(input: {
   };
 }
 
-function requestTokenEstimate(request: CanonicalGenerationRequest): number {
-  return estimateTokens(request.baseInstructions)
-    + request.messages.reduce((sum, message) => sum + estimateTokens(message.content), 0)
-    + (request.overlay ? estimateTokens(request.overlay.content) : 0);
-}
-
 function layerTokenEstimates(packet: CanonicalContextPacket): ContextPacketManifest['token_estimate_by_layer'] {
   return {
     current_input: estimateTokens(packet.currentInput),
@@ -256,25 +283,11 @@ function layerTokenEstimates(packet: CanonicalContextPacket): ContextPacketManif
   };
 }
 
-function minimumEvidenceCount(resolved: ResolvedChatTurn, count: number): number {
-  if (count === 0) return 0;
-  if (resolved.semantic.intent === 'project_catalog') return count;
-  return [
-    'identity_fact',
-    'project_fit',
-    'named_project_fact',
-    'capability_fact',
-    'jd_match',
-    'external_current',
-  ].includes(resolved.semantic.intent) ? 1 : 0;
-}
-
 export interface BuildContextPacketInput {
   resolved: ResolvedChatTurn;
   currentInput: string;
   currentUserMessageId: string;
   projection: ContextProjection;
-  tokenBudget: number;
   digestKey: Buffer;
   digestKeyId: string;
   reasoningEffort: ContextReasoningEffort | null;
@@ -285,6 +298,143 @@ export interface BuildContextPacketInput {
     status: ContextPacketManifest['legacy_bridge_status'];
   } | null;
   degradedReason?: string | null;
+}
+
+export type BuildCanonicalAnswerSourceV2Input = Omit<CanonicalAnswerSourceV2, 'schemaVersion'>;
+
+function cloneAndFreeze<T>(value: T): T {
+  if (value instanceof Date) return Object.freeze(new Date(value.getTime())) as T;
+  if (Array.isArray(value)) {
+    return Object.freeze(value.map((item) => cloneAndFreeze(item))) as T;
+  }
+  if (value && typeof value === 'object') {
+    const copy: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      copy[key] = cloneAndFreeze(item);
+    }
+    return Object.freeze(copy) as T;
+  }
+  return value;
+}
+
+export function buildCanonicalAnswerSourceV2(
+  input: BuildCanonicalAnswerSourceV2Input,
+): CanonicalAnswerSourceV2 {
+  return cloneAndFreeze({
+    schemaVersion: CANONICAL_ANSWER_SOURCE_VERSION,
+    ownerPipeline: input.ownerPipeline,
+    conversationId: input.conversationId,
+    interactionTurnId: input.interactionTurnId,
+    contextScopeId: input.contextScopeId,
+    currentUserMessageId: input.currentUserMessageId,
+    currentInput: input.currentInput,
+    trustedInstructions: input.trustedInstructions,
+    taskFrame: input.taskFrame,
+    taskInputs: input.taskInputs,
+    approvedEvidence: input.approvedEvidence,
+    completeHistory: input.completeHistory,
+    reasoningEffort: input.reasoningEffort,
+    releasePolicy: input.releasePolicy,
+  });
+}
+
+export interface BuildTargetContextPacketV2Input {
+  source: CanonicalAnswerSourceV2;
+  target: GenerationTargetBindingV2;
+  variant: GenerationVariantV2;
+  historySummary: CanonicalContextPacketV2['historySummary'];
+  rawHistory: readonly CompletedContextTurn[];
+  digestKey: Buffer;
+  digestKeyId: string;
+}
+
+export interface BuiltTargetContextPacketV2 {
+  packet: CanonicalContextPacketV2;
+  canonicalPacketBytes: Uint8Array;
+  packetHmacKeyId: string;
+  packetHmacSha256: string;
+}
+
+export function buildTargetContextPacketV2(
+  input: BuildTargetContextPacketV2Input,
+): BuiltTargetContextPacketV2 {
+  if (input.digestKey.length < 32
+    || !/^[a-z0-9][a-z0-9._-]{0,31}$/u.test(input.digestKeyId)
+    || input.variant.target.configDigest !== input.target.configDigest) {
+    throw new ContextPacketBuildError('CONTEXT_PACKET_SERIALIZATION_FAILED');
+  }
+  const packet = cloneAndFreeze<CanonicalContextPacketV2>({
+    schemaVersion: 'context-packet-v2',
+    sourceSchemaVersion: CANONICAL_ANSWER_SOURCE_VERSION,
+    ownerPipeline: input.source.ownerPipeline,
+    conversationId: input.source.conversationId,
+    interactionTurnId: input.source.interactionTurnId,
+    contextScopeId: input.source.contextScopeId,
+    currentUserMessageId: input.source.currentUserMessageId,
+    variant: input.variant,
+    protectedLayers: {
+      currentInput: input.source.currentInput,
+      trustedInstructions: input.source.trustedInstructions,
+      taskFrame: input.source.taskFrame,
+      taskInputs: input.source.taskInputs,
+      approvedEvidence: input.source.approvedEvidence,
+    },
+    historySummary: input.historySummary,
+    rawHistory: input.rawHistory,
+  });
+  const canonicalPacketBytes = stableSerialize(packet);
+  return {
+    packet,
+    canonicalPacketBytes,
+    packetHmacKeyId: input.digestKeyId,
+    packetHmacSha256: hmac(input.digestKey, CONTEXT_V2_DOMAIN, canonicalPacketBytes),
+  };
+}
+
+export interface BuildTargetGenerationRequestV2Input {
+  variant: GenerationVariantV2;
+  packetHmacKeyId: string;
+  packetHmacSha256: string;
+  instructions: string;
+  messages: readonly ContextChatMessage[];
+  reasoningEffort: ContextReasoningEffort | null;
+  maxOutputTokens: number | null;
+  outboundBody: Readonly<Record<string, unknown>>;
+  digestKey: Buffer;
+}
+
+export interface BuiltTargetGenerationRequestV2 {
+  request: CanonicalGenerationRequestV2;
+  canonicalBytes: Uint8Array;
+  generationRequestHmacSha256: string;
+}
+
+export function buildTargetGenerationRequestV2(
+  input: BuildTargetGenerationRequestV2Input,
+): BuiltTargetGenerationRequestV2 {
+  if (input.digestKey.length < 32
+    || !/^[a-z0-9][a-z0-9._-]{0,31}$/u.test(input.packetHmacKeyId)
+    || !/^[0-9a-f]{64}$/u.test(input.packetHmacSha256)) {
+    throw new ContextPacketBuildError('CONTEXT_PACKET_SERIALIZATION_FAILED');
+  }
+  const request = cloneAndFreeze<CanonicalGenerationRequestV2>({
+    schemaVersion: 'generation-request-v2',
+    variant: input.variant,
+    packetHmacKeyId: input.packetHmacKeyId,
+    packetHmacSha256: input.packetHmacSha256,
+    instructions: input.instructions,
+    messages: [...input.messages],
+    reasoningEffort: input.reasoningEffort,
+    maxOutputTokens: input.maxOutputTokens,
+    outboundBody: input.outboundBody,
+    store: false,
+  });
+  const canonicalBytes = stableSerialize(request);
+  return {
+    request,
+    canonicalBytes,
+    generationRequestHmacSha256: hmac(input.digestKey, GENERATION_V2_DOMAIN, canonicalBytes),
+  };
 }
 
 export interface BuiltGenerationRequest {
@@ -303,65 +453,28 @@ export interface BuiltContextPacket {
 }
 
 export function buildContextPacket(input: BuildContextPacketInput): BuiltContextPacket {
-  if (!Number.isSafeInteger(input.tokenBudget) || input.tokenBudget <= 0
-    || input.digestKey.length < 32
+  if (input.digestKey.length < 32
     || !/^[a-z0-9][a-z0-9._-]{0,31}$/u.test(input.digestKeyId)) {
     throw new ContextPacketBuildError('CONTEXT_PACKET_SERIALIZATION_FAILED');
   }
   const history = [...input.projection.history];
-  const evidenceLimit = input.resolved.semantic.intent === 'project_catalog'
-    ? input.projection.evidence.length
-    : 3;
-  const evidence = [...input.projection.evidence].slice(0, evidenceLimit);
-  const evictedLayers = new Set<ContextLayerName>();
-  const evictionReasonCodes: string[] = [];
-
-  while (turnMessages(history).reduce((sum, message) => sum + estimateTokens(message.content), 0) > 2_500) {
-    history.shift();
-    evictedLayers.add('task_history');
-    evictionReasonCodes.push('evict_task_history_layer_cap');
-  }
-  const maximumInputTokens = Math.floor(input.tokenBudget * 0.9);
-  let packet: CanonicalContextPacket;
-  let normalRequest: CanonicalGenerationRequest;
-  let packetBytes: Uint8Array;
-  let packetHmacSha256: string;
-
-  for (;;) {
-    packet = buildPacket(
-      input.currentInput,
-      input.currentUserMessageId,
-      input.projection,
-      history,
-      evidence,
-    );
-    packetBytes = stableSerialize(packet);
-    packetHmacSha256 = hmac(input.digestKey, CONTEXT_DOMAIN, packetBytes);
-    const instructions = buildInstructions(packet, input.resolved);
-    const messages = buildMessages(packet);
-    normalRequest = buildGenerationRequest({
-      packetHmacKeyId: input.digestKeyId,
-      packetHmacSha256,
-      baseInstructions: instructions,
-      messages,
-      reasoningEffort: input.reasoningEffort,
-    });
-    if (requestTokenEstimate(normalRequest) <= maximumInputTokens) break;
-    if (history.length > 0) {
-      history.shift();
-      evictedLayers.add('task_history');
-      evictionReasonCodes.push('evict_task_history_budget');
-      continue;
-    }
-    const minimumEvidence = minimumEvidenceCount(input.resolved, evidence.length);
-    if (evidence.length > minimumEvidence) {
-      evidence.pop();
-      evictedLayers.add('approved_evidence');
-      evictionReasonCodes.push('evict_low_ranked_evidence_budget');
-      continue;
-    }
-    throw new ContextPacketBuildError('CONTEXT_PACKET_OVER_BUDGET');
-  }
+  const evidence = [...input.projection.evidence];
+  const packet = buildPacket(
+    input.currentInput,
+    input.currentUserMessageId,
+    input.projection,
+    history,
+    evidence,
+  );
+  const packetBytes = stableSerialize(packet);
+  const packetHmacSha256 = hmac(input.digestKey, CONTEXT_DOMAIN, packetBytes);
+  const normalRequest = buildGenerationRequest({
+    packetHmacKeyId: input.digestKeyId,
+    packetHmacSha256,
+    baseInstructions: buildInstructions(packet, input.resolved),
+    messages: buildMessages(packet),
+    reasoningEffort: input.reasoningEffort,
+  });
 
   const normalBytes = stableSerialize(normalRequest);
   const normalHmac = hmac(input.digestKey, GENERATION_DOMAIN, normalBytes);
@@ -390,16 +503,16 @@ export function buildContextPacket(input: BuildContextPacketInput): BuiltContext
     context_build_error_code: null,
     discourse_source_turn_ids: input.projection.discourse ? [input.projection.discourse.turnId] : [],
     legacy_bridge_policy_version: bridge?.policyVersion ?? null,
-    legacy_bridge_source_turn_ids: bridge?.sourceTurnIds.slice(0, 6) ?? [],
+    legacy_bridge_source_turn_ids: [...(bridge?.sourceTurnIds ?? [])],
     legacy_bridge_status: bridge?.status ?? 'not_eligible',
     included_layers: includedLayers,
     excluded_layers: [...input.projection.excludedLayers],
     projected_slot_kinds: [...new Set(packet.taskInputs.map((slot) => (
       slot.slot as ContextPacketManifest['projected_slot_kinds'][number]
     )))],
-    evicted_layers: LAYER_ORDER.filter((layer) => evictedLayers.has(layer)),
+    evicted_layers: [],
     projection_reason_codes: [...input.projection.reasonCodes],
-    eviction_reason_codes: [...new Set(evictionReasonCodes)],
+    eviction_reason_codes: [],
     token_estimate_by_layer: layerTokenEstimates(packet),
     evidence_ids: packet.approvedEvidence.map((source) => String(source.evidenceId)),
     retrieval_scores: packet.approvedEvidence.map((source) => ({

@@ -15,11 +15,13 @@ export interface ProviderTestState {
 export interface ProviderModel {
   archivedAt: string | null;
   configDigest: string;
+  configDigestVersion: 1 | 2;
+  contextWindowTokens: number | null;
   deletedAt: string | null;
   displayName: string;
   id: string;
   inputUsdPerMillion: string | null;
-  maxOutputTokens: number;
+  maxOutputTokens: number | null;
   modelId: string;
   outputUsdPerMillion: string | null;
   protocol: ProviderProtocol;
@@ -51,13 +53,15 @@ export interface ProviderCatalog {
 
 export interface RuntimeTarget {
   configDigest: string;
+  configDigestVersion: 1 | 2;
   connectionDisplayName: string;
+  contextWindowTokens: number | null;
   databaseModelSeriesId: string | null;
   databaseModelVersionId: string | null;
   endpointHost: string | null;
   environmentTargetKey: 'primary' | 'fallback-1' | 'fallback-2' | null;
   inputUsdPerMillion: string | null;
-  maxOutputTokens: number;
+  maxOutputTokens: number | null;
   modelDisplayName: string;
   modelId: string;
   outputUsdPerMillion: string | null;
@@ -72,11 +76,13 @@ export interface EnvironmentTarget {
   baseUrlMode: 'public_default' | 'server_reusable' | 'replacement_required';
   baseUrlPrefill: string | null;
   configDigest: string;
+  configDigestVersion: 1 | 2;
   connectionDisplayName: string;
+  contextWindowTokens: number | null;
   endpointHost: string | null;
   environmentTargetKey: 'primary' | 'fallback-1' | 'fallback-2';
   inputUsdPerMillion: string | null;
-  maxOutputTokens: number;
+  maxOutputTokens: number | null;
   modelDisplayName: string;
   modelId: string;
   outputUsdPerMillion: string | null;
@@ -125,9 +131,10 @@ export interface ProviderEventList {
 }
 
 export interface ModelInput {
+  contextWindowTokens: number | null;
   displayName: string;
   inputUsdPerMillion: string | null;
-  maxOutputTokens: number;
+  maxOutputTokens: number | null;
   modelId: string;
   outputUsdPerMillion: string | null;
   protocol: ProviderProtocol;

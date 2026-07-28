@@ -11,6 +11,10 @@ import {
   OperationTimeoutError,
   raceWithSignal,
 } from './timeout.ts';
+import {
+  sanitizeProviderFailure,
+  type SanitizedProviderFailure,
+} from './provider-failure.ts';
 
 interface EmbeddingResponse {
   data: Array<{ embedding: number[] }>;
@@ -43,7 +47,11 @@ type OpenAIResponseStreamEvent =
     }
   | {
       type: 'response.incomplete';
-      response?: { usage?: OpenAIResponseUsage | null };
+      response?: {
+        usage?: OpenAIResponseUsage | null;
+        incomplete_details?: { reason?: unknown } | null;
+        context_window_tokens?: unknown;
+      };
     }
   | { type: 'response.failed'; response?: { error?: { message?: string } | null } }
   | { type: 'error'; message?: string };
@@ -97,12 +105,28 @@ export type OpenAIProviderErrorCode =
 
 export class OpenAIProviderError extends Error {
   readonly code: OpenAIProviderErrorCode;
+  readonly failure: SanitizedProviderFailure;
   readonly usage: TokenUsage | null;
 
-  constructor(code: OpenAIProviderErrorCode, usage: TokenUsage | null = null) {
+  constructor(
+    code: OpenAIProviderErrorCode,
+    usage: TokenUsage | null = null,
+    failure?: SanitizedProviderFailure,
+  ) {
     super(code);
     this.name = 'OpenAIProviderError';
     this.code = code;
+    this.failure = Object.freeze(failure ?? sanitizeProviderFailure({
+      reason: code === 'PROVIDER_RESPONSE_INCOMPLETE'
+        ? 'response_incomplete'
+        : code === 'PROVIDER_RESPONSE_FAILED'
+          ? 'response_failed'
+          : code === 'PROVIDER_STREAM_FAILED'
+            ? 'stream_failed'
+            : 'transport',
+      inputTokens: usage?.inputTokens,
+      outputTokens: usage?.outputTokens,
+    }));
     this.usage = usage;
   }
 }
@@ -112,13 +136,182 @@ export interface OpenAIProviderConfig {
   chatModel: string;
   embeddingModel: string;
   embeddingDimensions: number;
-  maxOutputTokens: number;
+  maxOutputTokens: number | null;
+  contextWindowTokens: number | null;
   embeddingTimeoutMs: number;
   firstByteTimeoutMs: number;
   totalTimeoutMs: number;
   providerConcurrency: number;
   reasoningEffort?: AnswerReasoningEffort;
   outputlessMaxAttempts?: number;
+}
+
+export type OpenAIAnswerBodyConfig = Pick<
+  OpenAIProviderConfig,
+  'chatModel' | 'maxOutputTokens' | 'reasoningEffort'
+>;
+
+function freezeOutboundValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return Object.freeze(value.map((item) => freezeOutboundValue(item)));
+  }
+  if (value && typeof value === 'object') {
+    const copy: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      copy[key] = freezeOutboundValue(item);
+    }
+    return Object.freeze(copy);
+  }
+  return value;
+}
+
+function freezeOutboundBody(value: Record<string, unknown>): Readonly<Record<string, unknown>> {
+  return freezeOutboundValue(value) as Readonly<Record<string, unknown>>;
+}
+
+function effectiveOutputTokens(
+  request: AnswerRequest,
+  config: OpenAIAnswerBodyConfig,
+): number | null {
+  const value = request.maxOutputTokens ?? config.maxOutputTokens;
+  if (value !== null && safeInteger(value, 1) !== value) throw preparedBodyError();
+  return value;
+}
+
+function isDeepFrozen(value: unknown, seen = new WeakSet<object>()): boolean {
+  if (!value || typeof value !== 'object') return true;
+  if (seen.has(value)) return false;
+  seen.add(value);
+  if (!Object.isFrozen(value)) return false;
+  return Object.values(value as Record<string, unknown>)
+    .every((item) => isDeepFrozen(item, seen));
+}
+
+function preparedBodyError(): OpenAIProviderError {
+  return new OpenAIProviderError(
+    'PROVIDER_UNAVAILABLE',
+    null,
+    sanitizeProviderFailure({ reason: 'transport' }),
+  );
+}
+
+function validatePreparedBody(
+  body: Readonly<Record<string, unknown>>,
+  protocol: OpenAIChatProtocol,
+  model: string,
+): Readonly<Record<string, unknown>> {
+  if (!isDeepFrozen(body)
+    || body.model !== model
+    || body.stream !== true) {
+    throw preparedBodyError();
+  }
+  if (protocol === 'responses') {
+    if (!Array.isArray(body.input)
+      || Object.hasOwn(body, 'messages')
+      || body.store !== false
+      || Object.hasOwn(body, 'max_completion_tokens')
+      || (Object.hasOwn(body, 'max_output_tokens')
+        && safeInteger(body.max_output_tokens, 1) !== body.max_output_tokens)) {
+      throw preparedBodyError();
+    }
+  } else if (!Array.isArray(body.messages)
+    || Object.hasOwn(body, 'input')
+    || Object.hasOwn(body, 'max_output_tokens')
+    || (Object.hasOwn(body, 'max_completion_tokens')
+      && safeInteger(body.max_completion_tokens, 1) !== body.max_completion_tokens)
+    || safeRecord(body.stream_options).include_usage !== true) {
+    throw preparedBodyError();
+  }
+  return body;
+}
+
+function safeInteger(value: unknown, minimum: number, maximum = Number.MAX_SAFE_INTEGER): number | null {
+  return typeof value === 'number'
+    && Number.isSafeInteger(value)
+    && value >= minimum
+    && value <= maximum
+    ? value
+    : null;
+}
+
+function safeRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object'
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function sdkFailure(error: unknown, configuredWindow: number | null): SanitizedProviderFailure {
+  const outer = safeRecord(error);
+  const nested = safeRecord(outer.error);
+  const usage = safeRecord(outer.usage);
+  return sanitizeProviderFailure({
+    httpStatus: safeInteger(outer.status, 100, 599),
+    code: outer.code === 'context_length_exceeded'
+      ? outer.code
+      : nested.code === 'context_length_exceeded' ? nested.code : null,
+    inputTokens: safeInteger(
+      outer.input_tokens ?? usage.input_tokens ?? usage.prompt_tokens,
+      0,
+    ),
+    outputTokens: safeInteger(
+      outer.output_tokens ?? usage.output_tokens ?? usage.completion_tokens,
+      0,
+    ),
+    contextWindowTokens: safeInteger(
+      outer.context_window_tokens ?? nested.context_window_tokens,
+      1,
+    ) ?? configuredWindow,
+  });
+}
+
+export function buildOpenAIResponsesBody(
+  request: AnswerRequest,
+  config: OpenAIAnswerBodyConfig,
+): Readonly<Record<string, unknown>> {
+  const reasoningEffort = request.reasoningEffort ?? config.reasoningEffort;
+  const maxOutputTokens = effectiveOutputTokens(request, config);
+  return freezeOutboundBody({
+    model: config.chatModel,
+    instructions: request.instructions,
+    input: request.messages,
+    ...(maxOutputTokens === null ? {} : { max_output_tokens: maxOutputTokens }),
+    ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
+    stream: true,
+    store: false,
+  });
+}
+
+export function buildOpenAIChatCompletionsBody(
+  request: AnswerRequest,
+  config: OpenAIAnswerBodyConfig,
+): Readonly<Record<string, unknown>> {
+  const reasoningEffort = request.reasoningEffort ?? config.reasoningEffort;
+  const maxOutputTokens = effectiveOutputTokens(request, config);
+  return freezeOutboundBody({
+    model: config.chatModel,
+    messages: [
+      { role: 'system', content: request.instructions },
+      ...request.messages,
+    ],
+    ...(maxOutputTokens === null ? {} : { max_completion_tokens: maxOutputTokens }),
+    ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
+    stream: true,
+    stream_options: { include_usage: true },
+  });
+}
+
+export function buildResponsesAnswerBody(
+  config: OpenAIAnswerBodyConfig,
+  request: AnswerRequest,
+): Readonly<Record<string, unknown>> {
+  return buildOpenAIResponsesBody(request, config);
+}
+
+export function buildChatCompletionsAnswerBody(
+  config: OpenAIAnswerBodyConfig,
+  request: AnswerRequest,
+): Readonly<Record<string, unknown>> {
+  return buildOpenAIChatCompletionsBody(request, config);
 }
 
 const generationSemaphores = new Map<number, Semaphore>();
@@ -300,7 +493,11 @@ export class OpenAIProvider implements AiProvider {
       if (error instanceof OperationTimeoutError || error instanceof OpenAIProviderError) {
         throw error;
       }
-      throw new OpenAIProviderError('PROVIDER_UNAVAILABLE');
+      throw new OpenAIProviderError(
+        'PROVIDER_UNAVAILABLE',
+        null,
+        sdkFailure(error, this.config.contextWindowTokens),
+      );
     } finally {
       release?.();
       totalTimeout.dispose();
@@ -316,20 +513,15 @@ export class OpenAIProvider implements AiProvider {
     const responses = this.chatClient.responses;
     if (!responses) throw new Error('Configured Responses client is unavailable.');
 
-    const effectiveReasoningEffort = request.reasoningEffort ?? this.config.reasoningEffort;
     const startedAt = Date.now();
+    const body = request.preparedOutboundBody
+      ? validatePreparedBody(request.preparedOutboundBody, 'responses', this.config.chatModel)
+      : buildResponsesAnswerBody(this.config, request);
     const stream = streamWithTimeout({
-      create: (requestSignal) => responses.create({
-        model: this.config.chatModel,
-        instructions: request.instructions,
-        input: request.messages,
-        max_output_tokens: this.config.maxOutputTokens,
-        ...(effectiveReasoningEffort
-          ? { reasoning: { effort: effectiveReasoningEffort } }
-          : {}),
-        stream: true,
-        store: false,
-      }, { signal: requestSignal }),
+      create: (requestSignal) => responses.create(
+        body as Record<string, unknown>,
+        { signal: requestSignal },
+      ),
       totalSignal,
       firstByteTimeoutMs: request.execution
         ? Math.min(this.config.totalTimeoutMs, request.execution.totalTimeoutMs)
@@ -372,15 +564,50 @@ export class OpenAIProvider implements AiProvider {
         const incompleteUsage = event.response?.usage
           ? toResponseUsage(event.response.usage)
           : null;
-        throw new OpenAIProviderError('PROVIDER_RESPONSE_INCOMPLETE', incompleteUsage);
+        const suppliedReason = event.response?.incomplete_details?.reason;
+        const reason = suppliedReason === 'max_output_tokens'
+          ? suppliedReason
+          : suppliedReason === 'context_length_exceeded'
+            ? suppliedReason
+            : 'response_incomplete';
+        throw new OpenAIProviderError(
+          'PROVIDER_RESPONSE_INCOMPLETE',
+          incompleteUsage,
+          sanitizeProviderFailure({
+            reason,
+            inputTokens: incompleteUsage?.inputTokens,
+            outputTokens: incompleteUsage?.outputTokens,
+            contextWindowTokens: safeInteger(event.response?.context_window_tokens, 1)
+              ?? this.config.contextWindowTokens,
+          }),
+        );
       } else if (event.type === 'response.failed') {
-        throw new OpenAIProviderError('PROVIDER_RESPONSE_FAILED');
+        throw new OpenAIProviderError(
+          'PROVIDER_RESPONSE_FAILED',
+          null,
+          sanitizeProviderFailure({ reason: 'response_failed' }),
+        );
       } else if (event.type === 'error') {
-        throw new OpenAIProviderError('PROVIDER_STREAM_FAILED');
+        throw new OpenAIProviderError(
+          'PROVIDER_STREAM_FAILED',
+          null,
+          sanitizeProviderFailure({ reason: 'stream_failed' }),
+        );
       }
     }
 
-    if (!completed) throw new OpenAIProviderError('PROVIDER_RESPONSE_INCOMPLETE');
+    if (!completed) {
+      throw new OpenAIProviderError(
+        'PROVIDER_RESPONSE_INCOMPLETE',
+        usage,
+        sanitizeProviderFailure({
+          reason: 'response_incomplete',
+          inputTokens: usage?.inputTokens,
+          outputTokens: usage?.outputTokens,
+          contextWindowTokens: this.config.contextWindowTokens,
+        }),
+      );
+    }
     return usage;
   }
 
@@ -391,22 +618,15 @@ export class OpenAIProvider implements AiProvider {
     const completions = this.chatClient.chat?.completions;
     if (!completions) throw new Error('Configured Chat Completions client is unavailable.');
 
-    const effectiveReasoningEffort = request.reasoningEffort ?? this.config.reasoningEffort;
     const startedAt = Date.now();
+    const body = request.preparedOutboundBody
+      ? validatePreparedBody(request.preparedOutboundBody, 'chat_completions', this.config.chatModel)
+      : buildChatCompletionsAnswerBody(this.config, request);
     const stream = streamWithTimeout({
-      create: (requestSignal) => completions.create({
-        model: this.config.chatModel,
-        messages: [
-          { role: 'system', content: request.instructions },
-          ...request.messages,
-        ],
-        max_completion_tokens: this.config.maxOutputTokens,
-        ...(effectiveReasoningEffort
-          ? { reasoning_effort: effectiveReasoningEffort }
-          : {}),
-        stream: true,
-        stream_options: { include_usage: true },
-      }, { signal: requestSignal }),
+      create: (requestSignal) => completions.create(
+        body as Record<string, unknown>,
+        { signal: requestSignal },
+      ),
       totalSignal,
       firstByteTimeoutMs: request.execution
         ? Math.min(this.config.totalTimeoutMs, request.execution.totalTimeoutMs)
@@ -414,6 +634,7 @@ export class OpenAIProvider implements AiProvider {
     });
     let usage: TokenUsage | null = null;
     let completed = false;
+    let terminalFinishReason: string | null = null;
     let protocolEmitted = false;
     let modelTextEmitted = false;
 
@@ -431,6 +652,7 @@ export class OpenAIProvider implements AiProvider {
       for (const choice of chunk.choices) {
         if (typeof choice.finish_reason === 'string' && choice.finish_reason.trim()) {
           completed = true;
+          if (choice.finish_reason === 'length') terminalFinishReason = 'length';
         }
         if (choice.delta.content) {
           if (request.execution && !modelTextEmitted) {
@@ -442,7 +664,30 @@ export class OpenAIProvider implements AiProvider {
       }
     }
 
-    if (!completed) throw new OpenAIProviderError('PROVIDER_RESPONSE_INCOMPLETE');
+    if (!completed) {
+      throw new OpenAIProviderError(
+        'PROVIDER_RESPONSE_INCOMPLETE',
+        usage,
+        sanitizeProviderFailure({
+          reason: 'response_incomplete',
+          inputTokens: usage?.inputTokens,
+          outputTokens: usage?.outputTokens,
+          contextWindowTokens: this.config.contextWindowTokens,
+        }),
+      );
+    }
+    if (terminalFinishReason === 'length') {
+      throw new OpenAIProviderError(
+        'PROVIDER_RESPONSE_INCOMPLETE',
+        usage,
+        sanitizeProviderFailure({
+          reason: 'length',
+          inputTokens: usage?.inputTokens,
+          outputTokens: usage?.outputTokens,
+          contextWindowTokens: this.config.contextWindowTokens,
+        }),
+      );
+    }
     return usage;
   }
 }

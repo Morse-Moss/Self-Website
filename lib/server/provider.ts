@@ -7,8 +7,10 @@ import {
 } from './openai-provider.ts';
 import type {
   AiProvider,
+  AnswerReasoningEffort,
   ProviderTargetSnapshot,
 } from './ai-provider.ts';
+import type { ModelCapabilities } from './ai-config.ts';
 import { FailoverAiProvider } from './failover-ai-provider.ts';
 import { ProviderHealthRegistry } from './provider-health.ts';
 import { BochaSearchProvider } from './bocha-search-provider.ts';
@@ -32,11 +34,10 @@ type ProviderFactoryConfig = Pick<ServerConfig,
 >;
 const sharedProviderHealthRegistry = new ProviderHealthRegistry();
 
-export interface ResolvedChatTarget {
+export interface ResolvedChatTarget extends ModelCapabilities {
   apiKey: string;
   baseUrl: string | undefined;
-  maxOutputTokens: number;
-  reasoningEffort: ServerConfig['reasoningEffort'];
+  reasoningEffort: AnswerReasoningEffort | null;
   snapshot: ProviderTargetSnapshot;
   userAgent: string | null;
 }
@@ -81,12 +82,13 @@ export function createProviderFromTargets(
         chatModel: target.snapshot.modelId,
         embeddingModel: config.embeddingModel,
         embeddingDimensions: config.embeddingDimensions,
+        contextWindowTokens: target.contextWindowTokens,
         maxOutputTokens: target.maxOutputTokens,
         embeddingTimeoutMs: config.embeddingTimeoutMs,
         firstByteTimeoutMs: config.providerFirstByteTimeoutMs,
         totalTimeoutMs: config.providerTotalTimeoutMs,
         providerConcurrency: config.providerConcurrency,
-        reasoningEffort: target.reasoningEffort,
+        reasoningEffort: target.reasoningEffort ?? undefined,
         outputlessMaxAttempts: targets.length > 1 ? 1 : undefined,
       },
     );
@@ -112,22 +114,27 @@ export function createProvider(config: ServerConfig): AiProvider {
   return createProviderFromTargets(config, nodes.map((node, position) => ({
     apiKey: node.apiKey,
     baseUrl: node.baseUrl,
+    contextWindowTokens: config.chatContextWindowTokens,
     maxOutputTokens: config.maxOutputTokens,
-    reasoningEffort: config.reasoningEffort,
+    reasoningEffort: config.reasoningEffort ?? null,
     userAgent: config.openaiUserAgent ?? null,
     snapshot: {
       configDigest: '0'.repeat(64),
+      configDigestVersion: 2,
       connectionDisplayName: position === 0
         ? 'Environment primary'
         : `Environment fallback ${position}`,
       connectionVersionId: null,
+      contextWindowTokens: config.chatContextWindowTokens,
       inputUsdPerMillion: config.tokenRates?.inputUsdPerMillion.toString() ?? null,
       modelDisplayName: config.chatModel,
       modelId: config.chatModel,
       modelVersionId: null,
+      maxOutputTokens: config.maxOutputTokens,
       outputUsdPerMillion: config.tokenRates?.outputUsdPerMillion.toString() ?? null,
       position,
       protocol: config.chatProtocol,
+      reasoningEffort: config.reasoningEffort ?? null,
       routeRevisionId: null,
       sourceType: 'environment',
     },

@@ -31,7 +31,6 @@ function budget() {
     providerStartedAtMs: 0,
     turnTimeoutMs: 90_000,
     providerTimeoutMs: 80_000,
-    maxAttempts: 2,
   });
 }
 
@@ -41,8 +40,10 @@ function attempt(attemptIndex: number, status: ProviderAttempt['status']): Provi
     attemptIndex,
     completedAt: new Date(startedAt.getTime() + 10),
     configDigest: '0'.repeat(64),
+    configDigestVersion: 2,
     connectionDisplayName: 'Test provider',
     connectionVersionId: null,
+    contextWindowTokens: null,
     costComplete: true,
     errorCode: status === 'completed' ? null : 'PROVIDER_UNAVAILABLE',
     firstByteLatencyMs: 1,
@@ -56,9 +57,11 @@ function attempt(attemptIndex: number, status: ProviderAttempt['status']): Provi
     modelDisplayName: 'Test model',
     modelId: 'test-model',
     modelVersionId: null,
+    maxOutputTokens: null,
     outputUsdPerMillion: '1',
     position: 0,
     protocol: 'responses',
+    reasoningEffort: null,
     routeRevisionId: null,
     sourceType: 'environment',
     startedAt,
@@ -145,6 +148,41 @@ test('complete release buffers all text until protocol completion and emits it o
   const complete = await iterator.next();
   assert.equal(complete.value?.type, 'complete');
   assert.equal(await iterator.next().then((result) => result.done), true);
+});
+
+test('segment release also buffers all text until terminal provider success', async () => {
+  let waitingForCompletion = false;
+  let releaseDone: () => void = () => {
+    throw new Error('completion gate not initialized');
+  };
+  const completionGate = new Promise<void>((resolve) => { releaseDone = resolve; });
+  const provider = (async function* delayed(): AsyncGenerator<AnswerEvent> {
+    yield { type: 'delta', text: 'private partial ' };
+    yield { type: 'delta', text: 'winner' };
+    waitingForCompletion = true;
+    await completionGate;
+    yield { type: 'done', usage: null };
+  })();
+  const iterator = runChatAnswer({
+    budget: budget(),
+    now: () => 1_000,
+    releasePolicy: 'segment',
+    generate: () => provider,
+  })[Symbol.asyncIterator]();
+
+  const firstVisible = iterator.next();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(waitingForCompletion, true);
+  let settled = false;
+  void firstVisible.then(() => { settled = true; });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(settled, false);
+
+  releaseDone();
+  assert.deepEqual(await firstVisible, {
+    value: { type: 'delta', text: 'private partial winner' },
+    done: false,
+  });
 });
 
 test('provider attempts and winner metadata are forwarded unchanged', async () => {

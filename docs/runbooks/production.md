@@ -51,7 +51,7 @@ npm run production:worker
 - 三个 Chat 节点共享 `OPENAI_CHAT_MODEL`、`OPENAI_CHAT_PROTOCOL`、`OPENAI_REASONING_EFFORT` 和兼容 User-Agent。切换顺序固定为主节点、备用 1、备用 2，只在尚未输出正文时发生；已有部分回答或访客停止后不再切换。每个节点仍受单节点总超时约束，整次切换共享“单节点总超时 × 节点数”的上限。Embedding 继续使用独立配置。
 - 数据库 Provider 配置使用独立 32-byte 随机主密钥执行 AES-256-GCM 加密。生产只接受 `MORSE_PROVIDER_CONFIG_KEY_FILE` 和正整数 `MORSE_PROVIDER_CONFIG_KEY_VERSION`；直接值 `MORSE_PROVIDER_CONFIG_KEY`、mock origin 和私网 HTTP Provider override 均 fail closed。该 Secret 只挂载给 Web，Worker、Migration、Ingest 与 edge 不得读取。
 - Chat v2 灰度变量均为服务端配置，不得增加 `NEXT_PUBLIC_` 前缀。生产预检按运行时解析规则验证布尔值、0-100 整数 canary 和规范 UUID 列表；备用节点缺 key 或缺 URL、未解析引用和尖括号占位值均 fail closed，预检不调用 Provider，也不回显 UUID、Provider URL 或 key。
-- Controlled Context Packet 使用独立服务端开关 `MORSE_CHAT_CONTEXT_PACKET_ENABLED`、独立 `MORSE_CHAT_CONTEXT_CANARY_PERCENT`、UUID 白名单 `MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS` 和大小写敏感的精确标签白名单 `MORSE_CHAT_CONTEXT_CANARY_INVITE_LABELS`，不得复用 Chat v2 灰度变量。UUID 与标签是并集；标签命中的当前 Session 即使其 invite 已满额也可继续使用，percent 仍可保持 `0`。普通 Chat 与 JD 的输入预算分别固定为 `MORSE_CHAT_CONTEXT_TOKEN_BUDGET=12000` 和 `MORSE_JD_CONTEXT_TOKEN_BUDGET=24000`。
+- Controlled Context Packet 使用独立服务端开关 `MORSE_CHAT_CONTEXT_PACKET_ENABLED`、独立 `MORSE_CHAT_CONTEXT_CANARY_PERCENT`、UUID 白名单 `MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS` 和大小写敏感的精确标签白名单 `MORSE_CHAT_CONTEXT_CANARY_INVITE_LABELS`，不得复用 Chat v2 灰度变量。UUID 与标签是并集；标签命中的当前 Session 即使其 invite 已满额也可继续使用，percent 仍可保持 `0`。Chat、JD、诊断、历史和本地证据没有应用层字符、条数或 token 预算；仅可依据目标模型的已知数值上下文窗口压缩最老的完整 turn 前缀。
 - Context Packet HMAC 使用独立、解码后至少 32 bytes 的随机 Secret。生产只接受 Web 内的 `MORSE_CONTEXT_PACKET_DIGEST_KEY_FILE=/run/secrets/context_packet_digest_key` 和非敏感版本标识 `MORSE_CONTEXT_PACKET_DIGEST_KEY_ID`；不得使用直接值、复用 Provider/Admin/invite 密钥，Worker、Migration、Ingest 与 edge 均不得挂载该 Secret。
 - 私密简历默认使用 `MORSE_RESUME_ENABLED=false`。生产首次发布必须保持关闭，完成 migration `003`、私有卷初始化、最小 grants、健康检查和回滚检查后，才可在单独授权下启用。
 - 启用私密简历时，Web 还必须获得 `MORSE_RESUME_STORAGE_DIR`、`MORSE_RESUME_ENCRYPTION_KEY_FILE`、`MORSE_RESUME_KEY_VERSION`、`MORSE_RESUME_FINGERPRINT_SECRET`、`MORSE_RESUME_TRUSTED_PROXY_HOPS` 和独立 `MORSE_RESUME_COOKIE`。生产禁止使用直接值 `MORSE_RESUME_ENCRYPTION_KEY`；加密密钥只通过名为 `resume_encryption_key` 的部署 Secret 文件挂载给 Web。
@@ -93,7 +93,7 @@ npm run production:worker
 
 以下步骤每次都先保留当前已观察镜像，记录变更后只重启 Web，并复验 live、ready、公开页面和 v1 会话。真实 Provider 评审、故障注入和扩大流量分别需要明确授权，不能因配置已写入手册而自动执行：
 
-回答可靠性版本的默认时序为：`MORSE_PROVIDER_PROTOCOL_EVENT_TIMEOUT_MS=25000`、`MORSE_PROVIDER_MODEL_TEXT_TIMEOUT_MS=40000`、`MORSE_PROVIDER_STAGE_TIMEOUT_MS=80000`、`MORSE_CHAT_TURN_TIMEOUT_MS=90000`、`MORSE_PROVIDER_MAX_ATTEMPTS=2`。启动时必须满足“协议事件 < 模型正文 <= Provider 阶段 < 完整 turn”，attempt 数必须等于 2。normal 与仅由真实 Provider、协议或超时故障触发的串行 failover 共用同一个绝对 deadline；内容质量不得触发第二次调用、strict、reset 或节点切换。切换节点不得重置 80 秒预算，SSE heartbeat 不延长任何 deadline，hedging 保持关闭。
+回答可靠性版本的默认时序为：`MORSE_PROVIDER_PROTOCOL_EVENT_TIMEOUT_MS=25000`、`MORSE_PROVIDER_MODEL_TEXT_TIMEOUT_MS=40000`、`MORSE_PROVIDER_STAGE_TIMEOUT_MS=80000`、`MORSE_CHAT_TURN_TIMEOUT_MS=90000`。启动时必须满足“协议事件 < 模型正文 <= Provider 阶段 < 完整 turn”；attempt 数不再由环境变量配置。normal 与仅由真实 Provider、协议或超时故障触发的串行 failover 共用同一个绝对 deadline；内容质量不得触发第二次调用、strict、reset 或节点切换。切换节点不得重置 80 秒预算，SSE heartbeat 不延长任何 deadline，hedging 保持关闭。
 
 升级已有实例时，必须先独立验证 DB/Embedding healthy、PostgreSQL TLS 证书可解析且私钥为普通 `0600` 文件；migration、grants、ingest 和存储初始化使用 `docker compose run --rm --no-deps ...`。plain `compose run` 会协调 `depends_on`，配置或 bind 源漂移时可能重建依赖容器，不能用于升级路径。
 

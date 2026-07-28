@@ -4,10 +4,13 @@ import type pg from 'pg';
 
 import {
   AiConfigError,
-  createRuntimeConfigDigest,
+  createRuntimeConfigDigestV1,
+  createRuntimeConfigDigestV2,
   type AiChatProtocol,
+  type AiConfigDigestVersion,
   type AiConfigKey,
   type AiRouteRevisionSnapshot,
+  type ModelCapabilities,
 } from './ai-config.ts';
 import {
   decryptAiConfigSecret,
@@ -24,10 +27,9 @@ export interface ConnectionInput {
   userAgent: string | null;
 }
 
-export interface ModelInput {
+export interface ModelInput extends ModelCapabilities {
   displayName: string;
   inputUsdPerMillion: string | null;
-  maxOutputTokens: number;
   modelId: string;
   outputUsdPerMillion: string | null;
   protocol: AiChatProtocol;
@@ -49,11 +51,13 @@ interface ConnectionRow {
 
 interface ModelRow {
   config_digest: string;
+  config_digest_version: AiConfigDigestVersion;
   connection_version_id: string;
+  context_window_tokens: number | null;
   display_name: string;
   id: string;
   input_usd_per_million: string | null;
-  max_output_tokens: number;
+  max_output_tokens: number | null;
   model_id: string;
   output_usd_per_million: string | null;
   protocol: AiChatProtocol;
@@ -99,16 +103,23 @@ function normalizeConnection(input: ConnectionInput): ConnectionInput {
 function normalizeModel(input: ModelInput): ModelInput {
   const displayName = input.displayName.trim();
   const modelId = input.modelId.trim();
+  const contextWindowTokens = input.contextWindowTokens ?? null;
+  const maxOutputTokens = input.maxOutputTokens ?? null;
   if (
     !displayName
     || displayName.length > 120
     || !modelId
     || modelId.length > 512
     || !['responses', 'chat_completions'].includes(input.protocol)
-    || !Number.isSafeInteger(input.maxOutputTokens)
-    || input.maxOutputTokens < 1
+    || !validCapability(contextWindowTokens)
+    || !validCapability(maxOutputTokens)
   ) invalid();
-  return { ...input, displayName, modelId };
+  return { ...input, contextWindowTokens, displayName, maxOutputTokens, modelId };
+}
+
+function validCapability(value: number | null): boolean {
+  return value === null
+    || (Number.isSafeInteger(value) && value >= 1 && value <= 2_147_483_647);
 }
 
 function connectionDigest(input: ConnectionInput, key: Buffer): string {
@@ -124,15 +135,40 @@ function runtimeDigest(
   model: ModelInput,
   key: Buffer,
 ): string {
-  return createRuntimeConfigDigest({
+  return createRuntimeConfigDigestV2({
     apiKey: connection.apiKey,
     baseUrl: connection.baseUrl,
+    contextWindowTokens: model.contextWindowTokens,
     maxOutputTokens: model.maxOutputTokens,
     modelId: model.modelId,
     protocol: model.protocol,
     reasoningEffort: model.reasoningEffort,
     userAgent: connection.userAgent,
   }, key);
+}
+
+function storedRuntimeDigest(
+  connection: ConnectionInput,
+  model: ModelInput,
+  version: AiConfigDigestVersion,
+  key: Buffer,
+): string {
+  if (version === 1) {
+    if (model.maxOutputTokens === null) {
+      throw new AiConfigError('AI_CONFIG_SECRET_UNAVAILABLE');
+    }
+    return createRuntimeConfigDigestV1({
+      apiKey: connection.apiKey,
+      baseUrl: connection.baseUrl,
+      maxOutputTokens: model.maxOutputTokens,
+      modelId: model.modelId,
+      protocol: model.protocol,
+      reasoningEffort: model.reasoningEffort,
+      userAgent: connection.userAgent,
+    }, key);
+  }
+  if (version !== 2) throw new AiConfigError('AI_CONFIG_SECRET_UNAVAILABLE');
+  return runtimeDigest(connection, model, key);
 }
 
 async function insertConnection(
@@ -184,9 +220,10 @@ async function insertModel(
   await client.query(
     `INSERT INTO ai_model_presets
       (id, series_id, version, previous_version_id, connection_version_id,
-       display_name, model_id, protocol, reasoning_effort, max_output_tokens,
-       input_usd_per_million, output_usd_per_million, config_digest)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+       display_name, model_id, protocol, reasoning_effort, context_window_tokens,
+       max_output_tokens, input_usd_per_million, output_usd_per_million,
+       config_digest_version, config_digest)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 2, $14)`,
     [
       identity.id,
       identity.seriesId,
@@ -197,6 +234,7 @@ async function insertModel(
       input.modelId,
       input.protocol,
       input.reasoningEffort,
+      input.contextWindowTokens,
       input.maxOutputTokens,
       input.inputUsdPerMillion,
       input.outputUsdPerMillion,
@@ -336,8 +374,9 @@ export async function createConnectionVersion(
   const models = await client.query<ModelRow>(
     `SELECT DISTINCT ON (series_id)
             id, series_id, version, connection_version_id, display_name, model_id,
-            protocol, reasoning_effort, max_output_tokens,
-            input_usd_per_million::text, output_usd_per_million::text, config_digest
+            protocol, reasoning_effort, context_window_tokens, max_output_tokens,
+            input_usd_per_million::text, output_usd_per_million::text,
+            config_digest_version, config_digest
        FROM ai_model_presets
       WHERE deleted_at IS NULL
       ORDER BY series_id, version DESC`,
@@ -346,6 +385,7 @@ export async function createConnectionVersion(
   for (const model of currentModels) {
     await insertModel(client, connection, {
       displayName: model.display_name,
+      contextWindowTokens: model.context_window_tokens,
       inputUsdPerMillion: model.input_usd_per_million,
       maxOutputTokens: model.max_output_tokens,
       modelId: model.model_id,
@@ -371,8 +411,9 @@ export async function createModelVersion(
   await assertTransaction(client);
   const currentResult = await client.query<ModelRow>(
     `SELECT id, series_id, version, connection_version_id, display_name, model_id,
-            protocol, reasoning_effort, max_output_tokens,
-            input_usd_per_million::text, output_usd_per_million::text, config_digest
+            protocol, reasoning_effort, context_window_tokens, max_output_tokens,
+            input_usd_per_million::text, output_usd_per_million::text,
+            config_digest_version, config_digest
        FROM ai_model_presets
       WHERE series_id = $1 AND deleted_at IS NULL
       ORDER BY version DESC LIMIT 1 FOR UPDATE`,
@@ -405,7 +446,13 @@ export async function createModelVersion(
 export interface ResolvedModelRuntime {
   apiKey: string;
   connection: { baseUrl: string; displayName: string; id: string; userAgent: string | null; version: number };
-  model: ModelInput & { configDigest: string; id: string; seriesId: string; version: number };
+  model: ModelInput & {
+    configDigest: string;
+    configDigestVersion: AiConfigDigestVersion;
+    id: string;
+    seriesId: string;
+    version: number;
+  };
 }
 
 type ModelRuntimeRow = ModelRow & ConnectionRow & {
@@ -425,6 +472,7 @@ function resolvedModelRuntime(row: ModelRuntimeRow, configKey: AiConfigKey): Res
   };
   const connection = decryptConnection(connectionRow, configKey);
   const model: ModelInput = {
+    contextWindowTokens: row.context_window_tokens,
     displayName: row.display_name,
     inputUsdPerMillion: row.input_usd_per_million,
     maxOutputTokens: row.max_output_tokens,
@@ -433,7 +481,8 @@ function resolvedModelRuntime(row: ModelRuntimeRow, configKey: AiConfigKey): Res
     protocol: row.protocol,
     reasoningEffort: row.reasoning_effort,
   };
-  if (runtimeDigest(connection, model, configKey.key) !== row.config_digest) {
+  if (storedRuntimeDigest(connection, model, row.config_digest_version, configKey.key)
+    !== row.config_digest) {
     throw new AiConfigError('AI_CONFIG_SECRET_UNAVAILABLE');
   }
   return {
@@ -448,6 +497,7 @@ function resolvedModelRuntime(row: ModelRuntimeRow, configKey: AiConfigKey): Res
     model: {
       ...model,
       configDigest: row.config_digest,
+      configDigestVersion: row.config_digest_version,
       id: row.id,
       seriesId: row.series_id,
       version: row.version,
@@ -463,8 +513,9 @@ export async function resolveModelRuntime(
   const result = await client.query<ModelRow & ConnectionRow>(
     `SELECT m.id, m.series_id, m.version, m.connection_version_id,
             m.display_name, m.model_id, m.protocol, m.reasoning_effort,
-            m.max_output_tokens, m.input_usd_per_million::text,
-            m.output_usd_per_million::text, m.config_digest,
+            m.context_window_tokens, m.max_output_tokens,
+            m.input_usd_per_million::text, m.output_usd_per_million::text,
+            m.config_digest_version, m.config_digest,
             c.id AS connection_id, c.series_id AS connection_series_id,
             c.version AS connection_version, c.display_name AS connection_display_name,
             c.base_url, c.user_agent, c.api_key_ciphertext, c.api_key_iv,
@@ -490,8 +541,9 @@ export async function resolveModelVersionRuntime(
   const result = await client.query<ModelRuntimeRow>(
     `SELECT m.id, m.series_id, m.version, m.connection_version_id,
             m.display_name, m.model_id, m.protocol, m.reasoning_effort,
-            m.max_output_tokens, m.input_usd_per_million::text,
-            m.output_usd_per_million::text, m.config_digest,
+            m.context_window_tokens, m.max_output_tokens,
+            m.input_usd_per_million::text, m.output_usd_per_million::text,
+            m.config_digest_version, m.config_digest,
             c.id AS connection_id, c.series_id AS connection_series_id,
             c.version AS connection_version, c.display_name AS connection_display_name,
             c.base_url, c.user_agent, c.api_key_ciphertext, c.api_key_iv,
@@ -535,8 +587,9 @@ export async function listAiConfigCatalog(client: Queryable): Promise<{
   const models = await client.query<ModelRow>(
     `SELECT DISTINCT ON (series_id)
             id, series_id, version, connection_version_id, display_name, model_id,
-            protocol, reasoning_effort, max_output_tokens,
-            input_usd_per_million::text, output_usd_per_million::text, config_digest
+            protocol, reasoning_effort, context_window_tokens, max_output_tokens,
+            input_usd_per_million::text, output_usd_per_million::text,
+            config_digest_version, config_digest
        FROM ai_model_presets WHERE deleted_at IS NULL
       ORDER BY series_id, version DESC`,
   );
@@ -694,23 +747,28 @@ export async function readActiveRouteRaw(
   if (!row.revision_number) throw new AiConfigError('AI_CONFIG_UNAVAILABLE');
   const targets = await client.query<{
     config_digest: string;
+    config_digest_version: AiConfigDigestVersion;
     connection_display_name: string;
+    context_window_tokens: number | null;
     database_model_series_id: string | null;
     database_model_version_id: string | null;
     environment_target_key: 'primary' | 'fallback-1' | 'fallback-2' | null;
     input_usd_per_million: string | null;
     model_display_name: string;
     model_id: string;
+    max_output_tokens: number | null;
     position: number;
     protocol: 'responses' | 'chat_completions';
+    reasoning_effort: import('./ai-provider.ts').AnswerReasoningEffort | null;
     output_usd_per_million: string | null;
     source_type: 'database' | 'environment';
   }>(
     `SELECT target.position, target.source_type, target.database_model_version_id,
             model.series_id::text AS database_model_series_id, target.environment_target_key,
             target.connection_display_name, target.model_display_name, target.model_id,
-            target.protocol, target.config_digest, target.input_usd_per_million::text,
-            target.output_usd_per_million::text
+            target.protocol, target.config_digest, target.config_digest_version,
+            target.context_window_tokens, target.max_output_tokens, target.reasoning_effort,
+            target.input_usd_per_million::text, target.output_usd_per_million::text
        FROM ai_route_targets target
        LEFT JOIN ai_model_presets model ON model.id = target.database_model_version_id
       WHERE target.route_revision_id = $1 ORDER BY target.position`,
@@ -725,15 +783,19 @@ export async function readActiveRouteRaw(
     revisionNumber: Number(row.revision_number),
     targets: targets.rows.map((target) => ({
       configDigest: target.config_digest,
+      configDigestVersion: target.config_digest_version,
       connectionDisplayName: target.connection_display_name,
+      contextWindowTokens: target.context_window_tokens,
       databaseModelSeriesId: target.database_model_series_id,
       databaseModelVersionId: target.database_model_version_id,
       environmentTargetKey: target.environment_target_key,
       inputUsdPerMillion: target.input_usd_per_million,
+      maxOutputTokens: target.max_output_tokens,
       modelDisplayName: target.model_display_name,
       modelId: target.model_id,
       position: target.position,
       protocol: target.protocol,
+      reasoningEffort: target.reasoning_effort,
       outputUsdPerMillion: target.output_usd_per_million,
       sourceType: target.source_type,
     })),

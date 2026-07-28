@@ -1,6 +1,17 @@
 import type { TokenUsage } from './budget.ts';
 import type { ChatExecutionBudget } from './chat-execution-budget.ts';
-import type { GenerationRequestIntegrity } from '../contracts/chat-context.ts';
+import type {
+  CanonicalGenerationRequestV2,
+  GenerationRequestIntegrity,
+  GenerationRequestIntegrityV2,
+  GenerationVariantV2,
+} from '../contracts/chat-context.ts';
+import type {
+  AiConfigDigestVersion,
+  ModelCapabilities,
+} from './ai-config.ts';
+import type { PreparedTargetContext } from './chat-context-coordinator.ts';
+import type { SanitizedProviderFailure } from './provider-failure.ts';
 
 export interface AiMessage {
   role: 'user' | 'assistant';
@@ -18,18 +29,21 @@ export type AnswerReasoningEffort =
 export interface AnswerRequest {
   instructions: string;
   messages: AiMessage[];
+  maxOutputTokens?: number | null;
+  preparedOutboundBody?: Readonly<Record<string, unknown>>;
   reasoningEffort?: AnswerReasoningEffort;
   execution?: AnswerExecutionOptions;
 }
 
 export type ProviderAttemptEvent =
-  | { type: 'started'; attemptNo: number; providerAlias: string; launchKind: 'primary' | 'hedge' | 'failover'; generationMode: 'normal' | 'strict'; startedAt: Date; startDelayMs: number }
+  | { type: 'started'; attemptNo: number; providerAlias: string; launchKind: 'primary' | 'hedge' | 'failover' | 'overflow_retry'; generationMode: 'normal' | 'strict'; generationVariantTrigger?: GenerationVariantV2['trigger']; integrity?: GenerationRequestIntegrity; startedAt: Date; startDelayMs: number }
   | { type: 'first_byte'; attemptNo: number; providerAlias: string; firstByteMs: number }
   | { type: 'first_protocol' | 'first_model_text' | 'first_user_visible'; attemptNo: number; providerAlias: string; elapsedMs: number }
-  | { type: 'completed' | 'failed' | 'aborted'; attemptNo: number; providerAlias: string; durationMs: number; winner: boolean; errorCode: string | null; usage: TokenUsage | null; estimatedCostUsd?: number | null };
+  | { type: 'completed' | 'failed' | 'aborted'; attemptNo: number; providerAlias: string; durationMs: number; winner: boolean; errorCode: string | null; usage: TokenUsage | null; estimatedCostUsd?: number | null; failure?: SanitizedProviderFailure | null };
 
 export interface AnswerExecutionOptions {
   executionId: string;
+  generationVariantId?: string;
   releasePolicy: 'segment' | 'complete';
   minimumBufferCharacters: number;
   totalTimeoutMs: number;
@@ -40,8 +54,26 @@ export interface AnswerExecutionOptions {
   modelTextTimeoutMs: number;
   hedgingEnabled: boolean;
   delaysMs: readonly number[];
+  prepareTarget?(input: {
+    target: ProviderTargetSnapshot;
+    provider: AiProvider;
+    variantId: string;
+    revision: number;
+    trigger: GenerationVariantV2['trigger'];
+    numericOverflow: SanitizedProviderFailure | null;
+    signal: AbortSignal;
+    deadlineMs: number;
+  }): Promise<PreparedTargetAnswer>;
   reserveHedgedAttempt(event: Extract<ProviderAttemptEvent, { type: 'started' }>): Promise<boolean>;
   onAttempt(event: ProviderAttemptEvent): Promise<void>;
+}
+
+export interface PreparedTargetAnswer {
+  context: PreparedTargetContext;
+  request: AnswerRequest;
+  outboundBody: Readonly<Record<string, unknown>>;
+  generationRequest: CanonicalGenerationRequestV2;
+  integrity: GenerationRequestIntegrityV2;
 }
 
 export type AnswerExecutionErrorCode = 'PROVIDER_INCOMPLETE';
@@ -57,8 +89,9 @@ export class AnswerExecutionError extends Error {
 
 export type ProviderSourceType = 'database' | 'environment';
 
-export interface ProviderTargetSnapshot {
+export interface ProviderTargetSnapshot extends ModelCapabilities {
   configDigest: string;
+  configDigestVersion: AiConfigDigestVersion;
   connectionDisplayName: string;
   connectionVersionId: string | null;
   inputUsdPerMillion: string | null;
@@ -68,6 +101,7 @@ export interface ProviderTargetSnapshot {
   outputUsdPerMillion: string | null;
   position: number;
   protocol: 'responses' | 'chat_completions';
+  reasoningEffort: AnswerReasoningEffort | null;
   routeRevisionId: string | null;
   sourceType: ProviderSourceType;
 }
@@ -82,8 +116,9 @@ export interface ProviderAttempt extends ProviderTargetSnapshot {
   firstProtocolEventMs: number | null;
   firstUserVisibleMs: number | null;
   generationMode: 'normal' | 'strict';
+  generationVariantTrigger?: GenerationVariantV2['trigger'] | null;
   knownCostUsd: number | null;
-  launchKind: 'primary' | 'hedge' | 'failover';
+  launchKind: 'primary' | 'hedge' | 'failover' | 'overflow_retry';
   startedAt: Date;
   status: 'completed' | 'failed' | 'stopped';
   totalLatencyMs: number;
@@ -92,6 +127,7 @@ export interface ProviderAttempt extends ProviderTargetSnapshot {
   executionId?: string;
   attemptNo?: number;
   integrity?: GenerationRequestIntegrity | null;
+  failure?: SanitizedProviderFailure | null;
 }
 
 export interface ProviderWinner extends ProviderTargetSnapshot {

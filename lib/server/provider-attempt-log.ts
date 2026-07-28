@@ -1,9 +1,15 @@
 import type { PoolClient } from 'pg';
 
-import type { GenerationRequestIntegrity } from '../contracts/chat-context.ts';
+import type {
+  GenerationRequestIntegrity,
+  GenerationRequestIntegrityV1,
+  GenerationRequestIntegrityV2,
+  GenerationVariantV2,
+} from '../contracts/chat-context.ts';
 import type { TokenUsage } from './budget.ts';
+import type { SanitizedProviderFailure } from './provider-failure.ts';
 
-export type ProviderAttemptLaunchKind = 'primary' | 'hedge' | 'failover';
+export type ProviderAttemptLaunchKind = 'primary' | 'hedge' | 'failover' | 'overflow_retry';
 export type ProviderAttemptTerminalStatus = 'completed' | 'failed' | 'aborted';
 
 export interface ProviderAttemptKey {
@@ -24,6 +30,8 @@ export type ProviderAttemptEvent =
       attemptNo: number;
       launchKind: ProviderAttemptLaunchKind;
       generationMode?: 'normal' | 'strict';
+      generationVariantTrigger?: GenerationVariantV2['trigger'];
+      integrity?: GenerationRequestIntegrity;
       providerAlias: string;
       startDelayMs: number;
       startedAt: Date;
@@ -62,6 +70,7 @@ export type ProviderAttemptEvent =
       type: ProviderAttemptTerminalStatus;
       usage: TokenUsage | null;
       winner: boolean;
+      failure?: SanitizedProviderFailure | null;
     };
 
 interface RollingHedgeCounts {
@@ -70,12 +79,29 @@ interface RollingHedgeCounts {
 }
 
 interface AttemptIntegrityRow {
+  attempt_no: number;
   context_builder_version: string | null;
+  delete_after: Date;
+  generation_variant_id: string | null;
+  generation_variant_revision: number | null;
+  generation_variant_trigger: GenerationVariantV2['trigger'] | null;
   generation_mode: 'normal' | 'strict' | null;
   generation_overlay_version: 'strict-overlay-v1' | null;
   generation_request_hmac_sha256: string | null;
+  generation_request_v2_hmac_sha256: string | null;
+  launch_kind: ProviderAttemptLaunchKind;
   packet_hmac_key_id: string | null;
   packet_hmac_sha256: string | null;
+  provider_alias: string;
+  start_delay_ms: number;
+  started_at: Date;
+  target_config_digest: string | null;
+  target_config_digest_version: 1 | 2 | null;
+  target_context_window_tokens: number | null;
+  target_max_output_tokens: number | null;
+  target_model_id: string | null;
+  target_protocol: 'responses' | 'chat_completions' | null;
+  target_reasoning_effort: GenerationRequestIntegrityV2['target']['reasoningEffort'] | null;
 }
 
 const HEDGE_BUDGET_LOCK = 'revolution:chat-v2:rolling-hedge-budget:v1';
@@ -85,10 +111,40 @@ function integrityMismatch(): never {
   throw new Error('PROVIDER_ATTEMPT_INTEGRITY_MISMATCH');
 }
 
+function isIntegrityV2(
+  integrity: GenerationRequestIntegrity,
+): integrity is GenerationRequestIntegrityV2 {
+  return 'version' in integrity && integrity.version === 2;
+}
+
 function validateIntegrity(
   generationMode: 'normal' | 'strict',
   integrity: GenerationRequestIntegrity,
 ): void {
+  if (isIntegrityV2(integrity)) {
+    const target = integrity.target;
+    const nullablePositive = (value: number | null) => value === null
+      || (Number.isSafeInteger(value) && value > 0);
+    if (generationMode !== 'normal'
+      || !/^[a-z0-9][a-z0-9._-]{0,63}$/u.test(integrity.contextBuilderVersion)
+      || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u.test(
+        integrity.generationVariantId,
+      )
+      || !Number.isSafeInteger(integrity.generationVariantRevision)
+      || integrity.generationVariantRevision < 1
+      || !/^[a-z0-9][a-z0-9._-]{0,31}$/u.test(integrity.packetHmacKeyId)
+      || !/^[0-9a-f]{64}$/u.test(integrity.packetHmacSha256)
+      || !/^[0-9a-f]{64}$/u.test(integrity.generationRequestHmacSha256)
+      || ![1, 2].includes(target.configDigestVersion)
+      || !/^[0-9a-f]{64}$/u.test(target.configDigest)
+      || target.modelId.trim() !== target.modelId
+      || target.modelId.length < 1
+      || target.modelId.length > 512
+      || !['responses', 'chat_completions'].includes(target.protocol)
+      || !nullablePositive(target.contextWindowTokens)
+      || !nullablePositive(target.maxOutputTokens)) integrityMismatch();
+    return;
+  }
   if (generationMode !== 'normal'
     || !/^[a-z0-9][a-z0-9._-]{0,63}$/u.test(integrity.contextBuilderVersion)
     || !/^[a-z0-9][a-z0-9._-]{0,31}$/u.test(integrity.packetHmacKeyId)
@@ -97,29 +153,71 @@ function validateIntegrity(
     || integrity.generationOverlayVersion !== null) integrityMismatch();
 }
 
-function assertIntegrityCompatible(
-  rows: AttemptIntegrityRow[],
+function integritiesMatch(
+  left: GenerationRequestIntegrity,
+  right: GenerationRequestIntegrity,
+): boolean {
+  const leftV2 = isIntegrityV2(left);
+  const rightV2 = isIntegrityV2(right);
+  if (leftV2 !== rightV2) return false;
+  if (leftV2 && rightV2) {
+    return left.contextBuilderVersion === right.contextBuilderVersion
+      && left.generationVariantId === right.generationVariantId
+      && left.generationVariantRevision === right.generationVariantRevision
+      && left.target.configDigestVersion === right.target.configDigestVersion
+      && left.target.configDigest === right.target.configDigest
+      && left.target.modelId === right.target.modelId
+      && left.target.protocol === right.target.protocol
+      && left.target.contextWindowTokens === right.target.contextWindowTokens
+      && left.target.maxOutputTokens === right.target.maxOutputTokens
+      && left.target.reasoningEffort === right.target.reasoningEffort
+      && left.packetHmacKeyId === right.packetHmacKeyId
+      && left.packetHmacSha256 === right.packetHmacSha256
+      && left.generationRequestHmacSha256 === right.generationRequestHmacSha256;
+  }
+  if (leftV2 || rightV2) return false;
+  return left.contextBuilderVersion === right.contextBuilderVersion
+    && left.packetHmacKeyId === right.packetHmacKeyId
+    && left.packetHmacSha256 === right.packetHmacSha256
+    && left.generationOverlayVersion === right.generationOverlayVersion
+    && left.generationRequestHmacSha256 === right.generationRequestHmacSha256;
+}
+
+function assertAttemptReplayMatches(
+  row: AttemptIntegrityRow,
+  event: Extract<ProviderAttemptEvent, { type: 'started' }>,
   generationMode: 'normal' | 'strict',
   integrity: GenerationRequestIntegrity | null,
+  deleteAfter: Date,
 ): void {
   if (integrity) validateIntegrity(generationMode, integrity);
-  for (const row of rows) {
-    const hasIntegrity = row.context_builder_version !== null
-      || row.packet_hmac_key_id !== null
-      || row.packet_hmac_sha256 !== null
-      || row.generation_overlay_version !== null
-      || row.generation_request_hmac_sha256 !== null;
-    if (hasIntegrity !== Boolean(integrity)) integrityMismatch();
-    if (!integrity) continue;
-    if (row.context_builder_version !== integrity.contextBuilderVersion
-      || row.packet_hmac_key_id !== integrity.packetHmacKeyId
-      || row.packet_hmac_sha256 !== integrity.packetHmacSha256
-      || row.generation_mode !== generationMode
-      || row.generation_overlay_version !== integrity.generationOverlayVersion
-      || row.generation_request_hmac_sha256 !== integrity.generationRequestHmacSha256) {
-      integrityMismatch();
-    }
-  }
+  const v2 = integrity && isIntegrityV2(integrity) ? integrity : null;
+  const v1 = integrity && !isIntegrityV2(integrity)
+    ? integrity as GenerationRequestIntegrityV1
+    : null;
+  if (row.attempt_no !== event.attemptNo
+    || row.provider_alias !== event.providerAlias
+    || row.launch_kind !== event.launchKind
+    || row.generation_mode !== generationMode
+    || row.context_builder_version !== (integrity?.contextBuilderVersion ?? null)
+    || row.packet_hmac_key_id !== (integrity?.packetHmacKeyId ?? null)
+    || row.packet_hmac_sha256 !== (integrity?.packetHmacSha256 ?? null)
+    || row.generation_overlay_version !== (v1?.generationOverlayVersion ?? null)
+    || row.generation_request_hmac_sha256 !== (v1?.generationRequestHmacSha256 ?? null)
+    || row.generation_variant_id !== (v2?.generationVariantId ?? null)
+    || row.generation_variant_revision !== (v2?.generationVariantRevision ?? null)
+    || row.generation_variant_trigger !== (v2 ? event.generationVariantTrigger ?? null : null)
+    || row.target_config_digest_version !== (v2?.target.configDigestVersion ?? null)
+    || row.target_config_digest !== (v2?.target.configDigest ?? null)
+    || row.target_model_id !== (v2?.target.modelId ?? null)
+    || row.target_protocol !== (v2?.target.protocol ?? null)
+    || row.target_context_window_tokens !== (v2?.target.contextWindowTokens ?? null)
+    || row.target_max_output_tokens !== (v2?.target.maxOutputTokens ?? null)
+    || row.target_reasoning_effort !== (v2?.target.reasoningEffort ?? null)
+    || row.generation_request_v2_hmac_sha256 !== (v2?.generationRequestHmacSha256 ?? null)
+    || row.start_delay_ms !== event.startDelayMs
+    || row.started_at.getTime() !== event.startedAt.getTime()
+    || row.delete_after.getTime() !== deleteAfter.getTime()) integrityMismatch();
 }
 
 function validateProviderAlias(providerAlias: string): void {
@@ -150,42 +248,31 @@ async function recordStartedEvent(
 ): Promise<void> {
   const generationMode = event.generationMode ?? 'normal';
   if (generationMode !== 'normal') integrityMismatch();
+  if (integrity) validateIntegrity(generationMode, integrity);
+  const v2 = integrity && isIntegrityV2(integrity) ? integrity : null;
+  const v1 = integrity && !isIntegrityV2(integrity)
+    ? integrity as GenerationRequestIntegrityV1
+    : null;
+  if (Boolean(v2) !== Boolean(event.generationVariantTrigger)) integrityMismatch();
   await client.query(
     'SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))',
     [`revolution:provider-attempt-integrity:v1:${key.interactionTurnId}`],
   );
-  const existing = await client.query<AttemptIntegrityRow>(
-    `SELECT generation_mode, context_builder_version, packet_hmac_key_id,
-            packet_hmac_sha256, generation_overlay_version,
-            generation_request_hmac_sha256
-       FROM chat_provider_attempts
-      WHERE interaction_turn_id = $1
-      FOR UPDATE`,
-    [key.interactionTurnId],
-  );
-  assertIntegrityCompatible(existing.rows, generationMode, integrity);
   const result = await client.query(
     `INSERT INTO chat_provider_attempts
       (interaction_turn_id, execution_id, attempt_no, provider_alias, launch_kind,
        generation_mode, context_builder_version, packet_hmac_key_id,
        packet_hmac_sha256, generation_overlay_version,
        generation_request_hmac_sha256, status, winner, start_delay_ms,
-       started_at, delete_after)
+       started_at, delete_after, generation_variant_id, generation_variant_revision,
+       generation_variant_trigger, target_config_digest_version, target_config_digest,
+       target_model_id, target_protocol, target_context_window_tokens,
+       target_max_output_tokens, target_reasoning_effort,
+       generation_request_v2_hmac_sha256)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-             'started', false, $12, $13, $14)
-     ON CONFLICT (interaction_turn_id, execution_id, attempt_no) DO UPDATE
-       SET provider_alias = EXCLUDED.provider_alias,
-           launch_kind = EXCLUDED.launch_kind,
-           generation_mode = EXCLUDED.generation_mode,
-           context_builder_version = EXCLUDED.context_builder_version,
-           packet_hmac_key_id = EXCLUDED.packet_hmac_key_id,
-           packet_hmac_sha256 = EXCLUDED.packet_hmac_sha256,
-           generation_overlay_version = EXCLUDED.generation_overlay_version,
-           generation_request_hmac_sha256 = EXCLUDED.generation_request_hmac_sha256,
-           start_delay_ms = EXCLUDED.start_delay_ms,
-           started_at = EXCLUDED.started_at,
-           delete_after = EXCLUDED.delete_after
-     WHERE chat_provider_attempts.status = 'started'`,
+             'started', false, $12, $13, $14, $15, $16, $17, $18, $19,
+             $20, $21, $22, $23, $24, $25)
+     ON CONFLICT (interaction_turn_id, execution_id, attempt_no) DO NOTHING`,
     [
       key.interactionTurnId,
       key.executionId,
@@ -196,15 +283,43 @@ async function recordStartedEvent(
       integrity?.contextBuilderVersion ?? null,
       integrity?.packetHmacKeyId ?? null,
       integrity?.packetHmacSha256 ?? null,
-      integrity?.generationOverlayVersion ?? null,
-      integrity?.generationRequestHmacSha256 ?? null,
+      v1?.generationOverlayVersion ?? null,
+      v1?.generationRequestHmacSha256 ?? null,
       event.startDelayMs,
       event.startedAt,
       deleteAfter,
+      v2?.generationVariantId ?? null,
+      v2?.generationVariantRevision ?? null,
+      v2 ? event.generationVariantTrigger ?? null : null,
+      v2?.target.configDigestVersion ?? null,
+      v2?.target.configDigest ?? null,
+      v2?.target.modelId ?? null,
+      v2?.target.protocol ?? null,
+      v2?.target.contextWindowTokens ?? null,
+      v2?.target.maxOutputTokens ?? null,
+      v2?.target.reasoningEffort ?? null,
+      v2?.generationRequestHmacSha256 ?? null,
     ],
   );
   if (result.rowCount !== 1) {
-    throw new Error('Provider attempt start conflicts with a terminal attempt.');
+    const existing = await client.query<AttemptIntegrityRow>(
+      `SELECT attempt_no, provider_alias, launch_kind, generation_mode,
+              context_builder_version, packet_hmac_key_id, packet_hmac_sha256,
+              generation_overlay_version, generation_request_hmac_sha256,
+              generation_variant_id::text, generation_variant_revision,
+              generation_variant_trigger, target_config_digest_version,
+              target_config_digest, target_model_id, target_protocol,
+              target_context_window_tokens, target_max_output_tokens,
+              target_reasoning_effort, generation_request_v2_hmac_sha256,
+              start_delay_ms, started_at, delete_after
+         FROM chat_provider_attempts
+        WHERE interaction_turn_id = $1 AND execution_id = $2 AND attempt_no = $3
+        FOR UPDATE`,
+      [key.interactionTurnId, key.executionId, event.attemptNo],
+    );
+    const row = existing.rows[0];
+    if (!row) integrityMismatch();
+    assertAttemptReplayMatches(row, event, generationMode, integrity, deleteAfter);
   }
 }
 
@@ -249,19 +364,26 @@ async function recordMilestoneEvent(
   }[event.type];
   const result = await client.query(
     `UPDATE chat_provider_attempts
-        SET status = 'streaming',
+        SET status = CASE
+              WHEN status IN ('started', 'streaming') THEN 'streaming'
+              ELSE status
+            END,
             ${column} = COALESCE(${column}, $4)
       WHERE interaction_turn_id = $1
         AND execution_id = $2
         AND attempt_no = $3
         AND provider_alias = $5
-        AND status IN ('started', 'streaming')`,
+        AND (
+          status IN ('started', 'streaming')
+          OR ($6 = 'first_user_visible' AND status = 'completed' AND winner)
+        )`,
     [
       key.interactionTurnId,
       key.executionId,
       event.attemptNo,
       event.elapsedMs,
       event.providerAlias,
+      event.type,
     ],
   );
   if (result.rowCount !== 1) {
@@ -277,6 +399,7 @@ async function recordTerminalEvent(
   if (event.type === 'failed' && !event.errorCode) {
     throw new Error('Failed provider attempts require a stable error code.');
   }
+  const failure = event.failure ?? null;
   const result = await client.query(
     `UPDATE chat_provider_attempts
         SET status = $4,
@@ -286,11 +409,17 @@ async function recordTerminalEvent(
             input_tokens = $8,
             output_tokens = $9,
             estimated_cost_usd = $10,
-            completed_at = started_at + ($6::integer * interval '1 millisecond')
+            completed_at = started_at + ($6::integer * interval '1 millisecond'),
+            provider_failure_category = $11,
+            provider_failure_reason = $12,
+            provider_http_status = $13,
+            provider_input_tokens = $14,
+            provider_output_tokens = $15,
+            provider_context_window_tokens = $16
       WHERE interaction_turn_id = $1
         AND execution_id = $2
         AND attempt_no = $3
-        AND provider_alias = $11
+        AND provider_alias = $17
         AND (status IN ('started', 'streaming') OR status = $4)`,
     [
       key.interactionTurnId,
@@ -303,6 +432,12 @@ async function recordTerminalEvent(
       event.usage?.inputTokens ?? null,
       event.usage?.outputTokens ?? null,
       event.estimatedCostUsd ?? null,
+      failure?.category ?? null,
+      failure?.reason ?? null,
+      failure?.httpStatus ?? null,
+      failure?.inputTokens ?? null,
+      failure?.outputTokens ?? null,
+      failure?.contextWindowTokens ?? null,
       event.providerAlias,
     ],
   );
@@ -320,12 +455,15 @@ export async function recordProviderAttemptEvent(
 ): Promise<void> {
   validateAttemptIdentity(key, event);
   if (event.type === 'started') {
+    if (event.integrity && integrity && !integritiesMatch(event.integrity, integrity)) {
+      integrityMismatch();
+    }
     await inTransaction(client, () => recordStartedEvent(
       client,
       key,
       event,
       deleteAfter,
-      integrity,
+      event.integrity ?? integrity,
     ));
     return;
   }

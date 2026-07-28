@@ -224,22 +224,19 @@ test('project CTA opens Digital Morse with the approved content-agent question p
   assert.match(component, /chat\.setDraft\(prompt\)/);
 });
 
-test('structured intake supports 12,000-character JD and five-field diagnosis', () => {
+test('structured intake exposes uncapped JD and five-field diagnosis inputs', () => {
   const jd = readChatSource('JdIntake.tsx');
   const diagnosis = readChatSource('DiagnosisIntake.tsx');
   const hook = readChatSource('useMorseChat.ts');
 
-  assert.match(jd, /maxLength=\{12_000\}/);
-  assert.match(jd, /12,000/);
+  assert.doesNotMatch(jd, /maxLength|12,000/);
   assert.match(hook, /jobDescription/);
   assert.match(diagnosis, /name=\{field\.name\}/);
   for (const field of ['problem', 'goal', 'currentState', 'constraints', 'expectedTimeline']) {
     assert.match(diagnosis, new RegExp(`name:\\s*["']${field}["']`));
     assert.match(hook, new RegExp(field));
   }
-  assert.match(diagnosis, /totalCharacters/);
-  assert.match(diagnosis, /6_500/);
-  assert.match(diagnosis, /6,500/);
+  assert.doesNotMatch(diagnosis, /maxLength|totalCharacters|6_500|6,500/);
   assert.match(
     hook,
     /payload\.stage\s*===\s*['"]handoff['"][\s\S]*['"]handoff_pending['"]/,

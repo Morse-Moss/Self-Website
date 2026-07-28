@@ -180,14 +180,16 @@ test('production environment contract exposes controls but no committed credenti
     'MORSE_CHAT_CONTEXT_CANARY_PERCENT',
     'MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS',
     'MORSE_CHAT_CONTEXT_CANARY_INVITE_LABELS',
-    'MORSE_CHAT_CONTEXT_TOKEN_BUDGET',
-    'MORSE_JD_CONTEXT_TOKEN_BUDGET',
     'MORSE_CONTEXT_PACKET_DIGEST_KEY_ID',
     'MORSE_CHAT_HEDGED_FAILOVER_ENABLED',
     'MORSE_CHAT_SAFE_MODE',
   ]) {
     assert.match(source, new RegExp(`^${name}=`, 'm'));
   }
+  assert.doesNotMatch(
+    source,
+    /^MORSE_(?:CHAT_CONTEXT_TOKEN_BUDGET|JD_CONTEXT_TOKEN_BUDGET|HISTORY_MESSAGE_LIMIT|RETRIEVAL_LIMIT)=/m,
+  );
   assert.doesNotMatch(
     source,
     /^NEXT_PUBLIC_(?:MORSE_CHAT_V2|MORSE_CHAT_HEDGED_FAILOVER|MORSE_CHAT_SAFE_MODE)/m,

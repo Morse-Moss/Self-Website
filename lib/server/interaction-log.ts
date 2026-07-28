@@ -12,7 +12,11 @@ import type { ProviderAttempt, ProviderWinner } from './ai-provider.ts';
 import type {
   ContextExecutionPipeline,
   GenerationRequestIntegrity,
+  GenerationRequestIntegrityV1,
+  GenerationRequestIntegrityV2,
+  GenerationVariantV2,
 } from '../contracts/chat-context.ts';
+import type { SanitizedProviderFailure } from './provider-failure.ts';
 import { sanitizeTurnSources } from './turn-codec.ts';
 import {
   CLARIFY_REPLY,
@@ -405,12 +409,89 @@ interface AuthorityAttemptIntegrityRow {
   generation_request_hmac_sha256: string | null;
   packet_hmac_key_id: string | null;
   packet_hmac_sha256: string | null;
+  generation_variant_id: string | null;
+  generation_variant_revision: number | null;
+  generation_variant_trigger: GenerationVariantV2['trigger'] | null;
+  target_config_digest_version: 1 | 2 | null;
+  target_config_digest: string | null;
+  target_model_id: string | null;
+  target_protocol: 'responses' | 'chat_completions' | null;
+  target_context_window_tokens: number | null;
+  target_max_output_tokens: number | null;
+  target_reasoning_effort: GenerationRequestIntegrityV2['target']['reasoningEffort'] | null;
+  provider_failure_category: SanitizedProviderFailure['category'] | null;
+  provider_failure_reason: SanitizedProviderFailure['reason'] | null;
+  provider_http_status: number | null;
+  provider_input_tokens: number | null;
+  provider_output_tokens: number | null;
+  provider_context_window_tokens: number | null;
+  generation_request_v2_hmac_sha256: string | null;
   status: string;
+}
+
+interface AuthorityAttemptMetadata {
+  integrity: GenerationRequestIntegrity | null;
+  trigger: GenerationVariantV2['trigger'] | null;
+  failure: SanitizedProviderFailure | null;
 }
 
 function authorityIntegrity(
   row: AuthorityAttemptIntegrityRow,
-): GenerationRequestIntegrity | null {
+): AuthorityAttemptMetadata {
+  if (row.generation_variant_id !== null) {
+    if (!row.context_builder_version
+      || !row.packet_hmac_key_id
+      || !row.packet_hmac_sha256
+      || !row.generation_variant_revision
+      || !row.generation_variant_trigger
+      || !row.target_config_digest_version
+      || !row.target_config_digest
+      || !row.target_model_id
+      || !row.target_protocol
+      || !row.generation_request_v2_hmac_sha256
+      || row.generation_overlay_version !== null
+      || row.generation_request_hmac_sha256 !== null) {
+      throw new Error('PROVIDER_ATTEMPT_INTEGRITY_MISMATCH');
+    }
+    const hasFailure = row.provider_failure_category !== null
+      || row.provider_failure_reason !== null
+      || row.provider_http_status !== null
+      || row.provider_input_tokens !== null
+      || row.provider_output_tokens !== null
+      || row.provider_context_window_tokens !== null;
+    if (hasFailure && (!row.provider_failure_category || !row.provider_failure_reason)) {
+      throw new Error('PROVIDER_ATTEMPT_INTEGRITY_MISMATCH');
+    }
+    return {
+      integrity: {
+        version: 2,
+        contextBuilderVersion: row.context_builder_version,
+        generationVariantId: row.generation_variant_id,
+        generationVariantRevision: row.generation_variant_revision,
+        target: {
+          configDigestVersion: row.target_config_digest_version,
+          configDigest: row.target_config_digest,
+          modelId: row.target_model_id,
+          protocol: row.target_protocol,
+          contextWindowTokens: row.target_context_window_tokens,
+          maxOutputTokens: row.target_max_output_tokens,
+          reasoningEffort: row.target_reasoning_effort,
+        },
+        packetHmacKeyId: row.packet_hmac_key_id,
+        packetHmacSha256: row.packet_hmac_sha256,
+        generationRequestHmacSha256: row.generation_request_v2_hmac_sha256,
+      },
+      trigger: row.generation_variant_trigger,
+      failure: hasFailure ? {
+        category: row.provider_failure_category!,
+        reason: row.provider_failure_reason!,
+        httpStatus: row.provider_http_status,
+        inputTokens: row.provider_input_tokens,
+        outputTokens: row.provider_output_tokens,
+        contextWindowTokens: row.provider_context_window_tokens,
+      } : null,
+    };
+  }
   const values = [
     row.context_builder_version,
     row.packet_hmac_key_id,
@@ -418,7 +499,9 @@ function authorityIntegrity(
     row.generation_overlay_version,
     row.generation_request_hmac_sha256,
   ];
-  if (values.every((value) => value === null)) return null;
+  if (values.every((value) => value === null)) {
+    return { integrity: null, trigger: null, failure: null };
+  }
   if (!row.context_builder_version
     || !row.packet_hmac_key_id
     || !row.packet_hmac_sha256
@@ -428,12 +511,29 @@ function authorityIntegrity(
       row.generation_mode === 'strict' ? 'strict-overlay-v1' : null
     )) throw new Error('PROVIDER_ATTEMPT_INTEGRITY_MISMATCH');
   return {
-    contextBuilderVersion: row.context_builder_version,
-    packetHmacKeyId: row.packet_hmac_key_id,
-    packetHmacSha256: row.packet_hmac_sha256,
-    generationOverlayVersion: row.generation_overlay_version,
-    generationRequestHmacSha256: row.generation_request_hmac_sha256,
-  } as GenerationRequestIntegrity;
+    integrity: {
+      contextBuilderVersion: row.context_builder_version,
+      packetHmacKeyId: row.packet_hmac_key_id,
+      packetHmacSha256: row.packet_hmac_sha256,
+      generationOverlayVersion: row.generation_overlay_version,
+      generationRequestHmacSha256: row.generation_request_hmac_sha256,
+    } as GenerationRequestIntegrityV1,
+    trigger: null,
+    failure: null,
+  };
+}
+
+function failureMatches(
+  left: SanitizedProviderFailure | null,
+  right: SanitizedProviderFailure | null,
+): boolean {
+  if (!left || !right) return left === right;
+  return left.category === right.category
+    && left.reason === right.reason
+    && left.httpStatus === right.httpStatus
+    && left.inputTokens === right.inputTokens
+    && left.outputTokens === right.outputTokens
+    && left.contextWindowTokens === right.contextWindowTokens;
 }
 
 function integrityMatches(
@@ -441,6 +541,25 @@ function integrityMatches(
   right: GenerationRequestIntegrity | null,
 ): boolean {
   if (!left || !right) return left === right;
+  const leftV2 = 'version' in left;
+  const rightV2 = 'version' in right;
+  if (leftV2 !== rightV2) return false;
+  if (leftV2 && rightV2) {
+    return left.contextBuilderVersion === right.contextBuilderVersion
+      && left.generationVariantId === right.generationVariantId
+      && left.generationVariantRevision === right.generationVariantRevision
+      && left.target.configDigestVersion === right.target.configDigestVersion
+      && left.target.configDigest === right.target.configDigest
+      && left.target.modelId === right.target.modelId
+      && left.target.protocol === right.target.protocol
+      && left.target.contextWindowTokens === right.target.contextWindowTokens
+      && left.target.maxOutputTokens === right.target.maxOutputTokens
+      && left.target.reasoningEffort === right.target.reasoningEffort
+      && left.packetHmacKeyId === right.packetHmacKeyId
+      && left.packetHmacSha256 === right.packetHmacSha256
+      && left.generationRequestHmacSha256 === right.generationRequestHmacSha256;
+  }
+  if (leftV2 || rightV2) return false;
   return left.contextBuilderVersion === right.contextBuilderVersion
     && left.packetHmacKeyId === right.packetHmacKeyId
     && left.packetHmacSha256 === right.packetHmacSha256
@@ -452,10 +571,10 @@ async function loadAuthorityAttemptIntegrity(
   client: PoolClient,
   turnId: string,
   attempt: ProviderAttempt,
-): Promise<GenerationRequestIntegrity | null> {
+): Promise<AuthorityAttemptMetadata> {
   if (!attempt.executionId && attempt.attemptNo === undefined) {
     if (attempt.integrity) throw new Error('PROVIDER_ATTEMPT_INTEGRITY_MISMATCH');
-    return null;
+    return { integrity: null, trigger: null, failure: null };
   }
   if (!attempt.executionId || !attempt.attemptNo) {
     throw new Error('PROVIDER_ATTEMPT_INTEGRITY_MISMATCH');
@@ -463,7 +582,13 @@ async function loadAuthorityAttemptIntegrity(
   const result = await client.query<AuthorityAttemptIntegrityRow>(
     `SELECT generation_mode, context_builder_version, packet_hmac_key_id,
             packet_hmac_sha256, generation_overlay_version,
-            generation_request_hmac_sha256, status
+            generation_request_hmac_sha256, generation_variant_id::text,
+            generation_variant_revision, generation_variant_trigger,
+            target_config_digest_version, target_config_digest, target_model_id,
+            target_protocol, target_context_window_tokens, target_max_output_tokens,
+            target_reasoning_effort, provider_failure_category, provider_failure_reason,
+            provider_http_status, provider_input_tokens, provider_output_tokens,
+            provider_context_window_tokens, generation_request_v2_hmac_sha256, status
        FROM chat_provider_attempts
       WHERE interaction_turn_id = $1
         AND execution_id = $2
@@ -476,7 +601,9 @@ async function loadAuthorityAttemptIntegrity(
     throw new Error('PROVIDER_ATTEMPT_INTEGRITY_MISMATCH');
   }
   const authority = authorityIntegrity(row);
-  if (!integrityMatches(authority, attempt.integrity ?? null)) {
+  if (!integrityMatches(authority.integrity, attempt.integrity ?? null)
+    || authority.trigger !== (attempt.generationVariantTrigger ?? null)
+    || !failureMatches(authority.failure, attempt.failure ?? null)) {
     throw new Error('PROVIDER_ATTEMPT_INTEGRITY_MISMATCH');
   }
   return authority;
@@ -498,7 +625,11 @@ export async function replaceProviderAttempts(
     [turnId],
   );
   for (const attempt of attempts) {
-    const integrity = await loadAuthorityAttemptIntegrity(client, turnId, attempt);
+    const authority = await loadAuthorityAttemptIntegrity(client, turnId, attempt);
+    const integrity = authority.integrity;
+    const v2 = integrity && 'version' in integrity ? integrity : null;
+    const v1 = integrity && !('version' in integrity) ? integrity : null;
+    const failure = authority.failure;
     const deleteAfter = new Date(attempt.startedAt.getTime() + 10 * 24 * 60 * 60 * 1000);
     await client.query(
       `INSERT INTO interaction_provider_attempts
@@ -511,10 +642,17 @@ export async function replaceProviderAttempts(
          input_tokens, output_tokens, usage_complete, known_cost_usd, cost_complete,
          created_at, completed_at, delete_after,
          context_builder_version, packet_hmac_key_id, packet_hmac_sha256,
-         generation_overlay_version, generation_request_hmac_sha256)
+          generation_overlay_version, generation_request_hmac_sha256,
+          generation_variant_id, generation_variant_revision, generation_variant_trigger,
+          target_config_digest_version, target_config_digest, target_model_id,
+          target_protocol, target_context_window_tokens, target_max_output_tokens,
+          target_reasoning_effort, provider_failure_category, provider_http_status,
+          provider_input_tokens, provider_context_window_tokens, provider_output_tokens,
+          provider_failure_reason, generation_request_v2_hmac_sha256)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,
                $17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,
-               $30,$31,$32,$33,$34)`,
+                $30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,
+                $44,$45,$46,$47,$48,$49,$50,$51)`,
       [
         turnId,
         attempt.attemptIndex,
@@ -548,8 +686,25 @@ export async function replaceProviderAttempts(
         integrity?.contextBuilderVersion ?? null,
         integrity?.packetHmacKeyId ?? null,
         integrity?.packetHmacSha256 ?? null,
-        integrity?.generationOverlayVersion ?? null,
-        integrity?.generationRequestHmacSha256 ?? null,
+        v1?.generationOverlayVersion ?? null,
+        v1?.generationRequestHmacSha256 ?? null,
+        v2?.generationVariantId ?? null,
+        v2?.generationVariantRevision ?? null,
+        authority.trigger,
+        v2?.target.configDigestVersion ?? null,
+        v2?.target.configDigest ?? null,
+        v2?.target.modelId ?? null,
+        v2?.target.protocol ?? null,
+        v2?.target.contextWindowTokens ?? null,
+        v2?.target.maxOutputTokens ?? null,
+        v2?.target.reasoningEffort ?? null,
+        failure?.category ?? null,
+        failure?.httpStatus ?? null,
+        failure?.inputTokens ?? null,
+        failure?.contextWindowTokens ?? null,
+        failure?.outputTokens ?? null,
+        failure?.reason ?? null,
+        v2?.generationRequestHmacSha256 ?? null,
       ],
     );
   }
@@ -578,6 +733,23 @@ export async function providerAttemptsMatch(
     packet_hmac_sha256: string | null;
     generation_overlay_version: 'strict-overlay-v1' | null;
     generation_request_hmac_sha256: string | null;
+    generation_variant_id: string | null;
+    generation_variant_revision: number | null;
+    generation_variant_trigger: GenerationVariantV2['trigger'] | null;
+    target_config_digest_version: 1 | 2 | null;
+    target_config_digest: string | null;
+    target_model_id: string | null;
+    target_protocol: 'responses' | 'chat_completions' | null;
+    target_context_window_tokens: number | null;
+    target_max_output_tokens: number | null;
+    target_reasoning_effort: GenerationRequestIntegrityV2['target']['reasoningEffort'] | null;
+    provider_failure_category: SanitizedProviderFailure['category'] | null;
+    provider_failure_reason: SanitizedProviderFailure['reason'] | null;
+    provider_http_status: number | null;
+    provider_input_tokens: number | null;
+    provider_output_tokens: number | null;
+    provider_context_window_tokens: number | null;
+    generation_request_v2_hmac_sha256: string | null;
     input_tokens: number | null;
     known_cost_usd: string | null;
     launch_kind: ProviderAttempt['launchKind'];
@@ -600,6 +772,14 @@ export async function providerAttemptsMatch(
             config_digest, launch_kind, generation_mode, status, error_code,
             context_builder_version, packet_hmac_key_id, packet_hmac_sha256,
             generation_overlay_version, generation_request_hmac_sha256,
+            generation_variant_id::text, generation_variant_revision,
+            generation_variant_trigger, target_config_digest_version,
+            target_config_digest, target_model_id, target_protocol,
+            target_context_window_tokens, target_max_output_tokens,
+            target_reasoning_effort, provider_failure_category,
+            provider_failure_reason, provider_http_status, provider_input_tokens,
+            provider_output_tokens, provider_context_window_tokens,
+            generation_request_v2_hmac_sha256,
             first_byte_latency_ms, first_protocol_event_ms, first_model_text_ms,
             first_user_visible_ms, total_latency_ms,
             input_tokens, output_tokens, usage_complete, known_cost_usd::text,
@@ -616,6 +796,10 @@ export async function providerAttemptsMatch(
       ? null
       : Number(attempt.knownCostUsd.toFixed(6));
     const actualCost = row.known_cost_usd === null ? null : Number(row.known_cost_usd);
+    const integrity = attempt.integrity ?? null;
+    const v2 = integrity && 'version' in integrity ? integrity : null;
+    const v1 = integrity && !('version' in integrity) ? integrity : null;
+    const failure = attempt.failure ?? null;
     return row.attempt_index === attempt.attemptIndex
       && row.route_revision_id === attempt.routeRevisionId
       && row.target_position === attempt.position
@@ -632,9 +816,29 @@ export async function providerAttemptsMatch(
       && row.context_builder_version === (attempt.integrity?.contextBuilderVersion ?? null)
       && row.packet_hmac_key_id === (attempt.integrity?.packetHmacKeyId ?? null)
       && row.packet_hmac_sha256 === (attempt.integrity?.packetHmacSha256 ?? null)
-      && row.generation_overlay_version === (attempt.integrity?.generationOverlayVersion ?? null)
-      && row.generation_request_hmac_sha256
-        === (attempt.integrity?.generationRequestHmacSha256 ?? null)
+      && row.generation_overlay_version === (
+        attempt.integrity && !('version' in attempt.integrity)
+          ? attempt.integrity.generationOverlayVersion
+          : null
+      )
+      && row.generation_request_hmac_sha256 === (v1?.generationRequestHmacSha256 ?? null)
+      && row.generation_variant_id === (v2?.generationVariantId ?? null)
+      && row.generation_variant_revision === (v2?.generationVariantRevision ?? null)
+      && row.generation_variant_trigger === (attempt.generationVariantTrigger ?? null)
+      && row.target_config_digest_version === (v2?.target.configDigestVersion ?? null)
+      && row.target_config_digest === (v2?.target.configDigest ?? null)
+      && row.target_model_id === (v2?.target.modelId ?? null)
+      && row.target_protocol === (v2?.target.protocol ?? null)
+      && row.target_context_window_tokens === (v2?.target.contextWindowTokens ?? null)
+      && row.target_max_output_tokens === (v2?.target.maxOutputTokens ?? null)
+      && row.target_reasoning_effort === (v2?.target.reasoningEffort ?? null)
+      && row.generation_request_v2_hmac_sha256 === (v2?.generationRequestHmacSha256 ?? null)
+      && row.provider_failure_category === (failure?.category ?? null)
+      && row.provider_failure_reason === (failure?.reason ?? null)
+      && row.provider_http_status === (failure?.httpStatus ?? null)
+      && row.provider_input_tokens === (failure?.inputTokens ?? null)
+      && row.provider_output_tokens === (failure?.outputTokens ?? null)
+      && row.provider_context_window_tokens === (failure?.contextWindowTokens ?? null)
       && row.status === attempt.status
       && row.error_code === attempt.errorCode
       && row.first_byte_latency_ms === attempt.firstByteLatencyMs

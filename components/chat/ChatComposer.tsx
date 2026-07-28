@@ -31,7 +31,6 @@ export default function ChatComposer({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder="问项目、经历或技术决策"
-        maxLength={2_000}
         rows={2}
         disabled={streaming}
       />

@@ -156,8 +156,6 @@ function contextConfig(
 ): ChatServiceConfig {
   return {
     maxMessagesPerSession: 20,
-    historyMessageLimit: 12,
-    retrievalLimit: 5,
     interactionRetentionDays: 10,
     tokenRates: { inputUsdPerMillion: 1, outputUsdPerMillion: 2 },
     chatV2Enabled: true,
@@ -167,8 +165,6 @@ function contextConfig(
     contextCanaryPercent: 0,
     contextCanaryInviteIds: new Set([fixture.inviteId]),
     contextCanaryInviteLabels: new Set(),
-    contextTokenBudget: 12_000,
-    jdContextTokenBudget: 24_000,
     contextPacketDigest: digest,
     hedgedFailoverEnabled: false,
     chatSafeMode: false,
@@ -177,7 +173,6 @@ function contextConfig(
     providerModelTextTimeoutMs: 40_000,
     providerStageTimeoutMs: 80_000,
     chatTurnTimeoutMs: 90_000,
-    providerMaxAttempts: 2,
     ...overrides,
   };
 }

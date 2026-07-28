@@ -39,13 +39,13 @@ test('interviewer mode adds technical decision guidance without changing knowled
   assert.match(interviewer, /仍然只能使用同一批审核知识/);
 });
 
-test('normalizeChatRequest trims valid input and rejects invalid modes or oversized prompts', () => {
+test('normalizeChatRequest preserves valid input and rejects invalid modes', () => {
   assert.deepEqual(normalizeChatRequest({
     message: '  介绍一下深度研究  ',
     mode: 'interviewer',
     audienceIntent: 'recruiter',
   }), {
-    message: '介绍一下深度研究',
+    message: '  介绍一下深度研究  ',
     workflow: 'chat',
     jobDescription: null,
     diagnosis: null,
@@ -60,8 +60,8 @@ test('normalizeChatRequest trims valid input and rejects invalid modes or oversi
     () => normalizeChatRequest({ message: '你好', audienceIntent: 'admin' }),
     /audienceIntent/,
   );
-  assert.equal(normalizeChatRequest({ message: '问'.repeat(2_000) }).message.length, 2_000);
-  assert.throws(() => normalizeChatRequest({ message: '问'.repeat(2_001) }), /2,000/);
+  const longMessage = `prefix-${'问'.repeat(20_000)}-suffix`;
+  assert.equal(normalizeChatRequest({ message: longMessage }).message, longMessage);
   assert.throws(
     () => normalizeChatRequest({ message: '你好', turnId: 'not-a-uuid' }),
     /turnId/,
@@ -74,9 +74,9 @@ test('normalizeChatRequest creates canonical JD and diagnosis workflow inputs', 
     jobDescription: '  Agent 工程师  ',
     audienceIntent: 'recruiter',
   }), {
-    message: 'Agent 工程师',
+    message: '  Agent 工程师  ',
     workflow: 'jd_match',
-    jobDescription: 'Agent 工程师',
+    jobDescription: '  Agent 工程师  ',
     diagnosis: null,
     diagnosisStatus: null,
     mode: 'general',
@@ -93,11 +93,11 @@ test('normalizeChatRequest creates canonical JD and diagnosis workflow inputs', 
     },
     audienceIntent: 'collaboration',
   }), {
-    message: '问题：知识库回答不稳定\n目标：稳定上线\n当前状态：未提供\n约束：未提供\n预期时间：未提供',
+    message: '问题：  知识库回答不稳定  \n目标：稳定上线\n当前状态：未提供\n约束：未提供\n预期时间：未提供',
     workflow: 'diagnosis',
     jobDescription: null,
     diagnosis: {
-      problem: '知识库回答不稳定',
+      problem: '  知识库回答不稳定  ',
       goal: '稳定上线',
       currentState: '',
       constraints: '',

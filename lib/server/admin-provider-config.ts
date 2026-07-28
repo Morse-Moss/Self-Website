@@ -6,6 +6,7 @@ import type pg from 'pg';
 import {
   AiConfigError,
   type AiChatProtocol,
+  type AiConfigDigestVersion,
   type AiConfigKey,
   type AiProviderTestState,
   type AiProviderTestSummary,
@@ -52,6 +53,7 @@ type Client = pg.PoolClient;
 export interface AdminProviderTransportTarget {
   apiKey: string;
   baseUrl: string;
+  contextWindowTokens?: number | null;
   maxOutputTokens?: number;
   modelId?: string;
   protocol?: AiChatProtocol;
@@ -62,7 +64,7 @@ export interface AdminProviderTransportTarget {
 export interface AdminProviderTransport {
   discover(target: AdminProviderTransportTarget, signal?: AbortSignal): Promise<string[]>;
   test(target: Required<Pick<AdminProviderTransportTarget,
-    'apiKey' | 'baseUrl' | 'maxOutputTokens' | 'modelId' | 'protocol'
+    'apiKey' | 'baseUrl' | 'contextWindowTokens' | 'maxOutputTokens' | 'modelId' | 'protocol'
   >> & Pick<AdminProviderTransportTarget, 'reasoningEffort' | 'userAgent'>, signal?: AbortSignal): Promise<{
     latencyMs: number;
     usage: { inputTokens: number; outputTokens: number } | null;
@@ -338,15 +340,17 @@ export async function getProviderCatalog(
   const ids = connections.rows.map((row) => row.id);
   const models = ids.length === 0 ? { rows: [] as Array<{
     archived_at: Date | null; config_digest: string; connection_version_id: string;
+    config_digest_version: AiConfigDigestVersion; context_window_tokens: number | null;
     deleted_at: Date | null; display_name: string; id: string;
-    input_usd_per_million: string | null; max_output_tokens: number; model_id: string;
+    input_usd_per_million: string | null; max_output_tokens: number | null; model_id: string;
     output_usd_per_million: string | null; protocol: AiChatProtocol;
     reasoning_effort: string | null; series_id: string; version: number;
   }> } : await pool.query(
     `SELECT DISTINCT ON (series_id) id::text, series_id::text, version,
             connection_version_id::text, display_name, model_id, protocol, reasoning_effort,
-            max_output_tokens, input_usd_per_million::text, output_usd_per_million::text,
-            config_digest, archived_at, deleted_at
+            context_window_tokens, max_output_tokens, input_usd_per_million::text,
+            output_usd_per_million::text, config_digest_version, config_digest,
+            archived_at, deleted_at
        FROM ai_model_presets
       WHERE connection_version_id = ANY($1::uuid[])
         AND ($2::boolean OR deleted_at IS NULL)
@@ -368,6 +372,8 @@ export async function getProviderCatalog(
       models: models.rows.filter((model) => model.connection_version_id === connection.id).map((model) => ({
         archivedAt: model.archived_at?.toISOString() ?? null,
         configDigest: model.config_digest,
+        configDigestVersion: model.config_digest_version,
+        contextWindowTokens: model.context_window_tokens,
         deletedAt: model.deleted_at?.toISOString() ?? null,
         displayName: model.display_name,
         id: model.id,
@@ -500,7 +506,7 @@ export async function discoverProviderModels(
 async function recordTest(
   pool: Pool,
   target: AdminProviderTransportTarget & Required<Pick<AdminProviderTransportTarget,
-    'maxOutputTokens' | 'modelId' | 'protocol'
+    'contextWindowTokens' | 'maxOutputTokens' | 'modelId' | 'protocol'
   >>,
   event: {
     configDigest: string;
@@ -559,7 +565,8 @@ export async function testProviderModel(
   return recordTest(pool, {
     apiKey: runtime.apiKey,
     baseUrl: runtime.connection.baseUrl,
-    maxOutputTokens: Math.min(runtime.model.maxOutputTokens, 16),
+    contextWindowTokens: runtime.model.contextWindowTokens,
+    maxOutputTokens: Math.min(runtime.model.maxOutputTokens ?? 16, 16),
     modelId: runtime.model.modelId,
     protocol: runtime.model.protocol,
     reasoningEffort: runtime.model.reasoningEffort as OpenAIReasoningEffort | null,
@@ -581,7 +588,8 @@ export async function testEnvironmentProviderTarget(
   return recordTest(pool, {
     apiKey: target.apiKey,
     baseUrl: target.effectiveBaseUrl,
-    maxOutputTokens: Math.min(options.runtimeConfig.maxOutputTokens, 16),
+    contextWindowTokens: options.runtimeConfig.chatContextWindowTokens,
+    maxOutputTokens: Math.min(options.runtimeConfig.maxOutputTokens ?? 16, 16),
     modelId: options.runtimeConfig.chatModel,
     protocol: options.runtimeConfig.chatProtocol,
     reasoningEffort: options.runtimeConfig.reasoningEffort ?? null,
@@ -624,19 +632,25 @@ async function databaseRouteTarget(
 ): Promise<AiRouteTargetSnapshot> {
   const result = await client.query<{
     config_digest: string;
+    config_digest_version: AiConfigDigestVersion;
     connection_display_name: string;
     connection_deleted_at: Date | null;
+    context_window_tokens: number | null;
     database_model_version_id: string;
     deleted_at: Date | null;
     input_usd_per_million: string | null;
     model_display_name: string;
     model_id: string;
+    max_output_tokens: number | null;
     output_usd_per_million: string | null;
     protocol: AiChatProtocol;
+    reasoning_effort: OpenAIReasoningEffort | null;
     secret_destroyed_at: Date | null;
   }>(
     `SELECT m.id::text AS database_model_version_id, m.display_name AS model_display_name,
-            m.model_id, m.protocol, m.config_digest, m.input_usd_per_million::text,
+            m.model_id, m.protocol, m.reasoning_effort, m.context_window_tokens,
+            m.max_output_tokens, m.config_digest_version, m.config_digest,
+            m.input_usd_per_million::text,
             m.output_usd_per_million::text, m.deleted_at,
             c.display_name AS connection_display_name, c.deleted_at AS connection_deleted_at,
             c.secret_destroyed_at
@@ -656,16 +670,20 @@ async function databaseRouteTarget(
   }
   return {
     configDigest: row.config_digest,
+    configDigestVersion: row.config_digest_version,
     connectionDisplayName: row.connection_display_name,
+    contextWindowTokens: row.context_window_tokens,
     databaseModelSeriesId: modelSeriesId,
     databaseModelVersionId: row.database_model_version_id,
     environmentTargetKey: null,
     inputUsdPerMillion: row.input_usd_per_million,
     modelDisplayName: row.model_display_name,
     modelId: row.model_id,
+    maxOutputTokens: row.max_output_tokens,
     outputUsdPerMillion: row.output_usd_per_million,
     position: 0,
     protocol: row.protocol,
+    reasoningEffort: row.reasoning_effort,
     sourceType: 'database',
   };
 }
@@ -709,25 +727,31 @@ export async function activateProviderRoute(
     const previousTargets = previousActiveId
       ? await client.query<{
           config_digest: string;
+          config_digest_version: AiConfigDigestVersion;
           connection_deleted_at: Date | null;
           connection_display_name: string;
+          context_window_tokens: number | null;
           database_model_version_id: string | null;
           environment_target_key: 'primary' | 'fallback-1' | 'fallback-2' | null;
           input_usd_per_million: string | null;
           model_deleted_at: Date | null;
           model_display_name: string;
           model_id: string;
+          max_output_tokens: number | null;
           model_series_id: string | null;
           output_usd_per_million: string | null;
           position: number;
           protocol: AiChatProtocol;
+          reasoning_effort: OpenAIReasoningEffort | null;
           secret_destroyed_at: Date | null;
           source_type: 'database' | 'environment';
         }>(
           `SELECT target.position, target.source_type, target.database_model_version_id::text,
                   target.environment_target_key, target.connection_display_name,
                   target.model_display_name, target.model_id, target.protocol,
-                  target.config_digest, target.input_usd_per_million::text,
+                  target.config_digest, target.config_digest_version,
+                  target.context_window_tokens, target.max_output_tokens,
+                  target.reasoning_effort, target.input_usd_per_million::text,
                   target.output_usd_per_million::text, model.series_id::text AS model_series_id,
                   model.deleted_at AS model_deleted_at,
                   connection.deleted_at AS connection_deleted_at, connection.secret_destroyed_at
@@ -771,22 +795,34 @@ export async function activateProviderRoute(
             const currentEnvironment = target.environment_target_key
               ? environment.get(target.environment_target_key)
               : null;
-            if (!currentEnvironment || currentEnvironment.snapshot.configDigest !== target.config_digest) {
+            const currentDigest = target.config_digest_version === 1
+              ? currentEnvironment?.legacyConfigDigestV1
+              : currentEnvironment?.snapshot.configDigest;
+            if (!currentEnvironment || currentDigest !== target.config_digest
+              || (target.config_digest_version === 2 && (
+                currentEnvironment.snapshot.contextWindowTokens !== target.context_window_tokens
+                || currentEnvironment.snapshot.maxOutputTokens !== target.max_output_tokens
+                || currentEnvironment.snapshot.reasoningEffort !== target.reasoning_effort
+              ))) {
               throw new AiConfigError('AI_CONFIG_TEST_REQUIRED');
             }
           }
           return {
             configDigest: target.config_digest,
+            configDigestVersion: target.config_digest_version,
             connectionDisplayName: target.connection_display_name,
+            contextWindowTokens: target.context_window_tokens,
             databaseModelSeriesId: target.model_series_id,
             databaseModelVersionId: target.database_model_version_id,
             environmentTargetKey: target.environment_target_key,
             inputUsdPerMillion: target.input_usd_per_million,
             modelDisplayName: target.model_display_name,
             modelId: target.model_id,
+            maxOutputTokens: target.max_output_tokens,
             outputUsdPerMillion: target.output_usd_per_million,
             position: target.position,
             protocol: target.protocol,
+            reasoningEffort: target.reasoning_effort,
             sourceType: target.source_type,
           };
         })
@@ -857,13 +893,16 @@ export async function activateProviderRoute(
         `INSERT INTO ai_route_targets
           (route_revision_id, position, source_type, database_model_version_id,
            environment_target_key, connection_display_name, model_display_name,
-           model_id, protocol, config_digest, input_usd_per_million, output_usd_per_million)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+           model_id, protocol, config_digest, config_digest_version,
+           context_window_tokens, max_output_tokens, reasoning_effort,
+           input_usd_per_million, output_usd_per_million)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
         [
           routeRevisionId, target.position, target.sourceType, target.databaseModelVersionId,
           target.environmentTargetKey, target.connectionDisplayName, target.modelDisplayName,
-          target.modelId, target.protocol, target.configDigest, target.inputUsdPerMillion,
-          target.outputUsdPerMillion,
+          target.modelId, target.protocol, target.configDigest, target.configDigestVersion,
+          target.contextWindowTokens, target.maxOutputTokens, target.reasoningEffort,
+          target.inputUsdPerMillion, target.outputUsdPerMillion,
         ],
       );
     }
@@ -1057,12 +1096,9 @@ export async function getProviderRuntimeSummary(
   const databaseRuntime = databaseVersionIds.length > 0
     ? await pool.query<{
         base_url: string;
-        max_output_tokens: number;
         model_version_id: string;
-        reasoning_effort: OpenAIReasoningEffort | null;
       }>(
-        `SELECT model.id::text AS model_version_id, connection.base_url,
-                model.max_output_tokens, model.reasoning_effort
+        `SELECT model.id::text AS model_version_id, connection.base_url
            FROM ai_model_presets model
            JOIN ai_connections connection ON connection.id = model.connection_version_id
           WHERE model.id = ANY($1::uuid[])`,
@@ -1073,8 +1109,6 @@ export async function getProviderRuntimeSummary(
     row.model_version_id,
     {
       endpointHost: safeEndpointHost(row.base_url),
-      maxOutputTokens: row.max_output_tokens,
-      reasoningEffort: row.reasoning_effort,
     },
   ]));
   const canRollback = route ? (await pool.query<{ can_rollback: boolean }>(
@@ -1095,10 +1129,6 @@ export async function getProviderRuntimeSummary(
         endpointHost: target.environmentTargetKey
           ? environmentHosts.get(target.environmentTargetKey) ?? null
           : databaseTarget?.endpointHost ?? null,
-        maxOutputTokens: databaseTarget?.maxOutputTokens ?? options.runtimeConfig.maxOutputTokens,
-        reasoningEffort: databaseTarget
-          ? databaseTarget.reasoningEffort
-          : options.runtimeConfig.reasoningEffort ?? null,
         testState: testStateFor(testStates, target.configDigest),
       };
     }) ?? [],
@@ -1108,7 +1138,9 @@ export async function getProviderRuntimeSummary(
         baseUrlMode: target.baseUrlMode,
         baseUrlPrefill: target.baseUrlPrefill,
         configDigest: target.snapshot.configDigest,
+        configDigestVersion: target.snapshot.configDigestVersion,
         connectionDisplayName: target.snapshot.connectionDisplayName,
+        contextWindowTokens: target.snapshot.contextWindowTokens,
         endpointHost: safeEndpointHost(target.effectiveBaseUrl),
         environmentTargetKey: target.key,
         inputUsdPerMillion: target.snapshot.inputUsdPerMillion,
@@ -1122,7 +1154,10 @@ export async function getProviderRuntimeSummary(
           ? {
               connectionSeriesId: takeover.connectionSeriesId,
               modelSeriesId: takeover.modelSeriesId,
-              sourceConfigMatches: takeover.sourceConfigDigest === target.snapshot.configDigest,
+              sourceConfigMatches: takeover.sourceConfigDigestVersion === 1
+                ? takeover.sourceConfigDigest === target.legacyConfigDigestV1
+                : takeover.sourceConfigDigestVersion === target.snapshot.configDigestVersion
+                  && takeover.sourceConfigDigest === target.snapshot.configDigest,
               takeoverId: takeover.takeoverId,
             }
           : null,
@@ -1200,6 +1235,7 @@ export function createAdminProviderTransport(
           embeddingModel: runtimeConfig.embeddingModel,
           embeddingTimeoutMs: runtimeConfig.embeddingTimeoutMs,
           firstByteTimeoutMs: runtimeConfig.providerFirstByteTimeoutMs,
+          contextWindowTokens: target.contextWindowTokens,
           maxOutputTokens: target.maxOutputTokens,
           protocol: target.protocol,
           providerConcurrency: runtimeConfig.providerConcurrency,

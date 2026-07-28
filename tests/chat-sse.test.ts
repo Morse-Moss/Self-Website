@@ -3,6 +3,16 @@ import { test } from 'node:test';
 
 import { readChatSse } from '../lib/client/chat-sse.ts';
 import { isAutoReplayChatError } from '../lib/client/chat-errors.ts';
+import type {
+  AiProvider,
+  AnswerRequest,
+  PreparedTargetAnswer,
+  ProviderAnswerTarget,
+} from '../lib/server/ai-provider.ts';
+import { createChatExecutionBudget } from '../lib/server/chat-execution-budget.ts';
+import { FailoverAiProvider } from '../lib/server/failover-ai-provider.ts';
+import { OpenAIProviderError } from '../lib/server/openai-provider.ts';
+import { createSseStream } from '../lib/server/sse.ts';
 
 const encoder = new TextEncoder();
 
@@ -138,6 +148,177 @@ test('readChatSse preserves switching and degraded completion payloads', async (
     { event: 'delta', stage: undefined, degraded: undefined },
     { event: 'done', stage: undefined, degraded: true },
   ]);
+});
+
+test('decoded SSE exposes no answer delta before an overflow retry reaches terminal success', async () => {
+  let calls = 0;
+  const raw: AiProvider = {
+    async embed() { return [[0.1, 0.2]]; },
+    async *streamAnswer() {
+      calls += 1;
+      if (calls === 1) {
+        yield { type: 'delta', text: 'PRIVATE_PARTIAL' };
+        throw new OpenAIProviderError('PROVIDER_RESPONSE_FAILED', null, {
+          category: 'context_overflow',
+          reason: 'context_length_exceeded',
+          httpStatus: 400,
+          inputTokens: 4_096,
+          outputTokens: 0,
+          contextWindowTokens: 4_096,
+        });
+      }
+      yield { type: 'delta', text: 'Recovered answer.' };
+      yield { type: 'done', usage: null };
+    },
+  };
+  const snapshot: ProviderAnswerTarget['snapshot'] = {
+    configDigest: 'a'.repeat(64),
+    configDigestVersion: 2,
+    connectionDisplayName: 'Primary',
+    connectionVersionId: null,
+    contextWindowTokens: 4_096,
+    inputUsdPerMillion: null,
+    modelDisplayName: 'Model',
+    modelId: 'model',
+    modelVersionId: null,
+    maxOutputTokens: 512,
+    outputUsdPerMillion: null,
+    position: 0,
+    protocol: 'responses',
+    reasoningEffort: null,
+    routeRevisionId: null,
+    sourceType: 'environment',
+  };
+  const failover = new FailoverAiProvider(raw, [{ provider: raw, snapshot }], 1_000);
+  const ordering: string[] = [];
+  const now = Date.now();
+  const request: AnswerRequest = {
+    instructions: 'Use evidence only.',
+    messages: [{ role: 'user', content: 'Question' }],
+    execution: {
+      executionId: '11111111-1111-4111-8111-111111111111',
+      generationVariantId: '22222222-2222-4222-8222-222222222222',
+      releasePolicy: 'segment',
+      minimumBufferCharacters: 1,
+      totalTimeoutMs: 500,
+      budget: createChatExecutionBudget({
+        turnStartedAtMs: now,
+        providerStartedAtMs: now,
+        turnTimeoutMs: 90_000,
+        providerTimeoutMs: 80_000,
+      }),
+      generationMode: 'normal',
+      protocolEventTimeoutMs: 50,
+      modelTextTimeoutMs: 100,
+      hedgingEnabled: false,
+      delaysMs: [0],
+      async reserveHedgedAttempt() { return false; },
+      async onAttempt(event) {
+        if (event.type === 'failed' || event.type === 'completed') {
+          ordering.push(`${event.type}-${event.attemptNo}`);
+        }
+      },
+      async prepareTarget({ target, revision, trigger }) {
+        const binding = {
+          configDigestVersion: target.configDigestVersion,
+          configDigest: target.configDigest,
+          modelId: target.modelId,
+          protocol: target.protocol,
+          contextWindowTokens: target.contextWindowTokens,
+          maxOutputTokens: target.maxOutputTokens,
+          reasoningEffort: target.reasoningEffort,
+        };
+        const variant = {
+          id: '22222222-2222-4222-8222-222222222222',
+          revision,
+          trigger,
+          target: binding,
+        };
+        const digest = revision.toString(16).repeat(64);
+        const outboundBody = Object.freeze({ model: target.modelId, revision });
+        return {
+          context: {
+            variant,
+            target: binding,
+            historyView: {
+              rawHistory: [],
+              summary: null,
+              consumedTurnIds: [],
+              compactionArtifactIds: [],
+            },
+            packet: {} as never,
+            packetHmacKeyId: '2026-07-v2',
+            packetHmacSha256: digest,
+            summaryAttemptIds: [],
+          },
+          request: {
+            instructions: 'Use evidence only.',
+            messages: [{ role: 'user', content: `variant-${revision}` }],
+          },
+          outboundBody,
+          generationRequest: {
+            schemaVersion: 'generation-request-v2',
+            variant,
+            packetHmacKeyId: '2026-07-v2',
+            packetHmacSha256: digest,
+            instructions: 'Use evidence only.',
+            messages: [{ role: 'user', content: `variant-${revision}` }],
+            reasoningEffort: null,
+            maxOutputTokens: 512,
+            outboundBody,
+            store: false,
+          },
+          integrity: {
+            version: 2,
+            contextBuilderVersion: 'context-packet-builder-v2',
+            generationVariantId: variant.id,
+            generationVariantRevision: revision,
+            target: binding,
+            packetHmacKeyId: '2026-07-v2',
+            packetHmacSha256: digest,
+            generationRequestHmacSha256: digest,
+          },
+        } satisfies PreparedTargetAnswer;
+      },
+    },
+  };
+  const controller = new AbortController();
+  const stream = createSseStream({
+    abortController: new AbortController(),
+    parentSignal: controller.signal,
+    heartbeatMs: 60_000,
+    async run(signal, emit) {
+      for await (const event of failover.streamAnswer(request, signal)) {
+        if (event.type === 'delta') emit('delta', { type: 'delta', text: event.text });
+        if (event.type === 'switching') {
+          emit('status', { type: 'status', stage: 'switching' });
+        }
+        if (event.type === 'done') {
+          emit('done', {
+            type: 'done',
+            usage: null,
+            budgetLevel: 'normal',
+            consumed: false,
+            degraded: false,
+            remainingMessages: 1,
+          });
+        }
+      }
+    },
+  });
+
+  const visible: string[] = [];
+  await readChatSse(new Response(stream), (event, payload) => {
+    if (event === 'delta') {
+      ordering.push('delta');
+      visible.push(payload.text ?? '');
+    }
+    if (event === 'done') ordering.push('done');
+  });
+
+  assert.equal(calls, 2);
+  assert.deepEqual(visible, ['Recovered answer.']);
+  assert.deepEqual(ordering, ['failed-1', 'completed-2', 'delta', 'done']);
 });
 
 test('automatic replay uses only the narrow transient error set', () => {

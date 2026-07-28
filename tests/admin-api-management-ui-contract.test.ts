@@ -56,6 +56,7 @@ test('API console exposes runtime truth before the catalog workbench', () => {
   assert.match(source, /data-testid=["']route-endpoint-host["']/u);
   assert.match(source, /active\?\.reasoningEffort/u);
   assert.match(source, /active\?\.maxOutputTokens/u);
+  assert.match(source, /active\?\.contextWindowTokens/u);
   assert.match(source, /loading/u);
   assert.match(source, /empty/u);
   assert.match(source, /error/u);
@@ -78,6 +79,12 @@ test('provider library keeps saved keys redacted and exposes explicit lifecycle 
   assert.match(source, /responses/u);
   assert.match(source, /chat_completions/u);
   assert.match(source, /reuseKeyAcrossOrigin/u);
+  assert.match(source, /name=["']contextWindowTokens["']/u);
+  assert.match(source, /name=["']maxOutputTokens["']/u);
+  assert.match(source, /max=\{2_147_483_647\}/u);
+  assert.match(source, /上下文窗口/u);
+  assert.match(source, /Provider 默认/u);
+  assert.match(source, /未知/u);
 });
 
 test('route editor supports one primary and five fallbacks without drag-only operation', () => {

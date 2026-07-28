@@ -17,6 +17,8 @@ import {
   CONTEXT_PIPELINE_VERSION,
   CONTEXT_PROJECTION_VERSION,
   LEGACY_BRIDGE_VERSION,
+  type CanonicalAnswerSourceV2,
+  type CompletedContextTurn,
   type CandidateConversationTaskFrameV22,
   type ContextExecutionPipeline,
   type ContextPacketManifest,
@@ -58,6 +60,7 @@ import {
   type TurnRoute,
 } from './chat-behavior.ts';
 import {
+  buildCanonicalAnswerSourceV2,
   buildContextPacket,
   ContextPacketBuildError,
   type BuiltContextPacket,
@@ -85,8 +88,8 @@ import {
   captureLegacyContextBridge,
   LegacyBridgeValidationError,
   loadAdjacentCompletedContextTurn,
+  loadCanonicalAnswerHistory,
   loadCapturedLegacyContextBridge,
-  loadCompletedContextHistory,
   loadContextTaskFrame,
   lockContextPipelineAfterLegacySuccess,
   persistContextSuccessState,
@@ -123,9 +126,10 @@ import {
 } from './interaction-search.ts';
 import {
   hasSufficientLocalEvidence,
-  retrieveKnowledge,
+  retrieveFullRelevantKnowledge,
   type KnowledgeSource,
 } from './rag.ts';
+import { partitionCompleteRetrievalQuery } from './retrieval-query.ts';
 import {
   recordProviderAttemptEvent,
   reserveHedgedProviderAttempt,
@@ -174,8 +178,6 @@ export interface ChatServiceConfig {
   maxMessagesPerSession: number;
   chatWindowSeconds?: number;
   chatWindowMaxMessages?: number;
-  historyMessageLimit: number;
-  retrievalLimit: number;
   interactionRetentionDays: number;
   tokenRates: TokenRates | null;
   searchEnabled?: boolean;
@@ -189,8 +191,6 @@ export interface ChatServiceConfig {
   contextCanaryPercent?: number;
   contextCanaryInviteIds?: ReadonlySet<string>;
   contextCanaryInviteLabels?: ReadonlySet<string>;
-  contextTokenBudget?: number;
-  jdContextTokenBudget?: number;
   contextPacketDigest?: ContextPacketDigestConfig | null;
   hedgedFailoverEnabled: boolean;
   chatSafeMode: boolean;
@@ -199,7 +199,6 @@ export interface ChatServiceConfig {
   providerModelTextTimeoutMs: number;
   providerStageTimeoutMs: number;
   chatTurnTimeoutMs: number;
-  providerMaxAttempts: number;
 }
 
 export type PublicChatSource = ChatSource;
@@ -257,6 +256,7 @@ interface ConversationRow {
 
 interface PreparedContextTurn {
   builtPacket: BuiltContextPacket | null;
+  canonicalSource: CanonicalAnswerSourceV2 | null;
   candidateFrame: CandidateConversationTaskFrameV22 | null;
   contextScopeId: string;
   currentFrame: ConversationTaskFrameV22 | null;
@@ -395,7 +395,7 @@ function contextManifest(input: {
 }): ContextPacketManifest {
   const projection = input.projection ?? null;
   const resolved = input.resolved;
-  const bridgeTurnIds = input.bridgeTurnIds?.slice(0, 6) ?? [];
+  const bridgeTurnIds = [...(input.bridgeTurnIds ?? [])];
   return {
     pipeline_version: CONTEXT_PIPELINE_VERSION,
     semantic_intent: resolved?.semantic.intent ?? 'clarify',
@@ -771,12 +771,12 @@ async function prepareContextTurn(input: {
       ?? currentFrame?.taskId
       ?? input.turn.turnId;
     const history = resolution.candidateFrame || currentFrame
-      ? await loadCompletedContextHistory(
-          input.client,
-          input.turn.conversationId,
+      ? await loadCanonicalAnswerHistory(input.client, {
+          conversationId: input.turn.conversationId,
+          ownerPipeline: 'context_packet_v22',
           contextScopeId,
-          { tokenBudget: 2_500 },
-        )
+          includeConversation: false,
+        })
       : [];
     const plannedEvidence: PlannedChatEvidence = resolved.legacyRoute.deterministicReply
       ? { knowledge: [], admissions: [], retrievalScores: [], degradedReason: null }
@@ -785,12 +785,12 @@ async function prepareContextTurn(input: {
           currentInput: input.request.message,
           frame: resolution.candidateFrame ?? currentFrame,
           ledger: capabilityLedger,
-          async embed(query) {
-            const [embedding] = await input.provider.embed([query], input.signal);
-            if (!embedding) throw new Error('EMBEDDING_UNAVAILABLE');
-            return embedding;
+          async embedAll(queries) {
+            const embeddings = await input.provider.embed([...queries], input.signal);
+            if (embeddings.length !== queries.length) throw new Error('EMBEDDING_UNAVAILABLE');
+            return embeddings;
           },
-           retrieve: (embedding, limit) => retrieveKnowledge(input.client, embedding, limit),
+          retrieveAll: (embeddings) => retrieveFullRelevantKnowledge(input.client, embeddings),
          });
     const search = resolved.semantic.intent === 'external_current'
       ? await resolveSearch({
@@ -830,6 +830,7 @@ async function prepareContextTurn(input: {
     if (resolved.legacyRoute.deterministicReply) {
       return {
         builtPacket: null,
+        canonicalSource: null,
         candidateFrame: resolution.candidateFrame,
         contextScopeId,
         currentFrame,
@@ -851,17 +852,11 @@ async function prepareContextTurn(input: {
 
     const digest = input.config.contextPacketDigest;
     if (!digest) throw new Error('CONTEXT_PACKET_DIGEST_CONFIG_INVALID');
-    const packetFrame = resolution.candidateFrame ?? currentFrame;
-    const usesJdBudget = resolved.semantic.intent === 'jd_match'
-      || packetFrame?.slots.some((slot) => slot.slot === 'job_description') === true;
     const builtPacket = buildContextPacket({
       resolved,
       currentInput: input.request.message,
       currentUserMessageId: input.turn.userMessageId,
       projection,
-      tokenBudget: usesJdBudget
-        ? input.config.jdContextTokenBudget ?? 24_000
-        : input.config.contextTokenBudget ?? 12_000,
       digestKey: digest.key,
       digestKeyId: digest.keyId,
       reasoningEffort: adaptV2Route(resolved.legacyRoute).reasoningEffort ?? null,
@@ -873,8 +868,24 @@ async function prepareContextTurn(input: {
       } : null,
       degradedReason: plannedEvidence.degradedReason,
     });
+    const canonicalSource = buildCanonicalAnswerSourceV2({
+      ownerPipeline: 'context_packet_v22',
+      conversationId: input.turn.conversationId,
+      interactionTurnId: input.turn.turnId,
+      contextScopeId,
+      currentUserMessageId: input.turn.userMessageId,
+      currentInput: input.request.message,
+      trustedInstructions: builtPacket.normal.request.baseInstructions,
+      taskFrame: builtPacket.packet.taskFrame,
+      taskInputs: builtPacket.packet.taskInputs,
+      approvedEvidence: builtPacket.packet.approvedEvidence,
+      completeHistory: history,
+      reasoningEffort: adaptV2Route(resolved.legacyRoute).reasoningEffort ?? null,
+      releasePolicy: resolved.legacyRoute.release,
+    });
     return {
       builtPacket,
+      canonicalSource,
       candidateFrame: resolution.candidateFrame,
       contextScopeId,
       currentFrame,
@@ -911,108 +922,11 @@ function contextSuccessManifest(prepared: PreparedContextTurn): ContextPacketMan
   };
 }
 
-export async function loadCompletedHistory(
-  client: PoolClient,
-  conversationId: string,
-  options: {
-    taskId: string | null;
-    includeConversation: boolean;
-    tokenBudget: number;
-  },
-): Promise<AiMessage[]> {
-  if (!options.taskId && !options.includeConversation) return [];
-  const completed = await client.query<{ id: string }>(
-    `SELECT id::text AS id
-       FROM interaction_turns
-      WHERE conversation_id = $1
-        AND status = 'completed'
-        AND execution_pipeline IS DISTINCT FROM 'context_packet_v22'
-        AND (
-          ($2::uuid IS NOT NULL AND task_id = $2)
-          OR ($2::uuid IS NULL AND $3::boolean AND task_id IS NULL AND route_kind = 'conversation')
-        )
-      ORDER BY created_at, id`,
-    [conversationId, options.taskId, options.includeConversation],
-  );
-  const completedTurnIds = completed.rows.map((row) => row.id);
-  if (completedTurnIds.length === 0) return [];
-  const rows = await client.query<ConversationMessageRow>(
-    `SELECT id::text AS id, role, content
-       FROM conversation_messages
-      WHERE conversation_id = $1
-      ORDER BY id`,
-    [conversationId],
-  );
-  return selectCompletedTurnMessages(completedTurnIds, rows.rows, options.tokenBudget);
-}
-
-function estimateHistoryTokens(content: string): number {
-  const cjkCharacters = content.match(
-    /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu,
-  )?.length ?? 0;
-  const nonCjkCharacters = content.replace(
-    /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu,
-    '',
-  ).length;
-  return Math.max(1, cjkCharacters + Math.ceil(nonCjkCharacters / 4));
-}
-
-function selectCompletedTurnMessages(
-  completedTurnIds: string[],
-  rows: ConversationMessageRow[],
-  tokenBudget: number,
-): AiMessage[] {
-  const allowedTurnIds = new Set(completedTurnIds);
-  const messagesByTurn = new Map<string, AiMessage[]>();
-  for (const row of rows) {
-    const decoded = decodeTurnMessage(row.content);
-    if (!decoded.turnId || !allowedTurnIds.has(decoded.turnId)) continue;
-    const messages = messagesByTurn.get(decoded.turnId) ?? [];
-    messages.push({ role: row.role, content: decoded.content });
-    messagesByTurn.set(decoded.turnId, messages);
-  }
-  const completedTurns = completedTurnIds
-    .map((turnId) => messagesByTurn.get(turnId) ?? [])
-    .filter((messages) => messages.length > 0);
-  const selected: AiMessage[][] = [];
-  let used = 0;
-  for (let index = completedTurns.length - 1; index >= 0; index -= 1) {
-    const messages = completedTurns[index];
-    const turnSize = messages.reduce(
-      (total, message) => total + estimateHistoryTokens(message.content),
-      0,
-    );
-    if (selected.length > 0 && used + turnSize > tokenBudget) break;
-    selected.push(messages);
-    used += turnSize;
-  }
-  return selected.reverse().flat();
-}
-
-async function loadLegacyCompletedHistory(
-  client: PoolClient,
-  conversationId: string,
-  tokenBudget: number,
-): Promise<AiMessage[]> {
-  const completed = await client.query<{ id: string }>(
-    `SELECT id::text AS id
-       FROM interaction_turns
-      WHERE conversation_id = $1
-        AND status = 'completed'
-        AND execution_pipeline IS DISTINCT FROM 'context_packet_v22'
-      ORDER BY created_at, id`,
-    [conversationId],
-  );
-  const completedTurnIds = completed.rows.map((row) => row.id);
-  if (completedTurnIds.length === 0) return [];
-  const rows = await client.query<ConversationMessageRow>(
-    `SELECT id::text AS id, role, content
-       FROM conversation_messages
-      WHERE conversation_id = $1
-      ORDER BY id`,
-    [conversationId],
-  );
-  return selectCompletedTurnMessages(completedTurnIds, rows.rows, tokenBudget);
+function canonicalHistoryMessages(turns: readonly CompletedContextTurn[]): AiMessage[] {
+  return turns.flatMap((turn) => [
+    { role: 'user' as const, content: turn.user.text },
+    { role: 'assistant' as const, content: turn.assistant.text },
+  ]);
 }
 
 async function loadTurnDiagnosis(input: {
@@ -1067,7 +981,6 @@ async function recoverRunningTurn(input: {
   conversationId: string;
   turnId: string;
   request: NormalizedChatRequest;
-  historyMessageLimit: number;
   searchCount: number;
   searchAlreadyClaimed: boolean;
   diagnosis: TurnDiagnosis | null;
@@ -1310,7 +1223,6 @@ async function reserveTurnInTransaction(input: {
       conversationId,
       turnId: input.turnId,
       request: input.request,
-      historyMessageLimit: input.config.historyMessageLimit,
       searchCount: session.search_count,
       searchAlreadyClaimed: interaction.usedSearch,
       diagnosis,
@@ -2522,25 +2434,29 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
         && v2Route.topicRef === v2TaskState.topicRef
         ? v2TaskState.taskId
         : null;
-      const completedHistory = await loadCompletedHistory(
+      const completedHistory = canonicalHistoryMessages(await loadCanonicalAnswerHistory(
         lockClient,
-        turn.conversationId,
         {
-          taskId: continuingTaskId,
+          conversationId: turn.conversationId,
+          ownerPipeline: 'legacy_v2',
+          contextScopeId: continuingTaskId,
           includeConversation: v2Route.routeKind === 'conversation',
-          tokenBudget: Math.max(256, input.config.historyMessageLimit * 128),
         },
-      );
+      ));
       turn.messages = [
         ...completedHistory,
         { role: 'user', content: input.request.message },
       ];
     } else if (turn.behavior === 'v1') {
-      const completedHistory = await loadLegacyCompletedHistory(
+      const completedHistory = canonicalHistoryMessages(await loadCanonicalAnswerHistory(
         lockClient,
-        turn.conversationId,
-        Math.max(256, input.config.historyMessageLimit * 128),
-      );
+        {
+          conversationId: turn.conversationId,
+          ownerPipeline: 'legacy_v1',
+          contextScopeId: null,
+          includeConversation: true,
+        },
+      ));
       turn.messages = [
         ...completedHistory,
         { role: 'user', content: input.request.message },
@@ -2575,9 +2491,13 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
     } else if (turn.behavior === 'safe') {
       knowledge = approvedSafeKnowledge(route.intent);
     } else if (turn.behavior === 'v1') {
-      let queryEmbedding: number[];
+      const retrievalQueries = partitionCompleteRetrievalQuery(effectiveQuery);
+      let queryEmbeddings: readonly number[][];
       try {
-        [queryEmbedding] = await input.provider.embed([effectiveQuery], input.signal);
+        queryEmbeddings = await input.provider.embed(retrievalQueries, input.signal);
+        if (queryEmbeddings.length !== retrievalQueries.length) {
+          throw new Error('EMBEDDING_UNAVAILABLE');
+        }
       } catch (error) {
         if (input.signal?.aborted) throw error;
         await recordDependencyFailure({
@@ -2594,11 +2514,7 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
 
       yield { type: 'status', stage: 'knowledge' };
       try {
-        knowledge = await retrieveKnowledge(
-          lockClient,
-          queryEmbedding,
-          input.config.retrievalLimit,
-        );
+        knowledge = await retrieveFullRelevantKnowledge(lockClient, queryEmbeddings);
       } catch (error) {
         throw new RuntimePhaseError('RETRIEVAL_UNAVAILABLE', 'RETRIEVAL_UNAVAILABLE', error);
       }
@@ -2627,10 +2543,11 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
         ledger: capabilityLedger,
         identityKnowledge: () => [identityKnowledgeSource()],
         projectKnowledge: approvedProjectCatalogSources,
-        async embed(query) {
+        async embedAll(queries) {
           try {
-            const [embedding] = await input.provider.embed([query], input.signal);
-            return embedding;
+            const embeddings = await input.provider.embed([...queries], input.signal);
+            if (embeddings.length !== queries.length) throw new Error('EMBEDDING_UNAVAILABLE');
+            return embeddings;
           } catch (error) {
             if (input.signal?.aborted) throw error;
             await recordDependencyFailure({
@@ -2645,13 +2562,9 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
             throw new RuntimePhaseError('RETRIEVAL_UNAVAILABLE', 'EMBEDDING_UNAVAILABLE', error);
           }
         },
-        async retrieve(embedding) {
+        async retrieveAll(embeddings) {
           try {
-            return await retrieveKnowledge(
-              lockClient,
-              embedding,
-              input.config.retrievalLimit,
-            );
+            return await retrieveFullRelevantKnowledge(lockClient, embeddings);
           } catch (error) {
             throw new RuntimePhaseError('RETRIEVAL_UNAVAILABLE', 'RETRIEVAL_UNAVAILABLE', error);
           }
@@ -2967,7 +2880,6 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
       providerStartedAtMs,
       turnTimeoutMs: input.config.chatTurnTimeoutMs,
       providerTimeoutMs: input.config.providerStageTimeoutMs,
-      maxAttempts: input.config.providerMaxAttempts,
     });
     answerIterator = runChatAnswer({
       budget: executionBudget,

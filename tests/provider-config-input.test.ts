@@ -53,6 +53,7 @@ const model = {
   inputUsdPerMillion: '1.25',
   outputUsdPerMillion: null,
 };
+const normalizedModel = { ...model, contextWindowTokens: null };
 
 function invalid(run: () => unknown): void {
   assert.throws(run, (error: unknown) => (
@@ -73,7 +74,7 @@ test('connection create and update inputs are strict and normalize safe values',
     baseUrl: 'https://gateway.example/v1',
     userAgent: 'Morse/1.0',
     apiKey: 'secret',
-    firstModel: model,
+    firstModel: normalizedModel,
     password: 'admin-password',
   });
 
@@ -104,7 +105,7 @@ test('connection create and update inputs are strict and normalize safe values',
 });
 
 test('model input enforces protocol, reasoning, token, decimal, and unknown-field bounds', () => {
-  assert.deepEqual(parseModelInput(model), model);
+  assert.deepEqual(parseModelInput(model), normalizedModel);
   assert.deepEqual(parseModelInput({
     ...model,
     reasoningEffort: null,
@@ -112,21 +113,78 @@ test('model input enforces protocol, reasoning, token, decimal, and unknown-fiel
     outputUsdPerMillion: 100000,
   }), {
     ...model,
+    contextWindowTokens: null,
     reasoningEffort: null,
     inputUsdPerMillion: '0',
     outputUsdPerMillion: '100000',
   });
   invalid(() => parseModelInput({ ...model, protocol: 'assistants' }));
   invalid(() => parseModelInput({ ...model, reasoningEffort: 'extreme' }));
-  invalid(() => parseModelInput({ ...model, maxOutputTokens: 100001 }));
+  invalid(() => parseModelInput({ ...model, maxOutputTokens: 2_147_483_648 }));
+  invalid(() => parseModelInput({ ...model, contextWindowTokens: 2_147_483_648 }));
   invalid(() => parseModelInput({ ...model, inputUsdPerMillion: -1 }));
   invalid(() => parseModelInput({ ...model, temperature: 0.7 }));
   assert.deepEqual(parseModelMutationInput({ ...model, password: 'admin-password' }), {
-    model,
+    model: normalizedModel,
     password: 'admin-password',
   });
   invalid(() => parseModelMutationInput(null));
   invalid(() => parseModelMutationInput({ ...model, password: 'admin-password', headers: {} }));
+});
+
+test('model capabilities accept unknown values and PostgreSQL positive integer bounds', () => {
+  let nullableCapabilities: ReturnType<typeof parseModelInput> | null = null;
+  assert.doesNotThrow(() => {
+    nullableCapabilities = parseModelInput({
+      ...model,
+      contextWindowTokens: null,
+      maxOutputTokens: null,
+    });
+  });
+  assert.deepEqual(nullableCapabilities, {
+    ...model,
+    contextWindowTokens: null,
+    maxOutputTokens: null,
+  });
+  assert.deepEqual(parseModelInput({
+    ...model,
+    contextWindowTokens: '',
+    maxOutputTokens: '',
+  }), {
+    ...model,
+    contextWindowTokens: null,
+    maxOutputTokens: null,
+  });
+  assert.deepEqual(parseModelInput({
+    ...model,
+    contextWindowTokens: 2_147_483_647,
+    maxOutputTokens: 2_147_483_647,
+  }), {
+    ...model,
+    contextWindowTokens: 2_147_483_647,
+    maxOutputTokens: 2_147_483_647,
+  });
+
+  const {
+    maxOutputTokens: _maxOutputTokens,
+    ...withoutCapabilities
+  } = model;
+  assert.deepEqual(parseModelInput(withoutCapabilities), {
+    ...withoutCapabilities,
+    contextWindowTokens: null,
+    maxOutputTokens: null,
+  });
+
+  for (const capabilities of [
+    { contextWindowTokens: 0, maxOutputTokens: null },
+    { contextWindowTokens: 1.5, maxOutputTokens: null },
+    { contextWindowTokens: Number.MAX_SAFE_INTEGER, maxOutputTokens: null },
+    { contextWindowTokens: null, maxOutputTokens: 0 },
+    { contextWindowTokens: null, maxOutputTokens: 1.5 },
+    { contextWindowTokens: null, maxOutputTokens: Number.MAX_SAFE_INTEGER },
+  ]) {
+    invalid(() => parseModelInput({ ...model, ...capabilities }));
+  }
 });
 
 test('environment takeover input is strict and uses null as the only URL inheritance sentinel', () => {
@@ -146,7 +204,7 @@ test('environment takeover input is strict and uses null as the only URL inherit
     apiKey: null,
     baseUrl: null,
     expectedConfigDigest,
-    firstModel: model,
+    firstModel: normalizedModel,
     name: 'Editable primary',
     password: 'admin-password',
     requestId,
@@ -168,7 +226,7 @@ test('environment takeover input is strict and uses null as the only URL inherit
     apiKey: 'replacement-secret',
     baseUrl: 'https://replacement.example/v1',
     expectedConfigDigest,
-    firstModel: model,
+    firstModel: normalizedModel,
     name: 'Replacement',
     password: 'admin-password',
     requestId,

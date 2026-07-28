@@ -95,14 +95,14 @@ function source(projectSlug: string, score: number, suffix = '1'): KnowledgeSour
 }
 
 function dependencies(candidates: KnowledgeSource[] = []) {
-  const calls = { embed: 0, retrieve: 0, limits: [] as number[] };
+  const calls = { embed: 0, retrieve: 0, limits: [] as Array<number | undefined> };
   return {
     calls,
     embed: async () => {
       calls.embed += 1;
       return [1, 0, 0];
     },
-    retrieve: async (_embedding: number[], limit: number) => {
+    retrieve: async (_embedding: number[], limit?: number) => {
       calls.retrieve += 1;
       calls.limits.push(limit);
       return candidates;
@@ -136,7 +136,7 @@ test('project catalog returns the complete audited catalog without embedding', a
   }
 });
 
-test('project fit over-fetches 15 chunks and returns stable top three unique audited projects', async () => {
+test('project fit returns every stable unique threshold-qualified audited project', async () => {
   const deps = dependencies([
     source('digital-morse', 0.94, 'a'),
     source('digital-morse', 0.92, 'b'),
@@ -153,13 +153,14 @@ test('project fit over-fetches 15 chunks and returns stable top three unique aud
     retrieve: deps.retrieve,
   });
 
-  assert.deepEqual(deps.calls.limits, [15]);
+  assert.deepEqual(deps.calls.limits, [undefined]);
   assert.deepEqual(result.knowledge.map((item) => item.projectSlug), [
     'digital-morse',
     'deep-research',
     'content-agent',
+    'auto-operations',
   ]);
-  assert.equal(new Set(result.knowledge.map((item) => item.projectSlug)).size, 3);
+  assert.equal(new Set(result.knowledge.map((item) => item.projectSlug)).size, 4);
   assert.ok(result.knowledge.every((item) => item.content !== `retrieved-${item.projectSlug}-1`));
 });
 
@@ -183,12 +184,14 @@ test('project fit keeps threshold-qualified direct evidence ahead of higher-scor
     'digital-morse',
     'auto-operations',
     'ai-leadgen',
+    'content-agent',
   ]);
   assert.equal(result.knowledge[0].evidenceLevel, 'direct');
   assert.deepEqual(result.retrievalScores.map((item) => item.evidenceId), [
     'project:digital-morse',
     'project:auto-operations',
     'project:ai-leadgen',
+    'project:content-agent',
   ]);
 });
 
@@ -212,10 +215,11 @@ test('JD match applies the same direct-first ordering before filling by retrieva
     'digital-morse',
     'auto-operations',
     'ai-leadgen',
+    'content-agent',
   ]);
 });
 
-test('more than three direct projects are capped by retrieval score', async () => {
+test('more than three direct projects remain present in deterministic retrieval order', async () => {
   const deps = dependencies([
     source('deep-research', 0.91),
     source('content-agent', 0.94),
@@ -236,6 +240,8 @@ test('more than three direct projects are capped by retrieval score', async () =
     'auto-operations',
     'ai-leadgen',
     'content-agent',
+    'digital-morse',
+    'deep-research',
   ]);
   assert.ok(result.knowledge.every((item) => item.evidenceLevel === 'direct'));
 });

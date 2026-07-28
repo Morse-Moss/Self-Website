@@ -269,28 +269,41 @@ function clearKinds(message: string): Set<ResolvedTaskSlotRef['slot']> {
 }
 
 function normalizeSlots(slots: ResolvedTaskSlotRef[]): ResolvedTaskSlotRef[] {
-  const singles = new Map<'company' | 'role', ResolvedTaskSlotRef>();
-  const jobs: ResolvedTaskSlotRef[] = [];
-  const jobHashes = new Set<string>();
-  for (const candidate of slots) {
-    if (candidate.slot === 'job_description') {
-      if (!jobHashes.has(candidate.contentSha256)) {
-        jobHashes.add(candidate.contentSha256);
-        jobs.push(candidate);
-      }
-    } else {
-      singles.set(candidate.slot, candidate);
+  const seenJobHashes = new Set<string>();
+  const validated = slots.filter((candidate) => {
+    if (!/^[1-9]\d*$/u.test(candidate.sourceMessageId)) {
+      throw new Error('CONTEXT_SLOT_SOURCE_MESSAGE_ID_INVALID');
     }
-  }
-  if (jobs.length > 8 || jobs.reduce((total, candidate) => total + candidate.text.length, 0) > 12_000) {
-    throw new Error('CONTEXT_JD_SLOT_LIMIT');
-  }
-  return [singles.get('company'), singles.get('role'), ...jobs]
-    .filter((candidate): candidate is ResolvedTaskSlotRef => Boolean(candidate))
-    .map((candidate, index, all) => ({
-      ...candidate,
-      ordinal: all.slice(0, index).filter((other) => other.slot === candidate.slot).length,
-    }));
+    if (!Number.isSafeInteger(candidate.startUtf16)
+      || !Number.isSafeInteger(candidate.endUtf16)
+      || candidate.startUtf16 < 0
+      || candidate.endUtf16 <= candidate.startUtf16
+      || candidate.endUtf16 - candidate.startUtf16 !== candidate.text.length) {
+      throw new Error('CONTEXT_SLOT_SOURCE_SPAN_INVALID');
+    }
+    if (!/^[0-9a-f]{64}$/u.test(candidate.contentSha256)
+      || sha256(candidate.text) !== candidate.contentSha256) {
+      throw new Error('CONTEXT_SLOT_SOURCE_HASH_MISMATCH');
+    }
+    if (candidate.slot === 'job_description') {
+      if (seenJobHashes.has(candidate.contentSha256)) return false;
+      seenJobHashes.add(candidate.contentSha256);
+    }
+    return true;
+  });
+  const ordered = [...validated].sort((left, right) => (
+    BigInt(left.sourceMessageId) < BigInt(right.sourceMessageId) ? -1
+      : BigInt(left.sourceMessageId) > BigInt(right.sourceMessageId) ? 1
+        : left.startUtf16 - right.startUtf16
+          || left.endUtf16 - right.endUtf16
+          || left.contentSha256.localeCompare(right.contentSha256)
+  ));
+  const nextOrdinal = new Map<ResolvedTaskSlotRef['slot'], number>();
+  return ordered.map((candidate) => {
+    const ordinal = nextOrdinal.get(candidate.slot) ?? 0;
+    nextOrdinal.set(candidate.slot, ordinal + 1);
+    return { ...candidate, ordinal };
+  });
 }
 
 function reconstructLegacyRecruitmentFrame(input: {

@@ -31,9 +31,33 @@ DEVICE = select_device()
 MODEL = SentenceTransformer(MODEL_ID, device=DEVICE)
 
 
-def encode(inputs):
+def token_windows(text):
+    tokenizer = MODEL.tokenizer
+    # Do not let the tokenizer silently keep only its first window.
+    token_ids = tokenizer.encode(text, add_special_tokens=False, truncation=False)
+    max_seq_length = int(getattr(MODEL, "max_seq_length", 512))
+    special_tokens = int(tokenizer.num_special_tokens_to_add(pair=False))
+    window_size = max(1, max_seq_length - special_tokens)
+    if len(token_ids) <= window_size:
+        return [text], [len(token_ids)]
+
+    windows = []
+    weights = []
+    for start in range(0, len(token_ids), window_size):
+        window_ids = token_ids[start:start + window_size]
+        windows.append(tokenizer.decode(
+            window_ids,
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
+        ))
+        weights.append(len(window_ids))
+    return windows, weights
+
+
+def encode_one(text):
+    windows, weights = token_windows(text)
     vectors = MODEL.encode(
-        inputs,
+        windows,
         normalize_embeddings=True,
         convert_to_numpy=True,
         show_progress_bar=False,
@@ -45,12 +69,21 @@ def encode(inputs):
         raise ValueError(
             f"Model returned {vectors.shape[1]} dimensions; expected {SOURCE_DIMENSIONS}."
         )
-    vectors = np.pad(
+    # Combine every token window with a token-weighted aggregate.
+    weighted = np.average(vectors, axis=0, weights=np.asarray(weights, dtype=np.float32))
+    norm = np.linalg.norm(weighted)
+    if not np.isfinite(norm) or norm == 0:
+        raise ValueError("Model returned a zero or invalid embedding.")
+    return (weighted / norm).astype(np.float32)
+
+
+def encode(inputs):
+    vectors = np.asarray([encode_one(text) for text in inputs], dtype=np.float32)
+    return np.pad(
         vectors,
         ((0, 0), (0, TARGET_DIMENSIONS - SOURCE_DIMENSIONS)),
         mode="constant",
     )
-    return vectors
 
 
 class EmbeddingHandler(BaseHTTPRequestHandler):

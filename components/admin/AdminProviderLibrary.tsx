@@ -167,7 +167,8 @@ export default function AdminProviderLibrary({
                           </div>
                           <dl className={styles.modelFacts}>
                             <div><dt>版本</dt><dd>v{model.version}</dd></div>
-                            <div><dt>最大输出</dt><dd>{model.maxOutputTokens}</dd></div>
+                            <div><dt>上下文窗口</dt><dd>{model.contextWindowTokens ?? '未知'}</dd></div>
+                            <div><dt>最大输出</dt><dd>{model.maxOutputTokens ?? 'Provider 默认'}</dd></div>
                             <div><dt>推理</dt><dd>{model.reasoningEffort ?? '默认'}</dd></div>
                             <div><dt>状态</dt><dd>{model.deletedAt ? '已删除' : active ? '活动路由' : '待命'}</dd></div>
                             <div><dt>测试资格</dt><dd>{labels.eligibility}</dd></div>

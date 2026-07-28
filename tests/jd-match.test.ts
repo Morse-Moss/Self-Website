@@ -2,25 +2,17 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
-  JD_MAX_CHARACTERS,
   buildJdMatchPrompt,
   normalizeJobDescription,
 } from '../lib/server/workflows/jd-match.ts';
 
-test('normalizeJobDescription trims a valid JD and accepts the exact size limit', () => {
-  assert.equal(normalizeJobDescription('  Agent 工程师  '), 'Agent 工程师');
-  assert.equal(
-    normalizeJobDescription('岗'.repeat(JD_MAX_CHARACTERS)),
-    '岗'.repeat(JD_MAX_CHARACTERS),
-  );
+test('normalizeJobDescription preserves a valid JD exactly with no application size cap', () => {
+  const value = `  Agent 工程师  ${'岗'.repeat(30_000)}\n`;
+  assert.equal(normalizeJobDescription(value), value);
 });
 
-test('normalizeJobDescription rejects empty, oversized, file-like, and object payloads', () => {
+test('normalizeJobDescription rejects empty, file-like, and object payloads', () => {
   assert.throws(() => normalizeJobDescription('   '), /required/i);
-  assert.throws(
-    () => normalizeJobDescription('岗'.repeat(JD_MAX_CHARACTERS + 1)),
-    /12,000/,
-  );
   assert.throws(
     () => normalizeJobDescription({ name: 'jd.pdf', type: 'application/pdf' }),
     /string/i,
@@ -50,10 +42,10 @@ test('buildJdMatchPrompt deterministically freezes the evidence-led candidate co
   assert.doesNotMatch(first, /诚实缺口|缺口清单|仍需补充|匹配百分比|没有、缺少|未体现/);
 });
 
-test('buildJdMatchPrompt normalizes the JD and keeps missing evidence explicit', () => {
+test('buildJdMatchPrompt preserves the JD and keeps missing evidence explicit', () => {
   const prompt = buildJdMatchPrompt('  Agent 工程师  ', '   ');
 
   assert.match(prompt, /Agent 工程师/);
-  assert.doesNotMatch(prompt, /  Agent 工程师  /);
+  assert.match(prompt, /  Agent 工程师  /);
   assert.match(prompt, /当前没有可用的站内审核证据/);
 });

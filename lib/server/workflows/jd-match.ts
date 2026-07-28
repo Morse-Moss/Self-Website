@@ -1,5 +1,3 @@
-export const JD_MAX_CHARACTERS = 12_000;
-
 function escapePromptData(value: string): string {
   return value
     .replaceAll('&', '&amp;')
@@ -12,15 +10,8 @@ export function normalizeJobDescription(input: unknown): string {
     throw new TypeError('jobDescription must be a string.');
   }
 
-  const jobDescription = input.trim();
-  if (!jobDescription) {
-    throw new TypeError('jobDescription is required.');
-  }
-  if (jobDescription.length > JD_MAX_CHARACTERS) {
-    throw new RangeError('jobDescription must be 12,000 characters or fewer.');
-  }
-
-  return jobDescription;
+  if (!input.trim()) throw new TypeError('jobDescription is required.');
+  return input;
 }
 
 export function buildJdMatchPrompt(

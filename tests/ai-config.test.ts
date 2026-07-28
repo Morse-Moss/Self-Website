@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 
+import * as aiConfigModule from '../lib/server/ai-config.ts';
 import {
   AI_CONFIG_PUBLIC_ERROR_CODES,
   AiConfigError,
@@ -150,4 +151,59 @@ test('runtime digest is canonical, secret-bearing, and excludes display metadata
     inputUsdPerMillion: '1.25',
     outputUsdPerMillion: '4.50',
   }, digestKey), digest);
+});
+
+test('runtime digest v1 bytes stay frozen while v2 is capability-bound and domain-separated', () => {
+  const digestApi = aiConfigModule as typeof aiConfigModule & {
+    createRuntimeConfigDigestV1: typeof createRuntimeConfigDigest;
+    createRuntimeConfigDigestV2: (input: {
+      apiKey: string;
+      baseUrl: string;
+      contextWindowTokens: number | null;
+      maxOutputTokens: number | null;
+      modelId: string;
+      protocol: 'responses' | 'chat_completions';
+      reasoningEffort: string | null;
+      userAgent: string | null;
+    }, digestKey: Buffer) => string;
+  };
+  assert.equal(typeof digestApi.createRuntimeConfigDigestV1, 'function');
+  assert.equal(typeof digestApi.createRuntimeConfigDigestV2, 'function');
+
+  const digestKey = Buffer.alloc(32, 9);
+  const v1Input = {
+    apiKey: 'provider-secret-value',
+    baseUrl: 'https://gateway.example/v1',
+    maxOutputTokens: 4096,
+    modelId: 'gpt-example',
+    protocol: 'responses' as const,
+    reasoningEffort: 'high',
+    userAgent: 'Morse/1.0',
+  };
+  const frozenV1 = '3fe95838d42a56d565cd63eeb122f45a56f50d4a17f2a37f27e644097d7828e8';
+
+  assert.equal(digestApi.createRuntimeConfigDigestV1(v1Input, digestKey), frozenV1);
+  assert.equal(createRuntimeConfigDigest(v1Input, digestKey), frozenV1);
+
+  const v2Input = {
+    ...v1Input,
+    contextWindowTokens: null,
+  };
+  const v2 = digestApi.createRuntimeConfigDigestV2(v2Input, digestKey);
+  assert.match(v2, /^[0-9a-f]{64}$/u);
+  assert.notEqual(v2, frozenV1);
+  assert.notEqual(
+    digestApi.createRuntimeConfigDigestV2({
+      ...v2Input,
+      contextWindowTokens: 128_000,
+    }, digestKey),
+    v2,
+  );
+  assert.notEqual(
+    digestApi.createRuntimeConfigDigestV2({
+      ...v2Input,
+      maxOutputTokens: null,
+    }, digestKey),
+    v2,
+  );
 });

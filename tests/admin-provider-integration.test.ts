@@ -8,7 +8,11 @@ import { test } from 'node:test';
 
 import pg from 'pg';
 
-import { AiConfigError, createRuntimeConfigDigest } from '../lib/server/ai-config.ts';
+import {
+  AiConfigError,
+  createRuntimeConfigDigestV1,
+  createRuntimeConfigDigestV2,
+} from '../lib/server/ai-config.ts';
 import { decryptAiConfigSecret } from '../lib/server/ai-config-crypto.ts';
 import {
   activateProviderRoute,
@@ -53,6 +57,7 @@ async function migrate(connectionString: string): Promise<void> {
 }
 
 const model = {
+  contextWindowTokens: 128_000,
   displayName: 'Primary model',
   modelId: 'gpt-compatible',
   protocol: 'responses' as const,
@@ -71,6 +76,7 @@ function options(overrides: Partial<AdminProviderServiceOptions> = {}): AdminPro
     runtimeConfig: {
       chatModel: 'gpt-environment',
       chatProtocol: 'responses',
+      chatContextWindowTokens: 256_000,
       embeddingApiKey: 'unused-embedding',
       embeddingBaseUrl: 'https://embedding.example/v1',
       embeddingDimensions: 1536,
@@ -429,6 +435,7 @@ test('default admin transport discovers models and runs a fixed probe through pi
     assert.deepEqual(await transport.discover(target), ['model-b', 'model-a']);
     const probeResult = await transport.test({
       ...target,
+      contextWindowTokens: null,
       maxOutputTokens: 16,
       modelId: 'model-a',
       protocol: 'chat_completions',
@@ -517,6 +524,8 @@ test('provider administration versions configuration and returns only redacted c
     assert.equal(catalog.items[0].version, 2);
     assert.equal(catalog.items[0].models.length, 2);
     assert.ok(catalog.items[0].models.some((item) => item.seriesId === addedModel.modelSeriesId));
+    assert.ok(catalog.items[0].models.every((item) => item.configDigestVersion === 2));
+    assert.ok(catalog.items[0].models.every((item) => item.contextWindowTokens === 128_000));
     assert.doesNotMatch(JSON.stringify(catalog), /top-secret-key|ciphertext|api_key|authorization/iu);
   });
 });
@@ -562,12 +571,24 @@ test('runtime summary identifies environment and database routes by safe endpoin
     assert.equal(runtime.targets[1].endpointHost, 'environment.example:8443');
     assert.deepEqual(
       runtime.targets.map((target) => ({
+        configDigestVersion: target.configDigestVersion,
+        contextWindowTokens: target.contextWindowTokens,
         maxOutputTokens: target.maxOutputTokens,
         reasoningEffort: target.reasoningEffort,
       })),
       [
-        { maxOutputTokens: 4096, reasoningEffort: 'high' },
-        { maxOutputTokens: 600, reasoningEffort: 'high' },
+        {
+          configDigestVersion: 2,
+          contextWindowTokens: 128_000,
+          maxOutputTokens: 4096,
+          reasoningEffort: 'high',
+        },
+        {
+          configDigestVersion: 2,
+          contextWindowTokens: 256_000,
+          maxOutputTokens: 600,
+          reasoningEffort: 'high',
+        },
       ],
     );
     assert.deepEqual(
@@ -575,6 +596,8 @@ test('runtime summary identifies environment and database routes by safe endpoin
         baseUrlMode: target.baseUrlMode,
         baseUrlPrefill: target.baseUrlPrefill,
         endpointHost: target.endpointHost,
+        configDigestVersion: target.configDigestVersion,
+        contextWindowTokens: target.contextWindowTokens,
         maxOutputTokens: target.maxOutputTokens,
         reasoningEffort: target.reasoningEffort,
       })),
@@ -582,6 +605,8 @@ test('runtime summary identifies environment and database routes by safe endpoin
         {
           baseUrlMode: 'replacement_required',
           baseUrlPrefill: null,
+          configDigestVersion: 2,
+          contextWindowTokens: 256_000,
           endpointHost: 'environment.example:8443',
           maxOutputTokens: 600,
           reasoningEffort: 'high',
@@ -589,6 +614,8 @@ test('runtime summary identifies environment and database routes by safe endpoin
         {
           baseUrlMode: 'replacement_required',
           baseUrlPrefill: null,
+          configDigestVersion: 2,
+          contextWindowTokens: 256_000,
           endpointHost: 'fallback.example',
           maxOutputTokens: 600,
           reasoningEffort: 'high',
@@ -639,18 +666,20 @@ test('runtime summary redacts configured URLs and reuses the canonical Environme
     ]);
 
     const digestInput = {
+      contextWindowTokens: serviceOptions.runtimeConfig.chatContextWindowTokens,
       maxOutputTokens: serviceOptions.runtimeConfig.maxOutputTokens,
       modelId: serviceOptions.runtimeConfig.chatModel,
       protocol: serviceOptions.runtimeConfig.chatProtocol,
       reasoningEffort: serviceOptions.runtimeConfig.reasoningEffort ?? null,
       userAgent: serviceOptions.runtimeConfig.openaiUserAgent ?? null,
     };
-    assert.equal(runtime.environmentTargets[0].configDigest, createRuntimeConfigDigest({
+    assert.ok(runtime.environmentTargets.every((target) => target.configDigestVersion === 2));
+    assert.equal(runtime.environmentTargets[0].configDigest, createRuntimeConfigDigestV2({
       ...digestInput,
       apiKey: 'primary-digest-secret',
       baseUrl: '',
     }, serviceOptions.configKey.key));
-    assert.equal(runtime.environmentTargets[1].configDigest, createRuntimeConfigDigest({
+    assert.equal(runtime.environmentTargets[1].configDigest, createRuntimeConfigDigestV2({
       ...digestInput,
       apiKey: 'fallback-digest-secret',
       baseUrl: 'https://fallback-private.example/v1/private',
@@ -768,15 +797,19 @@ test('fallback-1 environment takeover creates an independent encrypted draft wit
       initial_model_version_id: string;
       key_version: number;
       model_config_digest: string;
+      model_config_digest_version: number;
+      model_context_window_tokens: number | null;
       model_id: string;
       model_series_id: string;
       model_version: number;
       source_config_digest: string;
+      source_config_digest_version: number;
       takeover_id: string;
       user_agent: string | null;
     }>(`SELECT
           takeover.id::text AS takeover_id,
           takeover.source_config_digest,
+          takeover.source_config_digest_version,
           takeover.initial_connection_version_id::text AS initial_connection_version_id,
           takeover.initial_model_version_id::text AS initial_model_version_id,
           connection.id::text AS connection_id,
@@ -793,6 +826,8 @@ test('fallback-1 environment takeover creates an independent encrypted draft wit
           model.series_id::text AS model_series_id,
           model.version AS model_version,
           model.config_digest AS model_config_digest
+          , model.config_digest_version AS model_config_digest_version
+          , model.context_window_tokens AS model_context_window_tokens
         FROM ai_environment_takeovers takeover
         JOIN ai_connections connection
           ON connection.id = takeover.initial_connection_version_id
@@ -816,9 +851,10 @@ test('fallback-1 environment takeover creates an independent encrypted draft wit
         userAgent: fallback.userAgent,
       }), 'utf8')
       .digest('hex');
-    const expectedModelDigest = createRuntimeConfigDigest({
+    const expectedModelDigest = createRuntimeConfigDigestV2({
       apiKey: fallbackSecret,
       baseUrl: fallbackUrl,
+      contextWindowTokens: model.contextWindowTokens,
       maxOutputTokens: model.maxOutputTokens,
       modelId: model.modelId,
       protocol: model.protocol,
@@ -832,9 +868,12 @@ test('fallback-1 environment takeover creates an independent encrypted draft wit
     assert.equal(row.base_url, fallbackUrl);
     assert.notEqual(row.base_url, primaryUrl);
     assert.equal(row.source_config_digest, fallback.configDigest);
+    assert.equal(row.source_config_digest_version, 2);
     assert.notEqual(row.source_config_digest, primary.configDigest);
     assert.equal(row.connection_config_digest, expectedConnectionDigest);
     assert.equal(row.model_config_digest, expectedModelDigest);
+    assert.equal(row.model_config_digest_version, 2);
+    assert.equal(row.model_context_window_tokens, model.contextWindowTokens);
     assert.equal(row.initial_connection_version_id, row.connection_id);
     assert.equal(row.initial_model_version_id, row.model_id);
     assert.equal(row.connection_series_id, result.connectionSeriesId);
@@ -1861,11 +1900,31 @@ test('activating the previous logical route creates a rollback revision with its
       name: 'Gateway', baseUrl: 'https://gateway.example/v1', userAgent: null,
       apiKey: 'top-secret-key', firstModel: model,
     }, serviceOptions);
+    const v1Digest = createRuntimeConfigDigestV1({
+      apiKey: 'top-secret-key',
+      baseUrl: 'https://gateway.example/v1',
+      maxOutputTokens: model.maxOutputTokens,
+      modelId: model.modelId,
+      protocol: model.protocol,
+      reasoningEffort: model.reasoningEffort,
+      userAgent: null,
+    }, serviceOptions.configKey.key);
+    await pool.query('ALTER TABLE ai_model_presets DISABLE TRIGGER ai_model_presets_immutable_update');
+    await pool.query(
+      `UPDATE ai_model_presets
+          SET config_digest = $2, config_digest_version = 1, context_window_tokens = NULL
+        WHERE id = $1`,
+      [created.modelVersionId, v1Digest],
+    );
+    await pool.query('ALTER TABLE ai_model_presets ENABLE TRIGGER ai_model_presets_immutable_update');
     await testProviderModel(pool, created.modelSeriesId, serviceOptions);
     const first = await activateProviderRoute(pool, {
       expectedActiveRevision: 0,
       targets: [{ source: 'database', modelId: created.modelSeriesId }],
     }, serviceOptions);
+    assert.equal(first.targets[0].configDigestVersion, 1);
+    assert.equal(first.targets[0].contextWindowTokens, null);
+    assert.equal(first.targets[0].maxOutputTokens, 4096);
 
     await updateProviderModel(pool, created.modelSeriesId, {
       ...model,
@@ -1878,6 +1937,8 @@ test('activating the previous logical route creates a rollback revision with its
       targets: [{ source: 'database', modelId: created.modelSeriesId }],
     }, serviceOptions);
     assert.notEqual(second.targets[0].databaseModelVersionId, first.targets[0].databaseModelVersionId);
+    assert.equal(second.targets[0].configDigestVersion, 2);
+    assert.equal(second.targets[0].contextWindowTokens, 128_000);
 
     await assert.rejects(
       activateProviderRoute(pool, {
@@ -1894,6 +1955,19 @@ test('activating the previous logical route creates a rollback revision with its
     }, serviceOptions);
     assert.equal(rollback.activeRevision, 3);
     assert.equal(rollback.targets[0].databaseModelVersionId, first.targets[0].databaseModelVersionId);
+    assert.deepEqual({
+      configDigest: rollback.targets[0].configDigest,
+      configDigestVersion: rollback.targets[0].configDigestVersion,
+      contextWindowTokens: rollback.targets[0].contextWindowTokens,
+      maxOutputTokens: rollback.targets[0].maxOutputTokens,
+      reasoningEffort: rollback.targets[0].reasoningEffort,
+    }, {
+      configDigest: first.targets[0].configDigest,
+      configDigestVersion: 1,
+      contextWindowTokens: null,
+      maxOutputTokens: 4096,
+      reasoningEffort: 'high',
+    });
     const stored = await pool.query<{ activation_kind: string }>(
       'SELECT activation_kind FROM ai_route_revisions WHERE id = $1',
       [rollback.routeRevisionId],

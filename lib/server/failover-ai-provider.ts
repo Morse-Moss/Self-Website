@@ -8,9 +8,15 @@ import {
   type ProviderAnswerTarget,
   type ProviderAttempt,
   type ProviderAttemptEvent,
+  type PreparedTargetAnswer,
   type ProviderTargetSnapshot,
 } from './ai-provider.ts';
 import { OpenAIProviderError } from './openai-provider.ts';
+import {
+  isNumericContextOverflow,
+  sanitizeProviderFailure,
+  type SanitizedProviderFailure,
+} from './provider-failure.ts';
 import { createProviderDeadline } from './provider-deadline.ts';
 import { ProviderHealthRegistry } from './provider-health.ts';
 import { createTimeoutSignal, OperationTimeoutError, raceWithSignal } from './timeout.ts';
@@ -25,15 +31,6 @@ export type ProviderNodeInput =
   | AiProvider
   | ProviderAnswerTarget
   | (Omit<ProviderNode, 'snapshot'> & { snapshot?: ProviderTargetSnapshot });
-
-function hasOpenFencedCode(text: string): boolean {
-  return (text.match(/```/gu)?.length ?? 0) % 2 === 1;
-}
-
-function hasCompleteSemanticBoundary(text: string): boolean {
-  return !hasOpenFencedCode(text)
-    && /[.!?\n\u3002\uFF01\uFF1F]\s*$/u.test(text);
-}
 
 function addUsage(current: TokenUsage | null, next: TokenUsage | null): TokenUsage | null {
   if (!next) return current;
@@ -60,6 +57,45 @@ function isFailoverEligible(error: unknown): boolean {
     || error instanceof OperationTimeoutError
     || error instanceof ProviderRunError
     || (error instanceof AnswerExecutionError && error.code === 'PROVIDER_INCOMPLETE');
+}
+
+function isTargetPreparationFailure(error: unknown): boolean {
+  if (!error || typeof error !== 'object' || !('code' in error)) return false;
+  return new Set([
+    'CONTEXT_PROTECTED_PAYLOAD_TOO_LARGE',
+    'CONTEXT_TARGET_INELIGIBLE',
+    'CONTEXT_SUMMARY_FAILED',
+    'CONTEXT_SUMMARY_CANCELLED',
+    'CONTEXT_SUMMARY_NOT_SMALLER',
+  ]).has(String((error as { code?: unknown }).code ?? ''));
+}
+
+function failureFor(error: unknown): SanitizedProviderFailure {
+  if (error instanceof OpenAIProviderError) return error.failure;
+  if (error instanceof OperationTimeoutError) {
+    return sanitizeProviderFailure({ reason: 'timeout' });
+  }
+  if (error instanceof AnswerExecutionError) {
+    return sanitizeProviderFailure({ reason: 'response_incomplete' });
+  }
+  return sanitizeProviderFailure({ reason: 'transport' });
+}
+
+function snapshotForAttempt(
+  snapshot: ProviderTargetSnapshot,
+  integrity: ProviderAttempt['integrity'],
+): ProviderTargetSnapshot {
+  if (!integrity || !('version' in integrity)) return snapshot;
+  return {
+    ...snapshot,
+    configDigestVersion: integrity.target.configDigestVersion,
+    configDigest: integrity.target.configDigest,
+    modelId: integrity.target.modelId,
+    protocol: integrity.target.protocol,
+    contextWindowTokens: integrity.target.contextWindowTokens,
+    maxOutputTokens: integrity.target.maxOutputTokens,
+    reasoningEffort: integrity.target.reasoningEffort,
+  };
 }
 
 export class FailoverAiProvider implements AiProvider {
@@ -189,65 +225,129 @@ export class FailoverAiProvider implements AiProvider {
 
   private async *streamCoordinated(request: AnswerRequest, signal?: AbortSignal): AsyncIterable<AnswerEvent> {
     const execution = request.execution!;
+    const timeoutMs = Math.max(1, Math.min(
+      execution.totalTimeoutMs,
+      execution.budget.remainingMs(Date.now()),
+    ));
+    const deadlineMs = Date.now() + timeoutMs;
     const timeout = createTimeoutSignal({
-      timeoutMs: Math.max(1, Math.min(
-        execution.totalTimeoutMs,
-        execution.budget.remainingMs(Date.now()),
-      )),
+      timeoutMs,
       code: 'PROVIDER_TOTAL_TIMEOUT',
       signal,
     });
     const attempts: ProviderAttempt[] = [];
     let lastError: unknown;
     let localAttemptNo = 0;
+    let variantRevision = 0;
+    let overflowRetryConsumed = false;
 
     try {
-      for (const [nodeIndex, node] of this.nodes.entries()) {
+      nodeLoop:
+      for (const [nodeIndex, node] of this.nodes.slice(0, 6).entries()) {
         if (timeout.signal.aborted) throw timeout.signal.reason;
         if (!this.health.acquire(node.alias, new Date())) continue;
 
-        const reservedAt = Date.now();
-        if (!execution.budget.canStartAttempt(reservedAt, 10_000)
-          || !execution.budget.reserveAttempt(reservedAt)) {
-          this.health.abort(node.alias);
-          break;
-        }
-        localAttemptNo += 1;
-        const attemptNo = localAttemptNo;
-        const launchKind = nodeIndex === 0 ? 'primary' : 'failover';
-        const startedAt = Date.now();
-        const startedEvent: Extract<ProviderAttemptEvent, { type: 'started' }> = {
-          type: 'started',
-          attemptNo,
-          providerAlias: node.alias,
-          launchKind,
-          generationMode: execution.generationMode,
-          startedAt: new Date(startedAt),
-          startDelayMs: 0,
-        };
-        await execution.onAttempt(startedEvent);
-        if (launchKind === 'failover') yield { type: 'switching' };
+        let nextVariant: {
+          trigger: 'initial' | 'provider_numeric_overflow';
+          numericOverflow: SanitizedProviderFailure | null;
+        } | null = { trigger: 'initial', numericOverflow: null };
 
-        const controller = new AbortController();
-        const forwardAbort = () => controller.abort(timeout.signal.reason);
-        if (timeout.signal.aborted) forwardAbort();
-        else timeout.signal.addEventListener('abort', forwardAbort, { once: true });
-        const iterator = node.provider.streamAnswer(request, controller.signal)[Symbol.asyncIterator]();
-        let text = '';
-        let releasedLength = 0;
-        let firstByteAt: number | null = null;
-        let firstProtocolAt: number | null = null;
-        let firstModelTextAt: number | null = null;
-        let firstUserVisibleAt: number | null = null;
-        let latestUsage: TokenUsage | null = null;
-        let terminalRecorded = false;
-        const providerDeadline = createProviderDeadline({
-          startedAtMs: startedAt,
-          protocolTimeoutMs: execution.protocolEventTimeoutMs,
-          modelTextTimeoutMs: execution.modelTextTimeoutMs,
-        });
+        while (nextVariant) {
+          const variant = nextVariant;
+          nextVariant = null;
+          variantRevision += 1;
+          let prepared: PreparedTargetAnswer | null = null;
+          let attemptRequest = request;
+          let attemptIntegrity = execution.integrity ?? null;
+          try {
+            if (execution.prepareTarget) {
+              prepared = await raceWithSignal(execution.prepareTarget({
+                target: node.snapshot,
+                provider: node.provider,
+                variantId: execution.generationVariantId ?? execution.executionId,
+                revision: variantRevision,
+                trigger: variant.trigger,
+                numericOverflow: variant.numericOverflow,
+                signal: timeout.signal,
+                deadlineMs,
+              }), timeout.signal);
+              attemptRequest = {
+                ...prepared.request,
+                preparedOutboundBody: prepared.outboundBody,
+              };
+              attemptIntegrity = prepared.integrity;
+            }
+          } catch (error) {
+            if (signal?.aborted) {
+              this.health.abort(node.alias);
+              throw signal.reason;
+            }
+            if (timeout.signal.aborted) {
+              this.health.abort(node.alias);
+              throw timeout.signal.reason;
+            }
+            if (error && typeof error === 'object' && 'code' in error
+              && (error as { code?: unknown }).code === 'CONTEXT_SUMMARY_CANCELLED') {
+              this.health.abort(node.alias);
+              throw error;
+            }
+            if (!isTargetPreparationFailure(error)) {
+              this.health.abort(node.alias);
+              throw error;
+            }
+            lastError = error;
+            break;
+          }
 
-        const recordProtocol = async (atMs: number) => {
+          const reservedAt = Date.now();
+          if (!execution.budget.canStartAttempt(reservedAt, 10_000)
+            || !execution.budget.reserveAttempt(reservedAt)) {
+            this.health.abort(node.alias);
+            break nodeLoop;
+          }
+          localAttemptNo += 1;
+          const attemptNo = localAttemptNo;
+          const launchKind = variant.trigger === 'provider_numeric_overflow'
+            ? 'overflow_retry'
+            : nodeIndex === 0 ? 'primary' : 'failover';
+          const startedAt = Date.now();
+          const attemptSnapshot = snapshotForAttempt(node.snapshot, attemptIntegrity);
+          const startedEvent: Extract<ProviderAttemptEvent, { type: 'started' }> = {
+            type: 'started',
+            attemptNo,
+            providerAlias: node.alias,
+            launchKind,
+            generationMode: execution.generationMode,
+            ...(prepared ? { generationVariantTrigger: prepared.context.variant.trigger } : {}),
+            ...(attemptIntegrity ? { integrity: attemptIntegrity } : {}),
+            startedAt: new Date(startedAt),
+            startDelayMs: 0,
+          };
+          await execution.onAttempt(startedEvent);
+          if (launchKind !== 'primary') yield { type: 'switching' };
+
+          const controller = new AbortController();
+          const forwardAbort = () => controller.abort(timeout.signal.reason);
+          if (timeout.signal.aborted) forwardAbort();
+          else timeout.signal.addEventListener('abort', forwardAbort, { once: true });
+          const iterator = node.provider.streamAnswer(
+            attemptRequest,
+            controller.signal,
+          )[Symbol.asyncIterator]();
+          let text = '';
+          let firstByteAt: number | null = null;
+          let firstProtocolAt: number | null = null;
+          let firstModelTextAt: number | null = null;
+          let firstUserVisibleAt: number | null = null;
+          let latestUsage: TokenUsage | null = null;
+          let terminalRecorded = false;
+          const providerDeadline = createProviderDeadline({
+            startedAtMs: startedAt,
+            protocolTimeoutMs: execution.protocolEventTimeoutMs,
+            modelTextTimeoutMs: execution.modelTextTimeoutMs,
+          });
+
+          const recordProtocol = async (atMs: number) => {
           providerDeadline.recordProtocolEvent(atMs);
           if (firstProtocolAt !== null) return;
           firstProtocolAt = atMs;
@@ -259,8 +359,8 @@ export class FailoverAiProvider implements AiProvider {
           await execution.onAttempt({
             type: 'first_byte', attemptNo, providerAlias: node.alias, firstByteMs: elapsedMs,
           });
-        };
-        const recordModelText = async (atMs: number) => {
+          };
+          const recordModelText = async (atMs: number) => {
           await recordProtocol(atMs);
           providerDeadline.recordModelText(atMs);
           if (firstModelTextAt !== null) return;
@@ -271,8 +371,8 @@ export class FailoverAiProvider implements AiProvider {
             providerAlias: node.alias,
             elapsedMs: atMs - startedAt,
           });
-        };
-        const recordUserVisible = async (atMs: number) => {
+          };
+          const recordUserVisible = async (atMs: number) => {
           if (firstUserVisibleAt !== null) return;
           firstUserVisibleAt = atMs;
           await execution.onAttempt({
@@ -281,16 +381,17 @@ export class FailoverAiProvider implements AiProvider {
             providerAlias: node.alias,
             elapsedMs: atMs - startedAt,
           });
-        };
+          };
 
-        const recordTerminal = async (
-          status: ProviderAttempt['status'],
-          errorCode: string | null,
-          eventUsage: TokenUsage | null,
-        ): Promise<ProviderAttempt> => {
-          const recorded = createAttempt({
+          const recordTerminal = async (
+            status: ProviderAttempt['status'],
+            errorCode: string | null,
+            eventUsage: TokenUsage | null,
+            failure: SanitizedProviderFailure | null,
+          ): Promise<ProviderAttempt> => {
+            const recorded = createAttempt({
             attemptIndex: attemptNo - 1,
-            snapshot: node.snapshot,
+            snapshot: attemptSnapshot,
             startedAt: new Date(startedAt),
             firstByteAt: firstByteAt === null ? null : new Date(firstByteAt),
             firstProtocolAt: firstProtocolAt === null ? null : new Date(firstProtocolAt),
@@ -303,9 +404,11 @@ export class FailoverAiProvider implements AiProvider {
             launchKind,
             executionId: execution.executionId,
             attemptNo,
-            integrity: execution.integrity ?? null,
+            integrity: attemptIntegrity,
+            generationVariantTrigger: prepared?.context.variant.trigger ?? null,
+            failure,
           });
-          await execution.onAttempt({
+            await execution.onAttempt({
             type: status === 'completed' ? 'completed' : status === 'stopped' ? 'aborted' : 'failed',
             attemptNo,
             providerAlias: node.alias,
@@ -313,15 +416,16 @@ export class FailoverAiProvider implements AiProvider {
             winner: status === 'completed',
             errorCode,
             usage: eventUsage,
-            estimatedCostUsd: recorded.knownCostUsd,
+              estimatedCostUsd: recorded.knownCostUsd,
+              failure,
           });
-          attempts.push(recorded);
-          terminalRecorded = true;
-          return recorded;
-        };
+            attempts.push(recorded);
+            terminalRecorded = true;
+            return recorded;
+          };
 
-        try {
-          while (true) {
+          try {
+            while (true) {
             const deadlineMs = providerDeadline.deadlineMs();
             const adaptiveTimeout = deadlineMs === null
               ? null
@@ -358,25 +462,17 @@ export class FailoverAiProvider implements AiProvider {
               if (!event.text) continue;
               await recordModelText(Date.now());
               text += event.text;
-              const completeSegment = hasCompleteSemanticBoundary(text);
-              if (execution.releasePolicy === 'segment'
-                && completeSegment
-                && text.length >= execution.minimumBufferCharacters) {
-                await recordUserVisible(Date.now());
-                yield { type: 'delta', text: text.slice(releasedLength) };
-                releasedLength = text.length;
-              }
               continue;
             }
 
             latestUsage = event.usage;
             if (!text.trim()) throw new AnswerExecutionError('PROVIDER_INCOMPLETE');
-            if (releasedLength < text.length) {
-              await recordUserVisible(Date.now());
-              yield { type: 'delta', text: text.slice(releasedLength) };
-              releasedLength = text.length;
-            }
-            const recorded = await recordTerminal('completed', null, event.usage);
+            const recorded = await recordTerminal('completed', null, event.usage, null);
+            await recordUserVisible(Date.now());
+            recorded.firstUserVisibleMs = firstUserVisibleAt === null
+              ? null
+              : firstUserVisibleAt - startedAt;
+            yield { type: 'delta', text };
             yield { type: 'attempt', attempt: recorded };
             this.health.success(node.alias);
             const aggregate = aggregateAttempts(attempts);
@@ -388,41 +484,56 @@ export class FailoverAiProvider implements AiProvider {
               providerAlias: node.alias,
               usage: aggregate.usage,
               usageComplete: aggregate.usageComplete,
-              winner: { ...node.snapshot, attemptIndex: attemptNo - 1 },
+              winner: { ...attemptSnapshot, attemptIndex: attemptNo - 1 },
             };
-            return;
-          }
-        } catch (error) {
-          const callerStopped = Boolean(signal?.aborted);
-          const errorUsage = error instanceof OpenAIProviderError ? error.usage : latestUsage;
-          const errorCode = callerStopped ? null : stableErrorCode(error);
-          if (!terminalRecorded) {
-            const recorded = await recordTerminal(
-              callerStopped ? 'stopped' : 'failed',
-              errorCode,
-              errorUsage,
-            );
-            yield { type: 'attempt', attempt: recorded };
-          }
-          if (callerStopped) {
-            this.health.abort(node.alias);
-            throw signal?.reason;
-          }
-          if (!isFailoverEligible(error)) {
-            this.health.abort(node.alias);
-            throw error;
-          }
-          this.health.failure(node.alias, new Date());
-          lastError = error;
-          if (releasedLength > 0 || timeout.signal.aborted) throw error;
-        } finally {
-          timeout.signal.removeEventListener('abort', forwardAbort);
-          controller.abort(new Error('ATTEMPT_CLOSED'));
-          if (iterator.return) {
-            await Promise.race([
-              Promise.resolve(iterator.return()).catch(() => undefined),
-              wait(100),
-            ]);
+              return;
+            }
+          } catch (error) {
+            const callerStopped = Boolean(signal?.aborted);
+            const errorUsage = error instanceof OpenAIProviderError ? error.usage : latestUsage;
+            const errorCode = callerStopped ? null : stableErrorCode(error);
+            const failure = callerStopped
+              ? sanitizeProviderFailure({ reason: 'cancelled' })
+              : failureFor(error);
+            if (!terminalRecorded) {
+              const recorded = await recordTerminal(
+                callerStopped ? 'stopped' : 'failed',
+                errorCode,
+                errorUsage,
+                failure,
+              );
+              yield { type: 'attempt', attempt: recorded };
+            }
+            if (callerStopped) {
+              this.health.abort(node.alias);
+              throw signal?.reason;
+            }
+            if (!isFailoverEligible(error)) {
+              this.health.abort(node.alias);
+              throw error;
+            }
+            lastError = error;
+            if (timeout.signal.aborted) throw error;
+            if (execution.prepareTarget
+              && !overflowRetryConsumed
+              && isNumericContextOverflow(failure)) {
+              overflowRetryConsumed = true;
+              nextVariant = {
+                trigger: 'provider_numeric_overflow',
+                numericOverflow: failure,
+              };
+              continue;
+            }
+            this.health.failure(node.alias, new Date());
+          } finally {
+            timeout.signal.removeEventListener('abort', forwardAbort);
+            controller.abort(new Error('ATTEMPT_CLOSED'));
+            if (iterator.return) {
+              await Promise.race([
+                Promise.resolve(iterator.return()).catch(() => undefined),
+                wait(100),
+              ]);
+            }
           }
         }
       }
@@ -436,15 +547,19 @@ export class FailoverAiProvider implements AiProvider {
 function legacySnapshot(position: number): ProviderTargetSnapshot {
   return {
     configDigest: '0'.repeat(64),
+    configDigestVersion: 1,
     connectionDisplayName: position === 0 ? 'Environment' : `Environment fallback ${position}`,
     connectionVersionId: null,
+    contextWindowTokens: null,
     inputUsdPerMillion: null,
     modelDisplayName: 'Configured model',
     modelId: 'configured-model',
     modelVersionId: null,
+    maxOutputTokens: null,
     outputUsdPerMillion: null,
     position,
     protocol: 'responses',
+    reasoningEffort: null,
     routeRevisionId: null,
     sourceType: 'environment',
   };
@@ -466,6 +581,8 @@ function createAttempt(input: {
   executionId?: string;
   attemptNo?: number;
   integrity?: ProviderAttempt['integrity'];
+  generationVariantTrigger?: ProviderAttempt['generationVariantTrigger'];
+  failure?: ProviderAttempt['failure'];
 }): ProviderAttempt {
   const completedAt = new Date();
   const inputRate = input.snapshot.inputUsdPerMillion === null
@@ -501,6 +618,9 @@ function createAttempt(input: {
       ? Math.max(0, (input.firstUserVisibleAt ?? input.firstByteAt)!.getTime() - input.startedAt.getTime())
       : null,
     generationMode: input.generationMode ?? 'normal',
+    ...(input.generationVariantTrigger !== undefined
+      ? { generationVariantTrigger: input.generationVariantTrigger }
+      : {}),
     knownCostUsd,
     launchKind: input.launchKind ?? (input.attemptIndex === 0 ? 'primary' : 'failover'),
     startedAt: input.startedAt,
@@ -511,6 +631,7 @@ function createAttempt(input: {
     ...(input.executionId ? { executionId: input.executionId } : {}),
     ...(input.attemptNo ? { attemptNo: input.attemptNo } : {}),
     ...(input.integrity !== undefined ? { integrity: input.integrity } : {}),
+    ...(input.failure !== undefined ? { failure: input.failure } : {}),
   };
 }
 

@@ -55,6 +55,12 @@ function escapeKnowledge(value: string): string {
     .replaceAll('>', '&gt;');
 }
 
+function requireNonblankString(value: unknown, field: string): string {
+  if (typeof value !== 'string') throw new TypeError(`${field} must be a string.`);
+  if (!value.trim()) throw new TypeError(`${field} is required.`);
+  return value;
+}
+
 export function normalizeChatRequest(input: unknown): NormalizedChatRequest {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     throw new TypeError('Request body must be an object.');
@@ -81,11 +87,7 @@ export function normalizeChatRequest(input: unknown): NormalizedChatRequest {
     if (Object.hasOwn(body, 'diagnosis')) {
       throw new TypeError('diagnosis is only valid for diagnosis workflow.');
     }
-    message = typeof body.message === 'string' ? body.message.trim() : '';
-    if (!message) throw new TypeError('message is required.');
-    if (message.length > 2_000) {
-      throw new RangeError('message must be 2,000 characters or fewer.');
-    }
+    message = requireNonblankString(body.message, 'message');
   } else if (workflow === 'jd_match') {
     if (Object.hasOwn(body, 'message')) {
       throw new TypeError('message is only valid for chat workflow.');

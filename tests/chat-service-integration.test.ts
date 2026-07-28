@@ -19,7 +19,6 @@ import { normalizeChatRequest } from '../lib/server/chat-core.ts';
 import { routeChatTurn } from '../lib/server/chat-route-policy.ts';
 import {
   ChatServiceError,
-  loadCompletedHistory,
   runChat,
   type ChatServiceEvent,
 } from '../lib/server/chat-service.ts';
@@ -48,73 +47,6 @@ test('v2 routing has no Provider fallback judge or route-classifier prompt', asy
   assert.doesNotMatch(source, /llmFallbackIntentPrompt/u);
 });
 
-test('v2 task history admits only completed turns with the same task_id', async () => {
-  const completedTurnId = randomUUID();
-  const failedTurnId = randomUUID();
-  const runningTurnId = randomUUID();
-  const taskId = randomUUID();
-  const queries: string[] = [];
-  const client = {
-    async query(sql: string) {
-      queries.push(sql);
-      if (queries.length === 1) return { rows: [{ id: completedTurnId }] };
-      return {
-        rows: [
-          { id: '1', role: 'user', content: `morse-turn-v1:${JSON.stringify({ turnId: completedTurnId, content: 'completed question' })}` },
-          { id: '2', role: 'assistant', content: `morse-turn-v1:${JSON.stringify({ turnId: completedTurnId, content: 'completed answer' })}` },
-          { id: '3', role: 'user', content: `morse-turn-v1:${JSON.stringify({ turnId: failedTurnId, content: 'failed pollution' })}` },
-          { id: '4', role: 'user', content: `morse-turn-v1:${JSON.stringify({ turnId: runningTurnId, content: 'running pollution' })}` },
-        ],
-      };
-    },
-  };
-
-  const history = await loadCompletedHistory(client as never, randomUUID(), {
-    taskId,
-    includeConversation: false,
-    tokenBudget: 500,
-  });
-
-  assert.match(queries[0], /status = 'completed'/u);
-  assert.match(queries[0], /task_id = \$2/u);
-  assert.deepEqual(history, [
-    { role: 'user', content: 'completed question' },
-    { role: 'assistant', content: 'completed answer' },
-  ]);
-  assert.doesNotMatch(JSON.stringify(history), /failed pollution|running pollution/u);
-});
-
-test('v2 completed history applies its budget to whole turns instead of splitting a user-assistant pair', async () => {
-  const olderTurnId = randomUUID();
-  const latestTurnId = randomUUID();
-  const taskId = randomUUID();
-  const client = {
-    async query(_sql: string) {
-      if (_sql.includes('FROM interaction_turns')) {
-        return { rows: [{ id: olderTurnId }, { id: latestTurnId }] };
-      }
-      return {
-        rows: [
-          { id: '1', role: 'user', content: `morse-turn-v1:${JSON.stringify({ turnId: olderTurnId, content: 'older question' })}` },
-          { id: '2', role: 'assistant', content: `morse-turn-v1:${JSON.stringify({ turnId: olderTurnId, content: 'older answer' })}` },
-          { id: '3', role: 'user', content: `morse-turn-v1:${JSON.stringify({ turnId: latestTurnId, content: 'latest question' })}` },
-          { id: '4', role: 'assistant', content: `morse-turn-v1:${JSON.stringify({ turnId: latestTurnId, content: 'latest answer' })}` },
-        ],
-      };
-    },
-  };
-
-  const history = await loadCompletedHistory(client as never, randomUUID(), {
-    taskId,
-    includeConversation: false,
-    tokenBudget: 8,
-  });
-
-  assert.deepEqual(history, [
-    { role: 'user', content: 'latest question' },
-    { role: 'assistant', content: 'latest answer' },
-  ]);
-});
 const inviteCode = 'm3-chat-service-invite';
 const now = new Date('2026-07-13T03:00:00.000Z');
 let accessSessionId = '';
@@ -291,8 +223,10 @@ function routedAttempt(input: {
     attemptIndex: input.attemptIndex,
     completedAt,
     configDigest: String(input.position + 1).repeat(64),
+    configDigestVersion: 2,
     connectionDisplayName: `Connection ${input.position}`,
     connectionVersionId: null,
+    contextWindowTokens: null,
     costComplete: input.usage !== null,
     errorCode: input.errorCode ?? null,
     firstByteLatencyMs: input.status === 'completed' ? 10 : null,
@@ -306,9 +240,11 @@ function routedAttempt(input: {
     modelDisplayName: `Model ${input.position}`,
     modelId: `model-${input.position}`,
     modelVersionId: null,
+    maxOutputTokens: null,
     outputUsdPerMillion: input.outputRate,
     position: input.position,
     protocol: 'responses',
+    reasoningEffort: null,
     routeRevisionId: null,
     sourceType: 'environment',
     startedAt,
@@ -329,15 +265,19 @@ function answerTarget(
     provider,
     snapshot: {
       configDigest: String(position).repeat(64),
+      configDigestVersion: 2,
       connectionDisplayName: `Priced connection ${position}`,
       connectionVersionId: null,
+      contextWindowTokens: null,
       inputUsdPerMillion,
       modelDisplayName: `Priced model ${position}`,
       modelId: `priced-model-${position}`,
       modelVersionId: null,
+      maxOutputTokens: null,
       outputUsdPerMillion,
       position,
       protocol: 'responses',
+      reasoningEffort: null,
       routeRevisionId: null,
       sourceType: 'environment',
     },
@@ -562,8 +502,6 @@ class AbortDuringSearchProvider implements SearchProvider {
 const provider = new FakeProvider();
 const config = {
   maxMessagesPerSession: 2,
-  historyMessageLimit: 12,
-  retrievalLimit: 3,
   interactionRetentionDays: 10,
   tokenRates: { inputUsdPerMillion: 1, outputUsdPerMillion: 2 },
   chatV2Enabled: false,
@@ -576,7 +514,6 @@ const config = {
   providerModelTextTimeoutMs: 40_000,
   providerStageTimeoutMs: 80_000,
   chatTurnTimeoutMs: 90_000,
-  providerMaxAttempts: 2,
 };
 
 const searchConfig = {
@@ -6147,7 +6084,7 @@ test('v2 failed turn after an earlier topic switch leaves conversation_task_stat
   const testNow = new Date();
   const fixture = await createFailureFixture('chat-v2-task-state-failed-turn', testNow);
   const v2Config = { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 };
-  const secondTurnConfig = { ...v2Config, retrievalLimit: 10 };
+  const secondTurnConfig = v2Config;
   const firstTurnId = randomUUID();
   const secondTurnId = randomUUID();
 

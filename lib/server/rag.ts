@@ -73,66 +73,8 @@ interface KnowledgeRow {
   topic_ids: unknown;
 }
 
-export async function retrieveKnowledge(
-  pool: Pool | PoolClient,
-  queryEmbedding: number[],
-  requestedLimit = 5,
-): Promise<KnowledgeSource[]> {
-  if (queryEmbedding.length !== EMBEDDING_DIMENSIONS) {
-    throw new RangeError(`Query embedding must have ${EMBEDDING_DIMENSIONS} dimensions.`);
-  }
-
-  const limit = Math.min(Math.max(Math.trunc(requestedLimit), 1), 15);
-  // Two-stage retrieval: the inner ANN scan orders by distance alone with a
-  // bounded LIMIT so PostgreSQL can serve it from the HNSW index; per-document
-  // dedup (DISTINCT ON) and final top-N ranking run over that candidate set.
-  // The inner LIMIT is pinned to 40 to match pgvector's default
-  // hnsw.ef_search: an index scan returns at most ef_search candidates, so a
-  // larger LIMIT would silently truncate. Raise both together if recall needs
-  // a deeper pool once the corpus grows.
-  const result = await pool.query<KnowledgeRow>(
-    `SELECT ranked.chunk_id,
-            ranked.document_id,
-            ranked.title,
-            ranked.source_path,
-            ranked.href,
-            ranked.content,
-            ranked.project_slug,
-            ranked.topic_ids,
-            1 - ranked.distance AS score
-       FROM (
-         SELECT DISTINCT ON (candidate.document_id)
-                candidate.chunk_id,
-                candidate.document_id,
-                candidate.title,
-                candidate.source_path,
-                candidate.href,
-                candidate.content,
-                candidate.project_slug,
-                candidate.topic_ids,
-                candidate.distance
-           FROM (
-             SELECT chunk.id AS chunk_id,
-                    chunk.document_id,
-                    chunk.metadata->>'title' AS title,
-                    chunk.metadata->>'sourcePath' AS source_path,
-                    chunk.metadata->>'href' AS href,
-                    chunk.content,
-                    chunk.metadata->>'projectSlug' AS project_slug,
-                    chunk.metadata->'topicIds' AS topic_ids,
-                    chunk.embedding <=> $1::vector AS distance
-               FROM knowledge_chunks AS chunk
-              ORDER BY chunk.embedding <=> $1::vector
-              LIMIT 40
-           ) AS candidate
-          ORDER BY candidate.document_id, candidate.distance, candidate.chunk_id
-       ) AS ranked
-      ORDER BY ranked.distance, ranked.chunk_id
-      LIMIT $2`,
-    [serializeVector(queryEmbedding), limit],
-  );
-
-  return result.rows.map((row) => ({
+function mapKnowledgeRow(row: KnowledgeRow): KnowledgeSource {
+  return {
     chunkId: row.chunk_id,
     documentId: row.document_id,
     title: row.title,
@@ -144,5 +86,73 @@ export async function retrieveKnowledge(
     topicIds: Array.isArray(row.topic_ids)
       ? row.topic_ids.filter((value): value is string => typeof value === 'string')
       : [],
-  }));
+  };
+}
+
+export async function retrieveFullRelevantKnowledge(
+  client: Pool | PoolClient,
+  embeddings: readonly number[][],
+): Promise<KnowledgeSource[]> {
+  if (embeddings.length === 0) return [];
+  if (embeddings.some((embedding) => embedding.length !== EMBEDDING_DIMENSIONS)) {
+    throw new RangeError(`Query embeddings must have ${EMBEDDING_DIMENSIONS} dimensions.`);
+  }
+
+  const values = embeddings.map((_, index) => `($${index + 1}::vector)`).join(', ');
+  const thresholdParameter = `$${embeddings.length + 1}`;
+  const result = await client.query<KnowledgeRow>(
+    `WITH query_vectors(embedding) AS (VALUES ${values}),
+          scored AS (
+            SELECT chunk.id AS chunk_id,
+                   chunk.document_id,
+                   chunk.metadata->>'title' AS title,
+                   chunk.metadata->>'sourcePath' AS source_path,
+                   chunk.metadata->>'href' AS href,
+                   chunk.content,
+                   chunk.metadata->>'projectSlug' AS project_slug,
+                   chunk.metadata->'topicIds' AS topic_ids,
+                   nearest.distance
+              FROM knowledge_chunks AS chunk
+              CROSS JOIN LATERAL (
+                SELECT MIN(chunk.embedding <=> query.embedding) AS distance
+                  FROM query_vectors AS query
+              ) AS nearest
+             WHERE 1 - nearest.distance >= ${thresholdParameter}
+          ),
+          deduplicated AS (
+            SELECT DISTINCT ON (scored.document_id)
+                   scored.chunk_id,
+                   scored.document_id,
+                   scored.title,
+                   scored.source_path,
+                   scored.href,
+                   scored.content,
+                   scored.project_slug,
+                   scored.topic_ids,
+                   1 - scored.distance AS score
+              FROM scored
+             ORDER BY scored.document_id, scored.distance, scored.chunk_id
+          )
+     SELECT chunk_id, document_id, title, source_path, href, content,
+            project_slug, topic_ids, score
+       FROM deduplicated
+      ORDER BY score DESC, chunk_id ASC`,
+    [...embeddings.map(serializeVector), LOCAL_EVIDENCE_MIN_SCORE],
+  );
+
+  return result.rows.map(mapKnowledgeRow);
+}
+
+export async function retrieveKnowledge(
+  pool: Pool | PoolClient,
+  queryEmbedding: number[],
+  requestedLimit = 5,
+): Promise<KnowledgeSource[]> {
+  if (queryEmbedding.length !== EMBEDDING_DIMENSIONS) {
+    throw new RangeError(`Query embedding must have ${EMBEDDING_DIMENSIONS} dimensions.`);
+  }
+
+  const limit = Math.min(Math.max(Math.trunc(requestedLimit), 1), 15);
+  const complete = await retrieveFullRelevantKnowledge(pool, [queryEmbedding]);
+  return complete.slice(0, limit);
 }

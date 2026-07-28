@@ -78,6 +78,25 @@ interface BridgeMessageRow {
   role: 'user' | 'assistant';
 }
 
+interface CanonicalLegacyTurnRow {
+  completed_at: Date;
+  context_scope_id: string | null;
+  task_id: string | null;
+  turn_id: string;
+}
+
+interface CanonicalContextTurnRow extends CompletedTurnRow {
+  assistant_role: 'user' | 'assistant' | null;
+  user_role: 'user' | 'assistant' | null;
+}
+
+export interface LoadCanonicalHistoryInput {
+  conversationId: string;
+  ownerPipeline: 'legacy_v1' | 'legacy_v2' | 'context_packet_v22';
+  contextScopeId: string | null;
+  includeConversation: boolean;
+}
+
 export interface UpsertContextTaskFrameInput {
   conversationId: string;
   taskId: string;
@@ -398,36 +417,146 @@ export async function loadAdjacentCompletedContextTurn(
   return result.rows[0] ? toCompletedContextTurn(result.rows[0]) : null;
 }
 
-function estimateTokens(value: string): number {
-  const cjk = value.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu)?.length ?? 0;
-  const other = value.replace(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu, '').length;
-  return Math.max(1, cjk + Math.ceil(other / 4));
+function canonicalTurnOrder(left: CompletedContextTurn, right: CompletedContextTurn): number {
+  const leftId = BigInt(left.user.id);
+  const rightId = BigInt(right.user.id);
+  return leftId < rightId ? -1 : leftId > rightId ? 1 : left.turnId.localeCompare(right.turnId);
 }
 
-export async function loadCompletedContextHistory(
-  client: Queryable,
-  conversationId: string,
-  contextScopeId: string,
-  options: { tokenBudget: number },
-): Promise<CompletedContextTurn[]> {
-  const result = await client.query<CompletedTurnRow>(
-    `${completedTurnSelection}
-      WHERE completed.conversation_id = $1
-        AND completed.context_scope_id = $2
-      ORDER BY completed.completed_at, completed.turn_id`,
-    [conversationId, contextScopeId],
-  );
-  const turns = result.rows.map(toCompletedContextTurn);
-  const selected: CompletedContextTurn[] = [];
-  let used = 0;
-  for (let index = turns.length - 1; index >= 0; index -= 1) {
-    const turn = turns[index];
-    const size = estimateTokens(turn.user.text) + estimateTokens(turn.assistant.text);
-    if (selected.length > 0 && used + size > options.tokenBudget) break;
-    selected.push(turn);
-    used += size;
+function finalizeCanonicalHistory(turns: CompletedContextTurn[]): CompletedContextTurn[] {
+  const messageIds = new Set<string>();
+  const turnIds = new Set<string>();
+  try {
+    for (const turn of turns) {
+      if (turnIds.has(turn.turnId)
+        || !/^[1-9][0-9]*$/u.test(turn.user.id)
+        || !/^[1-9][0-9]*$/u.test(turn.assistant.id)
+        || messageIds.has(turn.user.id)
+        || messageIds.has(turn.assistant.id)
+        || turn.user.id === turn.assistant.id) {
+        throw new Error('invalid completed turn identity');
+      }
+      turnIds.add(turn.turnId);
+      messageIds.add(turn.user.id);
+      messageIds.add(turn.assistant.id);
+    }
+    return [...turns].sort(canonicalTurnOrder);
+  } catch {
+    throw new Error('CONTEXT_COMPLETED_TURN_INVALID');
   }
-  return selected.reverse();
+}
+
+function validateCanonicalContextTurn(row: CanonicalContextTurnRow): CompletedContextTurn {
+  if (row.user_role !== 'user'
+    || row.assistant_role !== 'assistant'
+    || !row.user_content
+    || !row.assistant_content) {
+    throw new Error('CONTEXT_COMPLETED_TURN_INVALID');
+  }
+  try {
+    const turn = toCompletedContextTurn(row);
+    if (turn.user.id === turn.assistant.id) throw new Error('invalid pair');
+    return turn;
+  } catch {
+    throw new Error('CONTEXT_COMPLETED_TURN_INVALID');
+  }
+}
+
+export async function loadCanonicalAnswerHistory(
+  client: Queryable,
+  input: LoadCanonicalHistoryInput,
+): Promise<CompletedContextTurn[]> {
+  if (input.ownerPipeline === 'context_packet_v22') {
+    if (!input.contextScopeId) return [];
+    const result = await client.query<CanonicalContextTurnRow>(
+      `SELECT completed.conversation_id::text, completed.turn_id::text,
+              completed.context_scope_id::text, completed.user_message_id::text,
+              completed.assistant_message_id::text, completed.completed_at,
+              user_message.role AS user_role, user_message.content AS user_content,
+              assistant_message.role AS assistant_role,
+              assistant_message.content AS assistant_content
+         FROM conversation_context_completed_turns AS completed
+         LEFT JOIN conversation_messages AS user_message
+           ON user_message.conversation_id = completed.conversation_id
+          AND user_message.id = completed.user_message_id
+         LEFT JOIN conversation_messages AS assistant_message
+           ON assistant_message.conversation_id = completed.conversation_id
+          AND assistant_message.id = completed.assistant_message_id
+        WHERE completed.conversation_id = $1
+          AND completed.context_scope_id = $2
+        ORDER BY completed.user_message_id, completed.turn_id`,
+      [input.conversationId, input.contextScopeId],
+    );
+    return finalizeCanonicalHistory(result.rows.map(validateCanonicalContextTurn));
+  }
+
+  const completed = await client.query<CanonicalLegacyTurnRow>(
+    `SELECT turn_record.id::text AS turn_id,
+            turn_record.task_id::text,
+            turn_record.context_scope_id::text,
+            COALESCE(turn_record.completed_at, turn_record.created_at) AS completed_at
+       FROM interaction_turns AS turn_record
+      WHERE turn_record.conversation_id = $1
+        AND turn_record.status = 'completed'
+        AND (
+          ($2::text = 'legacy_v1'
+            AND COALESCE(turn_record.execution_pipeline, 'legacy_v1') = 'legacy_v1')
+          OR
+          ($2::text = 'legacy_v2'
+            AND turn_record.execution_pipeline = 'legacy_v2'
+            AND (
+              ($3::uuid IS NOT NULL AND turn_record.task_id = $3)
+              OR ($4::boolean AND turn_record.task_id IS NULL
+                AND turn_record.route_kind = 'conversation')
+            ))
+        )`,
+    [
+      input.conversationId,
+      input.ownerPipeline,
+      input.contextScopeId,
+      input.includeConversation,
+    ],
+  );
+  if (completed.rows.length === 0) return [];
+  const byTurn = new Map(completed.rows.map((row) => [row.turn_id, row]));
+  const messages = await client.query<BridgeMessageRow>(
+    `SELECT message.id::text, message.role, message.content, message.created_at
+       FROM conversation_messages AS message
+      WHERE message.conversation_id = $1
+      ORDER BY message.id`,
+    [input.conversationId],
+  );
+  const messagesByTurn = new Map<string, BridgeMessageRow[]>();
+  for (const message of messages.rows) {
+    let turnId: string | null;
+    try {
+      turnId = decodeTurnMessage(message.content).turnId;
+    } catch {
+      throw new Error('CONTEXT_COMPLETED_TURN_INVALID');
+    }
+    if (!turnId || !byTurn.has(turnId)) continue;
+    messagesByTurn.set(turnId, [...(messagesByTurn.get(turnId) ?? []), message]);
+  }
+
+  const turns = completed.rows.map((row) => {
+    const pair = messagesByTurn.get(row.turn_id) ?? [];
+    if (pair.length !== 2) throw new Error('CONTEXT_COMPLETED_TURN_INVALID');
+    try {
+      const turn = bridgeTurnFromRows({
+        conversationId: input.conversationId,
+        turnId: row.turn_id,
+        messages: pair,
+      });
+      return {
+        ...turn,
+        contextScopeId: row.context_scope_id ?? row.task_id ?? row.turn_id,
+        completedAt: row.completed_at,
+      };
+    } catch {
+      throw new Error('CONTEXT_COMPLETED_TURN_INVALID');
+    }
+  });
+  return finalizeCanonicalHistory(turns);
 }
 
 function bridgeTurnFromRows(input: {
@@ -521,8 +650,7 @@ export async function captureLegacyContextBridge(
     `SELECT message.id::text, message.role, message.content, message.created_at
        FROM conversation_messages AS message
       WHERE message.conversation_id = $1 AND message.id < $2
-      ORDER BY message.id DESC
-      LIMIT 32`,
+      ORDER BY message.id DESC`,
     [input.conversationId, input.beforeMessageId],
   );
   const groups = new Map<string, BridgeMessageRow[]>();
@@ -536,7 +664,6 @@ export async function captureLegacyContextBridge(
 
   const candidates: CompletedContextTurn[] = [];
   for (const turnId of order) {
-    if (candidates.length >= 6) break;
     const group = groups.get(turnId) ?? [];
     const status = await client.query<{ execution_pipeline: string | null; status: string }>(
       `SELECT status, execution_pipeline FROM interaction_turns WHERE id = $1`,

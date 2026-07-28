@@ -18,6 +18,13 @@ export const CONTEXT_BUILDER_VERSION = 'context-packet-builder-v1' as const;
 export const CONTEXT_PROJECTION_VERSION = 'final-context-projection-v1' as const;
 export const CONTEXT_SLOT_EXTRACTOR_VERSION = 'recruitment-slots-v1' as const;
 export const LEGACY_BRIDGE_VERSION = 'legacy-discourse-bridge-v1' as const;
+export const CANONICAL_ANSWER_SOURCE_VERSION = 'canonical-answer-source-v2' as const;
+export const TASK_HISTORY_SUMMARY_INSTRUCTION_VERSION = 'task-history-summary-v1' as const;
+
+export type HistoryCompactionPipeline =
+  | 'legacy_v1'
+  | 'legacy_v2'
+  | 'context_packet_v22';
 
 export type ContextPipelineAssignment =
   | 'legacy'
@@ -168,6 +175,81 @@ export interface CompletedContextTurn {
   completedAt: Date;
 }
 
+export interface CanonicalAnswerSourceV2 {
+  schemaVersion: typeof CANONICAL_ANSWER_SOURCE_VERSION;
+  ownerPipeline: HistoryCompactionPipeline;
+  conversationId: string;
+  interactionTurnId: string;
+  contextScopeId: string | null;
+  currentUserMessageId: string;
+  currentInput: string;
+  trustedInstructions: string;
+  taskFrame: Record<string, unknown> | null;
+  taskInputs: Array<Record<string, unknown>>;
+  approvedEvidence: Array<Record<string, unknown>>;
+  completeHistory: CompletedContextTurn[];
+  reasoningEffort: ContextReasoningEffort | null;
+  releasePolicy: 'segment' | 'complete';
+}
+
+export interface GenerationTargetBindingV2 {
+  configDigestVersion: 1 | 2;
+  configDigest: string;
+  modelId: string;
+  protocol: 'responses' | 'chat_completions';
+  contextWindowTokens: number | null;
+  maxOutputTokens: number | null;
+  reasoningEffort: ContextReasoningEffort | null;
+}
+
+export interface TaskHistorySummaryLayer {
+  layer: 'task_history_summary';
+  text: string;
+  sourceTurnIds: readonly string[];
+  sourceTurnSha256: string;
+  instructionVersion: typeof TASK_HISTORY_SUMMARY_INSTRUCTION_VERSION;
+}
+
+export interface GenerationVariantV2 {
+  id: string;
+  revision: number;
+  trigger: 'initial' | 'numeric_preflight' | 'provider_numeric_overflow';
+  target: GenerationTargetBindingV2;
+}
+
+export interface CanonicalContextPacketV2 {
+  schemaVersion: 'context-packet-v2';
+  sourceSchemaVersion: typeof CANONICAL_ANSWER_SOURCE_VERSION;
+  ownerPipeline: HistoryCompactionPipeline;
+  conversationId: string;
+  interactionTurnId: string;
+  contextScopeId: string | null;
+  currentUserMessageId: string;
+  variant: GenerationVariantV2;
+  protectedLayers: {
+    currentInput: string;
+    trustedInstructions: string;
+    taskFrame: Readonly<Record<string, unknown>> | null;
+    taskInputs: readonly Readonly<Record<string, unknown>>[];
+    approvedEvidence: readonly Readonly<Record<string, unknown>>[];
+  };
+  historySummary: TaskHistorySummaryLayer | null;
+  rawHistory: readonly CompletedContextTurn[];
+}
+
+export interface CanonicalGenerationRequestV2 {
+  schemaVersion: 'generation-request-v2';
+  variant: GenerationVariantV2;
+  packetHmacKeyId: string;
+  packetHmacSha256: string;
+  instructions: string;
+  messages: readonly ContextChatMessage[];
+  reasoningEffort: ContextReasoningEffort | null;
+  maxOutputTokens: number | null;
+  outboundBody: Readonly<Record<string, unknown>>;
+  store: false;
+}
+
 export type ContextLayerName =
   | 'current_input'
   | 'discourse_context'
@@ -240,10 +322,25 @@ export interface CanonicalGenerationRequest {
   store: false;
 }
 
-export interface GenerationRequestIntegrity {
+export interface GenerationRequestIntegrityV1 {
   contextBuilderVersion: typeof CONTEXT_BUILDER_VERSION;
   packetHmacKeyId: string;
   packetHmacSha256: string;
   generationOverlayVersion: 'strict-overlay-v1' | null;
   generationRequestHmacSha256: string;
 }
+
+export interface GenerationRequestIntegrityV2 {
+  version: 2;
+  contextBuilderVersion: string;
+  generationVariantId: string;
+  generationVariantRevision: number;
+  target: GenerationTargetBindingV2;
+  packetHmacKeyId: string;
+  packetHmacSha256: string;
+  generationRequestHmacSha256: string;
+}
+
+export type GenerationRequestIntegrity =
+  | GenerationRequestIntegrityV1
+  | GenerationRequestIntegrityV2;

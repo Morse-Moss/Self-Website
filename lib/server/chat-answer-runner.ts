@@ -50,7 +50,6 @@ export async function* runChatAnswer(
     })) {
       if (event.type === 'delta') {
         answer += event.text;
-        if (input.releasePolicy === 'segment') yield event;
         continue;
       }
       if (event.type === 'attempt') {
@@ -65,9 +64,7 @@ export async function* runChatAnswer(
       if (event.type === 'activity') continue;
 
       if (!answer.trim()) throw new AnswerExecutionError('PROVIDER_INCOMPLETE');
-      if (input.releasePolicy === 'complete') {
-        yield { type: 'delta', text: answer };
-      }
+      yield { type: 'delta', text: answer };
       for (const attempt of event.attempts ?? []) {
         attempts.set(attempt.attemptIndex, attempt);
       }

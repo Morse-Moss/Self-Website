@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { OpenAIProvider } from '../lib/server/openai-provider.ts';
+import {
+  buildOpenAIChatCompletionsBody,
+  buildOpenAIResponsesBody,
+  OpenAIProvider,
+} from '../lib/server/openai-provider.ts';
 import { createChatExecutionBudget } from '../lib/server/chat-execution-budget.ts';
+import { isNumericContextOverflow } from '../lib/server/provider-failure.ts';
 
 const providerConfig = {
   protocol: 'responses' as const,
@@ -10,12 +15,76 @@ const providerConfig = {
   embeddingModel: 'test-embedding-model',
   embeddingDimensions: 2,
   maxOutputTokens: 400,
+  contextWindowTokens: 100,
   embeddingTimeoutMs: 50,
   firstByteTimeoutMs: 50,
   totalTimeoutMs: 100,
   providerConcurrency: 4,
   reasoningEffort: 'high' as const,
 };
+
+async function captureAnswerFailure(provider: OpenAIProvider): Promise<unknown> {
+  try {
+    for await (const _event of provider.streamAnswer({
+      instructions: 'Use evidence only.',
+      messages: [{ role: 'user', content: 'Hello' }],
+    })) {
+      // Consume through the terminal failure.
+    }
+  } catch (error) {
+    return error;
+  }
+  throw new Error('expected provider failure');
+}
+
+test('pure OpenAI body builders freeze the exact protocol body and honor request-local limits', () => {
+  const request = {
+    instructions: 'Summarize exact data.',
+    messages: [{ role: 'user' as const, content: 'history data' }],
+    maxOutputTokens: 37,
+    reasoningEffort: 'low' as const,
+  };
+  const responses = buildOpenAIResponsesBody(request, providerConfig);
+  const chat = buildOpenAIChatCompletionsBody(request, providerConfig);
+
+  assert.deepEqual(responses, {
+    model: 'test-chat-model',
+    instructions: 'Summarize exact data.',
+    input: [{ role: 'user', content: 'history data' }],
+    max_output_tokens: 37,
+    reasoning: { effort: 'low' },
+    stream: true,
+    store: false,
+  });
+  assert.deepEqual(chat, {
+    model: 'test-chat-model',
+    messages: [
+      { role: 'system', content: 'Summarize exact data.' },
+      { role: 'user', content: 'history data' },
+    ],
+    max_completion_tokens: 37,
+    reasoning_effort: 'low',
+    stream: true,
+    stream_options: { include_usage: true },
+  });
+  assert.equal(Object.isFrozen(responses), true);
+  assert.equal(Object.isFrozen(responses.input), true);
+  assert.equal(Object.isFrozen((responses.input as unknown[])[0]), true);
+  assert.equal(Object.isFrozen(chat), true);
+  assert.equal(Object.isFrozen(chat.messages), true);
+
+  const configuredFallback = buildOpenAIResponsesBody({
+    ...request,
+    maxOutputTokens: null,
+  }, providerConfig);
+  assert.equal(configuredFallback.max_output_tokens, 400);
+  for (const maxOutputTokens of [0, -1, 1.5]) {
+    assert.throws(
+      () => buildOpenAIResponsesBody({ ...request, maxOutputTokens }, providerConfig),
+      (error: unknown) => (error as { code?: string }).code === 'PROVIDER_UNAVAILABLE',
+    );
+  }
+});
 
 test('Responses metadata is protocol activity but not model text', async () => {
   const now = Date.now();
@@ -35,7 +104,6 @@ test('Responses metadata is protocol activity but not model text', async () => {
     providerStartedAtMs: now,
     turnTimeoutMs: 90_000,
     providerTimeoutMs: 80_000,
-    maxAttempts: 2,
   });
 
   const events = [];
@@ -310,6 +378,184 @@ test('OpenAIProvider streams Chat Completions without falling back to Responses'
   ]);
 });
 
+test('OpenAIProvider omits unknown output limits for both chat protocols', async () => {
+  let responseBody: Record<string, unknown> | undefined;
+  let chatBody: Record<string, unknown> | undefined;
+  const responseProvider = new OpenAIProvider({
+    responses: {
+      create: async (body: Record<string, unknown>) => {
+        responseBody = body;
+        return fakeResponseStream();
+      },
+    },
+  }, {
+    embeddings: { create: async () => ({ data: [] }) },
+  }, {
+    ...providerConfig,
+    maxOutputTokens: null,
+  });
+  const chatProvider = new OpenAIProvider({
+    chat: {
+      completions: {
+        create: async (body: Record<string, unknown>) => {
+          chatBody = body;
+          return (async function* () {
+            yield {
+              choices: [{ delta: { content: 'Hello' }, finish_reason: 'stop' }],
+              usage: null,
+            };
+          })();
+        },
+      },
+    },
+  }, {
+    embeddings: { create: async () => ({ data: [] }) },
+  }, {
+    ...providerConfig,
+    maxOutputTokens: null,
+    protocol: 'chat_completions',
+  });
+
+  for await (const _event of responseProvider.streamAnswer({
+    instructions: 'Answer directly.',
+    messages: [{ role: 'user', content: 'Hello' }],
+  })) {
+    // Consume the stream so the outbound request is captured.
+  }
+  for await (const _event of chatProvider.streamAnswer({
+    instructions: 'Answer directly.',
+    messages: [{ role: 'user', content: 'Hello' }],
+  })) {
+    // Consume the stream so the outbound request is captured.
+  }
+
+  assert.ok(responseBody);
+  assert.ok(chatBody);
+  assert.equal(Object.hasOwn(responseBody, 'max_output_tokens'), false);
+  assert.equal(Object.hasOwn(chatBody, 'max_completion_tokens'), false);
+});
+
+test('OpenAIProvider sends the exact prepared body object for both protocols', async () => {
+  const preparedResponses = Object.freeze({
+    model: 'test-chat-model',
+    instructions: 'prepared',
+    input: Object.freeze([Object.freeze({ role: 'user', content: 'prepared response input' })]),
+    max_output_tokens: 17,
+    stream: true,
+    store: false,
+  });
+  const preparedChat = Object.freeze({
+    model: 'test-chat-model',
+    messages: Object.freeze([Object.freeze({ role: 'user', content: 'prepared chat input' })]),
+    max_completion_tokens: 19,
+    stream: true,
+    stream_options: Object.freeze({ include_usage: true }),
+  });
+  let seenResponses: Record<string, unknown> | undefined;
+  let seenChat: Record<string, unknown> | undefined;
+  const responseProvider = new OpenAIProvider({
+    responses: {
+      create: async (body: Record<string, unknown>) => {
+        seenResponses = body;
+        return fakeResponseStream();
+      },
+    },
+  }, {
+    embeddings: { create: async () => ({ data: [] }) },
+  }, providerConfig);
+  const chatProvider = new OpenAIProvider({
+    chat: {
+      completions: {
+        create: async (body: Record<string, unknown>) => {
+          seenChat = body;
+          return (async function* () {
+            yield {
+              choices: [{ delta: { content: 'Hello' }, finish_reason: 'stop' }],
+              usage: null,
+            };
+          })();
+        },
+      },
+    },
+  }, {
+    embeddings: { create: async () => ({ data: [] }) },
+  }, { ...providerConfig, protocol: 'chat_completions' });
+
+  for await (const _event of responseProvider.streamAnswer({
+    instructions: 'ignored',
+    messages: [{ role: 'user', content: 'ignored' }],
+    preparedOutboundBody: preparedResponses,
+  })) {
+    // Consume the stream so the exact outbound body is captured.
+  }
+  for await (const _event of chatProvider.streamAnswer({
+    instructions: 'ignored',
+    messages: [{ role: 'user', content: 'ignored' }],
+    preparedOutboundBody: preparedChat,
+  })) {
+    // Consume the stream so the exact outbound body is captured.
+  }
+
+  assert.equal(seenResponses, preparedResponses);
+  assert.equal(seenChat, preparedChat);
+});
+
+test('OpenAIProvider rejects unfrozen or target-mismatched prepared bodies before SDK I/O', async () => {
+  const invalidBodies = [
+    {
+      model: 'test-chat-model',
+      instructions: 'not frozen',
+      input: [{ role: 'user', content: 'data' }],
+      stream: true,
+      store: false,
+    },
+    Object.freeze({
+      model: 'wrong-model',
+      instructions: 'wrong target',
+      input: Object.freeze([{ role: 'user', content: 'data' }]),
+      stream: true,
+      store: false,
+    }),
+    Object.freeze({
+      model: 'test-chat-model',
+      messages: Object.freeze([{ role: 'user', content: 'wrong protocol' }]),
+      stream: true,
+    }),
+    Object.freeze({
+      model: 'test-chat-model',
+      instructions: 'invalid output limit',
+      input: Object.freeze([Object.freeze({ role: 'user', content: 'data' })]),
+      max_output_tokens: 0,
+      stream: true,
+      store: false,
+    }),
+  ];
+
+  for (const preparedOutboundBody of invalidBodies) {
+    let sdkCalls = 0;
+    const provider = new OpenAIProvider({
+      responses: {
+        create: async () => {
+          sdkCalls += 1;
+          return fakeResponseStream();
+        },
+      },
+    }, {
+      embeddings: { create: async () => ({ data: [] }) },
+    }, providerConfig);
+    const iterator = provider.streamAnswer({
+      instructions: 'ignored',
+      messages: [{ role: 'user', content: 'ignored' }],
+      preparedOutboundBody,
+    })[Symbol.asyncIterator]();
+
+    await assert.rejects(iterator.next(), (error: unknown) => (
+      (error as { code?: string }).code === 'PROVIDER_UNAVAILABLE'
+    ));
+    assert.equal(sdkCalls, 0);
+  }
+});
+
 test('OpenAIProvider lets one Chat Completions turn lower reasoning', async () => {
   let chatBody: Record<string, unknown> | undefined;
   const provider = new OpenAIProvider({
@@ -429,6 +675,130 @@ test('OpenAIProvider rejects a Responses incomplete terminal event', async () =>
     (error as { code?: string }).code === 'PROVIDER_RESPONSE_INCOMPLETE'
     && !(error as Error).message.includes('raw private reason')
   ));
+});
+
+test('Responses max_output_tokens and Chat length are sanitized as output truncation', async () => {
+  const responses = new OpenAIProvider({
+    responses: {
+      create: async () => (async function* () {
+        yield {
+          type: 'response.incomplete' as const,
+          response: {
+            incomplete_details: { reason: 'max_output_tokens' },
+            usage: { input_tokens: 50, output_tokens: 5 },
+          },
+        };
+      })(),
+    },
+  } as unknown as ConstructorParameters<typeof OpenAIProvider>[0], {
+    embeddings: { create: async () => ({ data: [] }) },
+  }, providerConfig);
+  const chat = new OpenAIProvider({
+    chat: {
+      completions: {
+        create: async () => (async function* () {
+          yield {
+            choices: [{ delta: {}, finish_reason: 'length' }],
+            usage: { prompt_tokens: 50, completion_tokens: 5 },
+          };
+        })(),
+      },
+    },
+  }, {
+    embeddings: { create: async () => ({ data: [] }) },
+  }, { ...providerConfig, protocol: 'chat_completions' });
+
+  for (const [failure, reason] of [
+    [await captureAnswerFailure(responses), 'max_output_tokens'],
+    [await captureAnswerFailure(chat), 'length'],
+  ] as const) {
+    assert.deepEqual((failure as { failure?: unknown }).failure, {
+      category: 'output_truncated',
+      reason,
+      httpStatus: null,
+      inputTokens: 50,
+      outputTokens: 5,
+      contextWindowTokens: 100,
+    });
+    assert.equal((failure as { code?: string }).code, 'PROVIDER_RESPONSE_INCOMPLETE');
+  }
+});
+
+test('zero output at 99 percent of a known window is numeric context overflow for both protocols', async () => {
+  const responses = new OpenAIProvider({
+    responses: {
+      create: async () => (async function* () {
+        yield {
+          type: 'response.incomplete' as const,
+          response: {
+            incomplete_details: { reason: 'max_output_tokens' },
+            usage: { input_tokens: 99, output_tokens: 0 },
+          },
+        };
+      })(),
+    },
+  } as unknown as ConstructorParameters<typeof OpenAIProvider>[0], {
+    embeddings: { create: async () => ({ data: [] }) },
+  }, providerConfig);
+  const chat = new OpenAIProvider({
+    chat: {
+      completions: {
+        create: async () => (async function* () {
+          yield {
+            choices: [{ delta: {}, finish_reason: 'length' }],
+            usage: { prompt_tokens: 99, completion_tokens: 0 },
+          };
+        })(),
+      },
+    },
+  }, {
+    embeddings: { create: async () => ({ data: [] }) },
+  }, { ...providerConfig, protocol: 'chat_completions' });
+
+  for (const provider of [responses, chat]) {
+    const failure = (await captureAnswerFailure(provider)) as {
+      failure: Parameters<typeof isNumericContextOverflow>[0];
+    };
+    assert.equal(failure.failure.category, 'context_overflow');
+    assert.equal(failure.failure.inputTokens, 99);
+    assert.equal(failure.failure.outputTokens, 0);
+    assert.equal(failure.failure.contextWindowTokens, 100);
+    assert.equal(isNumericContextOverflow(failure.failure), true);
+  }
+});
+
+test('HTTP 413 without a numeric window is sanitized but cannot trigger compaction', async () => {
+  const provider = new OpenAIProvider({
+    responses: {
+      create: async () => {
+        throw Object.assign(new Error('PRIVATE_MESSAGE'), {
+          status: 413,
+          code: 'context_length_exceeded',
+          body: { secret: 'PRIVATE_BODY' },
+          headers: { authorization: 'PRIVATE_HEADER' },
+          request: { input: 'PRIVATE_REQUEST' },
+        });
+      },
+    },
+  }, {
+    embeddings: { create: async () => ({ data: [] }) },
+  }, { ...providerConfig, contextWindowTokens: null });
+
+  const error = await captureAnswerFailure(provider) as {
+    code: string;
+    failure: Parameters<typeof isNumericContextOverflow>[0];
+  };
+  assert.equal(error.code, 'PROVIDER_UNAVAILABLE');
+  assert.deepEqual(error.failure, {
+    category: 'context_overflow',
+    reason: 'http_413',
+    httpStatus: 413,
+    inputTokens: null,
+    outputTokens: null,
+    contextWindowTokens: null,
+  });
+  assert.equal(isNumericContextOverflow(error.failure), false);
+  assert.doesNotMatch(JSON.stringify(error.failure), /PRIVATE_|authorization|secret/u);
 });
 
 test('OpenAIProvider performs one network attempt for an incomplete Responses target', async () => {

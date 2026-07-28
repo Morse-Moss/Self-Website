@@ -63,6 +63,7 @@ test('configuration store versions connections and models without exposing secre
           userAgent: 'Morse/1.0',
         },
         model: {
+          contextWindowTokens: null,
           displayName: '主模型',
           inputUsdPerMillion: null,
           maxOutputTokens: 4096,
@@ -89,6 +90,7 @@ test('configuration store versions connections and models without exposing secre
           userAgent: null,
         },
         model: {
+          contextWindowTokens: null,
           displayName: '无事务模型',
           inputUsdPerMillion: null,
           maxOutputTokens: 1024,
@@ -157,6 +159,7 @@ test('configuration store versions connections and models without exposing secre
       await modelClient.query('BEGIN');
       const result = await createModelVersion(modelClient, {
         seriesId: modelSeriesId,
+        contextWindowTokens: null,
         displayName: '主模型 v2',
         inputUsdPerMillion: '1.25',
         maxOutputTokens: 8192,
@@ -294,6 +297,68 @@ test('configuration store versions connections and models without exposing secre
     assert.ok(shredded.rows.every((row) => (
       row.ciphertext === null && row.iv === null && row.tag === null && row.destroyed
     )));
+  } finally {
+    await pool.end();
+    await database.dispose();
+  }
+});
+
+test('configuration store writes digest v2 and round-trips nullable model capabilities', async () => {
+  const database = await createDisposablePostgresDatabase();
+  await migrate(database.connectionString);
+  const pool = new Pool({ connectionString: database.connectionString });
+  try {
+    const client = await pool.connect();
+    let modelSeriesId = '';
+    let modelVersionId = '';
+    try {
+      await client.query('BEGIN');
+      await assert.doesNotReject(async () => {
+        const created = await createConnectionWithModel(client, {
+          connection: {
+            apiKey: 'nullable-capability-secret',
+            baseUrl: 'https://nullable.example/v1',
+            displayName: 'Nullable capabilities',
+            userAgent: null,
+          },
+          model: {
+            contextWindowTokens: null,
+            displayName: 'Provider default model',
+            inputUsdPerMillion: null,
+            maxOutputTokens: null,
+            modelId: 'provider-default-model',
+            outputUsdPerMillion: null,
+            protocol: 'responses',
+            reasoningEffort: null,
+          },
+        }, { key, keyVersion });
+        modelSeriesId = created.modelSeriesId;
+        modelVersionId = created.modelVersionId;
+      });
+      await client.query('COMMIT');
+    } finally {
+      client.release();
+    }
+
+    const stored = await pool.query<{
+      config_digest_version: number;
+      context_window_tokens: number | null;
+      max_output_tokens: number | null;
+    }>(
+      `SELECT config_digest_version, context_window_tokens, max_output_tokens
+         FROM ai_model_presets WHERE id = $1`,
+      [modelVersionId],
+    );
+    assert.deepEqual(stored.rows[0], {
+      config_digest_version: 2,
+      context_window_tokens: null,
+      max_output_tokens: null,
+    });
+
+    const runtime = await resolveModelRuntime(pool, modelSeriesId, { key, keyVersion });
+    assert.equal(runtime.model.configDigestVersion, 2);
+    assert.equal(runtime.model.contextWindowTokens, null);
+    assert.equal(runtime.model.maxOutputTokens, null);
   } finally {
     await pool.end();
     await database.dispose();

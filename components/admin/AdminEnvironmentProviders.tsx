@@ -59,6 +59,8 @@ export default function AdminEnvironmentProviders({
               </div>
               <dl className={styles.environmentState}>
                 <div><dt>生命周期</dt><dd data-state="lifecycle">{lifecycle}</dd></div>
+                <div><dt>上下文窗口</dt><dd>{target.contextWindowTokens ?? '未知'}</dd></div>
+                <div><dt>最大输出</dt><dd>{target.maxOutputTokens ?? 'Provider 默认'}</dd></div>
                 <div><dt>资格</dt><dd data-state="eligibility">{state.eligibility}</dd></div>
                 <div><dt>最近测试</dt><dd data-state="latest">{state.latest}</dd></div>
               </dl>

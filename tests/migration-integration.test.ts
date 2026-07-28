@@ -852,7 +852,8 @@ test('chat v2 migration adds stable assignment and metadata-only provider attemp
              AND column_name ~ '(question|answer|prompt|jd|url|key|payload|content|request|response)'
              AND column_name NOT IN (
                'packet_hmac_key_id',
-               'generation_request_hmac_sha256'
+               'generation_request_hmac_sha256',
+               'generation_request_v2_hmac_sha256'
              )`,
       );
 

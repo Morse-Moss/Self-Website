@@ -35,9 +35,10 @@ interface Props {
 }
 
 const emptyModel: ModelInput = {
+  contextWindowTokens: null,
   displayName: '',
   inputUsdPerMillion: null,
-  maxOutputTokens: 4096,
+  maxOutputTokens: null,
   modelId: '',
   outputUsdPerMillion: null,
   protocol: 'responses',
@@ -46,6 +47,7 @@ const emptyModel: ModelInput = {
 
 function modelFrom(value?: ProviderModel | null): ModelInput {
   return value ? {
+    contextWindowTokens: value.contextWindowTokens,
     displayName: value.displayName,
     inputUsdPerMillion: value.inputUsdPerMillion,
     maxOutputTokens: value.maxOutputTokens,
@@ -89,6 +91,7 @@ export default function AdminProviderForm({
     setShowKey(false);
     setReuseKeyAcrossOrigin(false);
     setModelValue(takeover ? {
+      contextWindowTokens: takeover.contextWindowTokens,
       displayName: takeover.modelDisplayName,
       inputUsdPerMillion: takeover.inputUsdPerMillion,
       maxOutputTokens: takeover.maxOutputTokens,
@@ -271,8 +274,32 @@ export default function AdminProviderForm({
                   </select>
                 </label>
                 <label className={styles.field}>
+                  上下文窗口 Token
+                  <input
+                    name="contextWindowTokens"
+                    type="number"
+                    min={1}
+                    max={2_147_483_647}
+                    value={modelValue.contextWindowTokens ?? ''}
+                    onChange={(event) => updateModel(
+                      'contextWindowTokens',
+                      event.target.value ? Number(event.target.value) : null,
+                    )}
+                  />
+                </label>
+                <label className={styles.field}>
                   最大输出 Token
-                  <input name="maxOutputTokens" required type="number" min={1} max={100000} value={modelValue.maxOutputTokens} onChange={(event) => updateModel('maxOutputTokens', Number(event.target.value))} />
+                  <input
+                    name="maxOutputTokens"
+                    type="number"
+                    min={1}
+                    max={2_147_483_647}
+                    value={modelValue.maxOutputTokens ?? ''}
+                    onChange={(event) => updateModel(
+                      'maxOutputTokens',
+                      event.target.value ? Number(event.target.value) : null,
+                    )}
+                  />
                 </label>
                 <label className={styles.field}>
                   输入单价 / 百万 Token

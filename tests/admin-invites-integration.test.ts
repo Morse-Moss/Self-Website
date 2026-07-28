@@ -353,8 +353,6 @@ test('deactivation blocks new redemption but preserves an already authenticated 
       },
       config: {
         maxMessagesPerSession: 30,
-        historyMessageLimit: 12,
-        retrievalLimit: 3,
         interactionRetentionDays: 10,
         tokenRates: null,
         chatV2Enabled: false,
@@ -367,7 +365,6 @@ test('deactivation blocks new redemption but preserves an already authenticated 
         providerModelTextTimeoutMs: 40_000,
         providerStageTimeoutMs: 80_000,
         chatTurnTimeoutMs: 90_000,
-        providerMaxAttempts: 2,
       },
     })) {
       // The probe provider fails after reservation; reaching it proves the session stayed usable.

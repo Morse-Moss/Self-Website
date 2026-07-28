@@ -7,8 +7,14 @@ import { test } from 'node:test';
 import pg from 'pg';
 
 import type { ProviderAttempt } from '../lib/server/ai-provider.ts';
-import type { GenerationRequestIntegrity } from '../lib/contracts/chat-context.ts';
-import { replaceProviderAttempts } from '../lib/server/interaction-log.ts';
+import type {
+  GenerationRequestIntegrity,
+  GenerationRequestIntegrityV2,
+} from '../lib/contracts/chat-context.ts';
+import {
+  providerAttemptsMatch,
+  replaceProviderAttempts,
+} from '../lib/server/interaction-log.ts';
 import {
   recordProviderAttemptEvent,
   reserveHedgedProviderAttempt,
@@ -32,6 +38,34 @@ function requestIntegrity(
     packetHmacSha256: packetDigest,
     generationOverlayVersion: generationMode === 'strict' ? 'strict-overlay-v1' : null,
     generationRequestHmacSha256: requestDigest,
+  };
+}
+
+function requestIntegrityV2(input: {
+  variantId: string;
+  revision: number;
+  digestCharacter: string;
+  modelId: string;
+}): GenerationRequestIntegrityV2 {
+  return {
+    version: 2,
+    contextBuilderVersion: 'context-packet-builder-v2',
+    generationVariantId: input.variantId,
+    generationVariantRevision: input.revision,
+    target: {
+      configDigestVersion: 2,
+      configDigest: input.digestCharacter.repeat(64),
+      modelId: input.modelId,
+      protocol: 'responses',
+      contextWindowTokens: 8_192,
+      maxOutputTokens: 1_024,
+      reasoningEffort: 'high',
+    },
+    packetHmacKeyId: '2026-07-v2',
+    packetHmacSha256: input.digestCharacter.repeat(64),
+    generationRequestHmacSha256: String.fromCharCode(
+      input.digestCharacter.charCodeAt(0) + 1,
+    ).repeat(64),
   };
 }
 
@@ -231,8 +265,10 @@ test('terminal reconciliation copies generation and three latency milestones', a
       attemptIndex: 0,
       completedAt: new Date(startedAt.getTime() + 3_000),
       configDigest: 'a'.repeat(64),
+      configDigestVersion: 2,
       connectionDisplayName: 'Primary',
       connectionVersionId: null,
+      contextWindowTokens: null,
       costComplete: false,
       errorCode: null,
       firstByteLatencyMs: 120,
@@ -246,9 +282,11 @@ test('terminal reconciliation copies generation and three latency milestones', a
       modelDisplayName: 'Model',
       modelId: 'model',
       modelVersionId: null,
+      maxOutputTokens: null,
       outputUsdPerMillion: null,
       position: 1,
       protocol: 'responses',
+      reasoningEffort: null,
       routeRevisionId: null,
       sourceType: 'environment',
       startedAt,
@@ -351,10 +389,10 @@ test('started attempts persist integrity and reject any request or generation-mo
       await assert.rejects(
         recordProviderAttemptEvent(client, { interactionTurnId, executionId }, {
           type: 'started',
-          attemptNo: 3,
-          providerAlias: 'fallback-2',
+          attemptNo: 2,
+          providerAlias: 'fallback-1',
           launchKind: 'failover',
-          startedAt: new Date(startedAt.getTime() + 2),
+          startedAt: new Date(startedAt.getTime() + 1),
           startDelayMs: 0,
           generationMode: 'normal',
         }, deleteAfter, requestIntegrity('normal', 'd'.repeat(64))),
@@ -363,10 +401,10 @@ test('started attempts persist integrity and reject any request or generation-mo
       await assert.rejects(
         recordProviderAttemptEvent(client, { interactionTurnId, executionId }, {
           type: 'started',
-          attemptNo: 4,
-          providerAlias: 'fallback-3',
+          attemptNo: 2,
+          providerAlias: 'fallback-1',
           launchKind: 'failover',
-          startedAt: new Date(startedAt.getTime() + 3),
+          startedAt: new Date(startedAt.getTime() + 1),
           startDelayMs: 0,
           generationMode: 'normal',
         }, deleteAfter, requestIntegrity('normal', 'b'.repeat(64), 'e'.repeat(64))),
@@ -423,6 +461,313 @@ test('started attempts persist integrity and reject any request or generation-mo
   }
 });
 
+test('first user visible may follow terminal success without reopening the attempt', async () => {
+  const database = await createDisposablePostgresDatabase();
+  const pool = new Pool({ connectionString: database.connectionString });
+  try {
+    await runMigrations(database.connectionString);
+    const interactionTurnId = await insertTurn(pool);
+    const executionId = randomUUID();
+    const startedAt = new Date('2026-07-22T02:30:00.000Z');
+    const deleteAfter = new Date(startedAt.getTime() + 10 * DAY_MS);
+    const client = await pool.connect();
+    try {
+      const key = { interactionTurnId, executionId };
+      await recordProviderAttemptEvent(client, key, {
+        type: 'started',
+        attemptNo: 1,
+        providerAlias: 'primary',
+        launchKind: 'primary',
+        generationMode: 'normal',
+        startedAt,
+        startDelayMs: 0,
+      }, deleteAfter);
+      await recordProviderAttemptEvent(client, key, {
+        type: 'completed',
+        attemptNo: 1,
+        providerAlias: 'primary',
+        durationMs: 20,
+        winner: true,
+        errorCode: null,
+        usage: null,
+      }, deleteAfter);
+      await recordProviderAttemptEvent(client, key, {
+        type: 'first_user_visible',
+        attemptNo: 1,
+        providerAlias: 'primary',
+        elapsedMs: 22,
+      }, deleteAfter);
+    } finally {
+      client.release();
+    }
+
+    const stored = await pool.query(
+      `SELECT status, winner, first_user_visible_ms
+         FROM chat_provider_attempts
+        WHERE interaction_turn_id = $1`,
+      [interactionTurnId],
+    );
+    assert.deepEqual(stored.rows[0], {
+      status: 'completed',
+      winner: true,
+      first_user_visible_ms: 22,
+    });
+  } finally {
+    await pool.end();
+    await database.dispose();
+  }
+});
+
+test('v2 attempts allow target-bound variants but reject drift when replaying one authority row', async () => {
+  const database = await createDisposablePostgresDatabase();
+  const pool = new Pool({ connectionString: database.connectionString });
+  try {
+    await runMigrations(database.connectionString);
+    const interactionTurnId = await insertTurn(pool);
+    const executionId = randomUUID();
+    const variantId = randomUUID();
+    const startedAt = new Date('2026-07-22T03:30:00.000Z');
+    const deleteAfter = new Date(startedAt.getTime() + 10 * DAY_MS);
+    const first = requestIntegrityV2({
+      variantId,
+      revision: 1,
+      digestCharacter: '1',
+      modelId: 'model-primary',
+    });
+    const second = requestIntegrityV2({
+      variantId,
+      revision: 2,
+      digestCharacter: '2',
+      modelId: 'model-fallback',
+    });
+    const client = await pool.connect();
+    try {
+      const key = { interactionTurnId, executionId };
+      await recordProviderAttemptEvent(client, key, {
+        type: 'started',
+        attemptNo: 1,
+        providerAlias: 'primary',
+        launchKind: 'primary',
+        generationVariantTrigger: 'initial',
+        startedAt,
+        startDelayMs: 0,
+        generationMode: 'normal',
+      } as never, deleteAfter, first);
+      await recordProviderAttemptEvent(client, key, {
+        type: 'started',
+        attemptNo: 2,
+        providerAlias: 'fallback-1',
+        launchKind: 'failover',
+        generationVariantTrigger: 'initial',
+        startedAt: new Date(startedAt.getTime() + 1),
+        startDelayMs: 0,
+        generationMode: 'normal',
+      } as never, deleteAfter, second);
+
+      await recordProviderAttemptEvent(client, key, {
+        type: 'started',
+        attemptNo: 2,
+        providerAlias: 'fallback-1',
+        launchKind: 'failover',
+        generationVariantTrigger: 'initial',
+        startedAt: new Date(startedAt.getTime() + 1),
+        startDelayMs: 0,
+        generationMode: 'normal',
+      } as never, deleteAfter, second);
+
+      await assert.rejects(
+        recordProviderAttemptEvent(client, key, {
+          type: 'started',
+          attemptNo: 2,
+          providerAlias: 'fallback-1',
+          launchKind: 'failover',
+          generationVariantTrigger: 'initial',
+          startedAt: new Date(startedAt.getTime() + 1),
+          startDelayMs: 0,
+          generationMode: 'normal',
+        } as never, deleteAfter, {
+          ...second,
+          generationRequestHmacSha256: 'f'.repeat(64),
+        }),
+        /PROVIDER_ATTEMPT_INTEGRITY_MISMATCH/,
+      );
+    } finally {
+      client.release();
+    }
+
+    const rows = await pool.query(
+      `SELECT attempt_no, generation_variant_id::text, generation_variant_revision,
+              generation_variant_trigger, target_config_digest, target_model_id,
+              generation_request_v2_hmac_sha256
+         FROM chat_provider_attempts
+        WHERE interaction_turn_id = $1
+        ORDER BY attempt_no`,
+      [interactionTurnId],
+    );
+    assert.deepEqual(rows.rows, [
+      {
+        attempt_no: 1,
+        generation_variant_id: variantId,
+        generation_variant_revision: 1,
+        generation_variant_trigger: 'initial',
+        target_config_digest: first.target.configDigest,
+        target_model_id: first.target.modelId,
+        generation_request_v2_hmac_sha256: first.generationRequestHmacSha256,
+      },
+      {
+        attempt_no: 2,
+        generation_variant_id: variantId,
+        generation_variant_revision: 2,
+        generation_variant_trigger: 'initial',
+        target_config_digest: second.target.configDigest,
+        target_model_id: second.target.modelId,
+        generation_request_v2_hmac_sha256: second.generationRequestHmacSha256,
+      },
+    ]);
+  } finally {
+    await pool.end();
+    await database.dispose();
+  }
+});
+
+test('terminal v2 projection mirrors variant target and sanitized failure metadata exactly', async () => {
+  const database = await createDisposablePostgresDatabase();
+  const pool = new Pool({ connectionString: database.connectionString });
+  try {
+    await runMigrations(database.connectionString);
+    const turnId = await insertTurn(pool);
+    const executionId = randomUUID();
+    const variantId = randomUUID();
+    const startedAt = new Date('2026-07-22T03:45:00.000Z');
+    const deleteAfter = new Date(startedAt.getTime() + 10 * DAY_MS);
+    const integrity = requestIntegrityV2({
+      variantId,
+      revision: 4,
+      digestCharacter: '4',
+      modelId: 'model-overflow-retry',
+    });
+    const failure = {
+      category: 'context_overflow' as const,
+      reason: 'context_length_exceeded' as const,
+      httpStatus: 400,
+      inputTokens: 8_192,
+      outputTokens: 0,
+      contextWindowTokens: 8_192,
+    };
+    let projectedAttempt: ProviderAttempt | null = null;
+    const client = await pool.connect();
+    try {
+      const key = { interactionTurnId: turnId, executionId };
+      await recordProviderAttemptEvent(client, key, {
+        type: 'started',
+        attemptNo: 4,
+        providerAlias: 'primary',
+        launchKind: 'overflow_retry',
+        generationVariantTrigger: 'provider_numeric_overflow',
+        startedAt,
+        startDelayMs: 0,
+        generationMode: 'normal',
+      }, deleteAfter, integrity);
+      await recordProviderAttemptEvent(client, key, {
+        type: 'failed',
+        attemptNo: 4,
+        providerAlias: 'primary',
+        durationMs: 25,
+        winner: false,
+        errorCode: 'PROVIDER_RESPONSE_FAILED',
+        usage: { inputTokens: 8_192, outputTokens: 0 },
+        failure,
+      } as never, deleteAfter);
+
+      const attempt = {
+        attemptIndex: 3,
+        completedAt: new Date(startedAt.getTime() + 25),
+        configDigest: integrity.target.configDigest,
+        configDigestVersion: integrity.target.configDigestVersion,
+        connectionDisplayName: 'Primary',
+        connectionVersionId: null,
+        contextWindowTokens: integrity.target.contextWindowTokens,
+        costComplete: false,
+        errorCode: 'PROVIDER_RESPONSE_FAILED',
+        failure,
+        firstByteLatencyMs: null,
+        firstModelTextMs: null,
+        firstProtocolEventMs: null,
+        firstUserVisibleMs: null,
+        generationMode: 'normal',
+        generationVariantTrigger: 'provider_numeric_overflow',
+        inputUsdPerMillion: null,
+        knownCostUsd: null,
+        launchKind: 'overflow_retry',
+        modelDisplayName: 'Overflow retry model',
+        modelId: integrity.target.modelId,
+        modelVersionId: null,
+        maxOutputTokens: integrity.target.maxOutputTokens,
+        outputUsdPerMillion: null,
+        position: 0,
+        protocol: integrity.target.protocol,
+        reasoningEffort: integrity.target.reasoningEffort,
+        routeRevisionId: null,
+        sourceType: 'environment',
+        startedAt,
+        status: 'failed',
+        totalLatencyMs: 25,
+        usage: { inputTokens: 8_192, outputTokens: 0 },
+        usageComplete: true,
+        executionId,
+        attemptNo: 4,
+        integrity,
+      } as unknown as ProviderAttempt;
+      projectedAttempt = attempt;
+      await replaceProviderAttempts(client, turnId, [attempt]);
+    } finally {
+      client.release();
+    }
+
+    const mirrored = await pool.query(
+      `SELECT generation_variant_id::text, generation_variant_revision,
+              generation_variant_trigger, target_config_digest_version,
+              target_config_digest, target_model_id, target_protocol,
+              target_context_window_tokens, target_max_output_tokens,
+              target_reasoning_effort, generation_request_v2_hmac_sha256,
+              provider_failure_category, provider_failure_reason,
+              provider_http_status, provider_input_tokens,
+              provider_output_tokens, provider_context_window_tokens
+         FROM interaction_provider_attempts
+        WHERE interaction_turn_id = $1`,
+      [turnId],
+    );
+    assert.deepEqual(mirrored.rows[0], {
+      generation_variant_id: variantId,
+      generation_variant_revision: 4,
+      generation_variant_trigger: 'provider_numeric_overflow',
+      target_config_digest_version: integrity.target.configDigestVersion,
+      target_config_digest: integrity.target.configDigest,
+      target_model_id: integrity.target.modelId,
+      target_protocol: integrity.target.protocol,
+      target_context_window_tokens: integrity.target.contextWindowTokens,
+      target_max_output_tokens: integrity.target.maxOutputTokens,
+      target_reasoning_effort: integrity.target.reasoningEffort,
+      generation_request_v2_hmac_sha256: integrity.generationRequestHmacSha256,
+      provider_failure_category: failure.category,
+      provider_failure_reason: failure.reason,
+      provider_http_status: failure.httpStatus,
+      provider_input_tokens: failure.inputTokens,
+      provider_output_tokens: failure.outputTokens,
+      provider_context_window_tokens: failure.contextWindowTokens,
+    });
+    assert.ok(projectedAttempt);
+    assert.equal(await providerAttemptsMatch(pool, turnId, [projectedAttempt]), true);
+    assert.equal(await providerAttemptsMatch(pool, turnId, [{
+      ...projectedAttempt,
+      failure: { ...failure, httpStatus: 413 },
+    }]), false);
+  } finally {
+    await pool.end();
+    await database.dispose();
+  }
+});
+
 test('terminal attempt projection copies integrity from the realtime authority row', async () => {
   const database = await createDisposablePostgresDatabase();
   const pool = new Pool({ connectionString: database.connectionString });
@@ -458,8 +803,10 @@ test('terminal attempt projection copies integrity from the realtime authority r
           attemptIndex: 0,
           completedAt: new Date(startedAt.getTime() + 10),
           configDigest: 'a'.repeat(64),
+          configDigestVersion: 2,
           connectionDisplayName: 'Primary',
           connectionVersionId: null,
+          contextWindowTokens: null,
           costComplete: false,
           errorCode: null,
           firstByteLatencyMs: null,
@@ -473,9 +820,11 @@ test('terminal attempt projection copies integrity from the realtime authority r
           modelDisplayName: 'Model',
           modelId: 'model',
           modelVersionId: null,
+          maxOutputTokens: null,
           outputUsdPerMillion: null,
           position: 0,
           protocol: 'responses',
+          reasoningEffort: null,
           routeRevisionId: null,
           sourceType: 'environment',
           startedAt,

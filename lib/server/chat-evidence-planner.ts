@@ -15,6 +15,7 @@ import {
   type CapabilityLedger,
 } from './capability-evidence.ts';
 import { LOCAL_EVIDENCE_MIN_SCORE } from './rag.ts';
+import { partitionCompleteRetrievalQuery } from './retrieval-query.ts';
 
 export type EvidenceAdmissionLevel = 'direct' | 'transferable' | 'unavailable';
 
@@ -37,8 +38,10 @@ export interface PlanChatEvidenceInput {
   currentInput: string;
   frame: CandidateConversationTaskFrameV22 | ConversationTaskFrameV22 | null;
   ledger: CapabilityLedger;
-  embed(query: string): Promise<number[]>;
-  retrieve(embedding: number[], limit: number): Promise<KnowledgeSource[]>;
+  embed?(query: string): Promise<number[]>;
+  retrieve?(embedding: number[], legacyLimit?: number): Promise<KnowledgeSource[]>;
+  embedAll?(queries: readonly string[]): Promise<readonly number[][]>;
+  retrieveAll?(embeddings: readonly number[][]): Promise<KnowledgeSource[]>;
 }
 
 const projectOrder = new Map(
@@ -183,7 +186,6 @@ function fallbackProjects(
       || (projectOrder.get(left[0] as ProjectSlug) ?? Number.MAX_SAFE_INTEGER)
         - (projectOrder.get(right[0] as ProjectSlug) ?? Number.MAX_SAFE_INTEGER)
     ))
-    .slice(0, 3)
     .flatMap(([slug, rank]) => {
       const project = auditedProject(slug);
       return project
@@ -200,15 +202,34 @@ function fallbackProjects(
 
 async function rankedProjects(input: PlanChatEvidenceInput): Promise<PlannedChatEvidence> {
   const query = evidenceQuery(input);
-  let embedding: number[];
+  const queries = partitionCompleteRetrievalQuery(query);
+  let embeddings: readonly number[][];
   try {
-    embedding = await input.embed(query);
+    if (input.embedAll) {
+      embeddings = await input.embedAll(queries);
+    } else if (input.embed) {
+      embeddings = await Promise.all(queries.map((chunk) => input.embed!(chunk)));
+    } else {
+      throw new Error('EMBEDDING_UNAVAILABLE');
+    }
   } catch {
     return fallbackProjects(query, input.ledger, 'embedding');
   }
   let candidates: KnowledgeSource[];
   try {
-    candidates = await input.retrieve(embedding, 15);
+    if (input.retrieveAll) {
+      candidates = await input.retrieveAll(embeddings);
+    } else if (input.retrieve) {
+      const results = await Promise.all(embeddings.map((embedding) => input.retrieve!(embedding)));
+      const union = new Map<string, KnowledgeSource>();
+      for (const source of results.flat()) {
+        const existing = union.get(source.chunkId);
+        if (!existing || source.score > existing.score) union.set(source.chunkId, source);
+      }
+      candidates = [...union.values()];
+    } else {
+      throw new Error('RETRIEVAL_UNAVAILABLE');
+    }
   } catch {
     return fallbackProjects(query, input.ledger, 'retrieval');
   }
@@ -232,8 +253,7 @@ async function rankedProjects(input: PlanChatEvidenceInput): Promise<PlannedChat
       || right[1].score - left[1].score
       || (projectOrder.get(left[0] as ProjectSlug) ?? Number.MAX_SAFE_INTEGER)
         - (projectOrder.get(right[0] as ProjectSlug) ?? Number.MAX_SAFE_INTEGER)
-    ))
-    .slice(0, 3);
+    ));
   const knowledge = selected.flatMap(([slug, retrieved]) => {
     const project = auditedProject(slug);
     if (!project) return [];

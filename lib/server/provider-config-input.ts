@@ -1,4 +1,4 @@
-import type { AiChatProtocol } from './ai-config.ts';
+import type { AiChatProtocol, ModelCapabilities } from './ai-config.ts';
 import {
   createProviderOutboundPolicy,
   validateProviderRuntimeBaseUrl,
@@ -10,6 +10,7 @@ const DECIMAL = /^(?:0|[1-9][0-9]{0,5})(?:\.[0-9]{1,6})?$/u;
 const REASONING = new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh']);
 const PROTOCOLS = new Set<AiChatProtocol>(['responses', 'chat_completions']);
 const ENVIRONMENT_TARGETS = new Set(['primary', 'fallback-1', 'fallback-2']);
+const POSTGRES_INTEGER_MAX = 2_147_483_647;
 
 export class ProviderConfigInputError extends Error {
   readonly code = 'AI_CONFIG_INVALID' as const;
@@ -51,6 +52,11 @@ function booleanValue(input: unknown): boolean {
 function integer(input: unknown, min: number, max: number): number {
   if (!Number.isSafeInteger(input) || (input as number) < min || (input as number) > max) invalid();
   return input as number;
+}
+
+function nullablePositiveInteger(input: unknown): number | null {
+  if (input === null || input === undefined || input === '') return null;
+  return integer(input, 1, POSTGRES_INTEGER_MAX);
 }
 
 function uuid(input: unknown): string {
@@ -98,10 +104,9 @@ function password(input: unknown): string {
   return input;
 }
 
-export interface ParsedModelInput {
+export interface ParsedModelInput extends ModelCapabilities {
   displayName: string;
   inputUsdPerMillion: string | null;
-  maxOutputTokens: number;
   modelId: string;
   outputUsdPerMillion: string | null;
   protocol: AiChatProtocol;
@@ -110,18 +115,20 @@ export interface ParsedModelInput {
 
 export function parseModelInput(input: unknown): ParsedModelInput {
   const body = record(input, [
-    'displayName', 'modelId', 'protocol', 'reasoningEffort', 'maxOutputTokens',
+    'displayName', 'modelId', 'protocol', 'reasoningEffort', 'contextWindowTokens',
+    'maxOutputTokens',
     'inputUsdPerMillion', 'outputUsdPerMillion',
   ]);
   if (typeof body.protocol !== 'string' || !PROTOCOLS.has(body.protocol as AiChatProtocol)) invalid();
   const reasoningEffort = nullableString(body.reasoningEffort, 32);
   if (reasoningEffort !== null && !REASONING.has(reasoningEffort)) invalid();
   return {
+    contextWindowTokens: nullablePositiveInteger(body.contextWindowTokens),
     displayName: stringValue(body.displayName, 1, 80),
     modelId: stringValue(body.modelId, 1, 200),
     protocol: body.protocol as AiChatProtocol,
     reasoningEffort,
-    maxOutputTokens: integer(body.maxOutputTokens, 1, 100000),
+    maxOutputTokens: nullablePositiveInteger(body.maxOutputTokens),
     inputUsdPerMillion: decimal(body.inputUsdPerMillion),
     outputUsdPerMillion: decimal(body.outputUsdPerMillion),
   };
@@ -132,11 +139,13 @@ export function parseModelMutationInput(input: unknown): {
   password: string;
 } {
   const body = record(input, [
-    'displayName', 'modelId', 'protocol', 'reasoningEffort', 'maxOutputTokens',
+    'displayName', 'modelId', 'protocol', 'reasoningEffort', 'contextWindowTokens',
+    'maxOutputTokens',
     'inputUsdPerMillion', 'outputUsdPerMillion', 'password',
   ]);
   return {
     model: parseModelInput({
+      contextWindowTokens: body.contextWindowTokens,
       displayName: body.displayName,
       modelId: body.modelId,
       protocol: body.protocol,

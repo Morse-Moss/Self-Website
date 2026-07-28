@@ -6,7 +6,9 @@ import {
   type AiProvider,
   type AnswerEvent,
   type AnswerRequest,
+  type PreparedTargetAnswer,
   type ProviderAnswerTarget,
+  ProviderRunError,
 } from '../lib/server/ai-provider.ts';
 import { createChatExecutionBudget } from '../lib/server/chat-execution-budget.ts';
 import { FailoverAiProvider } from '../lib/server/failover-ai-provider.ts';
@@ -51,15 +53,19 @@ function target(provider: AiProvider, position: number): ProviderAnswerTarget {
     provider,
     snapshot: {
       configDigest: String(position).repeat(64),
+      configDigestVersion: 2,
       connectionDisplayName: `Connection ${position}`,
       connectionVersionId: null,
+      contextWindowTokens: null,
       inputUsdPerMillion: position === 0 ? '1' : null,
       modelDisplayName: `Model ${position}`,
       modelId: `model-${position}`,
       modelVersionId: null,
+      maxOutputTokens: null,
       outputUsdPerMillion: position === 0 ? '2' : null,
       position,
       protocol: 'responses',
+      reasoningEffort: null,
       routeRevisionId: null,
       sourceType: 'environment',
     },
@@ -323,7 +329,6 @@ function v2Request(overrides: Partial<NonNullable<AnswerRequest['execution']>> =
         providerStartedAtMs: now,
         turnTimeoutMs: 90_000,
         providerTimeoutMs: 80_000,
-        maxAttempts: 2,
       }),
       generationMode: 'normal',
       protocolEventTimeoutMs: 25,
@@ -336,6 +341,74 @@ function v2Request(overrides: Partial<NonNullable<AnswerRequest['execution']>> =
       },
       onAttempt: async (event) => { executionEvents.push(event); },
       ...overrides,
+    },
+  };
+}
+
+function preparedTargetAnswer(
+  targetSnapshot: ProviderAnswerTarget['snapshot'],
+  revision: number,
+  trigger: PreparedTargetAnswer['context']['variant']['trigger'],
+): PreparedTargetAnswer {
+  const targetBinding = {
+    configDigestVersion: targetSnapshot.configDigestVersion,
+    configDigest: targetSnapshot.configDigest,
+    modelId: targetSnapshot.modelId,
+    protocol: targetSnapshot.protocol,
+    contextWindowTokens: targetSnapshot.contextWindowTokens,
+    maxOutputTokens: targetSnapshot.maxOutputTokens,
+    reasoningEffort: targetSnapshot.reasoningEffort,
+  };
+  const variant = {
+    id: '22222222-2222-4222-8222-222222222222',
+    revision,
+    trigger,
+    target: targetBinding,
+  };
+  const outboundBody = Object.freeze({ model: targetSnapshot.modelId, revision });
+  const preparedRequest = {
+    ...request,
+    messages: [{ role: 'user' as const, content: `variant-${revision}` }],
+  };
+  const digest = revision.toString(16).repeat(64);
+  return {
+    context: {
+      variant,
+      target: targetBinding,
+      historyView: {
+        rawHistory: [],
+        summary: null,
+        consumedTurnIds: [],
+        compactionArtifactIds: [],
+      },
+      packet: {} as never,
+      packetHmacKeyId: '2026-07-v2',
+      packetHmacSha256: digest,
+      summaryAttemptIds: [],
+    },
+    request: preparedRequest,
+    outboundBody,
+    generationRequest: {
+      schemaVersion: 'generation-request-v2',
+      variant,
+      packetHmacKeyId: '2026-07-v2',
+      packetHmacSha256: digest,
+      instructions: preparedRequest.instructions,
+      messages: preparedRequest.messages,
+      reasoningEffort: null,
+      maxOutputTokens: null,
+      outboundBody,
+      store: false,
+    },
+    integrity: {
+      version: 2,
+      contextBuilderVersion: 'context-packet-builder-v2',
+      generationVariantId: variant.id,
+      generationVariantRevision: revision,
+      target: targetBinding,
+      packetHmacKeyId: '2026-07-v2',
+      packetHmacSha256: digest,
+      generationRequestHmacSha256: digest,
     },
   };
 }
@@ -390,7 +463,7 @@ test('a completed primary returns done without waiting for an unstarted hedge', 
   });
 });
 
-test('a segment winner propagates a later stream failure instead of emitting done', async () => {
+test('private partial text stays hidden when the fallback is also incomplete', async () => {
   const streamFailure = new OpenAIProviderError('PROVIDER_STREAM_FAILED');
   let fallbackStarted = false;
   const primary = delayedProvider({
@@ -414,19 +487,273 @@ test('a segment winner propagates a later stream failure instead of emitting don
       totalTimeoutMs: 250,
       delaysMs: [0, 1_000],
     }))) events.push(event);
-  }, streamFailure);
+  }, (error: unknown) => error instanceof ProviderRunError);
 
-  assert.equal(fallbackStarted, false);
-  assert.deepEqual(
-    events.filter((event) => event.type !== 'attempt'),
-    [{ type: 'delta', text: 'Visible segment.' }],
-  );
+  assert.equal(fallbackStarted, true);
+  assert.equal(events.filter((event) => event.type === 'delta').length, 0);
   const attempts = events.filter(
     (event): event is Extract<AnswerEvent, { type: 'attempt' }> => event.type === 'attempt',
   );
-  assert.equal(attempts.length, 1);
+  assert.equal(attempts.length, 2);
   assert.equal(attempts[0].attempt.status, 'failed');
   assert.equal(attempts[0].attempt.errorCode, 'PROVIDER_STREAM_FAILED');
+});
+
+test('coordinated execution discards private partial text and fails over before public release', async () => {
+  let fallbackStarted = false;
+  const primary = delayedProvider({
+    delayMs: 0,
+    events: [{ type: 'delta', text: 'PRIVATE_PARTIAL.' }],
+    error: new OpenAIProviderError('PROVIDER_STREAM_FAILED'),
+  });
+  const fallback = delayedProvider({
+    delayMs: 0,
+    events: [
+      { type: 'delta', text: 'Recovered answer.' },
+      { type: 'done', usage: { inputTokens: 8, outputTokens: 2 } },
+    ],
+    onStart: () => { fallbackStarted = true; },
+  });
+  const provider = new FailoverAiProvider(primary, [
+    { alias: 'primary', provider: primary },
+    { alias: 'fallback-1', provider: fallback },
+  ], 1_000);
+  const events: AnswerEvent[] = [];
+
+  for await (const event of provider.streamAnswer(v2Request())) events.push(event);
+
+  assert.equal(fallbackStarted, true);
+  const visible = events
+    .filter((event) => event.type === 'delta')
+    .map((event) => event.text)
+    .join('');
+  assert.equal(visible, 'Recovered answer.');
+  assert.doesNotMatch(visible, /PRIVATE_PARTIAL/u);
+  assert.deepEqual(
+    events.filter((event) => event.type === 'attempt').map((event) => event.attempt.status),
+    ['failed', 'completed'],
+  );
+});
+
+test('coordinated execution allows one numeric overflow retry within seven global attempts', async () => {
+  const providerCalls = Array.from({ length: 6 }, () => 0);
+  const providers = providerCalls.map((_calls, position): AiProvider => ({
+    async embed() { return [[0.1, 0.2]]; },
+    async *streamAnswer() {
+      providerCalls[position] += 1;
+      if (position === 0 && providerCalls[position] === 1) {
+        throw new OpenAIProviderError('PROVIDER_RESPONSE_FAILED', null, {
+          category: 'context_overflow',
+          reason: 'context_length_exceeded',
+          httpStatus: 400,
+          inputTokens: 4_096,
+          outputTokens: 0,
+          contextWindowTokens: 4_096,
+        });
+      }
+      throw new OpenAIProviderError('PROVIDER_UNAVAILABLE');
+    },
+  }));
+  const routeTargets = providers.map(target);
+  const provider = new FailoverAiProvider(providers[0], routeTargets, 1_000);
+  const preparedRevisions: Array<[number, number, string]> = [];
+  const startedIntegrityRevisions: number[] = [];
+  const events: AnswerEvent[] = [];
+  let failure: unknown;
+
+  try {
+    for await (const event of provider.streamAnswer(v2Request({
+      onAttempt: async (event) => {
+        if (event.type !== 'started' || !('integrity' in event) || !event.integrity) return;
+        if ('version' in event.integrity) {
+          startedIntegrityRevisions.push(event.integrity.generationVariantRevision);
+        }
+      },
+      prepareTarget: async ({ target: targetSnapshot, revision, trigger }) => {
+        preparedRevisions.push([targetSnapshot.position, revision, trigger]);
+        return preparedTargetAnswer(
+          targetSnapshot,
+          revision,
+          trigger,
+        );
+      },
+    }))) events.push(event);
+  } catch (error) {
+    failure = error;
+  }
+
+  assert.ok(failure instanceof ProviderRunError);
+  assert.equal(events.some((event) => event.type === 'delta'), false);
+  assert.deepEqual(providerCalls, [2, 1, 1, 1, 1, 1]);
+  assert.deepEqual(preparedRevisions, [
+    [0, 1, 'initial'],
+    [0, 2, 'provider_numeric_overflow'],
+    [1, 3, 'initial'],
+    [2, 4, 'initial'],
+    [3, 5, 'initial'],
+    [4, 6, 'initial'],
+    [5, 7, 'initial'],
+  ]);
+  assert.deepEqual(startedIntegrityRevisions, [1, 2, 3, 4, 5, 6, 7]);
+  assert.deepEqual(failure.attempts.map((attempt) => attempt.attemptIndex), [0, 1, 2, 3, 4, 5, 6]);
+  assert.deepEqual(
+    failure.attempts.map((attempt) => (
+      attempt.integrity && 'version' in attempt.integrity
+        ? attempt.integrity.generationVariantRevision
+        : null
+    )),
+    [1, 2, 3, 4, 5, 6, 7],
+  );
+  assert.deepEqual(
+    failure.attempts.map((attempt) => attempt.generationVariantTrigger),
+    ['initial', 'provider_numeric_overflow', 'initial', 'initial', 'initial', 'initial', 'initial'],
+  );
+  assert.equal(failure.attempts[0].failure?.category, 'context_overflow');
+  assert.deepEqual(
+    failure.attempts.map((attempt) => [attempt.position, attempt.launchKind]),
+    [
+      [0, 'primary'],
+      [0, 'overflow_retry'],
+      [1, 'failover'],
+      [2, 'failover'],
+      [3, 'failover'],
+      [4, 'failover'],
+      [5, 'failover'],
+    ],
+  );
+});
+
+test('target preparation failures advance revisions without consuming answer attempts', async () => {
+  let firstProviderCalls = 0;
+  let secondProviderCalls = 0;
+  let secondPreparedBody: Readonly<Record<string, unknown>> | null = null;
+  let exactPreparedBodySent = false;
+  const first: AiProvider = {
+    async embed() { return [[0.1, 0.2]]; },
+    async *streamAnswer() { firstProviderCalls += 1; },
+  };
+  const second: AiProvider = {
+    async embed() { return [[0.1, 0.2]]; },
+    async *streamAnswer(answerRequest) {
+      secondProviderCalls += 1;
+      exactPreparedBodySent = answerRequest.preparedOutboundBody === secondPreparedBody;
+      yield { type: 'delta', text: 'Prepared fallback.' };
+      yield { type: 'done', usage: null };
+    },
+  };
+  const routeTargets = [target(first, 0), target(second, 1)];
+  const provider = new FailoverAiProvider(first, routeTargets, 1_000);
+  const revisions: Array<[number, number]> = [];
+  const budget = createChatExecutionBudget({
+    turnStartedAtMs: Date.now(),
+    providerStartedAtMs: Date.now(),
+    turnTimeoutMs: 90_000,
+    providerTimeoutMs: 80_000,
+  });
+  const events: AnswerEvent[] = [];
+
+  for await (const event of provider.streamAnswer(v2Request({
+    budget,
+    prepareTarget: async ({ target: targetSnapshot, revision, trigger }) => {
+      revisions.push([targetSnapshot.position, revision]);
+      if (targetSnapshot.position === 0) {
+        throw Object.assign(new Error('private summary failure'), {
+          code: 'CONTEXT_SUMMARY_FAILED',
+        });
+      }
+      const prepared = preparedTargetAnswer(targetSnapshot, revision, trigger);
+      secondPreparedBody = prepared.outboundBody;
+      return prepared;
+    },
+  }))) events.push(event);
+
+  assert.deepEqual(revisions, [[0, 1], [1, 2]]);
+  assert.equal(firstProviderCalls, 0);
+  assert.equal(secondProviderCalls, 1);
+  assert.equal(exactPreparedBodySent, true);
+  assert.equal(budget.remainingAttempts(), 6);
+  const attempts = events.filter((event) => event.type === 'attempt');
+  assert.equal(attempts.length, 1);
+  assert.equal(attempts[0].attempt.attemptIndex, 0);
+  assert.equal(attempts[0].attempt.position, 1);
+});
+
+test('cancelled target preparation terminates without starting that target or a fallback', async () => {
+  const calls = [0, 0];
+  const providers = calls.map((_value, position): AiProvider => ({
+    async embed() { return [[0.1, 0.2]]; },
+    async *streamAnswer() { calls[position] += 1; },
+  }));
+  const provider = new FailoverAiProvider(
+    providers[0],
+    providers.map(target),
+    1_000,
+  );
+  let preparationCalls = 0;
+
+  await assert.rejects(async () => {
+    for await (const _event of provider.streamAnswer(v2Request({
+      prepareTarget: async () => {
+        preparationCalls += 1;
+        throw Object.assign(new Error('private cancellation'), {
+          code: 'CONTEXT_SUMMARY_CANCELLED',
+        });
+      },
+    }))) {
+      // consume the stream
+    }
+  }, (error: unknown) => (
+    (error as { code?: string }).code === 'CONTEXT_SUMMARY_CANCELLED'
+  ));
+  assert.equal(preparationCalls, 1);
+  assert.deepEqual(calls, [0, 0]);
+});
+
+test('output truncation skips same-target retry and may complete on an unused fallback', async () => {
+  const calls = [0, 0];
+  const truncated: AiProvider = {
+    async embed() { return [[0.1, 0.2]]; },
+    async *streamAnswer() {
+      calls[0] += 1;
+      throw new OpenAIProviderError('PROVIDER_RESPONSE_INCOMPLETE', null, {
+        category: 'output_truncated',
+        reason: 'length',
+        httpStatus: 200,
+        inputTokens: 3_000,
+        outputTokens: 1_000,
+        contextWindowTokens: 8_192,
+      });
+    },
+  };
+  const fallback: AiProvider = {
+    async embed() { return [[0.1, 0.2]]; },
+    async *streamAnswer() {
+      calls[1] += 1;
+      yield { type: 'delta', text: 'Complete fallback.' };
+      yield { type: 'done', usage: null };
+    },
+  };
+  const routeTargets = [target(truncated, 0), target(fallback, 1)];
+  const provider = new FailoverAiProvider(truncated, routeTargets, 1_000);
+  const preparedTargets: number[] = [];
+  const events: AnswerEvent[] = [];
+
+  for await (const event of provider.streamAnswer(v2Request({
+    prepareTarget: async ({ target: targetSnapshot, revision, trigger }) => {
+      preparedTargets.push(targetSnapshot.position);
+      return preparedTargetAnswer(targetSnapshot, revision, trigger);
+    },
+  }))) events.push(event);
+
+  assert.deepEqual(calls, [1, 1]);
+  assert.deepEqual(preparedTargets, [0, 1]);
+  assert.equal(
+    events.filter((event) => event.type === 'delta').map((event) => event.text).join(''),
+    'Complete fallback.',
+  );
+  const attempts = events.filter((event) => event.type === 'attempt');
+  assert.equal(attempts[0].attempt.failure?.category, 'output_truncated');
+  assert.deepEqual(attempts.map((event) => event.attempt.launchKind), ['primary', 'failover']);
 });
 
 test('coordinated v2 execution stays serial and switches only after failure', async () => {
@@ -716,7 +1043,7 @@ test('coordinated execution does not fail over after an unknown program error', 
   assert.equal(fallbackStarted, false);
 });
 
-test('segment release waits for a complete sentence and flushes the final unpunctuated text', async () => {
+test('segment release emits one complete answer only after terminal success', async () => {
   const primary: AiProvider = {
     async embed() { return [[0.1, 0.2]]; },
     async *streamAnswer() {
@@ -733,7 +1060,7 @@ test('segment release waits for a complete sentence and flushes the final unpunc
     if (event.type === 'delta') visible.push(event.text);
   }
 
-  assert.deepEqual(visible, ['第一句。', '最后一段没有标点']);
+  assert.deepEqual(visible, ['第一句。最后一段没有标点']);
 });
 
 test('segment release keeps a fenced code block hidden until the closing fence arrives', async () => {

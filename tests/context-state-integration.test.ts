@@ -15,7 +15,7 @@ import {
   insertCompletedContextTurn,
   loadAdjacentCompletedContextTurn,
   loadCapturedLegacyContextBridge,
-  loadCompletedContextHistory,
+  loadCanonicalAnswerHistory,
   loadContextTaskFrame,
   persistContextSuccessState,
   persistContextTerminalManifest,
@@ -314,12 +314,12 @@ test('completed context history remains authoritative after interaction retentio
     assert.equal(adjacent?.user.text, '还要求做 RAG 评测');
     assert.equal(adjacent?.assistant.text, '这会影响相关项目排序。');
 
-    const history = await loadCompletedContextHistory(
-      pool,
-      fixture.conversationId,
-      taskScope,
-      { tokenBudget: 2_500 },
-    );
+    const history = await loadCanonicalAnswerHistory(pool, {
+      conversationId: fixture.conversationId,
+      ownerPipeline: 'context_packet_v22',
+      contextScopeId: taskScope,
+      includeConversation: false,
+    });
     assert.deepEqual(history.map((turn) => turn.turnId), [firstTurn, secondTurn]);
     assert.equal(history.every((turn) => turn.contextScopeId === taskScope), true);
   } finally {
@@ -328,7 +328,7 @@ test('completed context history remains authoritative after interaction retentio
   }
 });
 
-test('legacy bridge captures only the six nearest valid completed pairs and survives analytics cleanup', async () => {
+test('legacy bridge captures every valid completed pair and survives analytics cleanup', async () => {
   const database = await createDisposablePostgresDatabase();
   const pool = new Pool({ connectionString: database.connectionString });
   try {
@@ -381,7 +381,7 @@ test('legacy bridge captures only the six nearest valid completed pairs and surv
     } finally {
       client.release();
     }
-    assert.deepEqual(captured.map((turn) => turn.turnId), turnIds.slice(1).reverse());
+    assert.deepEqual(captured.map((turn) => turn.turnId), [...turnIds].reverse());
 
     const stored = await pool.query<{ has_body: boolean; ordinal: number; status: string }>(
       `SELECT ordinal, status,
@@ -390,12 +390,12 @@ test('legacy bridge captures only the six nearest valid completed pairs and surv
         WHERE conversation_id = $1 ORDER BY ordinal`,
       [fixture.conversationId],
     );
-    assert.equal(stored.rowCount, 6);
+    assert.equal(stored.rowCount, 7);
     assert.equal(stored.rows.every((row) => row.status === 'captured' && !row.has_body), true);
 
     await pool.query('DELETE FROM interaction_turns WHERE conversation_id = $1', [fixture.conversationId]);
     const afterCleanup = await loadCapturedLegacyContextBridge(pool, fixture.conversationId);
-    assert.deepEqual(afterCleanup.map((turn) => turn.turnId), turnIds.slice(1).reverse());
+    assert.deepEqual(afterCleanup.map((turn) => turn.turnId), [...turnIds].reverse());
 
     await resolveLegacyContextBridge(pool, {
       conversationId: fixture.conversationId,
@@ -597,12 +597,12 @@ test('context success state is atomic while terminal failure persists only a red
       [turnId],
     );
     assert.equal(completed.rows[0].context_manifest.semantic_intent, 'project_fit');
-    assert.equal((await loadCompletedContextHistory(
-      pool,
-      fixture.conversationId,
-      taskId,
-      { tokenBudget: 2_500 },
-    )).length, 1);
+    assert.equal((await loadCanonicalAnswerHistory(pool, {
+      conversationId: fixture.conversationId,
+      ownerPipeline: 'context_packet_v22',
+      contextScopeId: taskId,
+      includeConversation: false,
+    })).length, 1);
     assert.equal((await loadContextTaskFrame(pool, fixture.conversationId))?.taskId, taskId);
 
     const failureTurnId = randomUUID();

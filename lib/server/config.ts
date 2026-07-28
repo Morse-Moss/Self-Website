@@ -11,6 +11,7 @@ import {
 export type OpenAIReasoningEffort = AnswerReasoningEffort;
 
 type Env = Record<string, string | undefined>;
+const POSTGRES_INTEGER_MAX = 2_147_483_647;
 
 function required(env: Env, name: string): string {
   const value = env[name]?.trim();
@@ -33,6 +34,16 @@ function positiveInteger(env: Env, name: string, fallback: number): number {
   const value = positiveNumber(env, name, fallback);
   if (!Number.isInteger(value)) {
     throw new Error(`${name} must be a positive integer.`);
+  }
+  return value;
+}
+
+function optionalPositiveInteger(env: Env, name: string): number | null {
+  const raw = env[name]?.trim();
+  if (!raw) return null;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < 1 || value > POSTGRES_INTEGER_MAX) {
+    throw new Error(`${name} must be a positive PostgreSQL integer.`);
   }
   return value;
 }
@@ -424,23 +435,6 @@ export function loadServerConfig(env: Env = process.env) {
     env,
     'MORSE_CHAT_CONTEXT_CANARY_INVITE_LABELS',
   );
-  const contextTokenBudget = boundedPositiveInteger(
-    env,
-    'MORSE_CHAT_CONTEXT_TOKEN_BUDGET',
-    12_000,
-    1_000,
-    100_000,
-  );
-  const jdContextTokenBudget = boundedPositiveInteger(
-    env,
-    'MORSE_JD_CONTEXT_TOKEN_BUDGET',
-    24_000,
-    12_000,
-    200_000,
-  );
-  if (jdContextTokenBudget < contextTokenBudget) {
-    throw new Error('MORSE_JD_CONTEXT_TOKEN_BUDGET must be at least MORSE_CHAT_CONTEXT_TOKEN_BUDGET.');
-  }
   const contextPacketDigestConfig = contextPacketDigest(env, contextPacketEnabled);
   const providerProtocolEventTimeoutMs = positiveNumber(
     env,
@@ -472,8 +466,6 @@ export function loadServerConfig(env: Env = process.env) {
     1,
     100,
   );
-  const providerMaxAttempts = positiveInteger(env, 'MORSE_PROVIDER_MAX_ATTEMPTS', 2);
-
   if (
     providerProtocolEventTimeoutMs >= providerModelTextTimeoutMs
     || providerModelTextTimeoutMs > providerStageTimeoutMs
@@ -483,10 +475,6 @@ export function loadServerConfig(env: Env = process.env) {
       'MORSE_PROVIDER timing must satisfy protocol event < model text <= provider stage < chat turn.',
     );
   }
-  if (providerMaxAttempts !== 2) {
-    throw new Error('MORSE_PROVIDER_MAX_ATTEMPTS must be exactly 2.');
-  }
-
   return {
     ...access,
     ...search,
@@ -514,11 +502,9 @@ export function loadServerConfig(env: Env = process.env) {
     chatTurnTimeoutMs,
     chatWindowSeconds,
     chatWindowMaxMessages,
-    providerMaxAttempts,
     providerConcurrency: positiveInteger(env, 'MORSE_PROVIDER_CONCURRENCY', 4),
-    maxOutputTokens: positiveNumber(env, 'MORSE_MAX_OUTPUT_TOKENS', 1200),
-    historyMessageLimit: positiveNumber(env, 'MORSE_HISTORY_MESSAGE_LIMIT', 12),
-    retrievalLimit: positiveNumber(env, 'MORSE_RETRIEVAL_LIMIT', 5),
+    chatContextWindowTokens: optionalPositiveInteger(env, 'MORSE_CHAT_CONTEXT_WINDOW_TOKENS'),
+    maxOutputTokens: optionalPositiveInteger(env, 'MORSE_MAX_OUTPUT_TOKENS'),
     chatEnabled: booleanSetting(env, 'MORSE_CHAT_ENABLED', true),
     chatV2Enabled: booleanSetting(env, 'MORSE_CHAT_V2_ENABLED', false),
     chatV2CanaryPercent,
@@ -527,8 +513,6 @@ export function loadServerConfig(env: Env = process.env) {
     contextCanaryPercent,
     contextCanaryInviteIds,
     contextCanaryInviteLabels,
-    contextTokenBudget,
-    jdContextTokenBudget,
     contextPacketDigest: contextPacketDigestConfig,
     hedgedFailoverEnabled: booleanSetting(env, 'MORSE_CHAT_HEDGED_FAILOVER_ENABLED', false),
     chatSafeMode: booleanSetting(env, 'MORSE_CHAT_SAFE_MODE', false),

@@ -11,8 +11,9 @@ interface ChatExecutionBudgetInput {
   providerStartedAtMs: number;
   turnTimeoutMs: number;
   providerTimeoutMs: number;
-  maxAttempts: number;
 }
+
+export const MAX_ANSWER_ATTEMPTS = 7;
 
 function requireTimestamp(value: number, name: string): void {
   if (!Number.isSafeInteger(value) || value < 0) {
@@ -36,10 +37,6 @@ export function createChatExecutionBudget(
   if (input.providerStartedAtMs < input.turnStartedAtMs) {
     throw new Error('providerStartedAtMs must not precede turnStartedAtMs.');
   }
-  if (input.maxAttempts !== 2) {
-    throw new Error('maxAttempts must equal the Chat v2 contract of 2.');
-  }
-
   const deadlineMs = Math.min(
     input.turnStartedAtMs + input.turnTimeoutMs,
     input.providerStartedAtMs + input.providerTimeoutMs,
@@ -48,16 +45,16 @@ export function createChatExecutionBudget(
 
   return {
     providerDeadlineMs: () => deadlineMs,
-    remainingAttempts: () => Math.max(0, input.maxAttempts - attempts),
+    remainingAttempts: () => Math.max(0, MAX_ANSWER_ATTEMPTS - attempts),
     remainingMs: (nowMs) => Math.max(0, deadlineMs - nowMs),
     canStartAttempt(nowMs, minimumMs) {
       requireTimestamp(nowMs, 'nowMs');
       requirePositiveDuration(minimumMs, 'minimumMs');
-      return attempts < input.maxAttempts && deadlineMs - nowMs >= minimumMs;
+      return attempts < MAX_ANSWER_ATTEMPTS && deadlineMs - nowMs >= minimumMs;
     },
     reserveAttempt(nowMs) {
       requireTimestamp(nowMs, 'nowMs');
-      if (attempts >= input.maxAttempts || nowMs >= deadlineMs) return false;
+      if (attempts >= MAX_ANSWER_ATTEMPTS || nowMs >= deadlineMs) return false;
       attempts += 1;
       return true;
     },

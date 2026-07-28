@@ -383,6 +383,9 @@ export default function AdminApiConsole() {
   const activeProtocol = active?.protocol ?? activeEnvironment?.protocol;
   const activeReasoningEffort = active?.reasoningEffort ?? activeEnvironment?.reasoningEffort ?? null;
   const activeMaxOutputTokens = active?.maxOutputTokens ?? activeEnvironment?.maxOutputTokens ?? null;
+  const activeContextWindowTokens = active?.contextWindowTokens
+    ?? activeEnvironment?.contextWindowTokens
+    ?? null;
   const activation = newestActivation(allEvents);
 
   if (loading && !runtime) {
@@ -442,7 +445,8 @@ export default function AdminApiConsole() {
         <dl className={styles.runtimeFacts}>
           <div><dt>活动版本</dt><dd>v{runtime.activeRevision || 0}</dd></div>
           <div><dt>推理强度</dt><dd>{activeReasoningEffort ?? '默认'}</dd></div>
-          <div><dt>最大输出</dt><dd>{activeMaxOutputTokens ?? '-'}</dd></div>
+          <div><dt>上下文窗口</dt><dd>{activeContextWindowTokens ?? '未知'}</dd></div>
+          <div><dt>最大输出</dt><dd>{activeMaxOutputTokens ?? 'Provider 默认'}</dd></div>
           <div><dt>备用线路</dt><dd>{Math.max(0, runtime.targets.length - 1)} 条</dd></div>
           <div><dt>最近激活</dt><dd>{activation ? new Date(activation.createdAt).toLocaleString('zh-CN') : '环境基线'}</dd></div>
           <div><dt>路由来源</dt><dd>{runtime.routeRevisionId ? '数据库动态配置' : '环境配置'}</dd></div>

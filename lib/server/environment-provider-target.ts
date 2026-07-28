@@ -1,5 +1,6 @@
 import {
-  createRuntimeConfigDigest,
+  createRuntimeConfigDigestV1,
+  createRuntimeConfigDigestV2,
   type AiConfigKey,
   type AiRouteTargetSnapshot,
 } from './ai-config.ts';
@@ -25,7 +26,8 @@ export interface AdminEnvironmentProviderTarget {
   digestBaseUrl: string;
   effectiveBaseUrl: string;
   key: EnvironmentTargetKey;
-  maxOutputTokens: number;
+  legacyConfigDigestV1: string | null;
+  maxOutputTokens: number | null;
   reasoningEffort: OpenAIReasoningEffort | null;
   snapshot: AiRouteTargetSnapshot;
   userAgent: string | null;
@@ -79,15 +81,25 @@ export function listAdminEnvironmentTargets(
     const baseUrlMode = usesPublicDefault
       ? 'public_default'
       : configuredBaseUrlMode(effectiveBaseUrl, outboundPolicy);
-    const configDigest = createRuntimeConfigDigest({
+    const commonDigestInput = {
       apiKey: target.apiKey,
       baseUrl: digestBaseUrl,
-      maxOutputTokens: config.maxOutputTokens,
       modelId: config.chatModel,
       protocol: config.chatProtocol,
       reasoningEffort: config.reasoningEffort ?? null,
       userAgent: config.openaiUserAgent ?? null,
+    };
+    const configDigest = createRuntimeConfigDigestV2({
+      ...commonDigestInput,
+      contextWindowTokens: config.chatContextWindowTokens,
+      maxOutputTokens: config.maxOutputTokens,
     }, configKey.key);
+    const legacyConfigDigestV1 = config.maxOutputTokens === null
+      ? null
+      : createRuntimeConfigDigestV1({
+          ...commonDigestInput,
+          maxOutputTokens: config.maxOutputTokens,
+        }, configKey.key);
 
     return {
       apiKey: target.apiKey,
@@ -96,21 +108,26 @@ export function listAdminEnvironmentTargets(
       digestBaseUrl,
       effectiveBaseUrl,
       key: target.key,
+      legacyConfigDigestV1,
       maxOutputTokens: config.maxOutputTokens,
       reasoningEffort: config.reasoningEffort ?? null,
       userAgent: config.openaiUserAgent ?? null,
       snapshot: {
         configDigest,
+        configDigestVersion: 2,
         connectionDisplayName: target.name,
+        contextWindowTokens: config.chatContextWindowTokens,
         databaseModelSeriesId: null,
         databaseModelVersionId: null,
         environmentTargetKey: target.key,
         inputUsdPerMillion: config.tokenRates?.inputUsdPerMillion.toString() ?? null,
         modelDisplayName: config.chatModel,
         modelId: config.chatModel,
+        maxOutputTokens: config.maxOutputTokens,
         outputUsdPerMillion: config.tokenRates?.outputUsdPerMillion.toString() ?? null,
         position,
         protocol: config.chatProtocol,
+        reasoningEffort: config.reasoningEffort ?? null,
         sourceType: 'environment',
       },
     };

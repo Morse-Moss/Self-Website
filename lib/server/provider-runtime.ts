@@ -4,9 +4,11 @@ import type { Pool } from 'pg';
 
 import {
   AiConfigError,
-  createRuntimeConfigDigest,
+  createRuntimeConfigDigestV1,
+  createRuntimeConfigDigestV2,
   loadAiConfigKey,
   type AiChatProtocol,
+  type AiConfigDigestVersion,
 } from './ai-config.ts';
 import { decryptAiConfigSecret } from './ai-config-crypto.ts';
 import { readActiveRouteRaw } from './ai-config-store.ts';
@@ -26,12 +28,13 @@ import {
 export interface ProviderRuntimeConfig {
   chatModel: string;
   chatProtocol: AiChatProtocol;
+  chatContextWindowTokens: number | null;
   embeddingApiKey: string;
   embeddingBaseUrl: string | undefined;
   embeddingDimensions: number;
   embeddingModel: string;
   embeddingTimeoutMs: number;
-  maxOutputTokens: number;
+  maxOutputTokens: number | null;
   openaiApiKey: string;
   openaiBaseUrl: string | undefined;
   openaiFallbacks: Array<{ apiKey: string; baseUrl: string }>;
@@ -49,14 +52,16 @@ interface DatabaseTargetRow {
   api_key_tag: Buffer | null;
   base_url: string;
   config_digest: string;
+  config_digest_version: AiConfigDigestVersion;
   connection_display_name: string;
   connection_deleted_at: Date | null;
   connection_series_id: string;
   connection_version_id: string;
+  context_window_tokens: number | null;
   deleted_at: Date | null;
   input_usd_per_million: string | null;
   key_version: number;
-  max_output_tokens: number;
+  max_output_tokens: number | null;
   model_display_name: string;
   model_id: string;
   model_version_id: string;
@@ -93,19 +98,38 @@ function environmentNodes(config: ProviderRuntimeConfig) {
   ];
 }
 
-function fallbackEnvironmentDigest(input: {
-  apiKey: string;
-  baseUrl: string | undefined;
-  config: ProviderRuntimeConfig;
-}): string {
-  return createHmac('sha256', input.apiKey).update(JSON.stringify({
-    baseUrl: input.baseUrl ?? '',
-    maxOutputTokens: input.config.maxOutputTokens,
-    modelId: input.config.chatModel,
-    protocol: input.config.chatProtocol,
-    reasoningEffort: input.config.reasoningEffort ?? null,
-    userAgent: input.config.openaiUserAgent ?? null,
-  }), 'utf8').digest('hex');
+function environmentDigest(
+  config: ProviderRuntimeConfig,
+  node: ReturnType<typeof environmentNodes>[number],
+  version: AiConfigDigestVersion,
+  digestKey?: Buffer,
+): string {
+  const common = {
+    apiKey: node.apiKey,
+    baseUrl: node.baseUrl ?? '',
+    modelId: config.chatModel,
+    protocol: config.chatProtocol,
+    reasoningEffort: config.reasoningEffort ?? null,
+    userAgent: config.openaiUserAgent ?? null,
+  };
+  if (version === 1) {
+    if (!digestKey || config.maxOutputTokens === null) unavailable();
+    return createRuntimeConfigDigestV1({
+      ...common,
+      maxOutputTokens: config.maxOutputTokens,
+    }, digestKey);
+  }
+  if (version !== 2) unavailable();
+  const v2Input = {
+    ...common,
+    contextWindowTokens: config.chatContextWindowTokens,
+    maxOutputTokens: config.maxOutputTokens,
+  };
+  if (digestKey) return createRuntimeConfigDigestV2(v2Input, digestKey);
+  const unmanagedKey = createHmac('sha256', node.apiKey)
+    .update('morse/runtime-config/unmanaged-key/v1\0', 'utf8')
+    .digest();
+  return createRuntimeConfigDigestV2(v2Input, unmanagedKey);
 }
 
 function environmentTarget(
@@ -115,36 +139,41 @@ function environmentTarget(
   routeRevisionId: string | null,
   policy: ProviderOutboundPolicy,
   digestKey?: Buffer,
+  snapshot: {
+    configDigestVersion: AiConfigDigestVersion;
+    contextWindowTokens: number | null;
+    maxOutputTokens: number | null;
+    reasoningEffort: OpenAIReasoningEffort | null;
+  } = {
+    configDigestVersion: 2,
+    contextWindowTokens: config.chatContextWindowTokens,
+    maxOutputTokens: config.maxOutputTokens,
+    reasoningEffort: config.reasoningEffort ?? null,
+  },
 ): ResolvedChatTarget {
   if (node.baseUrl) validateProviderRuntimeBaseUrl(node.baseUrl, policy);
-  const digestInput = {
-    apiKey: node.apiKey,
-    baseUrl: node.baseUrl ?? '',
-    maxOutputTokens: config.maxOutputTokens,
-    modelId: config.chatModel,
-    protocol: config.chatProtocol,
-    reasoningEffort: config.reasoningEffort ?? null,
-    userAgent: config.openaiUserAgent ?? null,
-  };
   return {
     apiKey: node.apiKey,
     baseUrl: node.baseUrl,
-    maxOutputTokens: config.maxOutputTokens,
-    reasoningEffort: config.reasoningEffort,
+    contextWindowTokens: snapshot.contextWindowTokens,
+    maxOutputTokens: snapshot.maxOutputTokens,
+    reasoningEffort: snapshot.reasoningEffort,
     userAgent: config.openaiUserAgent ?? null,
     snapshot: {
-      configDigest: digestKey
-        ? createRuntimeConfigDigest(digestInput, digestKey)
-        : fallbackEnvironmentDigest({ apiKey: node.apiKey, baseUrl: node.baseUrl, config }),
+      configDigest: environmentDigest(config, node, snapshot.configDigestVersion, digestKey),
+      configDigestVersion: snapshot.configDigestVersion,
       connectionDisplayName: node.name,
       connectionVersionId: null,
+      contextWindowTokens: snapshot.contextWindowTokens,
       inputUsdPerMillion: config.tokenRates?.inputUsdPerMillion.toString() ?? null,
       modelDisplayName: config.chatModel,
       modelId: config.chatModel,
       modelVersionId: null,
+      maxOutputTokens: snapshot.maxOutputTokens,
       outputUsdPerMillion: config.tokenRates?.outputUsdPerMillion.toString() ?? null,
       position,
       protocol: config.chatProtocol,
+      reasoningEffort: snapshot.reasoningEffort,
       routeRevisionId,
       sourceType: 'environment',
     },
@@ -156,8 +185,9 @@ async function databaseRows(pool: Pool, ids: string[]): Promise<Map<string, Data
   const result = await pool.query<DatabaseTargetRow>(
     `SELECT m.id::text AS model_version_id, m.model_id,
             m.display_name AS model_display_name, m.protocol, m.reasoning_effort,
-            m.max_output_tokens, m.input_usd_per_million::text,
-            m.output_usd_per_million::text, m.config_digest, m.deleted_at,
+            m.context_window_tokens, m.max_output_tokens,
+            m.input_usd_per_million::text, m.output_usd_per_million::text,
+            m.config_digest_version, m.config_digest, m.deleted_at,
             c.id::text AS connection_version_id, c.series_id::text AS connection_series_id,
             c.display_name AS connection_display_name, c.base_url, c.user_agent,
             c.api_key_ciphertext, c.api_key_iv, c.api_key_tag, c.key_version,
@@ -209,13 +239,25 @@ export async function resolveProviderRuntime(
           route.id,
           policy,
           configKey.key,
+          {
+            configDigestVersion: target.configDigestVersion,
+            contextWindowTokens: target.contextWindowTokens,
+            maxOutputTokens: target.maxOutputTokens,
+            reasoningEffort: target.reasoningEffort,
+          },
         );
         if (
           resolved.snapshot.configDigest !== target.configDigest
+          || resolved.snapshot.configDigestVersion !== target.configDigestVersion
           || resolved.snapshot.connectionDisplayName !== target.connectionDisplayName
           || resolved.snapshot.modelDisplayName !== target.modelDisplayName
           || resolved.snapshot.modelId !== target.modelId
           || resolved.snapshot.protocol !== target.protocol
+          || (target.configDigestVersion === 2 && (
+            config.chatContextWindowTokens !== target.contextWindowTokens
+            || config.maxOutputTokens !== target.maxOutputTokens
+            || (config.reasoningEffort ?? null) !== target.reasoningEffort
+          ))
         ) unavailable();
         return {
           ...resolved,
@@ -234,6 +276,7 @@ export async function resolveProviderRuntime(
         || row.connection_deleted_at
         || row.secret_destroyed_at
         || row.key_version !== configKey.keyVersion
+        || row.config_digest_version !== target.configDigestVersion
         || row.config_digest !== target.configDigest
         || row.connection_display_name !== target.connectionDisplayName
         || row.model_display_name !== target.modelDisplayName
@@ -250,33 +293,54 @@ export async function resolveProviderRuntime(
         seriesId: row.connection_series_id,
       });
       validateProviderRuntimeBaseUrl(row.base_url, policy);
-      const runtimeDigest = createRuntimeConfigDigest({
+      const digestCommon = {
         apiKey,
         baseUrl: row.base_url,
-        maxOutputTokens: row.max_output_tokens,
         modelId: row.model_id,
         protocol: row.protocol,
         reasoningEffort: row.reasoning_effort,
         userAgent: row.user_agent,
-      }, configKey.key);
+      };
+      const runtimeDigest = row.config_digest_version === 1
+        ? row.max_output_tokens === null
+          ? unavailable()
+          : createRuntimeConfigDigestV1({
+              ...digestCommon,
+              maxOutputTokens: row.max_output_tokens,
+            }, configKey.key)
+        : createRuntimeConfigDigestV2({
+            ...digestCommon,
+            contextWindowTokens: row.context_window_tokens,
+            maxOutputTokens: row.max_output_tokens,
+          }, configKey.key);
       if (runtimeDigest !== row.config_digest || runtimeDigest !== target.configDigest) unavailable();
+      if (target.configDigestVersion === 2 && (
+        row.context_window_tokens !== target.contextWindowTokens
+        || row.max_output_tokens !== target.maxOutputTokens
+        || row.reasoning_effort !== target.reasoningEffort
+      )) unavailable();
       return {
         apiKey,
         baseUrl: row.base_url,
-        maxOutputTokens: row.max_output_tokens,
-        reasoningEffort: row.reasoning_effort ?? undefined,
+        contextWindowTokens: target.contextWindowTokens,
+        maxOutputTokens: target.maxOutputTokens,
+        reasoningEffort: target.reasoningEffort,
         userAgent: row.user_agent,
         snapshot: {
           configDigest: row.config_digest,
+          configDigestVersion: target.configDigestVersion,
           connectionDisplayName: row.connection_display_name,
           connectionVersionId: row.connection_version_id,
+          contextWindowTokens: target.contextWindowTokens,
           inputUsdPerMillion: target.inputUsdPerMillion,
           modelDisplayName: row.model_display_name,
           modelId: row.model_id,
           modelVersionId: row.model_version_id,
+          maxOutputTokens: target.maxOutputTokens,
           outputUsdPerMillion: target.outputUsdPerMillion,
           position: target.position,
           protocol: row.protocol,
+          reasoningEffort: target.reasoningEffort,
           routeRevisionId: route.id,
           sourceType: 'database',
         },

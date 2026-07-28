@@ -17,14 +17,6 @@ export interface DiagnosisTransitionInput {
   outboxEnqueued: boolean;
 }
 
-const FIELD_LIMITS: Record<DiagnosisFieldName, number> = {
-  problem: 2_000,
-  goal: 2_000,
-  currentState: 2_000,
-  constraints: 2_000,
-  expectedTimeline: 500,
-};
-const TOTAL_CHARACTER_LIMIT = 6_500;
 const FIELD_LABELS: Record<DiagnosisFieldName, string> = {
   problem: '问题',
   goal: '目标',
@@ -66,24 +58,11 @@ export function normalizeDiagnosisFields(input: unknown): DiagnosisFields {
     if (typeof value !== 'string') {
       throw new TypeError(`${field} must be a string.`);
     }
-    const normalized = value.trim();
-    if (normalized.length > FIELD_LIMITS[field]) {
-      throw new RangeError(
-        `${field} must be ${FIELD_LIMITS[field].toLocaleString('en-US')} characters or fewer.`,
-      );
-    }
-    fields[field] = normalized;
+    fields[field] = value;
   }
 
-  const totalCharacters = DIAGNOSIS_FIELD_NAMES.reduce(
-    (total, field) => total + fields[field].length,
-    0,
-  );
-  if (totalCharacters === 0) {
+  if (DIAGNOSIS_FIELD_NAMES.every((field) => !fields[field].trim())) {
     throw new TypeError('At least one diagnosis field is required.');
-  }
-  if (totalCharacters > TOTAL_CHARACTER_LIMIT) {
-    throw new RangeError('Diagnosis field total must be 6,500 characters or fewer.');
   }
 
   return fields;
@@ -93,7 +72,7 @@ export function getDiagnosisCollectionStatus(
   fieldsInput: DiagnosisFields,
 ): Extract<DiagnosisStatus, 'collecting' | 'complete'> {
   const fields = normalizeDiagnosisFields(fieldsInput);
-  return DIAGNOSIS_FIELD_NAMES.every((field) => fields[field].length > 0)
+  return DIAGNOSIS_FIELD_NAMES.every((field) => fields[field].trim().length > 0)
     ? 'complete'
     : 'collecting';
 }

@@ -26,7 +26,6 @@ export default function JdIntake({
     <form className={styles.intake} data-testid="morse-jd-intake" onSubmit={submit}>
       <div className={styles.intakeHeading}>
         <label htmlFor="morse-jd">职位描述</label>
-        <span>{value.length.toLocaleString('zh-CN')} / 12,000</span>
       </div>
       <textarea
         ref={inputRef}
@@ -34,7 +33,6 @@ export default function JdIntake({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder="粘贴完整 JD"
-        maxLength={12_000}
         rows={5}
         disabled={streaming}
       />

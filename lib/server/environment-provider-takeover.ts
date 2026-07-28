@@ -5,6 +5,7 @@ import type pg from 'pg';
 import {
   AiConfigError,
   type AiConfigKey,
+  type AiConfigDigestVersion,
 } from './ai-config.ts';
 import {
   createConnectionWithModel,
@@ -61,6 +62,7 @@ export interface ActiveEnvironmentTakeover {
   environmentTargetKey: EnvironmentTargetKey;
   modelSeriesId: string;
   sourceConfigDigest: string;
+  sourceConfigDigestVersion: AiConfigDigestVersion;
   takeoverId: string;
 }
 
@@ -72,11 +74,13 @@ export async function readActiveEnvironmentTakeovers(
     environment_target_key: EnvironmentTargetKey;
     model_series_id: string;
     source_config_digest: string;
+    source_config_digest_version: AiConfigDigestVersion;
     takeover_id: string;
   }>(
     `SELECT takeover.id::text AS takeover_id,
             takeover.environment_target_key,
             takeover.source_config_digest,
+            takeover.source_config_digest_version,
             connection.series_id::text AS connection_series_id,
             model.series_id::text AS model_series_id
        FROM ai_environment_takeovers takeover
@@ -91,6 +95,7 @@ export async function readActiveEnvironmentTakeovers(
     environmentTargetKey: row.environment_target_key,
     modelSeriesId: row.model_series_id,
     sourceConfigDigest: row.source_config_digest,
+    sourceConfigDigestVersion: row.source_config_digest_version,
     takeoverId: row.takeover_id,
   }]));
 }
@@ -282,8 +287,8 @@ async function executeTakeover(
     await client.query(
       `INSERT INTO ai_environment_takeovers
         (id, request_id, environment_target_key, source_config_digest,
-         initial_connection_version_id, initial_model_version_id)
-       VALUES ($1,$2,$3,$4,$5,$6)`,
+         source_config_digest_version, initial_connection_version_id, initial_model_version_id)
+       VALUES ($1,$2,$3,$4,2,$5,$6)`,
       [
         takeoverId,
         input.requestId,

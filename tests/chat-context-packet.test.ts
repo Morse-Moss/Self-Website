@@ -2,13 +2,17 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type {
+  CanonicalAnswerSourceV2,
   CompletedContextTurn,
   ContextProjection,
+  GenerationTargetBindingV2,
+  GenerationVariantV2,
   ResolvedChatTurn,
 } from '../lib/contracts/chat-context.ts';
 import type { KnowledgeSource } from '../lib/contracts/chat-runtime.ts';
 import {
-  ContextPacketBuildError,
+  buildTargetContextPacketV2,
+  buildTargetGenerationRequestV2,
   buildContextPacket,
   parseContextPacketDigestConfig,
   stableSerialize,
@@ -124,12 +128,124 @@ function projection(overrides: Partial<ContextProjection> = {}): ContextProjecti
   };
 }
 
+function v2Source(): CanonicalAnswerSourceV2 {
+  return {
+    schemaVersion: 'canonical-answer-source-v2',
+    ownerPipeline: 'context_packet_v22',
+    conversationId: '11111111-1111-4111-8111-111111111111',
+    interactionTurnId: '22222222-2222-4222-8222-222222222222',
+    contextScopeId: '33333333-3333-4333-8333-333333333333',
+    currentUserMessageId: '44444444-4444-4444-8444-444444444444',
+    currentInput: 'exact current input',
+    trustedInstructions: 'trusted instructions',
+    taskFrame: { task: 'analysis' },
+    taskInputs: [{ slot: 'requirement', text: 'exact' }],
+    approvedEvidence: [{ evidenceId: 'evidence-1', content: 'approved' }],
+    completeHistory: [turn('55555555-5555-4555-8555-555555555555')],
+    reasoningEffort: 'high',
+    releasePolicy: 'complete',
+  };
+}
+
+function v2Target(overrides: Partial<GenerationTargetBindingV2> = {}): GenerationTargetBindingV2 {
+  return {
+    configDigestVersion: 2,
+    configDigest: 'a'.repeat(64),
+    modelId: 'gpt-v2',
+    protocol: 'responses',
+    contextWindowTokens: 128_000,
+    maxOutputTokens: null,
+    reasoningEffort: 'high',
+    ...overrides,
+  };
+}
+
+function v2Variant(
+  target: GenerationTargetBindingV2,
+  revision = 1,
+): GenerationVariantV2 {
+  return {
+    id: '66666666-6666-4666-8666-666666666666',
+    revision,
+    trigger: 'initial',
+    target,
+  };
+}
+
 test('stable serialization sorts object keys recursively without reordering arrays', () => {
   const left = stableSerialize({ z: 1, nested: { b: 2, a: 1 }, list: [{ y: 2, x: 1 }, 3] });
   const right = stableSerialize({ list: [{ x: 1, y: 2 }, 3], nested: { a: 1, b: 2 }, z: 1 });
 
   assert.deepEqual(left, right);
   assert.equal(Buffer.from(left).toString('utf8'), '{"list":[{"x":1,"y":2},3],"nested":{"a":1,"b":2},"z":1}');
+});
+
+test('v2 packet and generation HMACs bind target capabilities, variant and exact outbound body', () => {
+  const buildPacket = (target: GenerationTargetBindingV2, revision = 1) => {
+    const variant = v2Variant(target, revision);
+    return buildTargetContextPacketV2({
+      source: v2Source(),
+      target,
+      variant,
+      historySummary: null,
+      rawHistory: v2Source().completeHistory,
+      digestKey: KEY,
+      digestKeyId: 'context-key-v2',
+    });
+  };
+  const baselineTarget = v2Target();
+  const baselinePacket = buildPacket(baselineTarget);
+  const changedPackets = [
+    buildPacket(v2Target({ configDigestVersion: 1 })),
+    buildPacket(v2Target({ configDigest: 'b'.repeat(64) })),
+    buildPacket(v2Target({ modelId: 'gpt-other' })),
+    buildPacket(v2Target({ protocol: 'chat_completions' })),
+    buildPacket(v2Target({ contextWindowTokens: 64_000 })),
+    buildPacket(v2Target({ maxOutputTokens: 4_000 })),
+    buildPacket(v2Target({ reasoningEffort: 'medium' })),
+    buildPacket(baselineTarget, 2),
+  ];
+  for (const changed of changedPackets) {
+    assert.notEqual(changed.packetHmacSha256, baselinePacket.packetHmacSha256);
+  }
+
+  const buildGeneration = (input: {
+    target?: GenerationTargetBindingV2;
+    revision?: number;
+    body?: Readonly<Record<string, unknown>>;
+  } = {}) => {
+    const target = input.target ?? baselineTarget;
+    const variant = v2Variant(target, input.revision ?? 1);
+    return buildTargetGenerationRequestV2({
+      variant,
+      packetHmacKeyId: baselinePacket.packetHmacKeyId,
+      packetHmacSha256: baselinePacket.packetHmacSha256,
+      instructions: 'answer from approved evidence',
+      messages: [{ role: 'user', content: 'exact current input' }],
+      reasoningEffort: target.reasoningEffort,
+      maxOutputTokens: target.maxOutputTokens,
+      outboundBody: input.body ?? {
+        model: target.modelId,
+        input: [{ role: 'user', content: 'exact current input' }],
+        stream: true,
+      },
+      digestKey: KEY,
+    });
+  };
+  const baselineGeneration = buildGeneration();
+  for (const changed of [
+    buildGeneration({ revision: 2 }),
+    buildGeneration({ target: v2Target({ reasoningEffort: 'medium' }) }),
+    buildGeneration({ body: { model: 'gpt-v2', input: [], stream: true } }),
+  ]) {
+    assert.notEqual(
+      changed.generationRequestHmacSha256,
+      baselineGeneration.generationRequestHmacSha256,
+    );
+  }
+  assert.equal(Object.isFrozen(baselineGeneration.request), true);
+  assert.equal(Object.isFrozen(baselineGeneration.request.outboundBody), true);
+  assert.equal(Object.isFrozen(baselineGeneration.request.messages), true);
 });
 
 test('generation request contains current input once and current-message slots use references', () => {
@@ -139,7 +255,6 @@ test('generation request contains current input once and current-message slots u
     currentInput,
     currentUserMessageId: '21',
     projection: projection(),
-    tokenBudget: 12_000,
     digestKey: KEY,
     digestKeyId: KEY_ID,
     reasoningEffort: 'medium',
@@ -161,7 +276,6 @@ test('canonical packet preserves task and slot source ids inside the packet HMAC
     currentInput: '哪些项目相关？',
     currentUserMessageId: '21',
     projection: projection(),
-    tokenBudget: 12_000,
     digestKey: KEY,
     digestKeyId: KEY_ID,
     reasoningEffort: null,
@@ -235,7 +349,6 @@ test('historical JD carried by discourse is referenced once instead of duplicate
         text: historicalJd,
       }],
     }),
-    tokenBudget: 24_000,
     digestKey: KEY,
     digestKeyId: KEY_ID,
     reasoningEffort: null,
@@ -247,14 +360,13 @@ test('historical JD carried by discourse is referenced once instead of duplicate
   assert.equal(Object.hasOwn(built.packet.taskInputs[0], 'text'), false);
 });
 
-test('project catalog retains all audited projects while ranked project fit remains capped at three', () => {
+test('canonical packet retains all approved evidence for catalog and ranked fit', () => {
   const catalogEvidence = ['one', 'two', 'three', 'four', 'five'].map((slug) => evidence(slug));
   const catalog = buildContextPacket({
     resolved: resolved('project_catalog'),
     currentInput: '你做过哪些项目？',
     currentUserMessageId: '21',
     projection: projection({ discourse: null, history: [], evidence: catalogEvidence }),
-    tokenBudget: 12_000,
     digestKey: KEY,
     digestKeyId: KEY_ID,
     reasoningEffort: null,
@@ -264,14 +376,13 @@ test('project catalog retains all audited projects while ranked project fit rema
     currentInput: '哪些项目相关？',
     currentUserMessageId: '21',
     projection: projection({ discourse: null, history: [], evidence: catalogEvidence }),
-    tokenBudget: 12_000,
     digestKey: KEY,
     digestKeyId: KEY_ID,
     reasoningEffort: null,
   });
 
   assert.equal(catalog.packet.approvedEvidence.length, 5);
-  assert.equal(fit.packet.approvedEvidence.length, 3);
+  assert.equal(fit.packet.approvedEvidence.length, 5);
 });
 
 test('project experience packet requires one complete audited delivery narrative', () => {
@@ -291,7 +402,6 @@ test('project experience packet requires one complete audited delivery narrative
     currentInput: '请讲一个真正落地过的 AI 项目，说明原流程、具体动作和结果。',
     currentUserMessageId: '21',
     projection: projection({ discourse: null, history: [], evidence: [evidence('digital-morse')] }),
-    tokenBudget: 12_000,
     digestKey: KEY,
     digestKeyId: KEY_ID,
     reasoningEffort: null,
@@ -308,7 +418,7 @@ test('project experience packet requires one complete audited delivery narrative
   assert.doesNotMatch(instructions, /完整列出本轮证据中的全部公开项目/);
 });
 
-test('budget eviction removes oldest whole history turns before evidence', () => {
+test('canonical packet preserves all whole history turns and evidence without eviction', () => {
   const history = [
     turn('55555555-5555-4555-8555-555555555555', 'A'.repeat(900)),
     turn('66666666-6666-4666-8666-666666666666', 'B'.repeat(900)),
@@ -319,19 +429,18 @@ test('budget eviction removes oldest whole history turns before evidence', () =>
     currentInput: '哪些项目相关？',
     currentUserMessageId: '21',
     projection: projection({ history }),
-    tokenBudget: 1_100,
     digestKey: KEY,
     digestKeyId: KEY_ID,
     reasoningEffort: null,
   });
 
-  assert.ok(built.manifest.evicted_layers.includes('task_history'));
-  assert.ok(built.packet.taskHistory.length < history.length);
+  assert.deepEqual(built.manifest.evicted_layers, []);
+  assert.equal(built.packet.taskHistory.length, history.length * 2);
   assert.equal(built.packet.taskHistory.length % 2, 0);
   assert.equal(built.packet.approvedEvidence.length, 1);
 });
 
-test('12k chat budget rejects an uncuttable 12k CJK input while 24k JD budget accepts it once', () => {
+test('canonical packet preserves a long current input exactly once without a fixed budget', () => {
   const currentInput = '岗'.repeat(12_000);
   const input = {
     resolved: resolved('jd_match'),
@@ -343,11 +452,7 @@ test('12k chat budget rejects an uncuttable 12k CJK input while 24k JD budget ac
     reasoningEffort: null,
   } as const;
 
-  assert.throws(
-    () => buildContextPacket({ ...input, tokenBudget: 12_000 }),
-    (error: unknown) => error instanceof ContextPacketBuildError && error.code === 'CONTEXT_PACKET_OVER_BUDGET',
-  );
-  const built = buildContextPacket({ ...input, tokenBudget: 24_000 });
+  const built = buildContextPacket(input);
   const generation = Buffer.from(built.normal.canonicalBytes).toString('utf8');
   assert.equal(generation.split(currentInput).length - 1, 1);
 });
@@ -358,7 +463,6 @@ test('packet builder emits one normal request with no strict overlay', () => {
     currentInput: '哪些项目相关？',
     currentUserMessageId: '21',
     projection: projection(),
-    tokenBudget: 12_000,
     digestKey: KEY,
     digestKeyId: KEY_ID,
     reasoningEffort: 'low',
@@ -368,7 +472,6 @@ test('packet builder emits one normal request with no strict overlay', () => {
     currentInput: '哪些项目相关？',
     currentUserMessageId: '21',
     projection: projection(),
-    tokenBudget: 12_000,
     digestKey: KEY,
     digestKeyId: KEY_ID,
     reasoningEffort: 'low',
@@ -411,7 +514,6 @@ test('manifest is redacted even when packet layers contain sensitive markers', (
     projection: projection({
       evidence: [evidence('digital-morse', 'SENSITIVE_EVIDENCE_BODY')],
     }),
-    tokenBudget: 12_000,
     digestKey: KEY,
     digestKeyId: KEY_ID,
     reasoningEffort: null,

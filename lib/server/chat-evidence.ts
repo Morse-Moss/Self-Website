@@ -12,6 +12,7 @@ import {
   admitKnowledgeForRoute,
   type KnowledgeSource,
 } from './rag.ts';
+import { partitionCompleteRetrievalQuery } from './retrieval-query.ts';
 import type { SearchResponse } from './search-provider.ts';
 
 export interface ResolvedChatEvidence {
@@ -26,8 +27,10 @@ export interface ResolveChatEvidenceInput {
   route: ChatRouteDecision;
   question: string;
   ledger: CapabilityLedger;
-  embed(query: string): Promise<number[]>;
-  retrieve(embedding: number[]): Promise<KnowledgeSource[]>;
+  embed?(query: string): Promise<number[]>;
+  retrieve?(embedding: number[], legacyLimit?: number): Promise<KnowledgeSource[]>;
+  embedAll?(queries: readonly string[]): Promise<readonly number[][]>;
+  retrieveAll?(embeddings: readonly number[][]): Promise<KnowledgeSource[]>;
   search(): Promise<SearchResponse | undefined>;
   identityKnowledge?: () => KnowledgeSource[];
   projectKnowledge?: () => KnowledgeSource[];
@@ -140,21 +143,40 @@ function retrievalQuery(route: ChatRouteDecision, question: string): string {
 async function semanticKnowledgeOrStructuredFallback(input: {
   query: string;
   structured: KnowledgeSource[];
-  embed(query: string): Promise<number[]>;
-  retrieve(embedding: number[]): Promise<KnowledgeSource[]>;
+  embed?: (query: string) => Promise<number[]>;
+  retrieve?: (embedding: number[], legacyLimit?: number) => Promise<KnowledgeSource[]>;
+  embedAll?: (queries: readonly string[]) => Promise<readonly number[][]>;
+  retrieveAll?: (embeddings: readonly number[][]) => Promise<KnowledgeSource[]>;
 }): Promise<{
   candidates: KnowledgeSource[];
   evidenceDegraded?: 'embedding' | 'retrieval';
 }> {
-  let embedding: number[];
+  const queries = partitionCompleteRetrievalQuery(input.query);
+  let embeddings: readonly number[][];
   try {
-    embedding = await input.embed(input.query);
+    if (input.embedAll) {
+      embeddings = await input.embedAll(queries);
+    } else if (input.embed) {
+      embeddings = await Promise.all(queries.map((query) => input.embed!(query)));
+    } else {
+      throw new Error('EMBEDDING_UNAVAILABLE');
+    }
   } catch (error) {
     if (input.structured.length === 0) throw error;
     return { candidates: input.structured, evidenceDegraded: 'embedding' };
   }
   try {
-    return { candidates: await input.retrieve(embedding) };
+    if (input.retrieveAll) {
+      return { candidates: await input.retrieveAll(embeddings) };
+    }
+    if (!input.retrieve) throw new Error('RETRIEVAL_UNAVAILABLE');
+    const results = await Promise.all(embeddings.map((embedding) => input.retrieve!(embedding)));
+    const union = new Map<string, KnowledgeSource>();
+    for (const source of results.flat()) {
+      const existing = union.get(source.chunkId);
+      if (!existing || source.score > existing.score) union.set(source.chunkId, source);
+    }
+    return { candidates: [...union.values()] };
   } catch (error) {
     if (input.structured.length === 0) throw error;
     return { candidates: input.structured, evidenceDegraded: 'retrieval' };
@@ -221,6 +243,8 @@ export async function resolveChatEvidence(
         structured,
         embed: input.embed,
         retrieve: input.retrieve,
+        embedAll: input.embedAll,
+        retrieveAll: input.retrieveAll,
       });
       const semantic = admitKnowledgeForRoute(
         input.route,
@@ -241,6 +265,8 @@ export async function resolveChatEvidence(
         structured: capability,
         embed: input.embed,
         retrieve: input.retrieve,
+        embedAll: input.embedAll,
+        retrieveAll: input.retrieveAll,
       });
       const semantic = resolved.evidenceDegraded
         ? []

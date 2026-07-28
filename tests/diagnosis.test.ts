@@ -19,16 +19,16 @@ const completeFields: DiagnosisFields = {
   expectedTimeline: '两周',
 };
 
-test('normalizeDiagnosisFields returns exactly five trimmed server-controlled fields', () => {
+test('normalizeDiagnosisFields returns exactly five exact server-controlled fields', () => {
   assert.deepEqual(normalizeDiagnosisFields({
     problem: '  内容生产链路不稳定  ',
     expectedTimeline: '  两周  ',
   }), {
-    problem: '内容生产链路不稳定',
+    problem: '  内容生产链路不稳定  ',
     goal: '',
     currentState: '',
     constraints: '',
-    expectedTimeline: '两周',
+    expectedTimeline: '  两周  ',
   });
   assert.deepEqual(Object.keys(normalizeDiagnosisFields({ problem: '问题' })), [
     ...DIAGNOSIS_FIELD_NAMES,
@@ -55,26 +55,17 @@ test('normalizeDiagnosisFields rejects unknown fields and every non-string field
   assert.throws(() => normalizeDiagnosisFields(null), /object/i);
 });
 
-test('normalizeDiagnosisFields requires content and enforces per-field limits after trim', () => {
+test('normalizeDiagnosisFields requires nonblank content and preserves long fields', () => {
   assert.throws(() => normalizeDiagnosisFields({}), /at least one/i);
   assert.throws(() => normalizeDiagnosisFields({ problem: '   ' }), /at least one/i);
 
-  assert.equal(normalizeDiagnosisFields({ problem: '问'.repeat(2_000) }).problem.length, 2_000);
-  assert.throws(
-    () => normalizeDiagnosisFields({ problem: '问'.repeat(2_001) }),
-    /problem.*2,000/i,
-  );
-  assert.equal(
-    normalizeDiagnosisFields({ expectedTimeline: '时'.repeat(500) }).expectedTimeline.length,
-    500,
-  );
-  assert.throws(
-    () => normalizeDiagnosisFields({ expectedTimeline: '时'.repeat(501) }),
-    /expectedTimeline.*500/i,
-  );
+  const longProblem = `start-${'问'.repeat(20_000)}-end`;
+  assert.equal(normalizeDiagnosisFields({ problem: longProblem }).problem, longProblem);
+  const longTimeline = `start-${'时'.repeat(10_000)}-end`;
+  assert.equal(normalizeDiagnosisFields({ expectedTimeline: longTimeline }).expectedTimeline, longTimeline);
 });
 
-test('normalizeDiagnosisFields enforces the 6,500-character aggregate limit', () => {
+test('normalizeDiagnosisFields preserves totals beyond the former aggregate limit', () => {
   const atLimit = normalizeDiagnosisFields({
     problem: '问'.repeat(2_000),
     goal: '目'.repeat(2_000),
@@ -83,12 +74,13 @@ test('normalizeDiagnosisFields enforces the 6,500-character aggregate limit', ()
   });
   assert.equal(Object.values(atLimit).reduce((sum, value) => sum + value.length, 0), 6_500);
 
-  assert.throws(() => normalizeDiagnosisFields({
+  const aboveFormerLimit = normalizeDiagnosisFields({
     problem: '问'.repeat(2_000),
     goal: '目'.repeat(2_000),
     currentState: '现'.repeat(2_000),
     constraints: '约'.repeat(501),
-  }), /total.*6,500/i);
+  });
+  assert.equal(Object.values(aboveFormerLimit).reduce((sum, value) => sum + value.length, 0), 6_501);
 });
 
 test('diagnosis collection status is complete only when all five fields are non-empty', () => {

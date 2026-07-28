@@ -11,6 +11,71 @@ import {
   type ProviderAddress,
   type ProviderRequestTransport,
 } from '../lib/server/provider-outbound.ts';
+import {
+  isNumericContextOverflow,
+  sanitizeProviderFailure,
+} from '../lib/server/provider-failure.ts';
+
+test('provider failure sanitizer retains only allowlisted reasons and safe numeric evidence', () => {
+  const overflow = sanitizeProviderFailure({
+    code: 'context_length_exceeded',
+    inputTokens: 99,
+    outputTokens: 0,
+    contextWindowTokens: 100,
+    message: 'PRIVATE_MESSAGE',
+    body: { secret: 'PRIVATE_BODY' },
+    headers: { authorization: 'PRIVATE_HEADER' },
+    request: { input: 'PRIVATE_REQUEST' },
+  });
+  assert.deepEqual(overflow, {
+    category: 'context_overflow',
+    reason: 'context_length_exceeded',
+    httpStatus: null,
+    inputTokens: 99,
+    outputTokens: 0,
+    contextWindowTokens: 100,
+  });
+  assert.equal(isNumericContextOverflow(overflow), true);
+  assert.doesNotMatch(JSON.stringify(overflow), /PRIVATE_|authorization|secret/u);
+
+  const outputTruncated = sanitizeProviderFailure({
+    reason: 'max_output_tokens',
+    inputTokens: 99,
+    outputTokens: 4,
+    contextWindowTokens: 100,
+  });
+  assert.equal(outputTruncated.category, 'output_truncated');
+  assert.equal(outputTruncated.reason, 'max_output_tokens');
+  assert.equal(isNumericContextOverflow(outputTruncated), false);
+
+  const unknownWindow = sanitizeProviderFailure({
+    httpStatus: 413,
+    message: 'PRIVATE_HTTP_BODY',
+  });
+  assert.deepEqual(unknownWindow, {
+    category: 'context_overflow',
+    reason: 'http_413',
+    httpStatus: 413,
+    inputTokens: null,
+    outputTokens: null,
+    contextWindowTokens: null,
+  });
+  assert.equal(isNumericContextOverflow(unknownWindow), false);
+
+  const unknownStrings = sanitizeProviderFailure({
+    httpStatus: 502,
+    code: 'PRIVATE_CODE',
+    reason: 'PRIVATE_REASON',
+  });
+  assert.deepEqual(unknownStrings, {
+    category: 'transport',
+    reason: 'transport',
+    httpStatus: 502,
+    inputTokens: null,
+    outputTokens: null,
+    contextWindowTokens: null,
+  });
+});
 
 test('provider base URLs require credential-free HTTPS and normalize one trailing slash', () => {
   assert.equal(validateProviderBaseUrl('https://api.example.com/v1/').href, 'https://api.example.com/v1');

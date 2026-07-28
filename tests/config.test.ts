@@ -54,7 +54,9 @@ test('loadServerConfig parses access, provider, lifecycle, and optional pricing 
   assert.equal(config.providerFirstByteTimeoutMs, 19000);
   assert.equal(config.providerTotalTimeoutMs, 85000);
   assert.equal(config.providerConcurrency, 3);
-  assert.equal(config.maxOutputTokens, 1200);
+  assert.equal(config.chatContextWindowTokens, null);
+  assert.equal(config.maxOutputTokens, null);
+  assert.equal('providerMaxAttempts' in config, false);
   assert.equal(config.chatEnabled, true);
   assert.equal(config.sseHeartbeatMs, 15_000);
   assert.equal(config.interactionRetentionDays, 10);
@@ -81,10 +83,10 @@ test('v2 timing defaults are bounded and ordered', () => {
   assert.equal(config.providerModelTextTimeoutMs, 40_000);
   assert.equal(config.providerStageTimeoutMs, 80_000);
   assert.equal(config.chatTurnTimeoutMs, 90_000);
-  assert.equal(config.providerMaxAttempts, 2);
+  assert.equal('providerMaxAttempts' in config, false);
 });
 
-test('v2 timing rejects unordered deadlines and an attempt limit other than two', () => {
+test('v2 timing rejects unordered deadlines', () => {
   for (const [name, overrides] of [
     ['protocol before model text', {
       MORSE_PROVIDER_PROTOCOL_EVENT_TIMEOUT_MS: '40000',
@@ -98,13 +100,35 @@ test('v2 timing rejects unordered deadlines and an attempt limit other than two'
       MORSE_PROVIDER_STAGE_TIMEOUT_MS: '90000',
       MORSE_CHAT_TURN_TIMEOUT_MS: '90000',
     }],
-    ['exactly two attempts', { MORSE_PROVIDER_MAX_ATTEMPTS: '3' }],
   ] as const) {
     assert.throws(
       () => loadServerConfig({ ...completeEnv, ...overrides }),
       /MORSE_PROVIDER|MORSE_CHAT_TURN_TIMEOUT_MS/,
       name,
     );
+  }
+});
+
+test('environment model capabilities are optional positive PostgreSQL integers', () => {
+  const configured = loadServerConfig({
+    ...completeEnv,
+    MORSE_CHAT_CONTEXT_WINDOW_TOKENS: '2147483647',
+    MORSE_MAX_OUTPUT_TOKENS: '2147483647',
+    MORSE_PROVIDER_MAX_ATTEMPTS: '999',
+  });
+  assert.equal(configured.chatContextWindowTokens, 2_147_483_647);
+  assert.equal(configured.maxOutputTokens, 2_147_483_647);
+  assert.equal('providerMaxAttempts' in configured, false);
+
+  for (const overrides of [
+    { MORSE_CHAT_CONTEXT_WINDOW_TOKENS: '0' },
+    { MORSE_CHAT_CONTEXT_WINDOW_TOKENS: '1.5' },
+    { MORSE_CHAT_CONTEXT_WINDOW_TOKENS: '2147483648' },
+    { MORSE_MAX_OUTPUT_TOKENS: '0' },
+    { MORSE_MAX_OUTPUT_TOKENS: '1.5' },
+    { MORSE_MAX_OUTPUT_TOKENS: '2147483648' },
+  ]) {
+    assert.throws(() => loadServerConfig({ ...completeEnv, ...overrides }));
   }
 });
 
@@ -303,7 +327,7 @@ test('.env.example keeps every chat v2 control disabled by default', () => {
   assert.match(example, /^MORSE_CHAT_SAFE_MODE=false$/m);
 });
 
-test('loadServerConfig parses independent context packet rollout, budgets, and digest configuration', () => {
+test('loadServerConfig parses independent context packet rollout and digest configuration', () => {
   const digestKey = Buffer.alloc(32, 17).toString('base64');
   const inviteId = '33333333-3333-4333-8333-333333333333';
   const disabled = loadServerConfig(completeEnv);
@@ -311,8 +335,6 @@ test('loadServerConfig parses independent context packet rollout, budgets, and d
   assert.equal(disabled.contextCanaryPercent, 0);
   assert.deepEqual([...disabled.contextCanaryInviteIds], []);
   assert.deepEqual([...disabled.contextCanaryInviteLabels], []);
-  assert.equal(disabled.contextTokenBudget, 12_000);
-  assert.equal(disabled.jdContextTokenBudget, 24_000);
   assert.equal(disabled.contextPacketDigest, null);
 
   const enabled = loadServerConfig({
@@ -322,8 +344,6 @@ test('loadServerConfig parses independent context packet rollout, budgets, and d
     MORSE_CHAT_CONTEXT_CANARY_PERCENT: '0',
     MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS: inviteId,
     MORSE_CHAT_CONTEXT_CANARY_INVITE_LABELS: 'HR interview,Internal QA,HR interview',
-    MORSE_CHAT_CONTEXT_TOKEN_BUDGET: '12000',
-    MORSE_JD_CONTEXT_TOKEN_BUDGET: '24000',
     MORSE_CONTEXT_PACKET_DIGEST_KEY: digestKey,
     MORSE_CONTEXT_PACKET_DIGEST_KEY_ID: 'context-key-v1',
   });
@@ -334,7 +354,7 @@ test('loadServerConfig parses independent context packet rollout, budgets, and d
   assert.equal(enabled.contextPacketDigest?.keyId, 'context-key-v1');
 });
 
-test('context packet config fails closed for invalid rollout, budget, or digest values', () => {
+test('context packet config fails closed for invalid rollout or digest values', () => {
   const validKey = Buffer.alloc(32, 18).toString('base64');
   const base = {
     ...completeEnv,
@@ -358,12 +378,10 @@ test('context packet config fails closed for invalid rollout, budget, or digest 
         (_, index) => `label-${index}`,
       ).join(','),
     },
-    { MORSE_CHAT_CONTEXT_TOKEN_BUDGET: '999' },
-    { MORSE_JD_CONTEXT_TOKEN_BUDGET: '11999' },
     { MORSE_CONTEXT_PACKET_DIGEST_KEY: Buffer.alloc(31).toString('base64') },
     { MORSE_CONTEXT_PACKET_DIGEST_KEY_ID: 'INVALID KEY ID' },
   ]) {
-    assert.throws(() => loadServerConfig({ ...base, ...overrides }), /MORSE_CHAT_CONTEXT|MORSE_JD_CONTEXT|CONTEXT_PACKET_DIGEST/u);
+    assert.throws(() => loadServerConfig({ ...base, ...overrides }), /MORSE_CHAT_CONTEXT|CONTEXT_PACKET_DIGEST/u);
   }
   assert.throws(
     () => loadServerConfig({
@@ -381,12 +399,11 @@ test('.env.example keeps context packet disabled and documents non-secret contro
     'MORSE_CHAT_CONTEXT_CANARY_PERCENT=0',
     'MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS=',
     'MORSE_CHAT_CONTEXT_CANARY_INVITE_LABELS=',
-    'MORSE_CHAT_CONTEXT_TOKEN_BUDGET=12000',
-    'MORSE_JD_CONTEXT_TOKEN_BUDGET=24000',
     'MORSE_CONTEXT_PACKET_DIGEST_KEY_ID=',
   ]) {
     assert.match(example, new RegExp(`^${line}$`, 'm'));
   }
+  assert.doesNotMatch(example, /^MORSE_(?:CHAT_CONTEXT_TOKEN_BUDGET|JD_CONTEXT_TOKEN_BUDGET|HISTORY_MESSAGE_LIMIT|RETRIEVAL_LIMIT)=/m);
   assert.doesNotMatch(example, /^MORSE_CONTEXT_PACKET_DIGEST_KEY=\S+/m);
 });
 
