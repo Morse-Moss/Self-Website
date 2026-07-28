@@ -22,7 +22,11 @@ import {
   assessCapabilities,
   type CapabilityLedger,
 } from './capability-evidence.ts';
-import { looksLikeRecruitmentJobDescription } from './chat-message-signals.ts';
+import {
+  isGenericJdDefinitionQuestion,
+  looksLikeRecruitmentEvaluationQuestion,
+  looksLikeRecruitmentJobDescription,
+} from './chat-message-signals.ts';
 import { matchChatProjectSlugs } from './chat-projects.ts';
 import { routeChatTurn, type RouteAnchor } from './chat-route-policy.ts';
 
@@ -247,12 +251,29 @@ function isBareRecheck(message: string): boolean {
   return /^(?:你)?(?:再|重新)(?:去)?(?:查|找|核对|确认)(?:一?下|一遍)?$/u.test(trimmed);
 }
 
+function isRecruitmentContinuationCue(message: string): boolean {
+  const trimmed = message.trim().replace(/[。！!？?]+$/gu, '');
+  if (trimmed.length > 30) return false;
+  return /^(?:这些|那些|这个|那个)(?:项目|证据|匹配|优势|风险|缺口|能力|经历|内容)?(?:呢|怎么样|再(?:展开|说明|分析)(?:一下)?|继续(?:说|分析)?)?$/u.test(trimmed)
+    || /^(?:继续|还有|然后)(?:呢|说|分析|展开|补充)?(?:一下)?$/u.test(trimmed);
+}
+
 function isCorrection(message: string): boolean {
   return /(?:不是|不对|改成|更正|纠正)/iu.test(message);
 }
 
 function isSwitch(message: string): boolean {
-  return /(?:换个|换一|另一家|另一个|另一份|重新看|切换|新任务|忽略以前(?:的)?内容)/iu.test(message);
+  const recruitmentTarget = '(?:公司|企业|雇主|岗位|职位|角色|JD|职位描述|招聘(?:任务|评估)?)';
+  const switchTarget = `${recruitmentTarget}(?=$|[\\s:：，,。！？!?])`;
+  const switchQualifier = '(?:(?:新|新的|另一个|另一份|另一家|其他|这个|那个)\\s*)?';
+  const commandPrefix = '(?:请|现在|接下来|我想|我们(?:来)?|帮我)?\\s*(?:把)?';
+  return new RegExp(
+    `^${commandPrefix}(?:换个|换一(?:个|份|家)?|换成|换到|改看|重新看|切换到?|另一个|另一份|另一家)\\s*${switchQualifier}${switchTarget}`
+      + `|^${commandPrefix}${recruitmentTarget}\\s*(?:换成|改成|切换到?|重新看)`
+      + '|^(?:请)?(?:开始|创建|切换到?)?新任务[。！!？?]*$'
+      + '|^(?:请)?忽略(?:以前|之前)(?:的)?内容[。！!？?]*$',
+    'iu',
+  ).test(message.trim());
 }
 
 function isCompletion(message: string): boolean {
@@ -335,7 +356,7 @@ function reconstructLegacyRecruitmentFrame(input: {
     });
     const extracted = extractSlotCaptures(message, {
       includeJobDescription: includeJd,
-      wholeJd: false,
+      wholeJd: includeJd,
     }).map((capture) => slotFromCapture(message, capture, turn.user.id));
     if (extracted.length > 0 && !taskStartedMessageId) taskStartedMessageId = turn.user.id;
     for (const candidate of extracted) {
@@ -393,6 +414,7 @@ function buildCandidateFrame(input: {
   taskIdFactory: () => string;
   clear: Set<ResolvedTaskSlotRef['slot']>;
   includeJd: boolean;
+  extractSlots: boolean;
 }): CandidateConversationTaskFrameV22 | null {
   if (!['create', 'continue', 'switch', 'wait', 'complete'].includes(input.taskAction)) return null;
   const reuse = input.currentFrame
@@ -407,10 +429,12 @@ function buildCandidateFrame(input: {
     || !reuse
     || input.taskAction === 'switch'
     || /(?:另一份|新的|完整)\s*(?:JD|职位描述)|(?:JD|职位描述)\s*(?:替换|改成)/iu.test(input.message);
-  const extracted = extractSlotCaptures(input.message, {
-    includeJobDescription: input.includeJd,
-    wholeJd: input.includeJd,
-  }).map((capture) => slotFromCapture(input.message, capture, input.currentUserMessageId));
+  const extracted = input.extractSlots
+    ? extractSlotCaptures(input.message, {
+        includeJobDescription: input.includeJd,
+        wholeJd: input.includeJd,
+      }).map((capture) => slotFromCapture(input.message, capture, input.currentUserMessageId))
+    : [];
   for (const candidate of extracted) {
     if (candidate.slot === 'job_description') {
       if (replaceWholeJd) slots = slots.filter((existing) => existing.slot !== 'job_description');
@@ -441,7 +465,9 @@ function buildCandidateFrame(input: {
     conversationId: input.conversationId,
     taskId,
     expectedVersion: reuse ? input.currentFrame!.version : 0,
-    taskKind: input.workflow === 'jd_match' ? 'jd_match' : 'recruitment_evaluation',
+    taskKind: reuse
+      ? input.currentFrame!.taskKind
+      : input.workflow === 'jd_match' ? 'jd_match' : 'recruitment_evaluation',
     subjectKind: 'morse',
     subjectRef: 'recruitment',
     evidenceFocus: {
@@ -472,9 +498,26 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
   const reconstructedBridgeFrame = bridgeReconstruction.frame;
   const currentFrame = input.currentFrame ?? reconstructedBridgeFrame;
   const activeRecruitment = isActiveRecruitmentFrame(currentFrame);
+  const latestLegacyTurn = [...legacyBridge].sort((left, right) => (
+    left.completedAt.getTime() - right.completedAt.getTime()
+    || (BigInt(left.user.id) < BigInt(right.user.id) ? -1 : 1)
+  )).at(-1) ?? null;
+  const adjacentReconstructedRecruitment = Boolean(
+    reconstructedBridgeFrame
+    && latestLegacyTurn
+    && !input.discourseContext
+    && (
+      reconstructedBridgeFrame.slots.some((candidate) => (
+        candidate.sourceMessageId === latestLegacyTurn.user.id
+      ))
+      || (reconstructedBridgeFrame.slots.some((candidate) => candidate.slot === 'job_description')
+        && looksLikeRecruitmentEvaluationQuestion(latestLegacyTurn.user.text))
+    ),
+  );
   const adjacentActiveRecruitment = Boolean(
     currentFrame?.status === 'active'
-    && input.discourseContext?.contextScopeId === currentFrame.taskId,
+    && (input.discourseContext?.contextScopeId === currentFrame.taskId
+      || adjacentReconstructedRecruitment),
   );
   const baseRoute = routeChatTurn({
     request: input.request,
@@ -494,6 +537,7 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
     hasActiveRecruitmentFrame: activeRecruitment,
     workflow: input.request.workflow,
   });
+  const genericJdDefinitionQuestion = isGenericJdDefinitionQuestion(message);
   const correction = !jdLike && isCorrection(message);
   const switchTask = isSwitch(message);
   const completing = !jdLike && isCompletion(message) && activeRecruitment;
@@ -504,6 +548,24 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
     includeJobDescription: jdLike,
     wholeJd: input.request.workflow === 'jd_match',
   }).length > 0;
+  const recruitmentEvaluationQuestion = looksLikeRecruitmentEvaluationQuestion(message);
+  const adjacentRecruitmentEvaluation = Boolean(
+    input.request.workflow === 'chat'
+    && input.request.mode === 'interviewer'
+    && input.request.audienceIntent === 'recruiter'
+    && activeRecruitment
+    && adjacentActiveRecruitment
+    && currentFrame?.slots.some((candidate) => candidate.slot === 'job_description')
+    && !jdLike
+    && !switchTask
+    && !correction
+    && !completing
+    && clear.size === 0
+    && (baseRoute.routeKind === 'conversation'
+      || (baseRoute.routeKind === 'jd_intake' && baseRoute.reasonCode === 'jd_required'))
+    && projectSlugs.length === 0
+    && recruitmentEvaluationQuestion,
+  );
 
   let intent: SemanticIntent;
   let reasonCode: string;
@@ -525,6 +587,13 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
   } else if (baseRoute.reasonCode === 'project_experience_query') {
     intent = 'project_catalog';
     reasonCode = baseRoute.reasonCode;
+  } else if (jdLike) {
+    intent = 'jd_match';
+    reasonCode = activeRecruitment ? 'contextual_jd_match' : 'short_jd_detected';
+    referent = { kind: 'jd', ref: input.currentUserMessageId };
+  } else if (genericJdDefinitionQuestion) {
+    intent = 'general_conversation';
+    reasonCode = 'generic_jd_definition';
   } else if (isProjectCatalog(message)) {
     intent = 'project_catalog';
     reasonCode = 'portfolio_project_collection_query';
@@ -548,18 +617,19 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
     intent = 'named_project_fact';
     reasonCode = baseRoute.reasonCode;
     referent = { kind: 'project', ref: projectSlugs[0] };
-  } else if (jdLike) {
-    intent = 'jd_match';
-    reasonCode = activeRecruitment ? 'contextual_jd_match' : 'short_jd_detected';
-    referent = { kind: 'jd', ref: input.currentUserMessageId };
   } else if (capability && /(?:你|morse|摩斯).{0,16}(?:熟悉|掌握|会不会|会|是否|用过|能力)/iu.test(message)) {
     intent = 'capability_fact';
     reasonCode = 'personal_capability_query';
     referent = { kind: 'capability', ref: capability.capabilityId! };
     capabilityEvidence = capability.evidenceClass === 'none' ? 'unavailable' : capability.evidenceClass;
+  } else if (adjacentRecruitmentEvaluation) {
+    intent = 'jd_match';
+    reasonCode = 'recruitment_evaluation_follow_up';
+    const jdSlot = currentFrame?.slots.find((candidate) => candidate.slot === 'job_description');
+    referent = jdSlot ? { kind: 'jd', ref: jdSlot.sourceMessageId } : null;
   } else if ((correction
     || (isBareRecheck(message) && adjacentActiveRecruitment)
-    || /^(?:这些|那|这个|继续|还有|然后)/u.test(message)) && activeRecruitment) {
+    || (isRecruitmentContinuationCue(message) && adjacentActiveRecruitment)) && activeRecruitment) {
     intent = 'project_fit';
     reasonCode = correction ? 'recruitment_context_correction' : 'recruitment_context_follow_up';
   } else if (clear.size > 0 && activeRecruitment) {
@@ -629,7 +699,9 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
     workflow: input.request.workflow,
     taskIdFactory,
     clear,
-    includeJd: intent === 'jd_match',
+    includeJd: jdLike,
+    extractSlots: jdLike || correction || switchTask
+      || (hasCurrentRecruitmentSlot && !recruitmentEvaluationQuestion),
   });
   if (!referent && candidateFrame) {
     const source = candidateFrame.slots.find((candidate) => candidate.slot === 'role')

@@ -170,7 +170,7 @@ V2.1 使用确定性级联，不调用意图 LLM：
 1. 显式工作流、完整 JD、安全边界和已批准确定性命令。
 2. 当前消息明确命名的项目、能力或外部对象。
 3. 服务端校验的页面上下文，例如作品卡“问数字摩斯”携带的公开项目 slug。
-4. 当前 Task Frame，仅用于包含代词、承接词或短追问结构的输入。
+4. 当前 Task Frame 默认仅用于包含代词、承接词或短追问结构的输入；招聘面试场景允许一个受控扩展：仅当 `workflow=chat`、`mode=interviewer`、`audienceIntent=recruiter`、当前 Frame 为活动 JD、且紧邻已完成 turn 与当前 task scope 相同，才把自包含的岗位评估问题视为当前 JD 的继续。
 5. 自包含的新问题默认作为当前问题直接回答。
 6. 只有缺少指代对象且前四项均不能确定时进入 `clarify`。
 
@@ -185,11 +185,14 @@ V2.1 使用确定性级联，不调用意图 LLM：
 | 临时问候或完整通用问题 | 不改变活动任务，当前 turn 的 `task_id = null` |
 | 岗位适配但缺少 JD | 创建或切换到 `jd_match + waiting_input + job_description` |
 | 随后提交完整 JD | 同一 `task_id` 转为 `active`，清空 `waiting_for` |
+| 受控招聘评估续问 | 复用原 `task_id`、`task_kind` 与全部受控槽位；本轮只改变成功 turn 指针，不从评估问句提取或覆盖 `company/role/job_description` |
 | 用户明确结束当前任务 | 成功确认后设为 `completed` |
 | 本轮 failed/stopped | 完全不改变 Task Frame |
 | 同一 completed turn 重放 | 不递增 `version`，不重复写 Task Frame |
 
 身份、闲聊和 `clarify` 不能把当前活动任务清空。新任务只有在其首个回答成功后才替换旧任务，避免“路由判断成功、回答失败”导致上下文丢失。
+
+受控招聘评估续问不包括通用定义题、外部实时问题、命名项目事实、能力单项核验、控制命令或安全边界请求；这些输入仍按一次性问题或各自专用路由处理。显式“换个/换一个/换到 + 明确岗位、公司或 JD 目标”才允许切换任务，角度、方法、视角等中间短语不能触发切换。
 
 ### 5.5 `clarify` 的唯一合法入口
 

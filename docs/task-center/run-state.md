@@ -4,10 +4,27 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**HR_JD_CURSOR_BOUNDARY_FIX_LOCAL_VERIFIED / REDEPLOY_PENDING / PRODUCTION_2440473**
+**HR_RECRUITMENT_EVALUATION_FOLLOWUP_FIX / VERIFY / PRODUCTION_2267208**
 
 ## next_allowed_pointer
-当前生产应用运行 `2440473`。招聘入口 turn `0a653ee5` 与完整 682 字 JD turn `1f270664` 的路由、项目和 Claude Code/Codex/WorkBuddy direct evidence 已正确，但回答遗漏同一 JD 明确询问的 Cursor。第四次修复已在混合能力查询中保留 `cursor/unavailable` admission，并把非空 unavailable capability IDs 写入受签名保护的 `<capability_evidence_boundaries>`；Provider 必须逐项说明“当前审核资料无证据、建议面试核验”，不得省略或改写成“从未使用”，同时 Cursor 仍不进入 `<approved_evidence>`。失败优先回归与完整本地出口均已通过。下一步只允许精确 commit/push 本轮代码、测试和收尾凭证，冻结归档并只重建 Web/Worker；随后过期当前测试资源，使用全新 `HR interview` 单 Session 邀请执行招聘入口、完整 JD 与 10 个追问。任一轮答非所问、无证据、编造、5xx、拒答或漏项时立即停止并检查该 turn 元数据，不在失败历史上盲目重试。
+本轮本地实现与验证已完成，当前生产仍为 `2267208`，尚未 commit、push 或部署。最新 focused resolver 为 `26/26`，完整 unit 为 `911/911`，PostgreSQL integration 为 `347/347`；typecheck、scoped ESLint、33-route production build、`git diff --check` 与 owned-diff 敏感扫描均通过。实现现在只在 `chat + interviewer + recruiter + active JD frame + adjacent same scope` 下承接自包含招聘评估，评估问句不提取或覆盖 slot；显式岗位/公司/JD 目标才切换，角度式“换个角度”与通用定义题保持当前任务或 temporary。设计决策已写回 V2.1 权威文档。下一步只允许按 closeout 精确 staging、commit、push，冻结归档并只重建 Web/Worker；随后用全新 `HR interview` Session 做入口、完整 JD 和 10 问真实对话验收。任何答非所问、0 evidence、编造、拒答或 5xx 立即停止并检查该 turn 元数据。
+
+## superseded_previous_pointer
+当前生产应用运行 `2267208`。全新 `HR interview` 单 Session 的招聘入口、完整 JD、问题 1 和问题 2 已分别以受控招聘 Task、原始 JD slot、审核来源和 evidence 完成；问题 3“如何把跨境电商业务想法转成可执行产品方案？”却落入 `general_conversation / one_shot / temporary`，Context Packet 为 0 sources / 0 evidence，真实十问门禁已按合同停止。根因是招聘 Task 只承接少数短追问，而自包含的招聘方法论问题被通用会话规则抢走；同时第一版修复会把评估问题误写为新增 JD，并可能覆盖原 frame 的 slot、task kind 和 temporary scope。下一步只允许先红后绿实现受控 `interviewer + recruiter + active JD frame + adjacent same scope` 评估续接，保证评估本轮不提取任何 slot、保留原 Task Frame 身份，并让所有 temporary turn 使用当前 turn 的隔离 scope；通过聚焦与完整本地门禁、CRITICAL 双视角审查后再精确 commit/push、冻结归档、只重建 Web/Worker，并从全新邀请重跑入口、完整 JD 与 10 问。任一轮答非所问、无证据、编造、5xx、拒答或漏项时立即停止并检查该 turn 元数据，不在失败历史上盲目重试。
+
+## HR 招聘评估续接与 temporary scope 修复（2026-07-29，本地验证完成，待发布）
+- Production observation：`2267208` 的失败仍保留为历史事实：问题 3 曾落入 `general_conversation / one_shot / temporary`，Context Packet 为 0 sources / 0 evidence，真实十问在发布前停止。
+- Root cause and correction：招聘评估续接现在有严格的 `chat + interviewer + recruiter + active JD + adjacent same scope` 门禁；评估问句不提取 slot、不重算 task identity；temporary turn 保持自身 scope；结构化 JD 优先；显式切换只接受明确岗位/公司/JD 目标；通用定义题和“换个角度”不误续接。
+- Local verification：focused resolver `26/26`；完整 unit `911/911`；PostgreSQL integration `347/347`；`npm run typecheck`、变更文件 scoped ESLint、`npm run build`（33 routes）、`git diff --check` 和 owned-diff sensitive scan 全部通过。
+- Design authority：`docs/superpowers/specs/2026-07-27-digital-morse-conversation-v2-1-design.md` 已记录受控自包含招聘评估扩展、显式切换语法与通用定义题隔离规则。
+- CRITICAL correction review：独立复审 `PASS`；三类通用 JD 定义问句在有无活动 JD 时均为 `general_conversation / temporary` 且不创建 candidate frame，结构化 JD、招聘评估续接和假设性切换回归保持通过。
+- Next action：精确 staging/commit/push，冻结 release archive，只重建 Web/Worker；之后用全新 `HR interview` Session 完成入口、完整 JD 和 10 问真实对话验收，任何答非所问、无 evidence、编造、拒答或 5xx 立即停止。
+
+## HR 招聘评估续接与 temporary scope 修复（2026-07-29，历史基线）
+- Production observation：release `2267208` 的招聘入口、完整 JD、问题 1、问题 2 均有审核来源与 evidence；问题 3 被记录为 `general_conversation / one_shot / temporary`，0 sources / 0 evidence，十问门禁停止。
+- Root cause：招聘 Task 的续接规则未覆盖自包含的岗位评估问法；`jd_match` 同时承担“使用已有 JD 评估”和“本轮输入是 JD 数据”两个含义；复用 frame 时会按当前 workflow 重算 `taskKind`；temporary turn 在活动 frame 下仍可能继承招聘 task scope。
+- Current stage：失败优先 resolver 回归已从 3 个预期失败转为 `23/23`；生产形状 PostgreSQL 回归已证明入口 + JD + 10 问保持同一 Task、全部问题有审核来源/evidence、所有 slot kind/hash/source 不变，且活动招聘 frame 后的 temporary turn 使用自己的隔离 scope。完整 unit `908/908`、PostgreSQL integration `345/345`、typecheck、scoped ESLint、33-route build、diff check 与 owned-diff 敏感扫描均通过；尚未提交或发布。
+- Next action：完成 CRITICAL 质量/合规双视角审查，关闭 blocker 后写本地 VerificationReceipt，再进入精确 commit/push 和 Web/Worker 发布。
 
 ## HR JD Cursor 证据边界修复（2026-07-29，待四次部署）
 - Production observation：release `2440473` 的真实完整 JD turn 已召回 6 个来源和 evidence，Claude Code、Codex、WorkBuddy 为 direct，但回答完全遗漏同一 JD 明确询问的 Cursor，十问门禁因此暂停。

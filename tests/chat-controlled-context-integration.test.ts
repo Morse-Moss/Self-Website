@@ -977,9 +977,300 @@ test('the screenshot HR chain upgrades legacy history into one JD-backed V2.2 ta
       session_count: 1,
       max_sessions: 1,
       frame_count: 1,
-      jd_slot_count: 2,
+      jd_slot_count: 1,
       consumed_bridge_count: legacyTurnIds.length,
     });
+  } finally {
+    await cleanupFixture(fixture);
+  }
+});
+
+test('the first V2.2 recruiter evaluation consumes the adjacent structured-JD legacy bridge', async () => {
+  const fixture = await createFixture('HR interview');
+  const provider = new ControlledAnswerProvider();
+  const jobDescription = [
+    '岗位：跨境电商产品经理（Vibe Coding 方向）',
+    '工作内容：把业务想法转成产品方案，接手前后端并快速交付。',
+    '岗位要求：使用 Claude Code，依据用户反馈和业务数据持续迭代。',
+  ].join('\n');
+  const legacyTurnIds: string[] = [];
+  let conversationId: string | null = null;
+  let jobDescriptionMessageId: string | null = null;
+  try {
+    await seedFailureChainKnowledge();
+    for (const [index, message] of [
+      '请介绍与岗位最相关的项目和能力证据。',
+      jobDescription,
+      '综合这份 JD，匹配度如何？',
+    ].entries()) {
+      const turnId = randomUUID();
+      legacyTurnIds.push(turnId);
+      const events = await collectChat({
+        pool,
+        provider: coordinatedProvider(provider),
+        accessSessionId: fixture.accessSessionId,
+        request: normalizeChatRequest({
+          workflow: 'chat',
+          message,
+          mode: 'interviewer',
+          audienceIntent: 'recruiter',
+          conversationId,
+          turnId,
+        }),
+        config: contextConfig(fixture, {
+          contextCanaryInviteIds: new Set(),
+          contextCanaryInviteLabels: new Set(),
+        }),
+        now: new Date(fixtureNow.getTime() + index * 1_000),
+      });
+      const meta = events.find((event) => event.type === 'meta');
+      assert.equal(meta?.type, 'meta', message);
+      if (meta?.type !== 'meta') return;
+      conversationId ??= meta.conversationId;
+      assert.equal(meta.conversationId, conversationId, message);
+      const stored = await pool.query<{ execution_pipeline: string }>(
+        `SELECT execution_pipeline
+           FROM interaction_turns
+          WHERE id = $1`,
+        [turnId],
+      );
+      assert.equal(stored.rows[0].execution_pipeline, 'legacy_v2', message);
+      if (index === 1) {
+        const userMessage = await pool.query<{ id: string }>(
+          `SELECT id::text
+             FROM conversation_messages
+            WHERE conversation_id = $1 AND role = 'user'
+            ORDER BY id DESC
+            LIMIT 1`,
+          [conversationId],
+        );
+        jobDescriptionMessageId = userMessage.rows[0].id;
+      }
+    }
+
+    assert.ok(conversationId);
+    assert.ok(jobDescriptionMessageId);
+    const turnId = randomUUID();
+    const message = '如何把跨境电商业务想法转成可执行产品方案？';
+    const events = await collectChat({
+      pool,
+      provider: coordinatedProvider(provider),
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        workflow: 'chat',
+        message,
+        mode: 'interviewer',
+        audienceIntent: 'recruiter',
+        conversationId,
+        turnId,
+      }),
+      config: contextConfig(fixture, {
+        contextCanaryInviteIds: new Set(),
+        contextCanaryInviteLabels: new Set(['HR interview']),
+      }),
+      now: new Date(fixtureNow.getTime() + 3_000),
+    });
+    const meta = events.find((event) => event.type === 'meta');
+    assert.equal(meta?.type, 'meta');
+    if (meta?.type !== 'meta') return;
+    assert.ok(meta.sources.length > 0);
+
+    const stored = await pool.query<{
+      context_manifest: {
+        evidence_ids: string[];
+        legacy_bridge_source_turn_ids: string[];
+        legacy_bridge_status: string;
+        projected_slot_kinds: string[];
+      };
+      context_scope_id: string;
+      discourse_action: string;
+      execution_pipeline: string;
+      semantic_intent: string;
+      task_action: string;
+    }>(
+      `SELECT execution_pipeline, semantic_intent, discourse_action,
+              task_action, context_scope_id::text, context_manifest
+         FROM interaction_turns
+        WHERE id = $1`,
+      [turnId],
+    );
+    assert.equal(stored.rows[0].execution_pipeline, 'context_packet_v22');
+    assert.equal(stored.rows[0].semantic_intent, 'jd_match');
+    assert.equal(stored.rows[0].discourse_action, 'follow_up');
+    assert.equal(stored.rows[0].task_action, 'continue');
+    assert.ok(stored.rows[0].context_manifest.evidence_ids.length > 0);
+    assert.equal(stored.rows[0].context_manifest.legacy_bridge_status, 'consumed');
+    assert.deepEqual(
+      stored.rows[0].context_manifest.legacy_bridge_source_turn_ids,
+      [...legacyTurnIds].reverse(),
+    );
+    assert.ok(stored.rows[0].context_manifest.projected_slot_kinds.includes('job_description'));
+
+    const frame = await pool.query<{
+      end_utf16: number;
+      source_message_id: string;
+      start_utf16: number;
+      task_id: string;
+      task_kind: string;
+    }>(
+      `SELECT frame.task_id::text, frame.task_kind,
+              slot.source_message_id::text, slot.start_utf16, slot.end_utf16
+         FROM conversation_context_task_state AS frame
+         JOIN conversation_context_slot_refs AS slot
+           ON slot.conversation_id = frame.conversation_id
+          AND slot.task_id = frame.task_id
+          AND slot.slot_kind = 'job_description'
+        WHERE frame.conversation_id = $1`,
+      [conversationId],
+    );
+    assert.equal(frame.rows.length, 1);
+    assert.equal(frame.rows[0].task_id, stored.rows[0].context_scope_id);
+    assert.equal(frame.rows[0].task_kind, 'recruitment_evaluation');
+    assert.equal(frame.rows[0].source_message_id, jobDescriptionMessageId);
+    assert.equal(frame.rows[0].start_utf16, 0);
+    assert.equal(frame.rows[0].end_utf16, jobDescription.length);
+  } finally {
+    await cleanupFixture(fixture);
+  }
+});
+
+test('a V2.2 temporary turn prevents later consumption of a captured legacy JD bridge', async () => {
+  const fixture = await createFixture('HR interview');
+  const provider = new ControlledAnswerProvider();
+  let conversationId: string | null = null;
+  try {
+    await seedFailureChainKnowledge();
+    const legacyTurnId = randomUUID();
+    const legacyEvents = await collectChat({
+      pool,
+      provider: coordinatedProvider(provider),
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        workflow: 'chat',
+        message: '岗位：AI 产品经理，负责 Agent 产品交付与验证',
+        mode: 'interviewer',
+        audienceIntent: 'recruiter',
+        turnId: legacyTurnId,
+      }),
+      config: contextConfig(fixture, {
+        contextCanaryInviteIds: new Set(),
+        contextCanaryInviteLabels: new Set(),
+      }),
+      now: fixtureNow,
+    });
+    const legacyMeta = legacyEvents.find((event) => event.type === 'meta');
+    assert.equal(legacyMeta?.type, 'meta');
+    if (legacyMeta?.type !== 'meta') return;
+    conversationId = legacyMeta.conversationId;
+
+    const temporaryTurnId = randomUUID();
+    const temporaryEvents = await collectChat({
+      pool,
+      provider: coordinatedProvider(provider),
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        workflow: 'chat',
+        message: '为什么天空是蓝色的？',
+        mode: 'interviewer',
+        audienceIntent: 'recruiter',
+        conversationId,
+        turnId: temporaryTurnId,
+      }),
+      config: contextConfig(fixture, {
+        contextCanaryInviteIds: new Set(),
+        contextCanaryInviteLabels: new Set(['HR interview']),
+      }),
+      now: new Date(fixtureNow.getTime() + 1_000),
+    });
+    const temporaryMeta = temporaryEvents.find((event) => event.type === 'meta');
+    assert.equal(temporaryMeta?.type, 'meta');
+    if (temporaryMeta?.type !== 'meta') return;
+    assert.deepEqual(temporaryMeta.sources, []);
+
+    const evaluationTurnId = randomUUID();
+    const evaluationEvents = await collectChat({
+      pool,
+      provider: coordinatedProvider(provider),
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        workflow: 'chat',
+        message: '如何保证产品交付可验证、可回滚？',
+        mode: 'interviewer',
+        audienceIntent: 'recruiter',
+        conversationId,
+        turnId: evaluationTurnId,
+      }),
+      config: contextConfig(fixture, {
+        contextCanaryInviteIds: new Set(),
+        contextCanaryInviteLabels: new Set(['HR interview']),
+      }),
+      now: new Date(fixtureNow.getTime() + 2_000),
+    });
+    const evaluationMeta = evaluationEvents.find((event) => event.type === 'meta');
+    assert.equal(evaluationMeta?.type, 'meta');
+    if (evaluationMeta?.type !== 'meta') return;
+    assert.deepEqual(evaluationMeta.sources, []);
+
+    const turns = await pool.query<{
+      context_manifest: {
+        evidence_ids: string[];
+        legacy_bridge_status: string;
+      };
+      context_scope_id: string;
+      discourse_action: string;
+      id: string;
+      semantic_intent: string;
+      task_action: string;
+    }>(
+      `SELECT id::text, semantic_intent, discourse_action, task_action,
+              context_scope_id::text, context_manifest
+         FROM interaction_turns
+        WHERE id = ANY($1::uuid[])
+        ORDER BY created_at`,
+      [[temporaryTurnId, evaluationTurnId]],
+    );
+    assert.deepEqual(turns.rows.map((row) => ({
+      bridgeStatus: row.context_manifest.legacy_bridge_status,
+      contextScopeId: row.context_scope_id,
+      discourseAction: row.discourse_action,
+      evidenceIds: row.context_manifest.evidence_ids,
+      id: row.id,
+      semanticIntent: row.semantic_intent,
+      taskAction: row.task_action,
+    })), [
+      {
+        bridgeStatus: 'captured',
+        contextScopeId: temporaryTurnId,
+        discourseAction: 'one_shot',
+        evidenceIds: [],
+        id: temporaryTurnId,
+        semanticIntent: 'general_conversation',
+        taskAction: 'temporary',
+      },
+      {
+        bridgeStatus: 'captured',
+        contextScopeId: evaluationTurnId,
+        discourseAction: 'one_shot',
+        evidenceIds: [],
+        id: evaluationTurnId,
+        semanticIntent: 'general_conversation',
+        taskAction: 'temporary',
+      },
+    ]);
+    const state = await pool.query<{
+      captured_bridge_count: number;
+      frame_count: number;
+    }>(
+      `SELECT
+         (SELECT count(*)::integer
+            FROM conversation_context_task_state
+           WHERE conversation_id = $1) AS frame_count,
+         (SELECT count(*)::integer
+            FROM conversation_context_legacy_bridge_turns
+           WHERE conversation_id = $1 AND status = 'captured') AS captured_bridge_count`,
+      [conversationId],
+    );
+    assert.deepEqual(state.rows[0], { frame_count: 0, captured_bridge_count: 1 });
   } finally {
     await cleanupFixture(fixture);
   }
@@ -1825,6 +2116,198 @@ test('recruiter-chat JD projects audited Claude Code evidence into V2.2', async 
     assert.match(boundaryBlock, /当前审核资料无证据，建议面试核验/u);
     assert.match(boundaryBlock, /不得省略/u);
     assert.match(boundaryBlock, /不得表述为“从未使用”/u);
+  } finally {
+    await cleanupFixture(fixture);
+  }
+});
+
+test('recruiter evaluation follow-ups keep the original JD and audited evidence', async () => {
+  const fixture = await createFixture('HR interview');
+  const provider = new ControlledAnswerProvider();
+  const jobDescription = [
+    '岗位：跨境电商产品经理（Vibe Coding 方向）',
+    '工作内容：把业务想法转成产品方案，接手前后端并快速交付。',
+    '岗位要求：使用 Claude Code，依据用户反馈和业务数据持续迭代。',
+  ].join('\n');
+  const messages = [
+    '请介绍与岗位最相关的项目和能力证据。',
+    jobDescription,
+    '综合这份 JD，匹配度如何？请给三项优势和两项缺口。',
+    '结合岗位要求，分析你最大的能力差距。',
+    '请结合这份 JD 分析：\n1. 三项优势\n2. 两项风险',
+    '请回答两个问题：\n1. 如何接手陌生代码\n2. 如何保证可回滚',
+    '哪个项目最能证明你能用 Vibe Coding 独立交付？',
+    '如何把跨境电商业务想法转成可执行产品方案？',
+    '如何接手陌生的 AI 生成前后端代码？',
+    '如何保证快速交付仍可验证、可回滚？',
+    '如何在主备模型之间切换并保证可回滚？',
+    '你如何适应新岗位并快速交付？',
+    '你如何切换到新岗位并快速适应？',
+    '切换到新岗位后，你如何快速适应并交付？',
+    'Claude Code 与模型渠道的真实能力边界是什么？',
+    '如何依据用户反馈和业务数据持续迭代？',
+    '独立技术负责时具体承担哪些工作？',
+    '当前最明显的能力差距是什么？',
+    '为什么你适合 AI 产品负责人岗位？',
+  ];
+  const taskIds: string[] = [];
+  type SlotSnapshot = {
+    content_sha256: string;
+    end_utf16: number;
+    ordinal: number;
+    slot_kind: string;
+    source_message_id: string;
+    start_utf16: number;
+  };
+  let originalSlots: SlotSnapshot[] | null = null;
+  let conversationId: string | null = null;
+  const testConfig = contextConfig(fixture, {
+    maxMessagesPerSession: 40,
+    chatWindowMaxMessages: 40,
+    contextCanaryInviteIds: new Set(),
+    contextCanaryInviteLabels: new Set(['HR interview']),
+  });
+  try {
+    await seedFailureChainKnowledge();
+    for (const [index, message] of messages.entries()) {
+      const turnId = randomUUID();
+      const events = await collectChat({
+        pool,
+        provider: coordinatedProvider(provider),
+        accessSessionId: fixture.accessSessionId,
+        request: normalizeChatRequest({
+          workflow: 'chat',
+          message,
+          mode: 'interviewer',
+          audienceIntent: 'recruiter',
+          conversationId,
+          turnId,
+        }),
+        config: testConfig,
+        now: new Date(fixtureNow.getTime() + index * 1_000),
+      });
+      const meta = events.find((event) => event.type === 'meta');
+      assert.equal(meta?.type, 'meta', message);
+      if (meta?.type !== 'meta') return;
+      conversationId ??= meta.conversationId;
+      assert.equal(meta.conversationId, conversationId, message);
+
+      const stored = await pool.query<{
+        context_manifest: {
+          context_build_status: string;
+          evidence_ids: string[];
+          included_layers: string[];
+          projected_slot_kinds: string[];
+        };
+        context_scope_id: string;
+        discourse_action: string;
+        semantic_intent: string;
+        status: string;
+        task_action: string;
+      }>(
+        `SELECT status, semantic_intent, discourse_action, task_action,
+                context_scope_id::text, context_manifest
+           FROM interaction_turns
+          WHERE id = $1`,
+        [turnId],
+      );
+      const row = stored.rows[0];
+      assert.equal(row.status, 'completed', message);
+      taskIds.push(row.context_scope_id);
+      if (index >= 2) {
+        assert.equal(row.semantic_intent, 'jd_match', message);
+        assert.equal(row.discourse_action, 'follow_up', message);
+        assert.equal(row.task_action, 'continue', message);
+        assert.equal(row.context_manifest.context_build_status, 'built', message);
+        assert.ok(row.context_manifest.evidence_ids.length > 0, message);
+        assert.ok(meta.sources.length > 0, message);
+        assert.ok(row.context_manifest.included_layers.includes('task_frame'), message);
+        assert.ok(row.context_manifest.included_layers.includes('task_inputs'), message);
+        assert.ok(row.context_manifest.projected_slot_kinds.includes('job_description'), message);
+      }
+      if (index === 1) {
+        const snapshot = await pool.query<SlotSnapshot>(
+          `SELECT slot_kind, ordinal, source_message_id::text,
+                  start_utf16, end_utf16, content_sha256
+             FROM conversation_context_slot_refs
+            WHERE conversation_id = $1
+            ORDER BY slot_kind, ordinal`,
+          [conversationId],
+        );
+        originalSlots = snapshot.rows;
+      }
+    }
+
+    assert.ok(conversationId);
+    assert.equal(new Set(taskIds).size, 1);
+    assert.ok(originalSlots);
+    const slots = await pool.query<SlotSnapshot>(
+      `SELECT slot_kind, ordinal, source_message_id::text,
+              start_utf16, end_utf16, content_sha256
+         FROM conversation_context_slot_refs
+        WHERE conversation_id = $1
+        ORDER BY slot_kind, ordinal`,
+      [conversationId],
+    );
+    assert.deepEqual(slots.rows, originalSlots);
+    assert.equal(provider.requests.length, messages.length);
+    assert.match(provider.requests.at(-1)!.instructions, /跨境电商产品经理/u);
+    assert.match(provider.requests.at(-1)!.instructions, /用户反馈和业务数据/u);
+
+    const temporaryTurnId = randomUUID();
+    const temporaryEvents = await collectChat({
+      pool,
+      provider: coordinatedProvider(provider),
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        workflow: 'chat',
+        message: '为什么天空是蓝色的？',
+        mode: 'interviewer',
+        audienceIntent: 'recruiter',
+        conversationId,
+        turnId: temporaryTurnId,
+      }),
+      config: testConfig,
+      now: new Date(fixtureNow.getTime() + messages.length * 1_000),
+    });
+    const temporaryMeta = temporaryEvents.find((event) => event.type === 'meta');
+    assert.equal(temporaryMeta?.type, 'meta');
+    if (temporaryMeta?.type !== 'meta') return;
+    const temporary = await pool.query<{
+      context_manifest: {
+        evidence_ids: string[];
+        included_layers: string[];
+      };
+      context_scope_id: string;
+      discourse_action: string;
+      semantic_intent: string;
+      task_action: string;
+    }>(
+      `SELECT semantic_intent, discourse_action, task_action,
+              context_scope_id::text, context_manifest
+         FROM interaction_turns
+        WHERE id = $1`,
+      [temporaryTurnId],
+    );
+    assert.deepEqual(
+      {
+        contextScopeId: temporary.rows[0].context_scope_id,
+        discourseAction: temporary.rows[0].discourse_action,
+        semanticIntent: temporary.rows[0].semantic_intent,
+        taskAction: temporary.rows[0].task_action,
+      },
+      {
+        contextScopeId: temporaryTurnId,
+        discourseAction: 'one_shot',
+        semanticIntent: 'general_conversation',
+        taskAction: 'temporary',
+      },
+    );
+    assert.deepEqual(temporary.rows[0].context_manifest.evidence_ids, []);
+    assert.equal(temporary.rows[0].context_manifest.included_layers.includes('task_frame'), false);
+    assert.equal(temporary.rows[0].context_manifest.included_layers.includes('task_inputs'), false);
+    assert.deepEqual(temporaryMeta.sources, []);
+    assert.equal(provider.requests.length, messages.length + 1);
   } finally {
     await cleanupFixture(fixture);
   }

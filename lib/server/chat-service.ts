@@ -797,9 +797,13 @@ async function prepareContextTurn(input: {
     });
     resolved = resolution.resolved;
     bridgeStatus = resolution.legacyBridgeStatus;
-    contextScopeId = resolution.candidateFrame?.taskId
-      ?? currentFrame?.taskId
-      ?? input.turn.turnId;
+    const isolatedTurn = resolved.semantic.taskAction === 'temporary'
+      || resolved.semantic.discourseAction === 'one_shot';
+    contextScopeId = isolatedTurn
+      ? input.turn.turnId
+      : resolution.candidateFrame?.taskId
+        ?? currentFrame?.taskId
+        ?? input.turn.turnId;
     const history = resolution.candidateFrame || currentFrame
       ? await loadCanonicalAnswerHistory(input.client, {
           conversationId: input.turn.conversationId,
