@@ -5,6 +5,7 @@ import {
   type MigrationManifestEntry,
 } from './migration-manifest.ts';
 import { validateProductionRole } from './production-config.ts';
+import { resolveProviderRuntime } from './provider-runtime.ts';
 import { loadResumeConfig } from './resume-config.ts';
 
 type Env = Record<string, string | undefined>;
@@ -172,6 +173,15 @@ export async function assertApplicationReady(input: ReadinessInput = {}): Promis
         if (error instanceof ReadinessError) throw error;
         throw new ReadinessError('READINESS_DYNAMIC_CONTEXT_UNAVAILABLE');
       }
+    }
+    try {
+      await resolveProviderRuntime(
+        pool as Parameters<typeof resolveProviderRuntime>[0],
+        loadServerConfig(env),
+        { env },
+      );
+    } catch {
+      throw new ReadinessError('READINESS_AI_CONFIG_UNAVAILABLE');
     }
   } catch (error) {
     if (error instanceof ReadinessError) throw error;

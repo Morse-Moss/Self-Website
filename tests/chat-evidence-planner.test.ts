@@ -219,6 +219,38 @@ test('JD match applies the same direct-first ordering before filling by retrieva
   ]);
 });
 
+test('multi-topic JD retrieval embeds complete smaller sections so one relevant requirement can admit evidence', async () => {
+  const calls = { queries: [] as string[], retrieve: 0 };
+  const currentInput = [
+    '岗位：跨境电商产品经理（Vibe Coding 方向）',
+    '岗位背景：重视业务闭环、上线速度与用户反馈，要求使用 AI 工具快速实现需求。',
+    '岗位要求：逻辑严谨，能把复杂业务拆成可执行方案，并使用 Claude Code 独立交付 App、网站或工具。',
+    '工作内容：接手现有独立站的前端和后端，完成 Bug 修复、功能迭代与部署上线。',
+    '协作方式：把运营和市场提出的想法转成产品方案，快速上线并依据反馈继续迭代。',
+    '评价方式：关注真实交付、用户反馈和业务闭环，不以手写代码量作为主要衡量标准。',
+    '发展方向：熟悉业务后继续使用 AI 创造新的产品和工具，而不是停留在日常维护。',
+  ].join('\n');
+  const result = await planChatEvidence({
+    resolved: resolved('jd_match'),
+    currentInput,
+    frame: frame([slot('job_description', currentInput)]),
+    ledger,
+    embed: async (query) => {
+      calls.queries.push(query);
+      return query.includes('前端和后端') && query.length < currentInput.length ? [1, 0, 0] : [0, 1, 0];
+    },
+    retrieve: async (embedding) => {
+      calls.retrieve += 1;
+      return embedding[0] === 1 ? [source('digital-morse', 0.88)] : [];
+    },
+  });
+
+  assert.ok(calls.queries.length > 1);
+  assert.equal(calls.queries.join(''), currentInput);
+  assert.equal(calls.retrieve, calls.queries.length);
+  assert.deepEqual(result.knowledge.map((item) => item.projectSlug), ['digital-morse']);
+});
+
 test('more than three direct projects remain present in deterministic retrieval order', async () => {
   const deps = dependencies([
     source('deep-research', 0.91),

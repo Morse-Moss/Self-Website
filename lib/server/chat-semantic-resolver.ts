@@ -490,10 +490,13 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
   const capability = capabilities.find((candidate) => candidate.evidenceClass !== 'none')
     ?? capabilities[0]
     ?? null;
-  const correction = isCorrection(message);
-  const switchTask = isSwitch(message);
-  const completing = isCompletion(message) && activeRecruitment;
-  const clear = clearKinds(message);
+  const explicitJdWorkflow = input.request.workflow === 'jd_match';
+  const correction = !explicitJdWorkflow && isCorrection(message);
+  const switchTask = !explicitJdWorkflow && isSwitch(message);
+  const completing = !explicitJdWorkflow && isCompletion(message) && activeRecruitment;
+  const clear = explicitJdWorkflow
+    ? new Set<ResolvedTaskSlotRef['slot']>()
+    : clearKinds(message);
   const jdLike = looksLikeRecruitmentJobDescription(message, {
     hasActiveRecruitmentFrame: activeRecruitment,
     workflow: input.request.workflow,

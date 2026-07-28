@@ -53,6 +53,7 @@ const manifest = [
 ];
 
 function poolWith(options: {
+  activeV1EnvironmentRoute?: boolean;
   chunks?: number;
   configThrows?: boolean;
   dynamicContextReady?: boolean;
@@ -70,6 +71,32 @@ function poolWith(options: {
       }
       if (sql.includes('knowledge_chunks')) {
         return { rows: [{ present: (options.chunks ?? 1) > 0 }] };
+      }
+      if (sql.includes('FROM ai_runtime_state state')) {
+        return { rows: [options.activeV1EnvironmentRoute
+          ? { id: '10000000-0000-4000-8000-000000000002', lock_version: '2', revision_number: '2' }
+          : { id: null, lock_version: '0', revision_number: null }] };
+      }
+      if (sql.includes('FROM ai_route_targets target')) {
+        if (!options.activeV1EnvironmentRoute) throw new Error('unexpected inactive route target query');
+        return { rows: [{
+          config_digest: 'a'.repeat(64),
+          config_digest_version: 1,
+          connection_display_name: 'Environment primary',
+          context_window_tokens: null,
+          database_model_series_id: null,
+          database_model_version_id: null,
+          environment_target_key: 'primary',
+          input_usd_per_million: null,
+          max_output_tokens: null,
+          model_display_name: 'gpt-production',
+          model_id: 'gpt-production',
+          output_usd_per_million: null,
+          position: 0,
+          protocol: 'responses',
+          reasoning_effort: null,
+          source_type: 'environment',
+        }] };
       }
       if (sql.includes('ai_runtime_state')) {
         return { rows: options.runtimeRows ?? [{ id: true, active_route_revision_id: null }] };
@@ -157,6 +184,35 @@ test('feature-on readiness fails closed when migration 013 or dynamic-context gr
   assert.match(dynamicContextQuery, /has_table_privilege\(current_user, 'conversation_history_compactions', 'UPDATE'\)/u);
   assert.match(dynamicContextQuery, /has_table_privilege\(current_user, 'conversation_history_compactions', 'DELETE'\)/u);
   assert.doesNotMatch(dynamicContextQuery, /(?:public\.)?chat_history_compactions/u);
+});
+
+test('readiness fails closed when an active v1 environment route needs the removed output limit', async () => {
+  const expected = Array.from({ length: 13 }, (_, index) => ({
+    version: String(index + 1).padStart(3, '0'),
+    checksum: String(index + 1).repeat(64).slice(0, 64),
+  }));
+  const env = {
+    ...runtimeEnv,
+    MORSE_DYNAMIC_PROVIDER_CONTEXT_ENABLED: 'true',
+    MORSE_CONTEXT_PACKET_DIGEST_KEY_FILE: contextDigestKeyFile,
+    MORSE_CONTEXT_PACKET_DIGEST_KEY_ID: 'readiness-context-v1',
+  };
+  await assert.rejects(
+    assertApplicationReady({
+      env,
+      expectedMigrations: expected,
+      pool: poolWith({
+        activeV1EnvironmentRoute: true,
+        dynamicContextReady: true,
+        migrations: expected,
+      }),
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof ReadinessError);
+      assert.equal(error.code, 'READINESS_AI_CONFIG_UNAVAILABLE');
+      return true;
+    },
+  );
 });
 
 test('readiness validates enabled resume config in local and production runtimes', async () => {

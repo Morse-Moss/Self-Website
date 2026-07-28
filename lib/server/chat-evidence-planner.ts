@@ -47,6 +47,7 @@ export interface PlanChatEvidenceInput {
 const projectOrder = new Map(
   siteContent.projects.map((project, index) => [project.slug, index]),
 );
+const RECRUITMENT_RETRIEVAL_CHUNK_CHARACTERS = 256;
 
 function auditedProject(slug: string): Project | null {
   return siteContent.projects.find((project) => project.slug === slug) ?? null;
@@ -202,7 +203,10 @@ function fallbackProjects(
 
 async function rankedProjects(input: PlanChatEvidenceInput): Promise<PlannedChatEvidence> {
   const query = evidenceQuery(input);
-  const queries = partitionCompleteRetrievalQuery(query);
+  const queries = partitionCompleteRetrievalQuery(
+    query,
+    RECRUITMENT_RETRIEVAL_CHUNK_CHARACTERS,
+  );
   let embeddings: readonly number[][];
   try {
     if (input.embedAll) {

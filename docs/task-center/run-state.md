@@ -4,10 +4,18 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**HR_PROJECT_NARRATIVE_DEPLOYED_UNOBSERVED / PRODUCTION_BC27857 / HR_TARGETED_PERCENT_0**
+**HR_JD_CONTEXT_FIX_LOCAL_VERIFIED / PREDEPLOY / PRODUCTION_ACECAFC**
 
 ## next_allowed_pointer
-当前生产应用仍运行 `2220759`，尚不包含项目经历路由与动态标签准入修复；用户刚创建的 `HR interview` invite 不在部署时冻结的 6 个 UUID 中，实际问题因此走入 `legacy_v2 / personal_history_query / unavailable`。修复已在本地通过验证并进入 CRITICAL 双审查，下一步是完成 scoped commit/push 和 Web-only 部署，将标签精确设置为 `HR interview`、percent 保持 `0`。部署完成前不要再次测试；Agent 不代替用户发送真实问题，不进入百分比灰度。
+当前生产应用运行 `acecafc`。活动 Provider route revision 3 的两个 target 均为 digest V2、`reasoning=high`，未配置上下文或输出上限；schema 为 `001-013`，41 documents / 48 chunks，五容器健康且无长事务。本地已修复显式 JD 正文被误判为会话控制、以及多主题 JD 单块 embedding 稀释召回的双重根因。下一步只允许精确 commit/push 本任务文件，冻结归档并只重建 Web/Worker；发布健康门禁通过后停用旧测试邀请，创建新的 `HR interview` 单 Session 邀请，从完整 JD 开始逐轮执行 11 次真实 HR 验收。任一轮答非所问、无证据、编造、5xx 或拒答时立即停止并检查该 turn 元数据，不在失败历史上盲目重试。
+
+## HR JD 正文与证据召回修复（2026-07-29，待部署）
+- 根因 1：显式 `jd_match` 请求仍对完整 JD 正文运行 correction/switch/completion/clear 检测，普通岗位描述中的“不、不是、不只”会把首轮误判为纠正或清空，因而没有创建 JD Task Frame。
+- 根因 2：默认 1024 字符检索分片使 682 字多主题 JD 只生成一个 embedding，相关项目在语义稀释后低于已校准的 `0.45` 门槛，Provider 前的来源与证据均为空。
+- 修复：显式 `jd_match` 把正文仅视为岗位数据；招聘/JD 证据检索按 256 字符完整边界分片，逐字保留全文，不降低相关性门槛，也不新增输入、输出、历史、检索或 Provider attempt 限制。
+- Verification：聚焦边界 `104/104`、完整 unit `900/900`、PostgreSQL integration `343/343`、typecheck、33-route build、scoped ESLint、`git diff --check` 与敏感模式扫描均通过。仓库完整 lint 的 20 errors / 3 warnings 均来自本轮未修改的既有 React 文件。
+- Review：CRITICAL 独立质量与合规审查多次被共享 Responses 网关 HTTP 502 阻断，未返回任何 verdict；不得伪报通过。主控已检查完整 diff，当前无已知 blocker，发布必须以真实生产 11 轮 HR 对话作为最终效果门禁。
+- Evidence：`docs/verify/release/hr-jd-context-production-closeout-2026-07-29.md`。
 
 ## HR 项目经历拒答修复（2026-07-28，待部署）
 

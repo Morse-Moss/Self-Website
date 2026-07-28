@@ -7,6 +7,19 @@ const composePath = path.resolve('compose.production.yaml');
 const envPath = path.resolve('.env.example');
 const privilegePath = path.resolve('deploy/postgres/verify-ai-config-runtime.sql');
 
+test('dynamic-context rollout migrates every active provider target to v2 before deleting legacy limits', () => {
+  for (const runbook of ['docs/runbooks/production.md', 'docs/runbooks/tencent-lighthouse.md']) {
+    const source = fs.readFileSync(path.resolve(runbook), 'utf8');
+    const v2Gate = source.indexOf('config_digest_version = 2');
+    const legacyLimit = runbook.endsWith('production.md')
+      ? 'MORSE_MAX_OUTPUT_TOKENS'
+      : '输出固定上限变量';
+    const legacyRemoval = source.indexOf(legacyLimit, v2Gate);
+    assert.ok(v2Gate >= 0, `${runbook} must require the active V2 route gate`);
+    assert.ok(legacyRemoval > v2Gate, `${runbook} must gate legacy limit removal behind V2 activation`);
+  }
+});
+
 test('provider configuration master key is declared empty and mounted only into web', () => {
   const compose = fs.readFileSync(composePath, 'utf8');
   const environment = fs.readFileSync(envPath, 'utf8');
