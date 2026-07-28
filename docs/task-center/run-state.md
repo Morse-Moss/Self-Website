@@ -4,7 +4,7 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**HR_PROJECT_NARRATIVE_LOCAL_READY / PRODUCTION_STILL_2220759 / PERCENT_0**
+**HR_PROJECT_NARRATIVE_DEPLOYED_UNOBSERVED / PRODUCTION_BC27857 / HR_TARGETED_PERCENT_0**
 
 ## next_allowed_pointer
 当前生产应用仍运行 `2220759`，尚不包含项目经历路由与动态标签准入修复；用户刚创建的 `HR interview` invite 不在部署时冻结的 6 个 UUID 中，实际问题因此走入 `legacy_v2 / personal_history_query / unavailable`。修复已在本地通过验证并进入 CRITICAL 双审查，下一步是完成 scoped commit/push 和 Web-only 部署，将标签精确设置为 `HR interview`、percent 保持 `0`。部署完成前不要再次测试；Agent 不代替用户发送真实问题，不进入百分比灰度。

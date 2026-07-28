@@ -284,3 +284,8 @@ docker compose --env-file .env.production -f compose.production.yaml ps
 应用镜像按 Git 提交保留 digest。无 schema 变化的发布可以停止 `edge/web/worker` 并切回上一 digest；迁移是前向追加，不执行猜测性的 down migration。若已应用 migration `004`，旧镜像必须至少具备 Stage 1 兼容性并识别 004 manifest；否则停止发布并按前向修复恢复，不能删除配置表、回填假 checksum 或切回只认识 003 的镜像。
 
 公开知识继续从仓库重新 ingest，短期会话和交互分析按既定保留期处理，不把原始对话复制到临时备份。私密简历启用后不属于“可重建数据”：数据库、加密密文卷和对应密钥版本必须分离备份并共同恢复验证；任何备份都不得包含明文 PDF、邀请码明文或 Session token。是否启用腾讯云快照或独立加密备份，需要在首轮真实恢复演练后单独决定。
+# Latest release override (2026-07-28)
+
+- Current runtime commit: `bc27857`; `/opt/revolution/current` points to `/opt/revolution/releases/bc27857/revolution`.
+- Status: `DEPLOYED_UNOBSERVED / HR_TARGETED / PERCENT_0`. Only Web was replaced; no real interview question or Provider call was made.
+- Authoritative evidence: `docs/verify/release/hr-interview-context-recovery-production-closeout-2026-07-28.md`.

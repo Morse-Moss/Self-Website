@@ -194,3 +194,8 @@ migration `012` 应用后，回滚只先设置 `MORSE_CHAT_CONTEXT_PACKET_ENABLE
 3. Web ready、对话失败：按主节点、备用 1、备用 2 的顺序检查 Chat Provider，再检查 Embedding/Search incident；不打印请求正文、响应正文或凭据。
 4. Outbox 堆积：检查 Worker 是否运行、alert mode、DB lease、Feishu 响应和 attempt cap。
 5. cleanup 过期：检查 Worker 稳定日志、DB lock 竞争和最后成功时间；不要手工绕过 10 天保留 SQL 顺序。
+# Latest release override (2026-07-28)
+
+- Current runtime commit: `bc27857`; `/opt/revolution/current` points to `/opt/revolution/releases/bc27857/revolution`.
+- Context Packet remains enabled with percent `0`; exact label allowlist is `HR interview`, preserving the existing UUID allowlist.
+- Status is `DEPLOYED_UNOBSERVED`: deployment and health are observed, real answer quality awaits the user's own question.
