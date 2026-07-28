@@ -118,6 +118,8 @@ npm run production:worker
 5. 观察只保存 case ID、pipeline/semantic/task 状态、来源 ID、脱敏 manifest、attempt 数/状态/时延，以及同 turn 的 packet/request HMAC 一致性；不得保存邀请码明文、原始问答、Provider payload、Key、Base URL 或私密简历内容。
 6. canary 结束后停用邀请码、清空 Context Packet 白名单并保持百分比 `0`，只重启 Web，再复验 live/ready/release smoke、容器 identity/restart count 和新 Web 启动后的错误日志。未经新的当前授权，不进入 10% 或更高灰度。
 
+获得定向 HR 测试授权后，可以在 percent 仍为 `0` 时把白名单设置为两个集合的精确并集：标签严格等于 `HR interview` 且 active、未过期、仍有 Session 容量的 invite ID，以及标签严格等于 `HR interview` 且拥有未过期 Session 的 invite ID。后者即使 invite 已满额也必须保留。变更必须使用环境文件 CAS、只重启 Web、比较变更前后两个集合，并且不得回显 UUID、邀请码明文或个人信息。定向启用本身不授权自动发送真实问题；真实问答由用户发起并单独观察。
+
 migration `012` 应用后，回滚只先设置 `MORSE_CHAT_CONTEXT_PACKET_ENABLED=false`、清空白名单并只重启 Web；保留 migration、HMAC Secret 和数据。任何回滚镜像都必须识别 migration manifest `001-012`，禁止切回 pre-012 镜像。
 
 ### 4.4 私密简历运维
@@ -172,7 +174,7 @@ migration `012` 应用后，回滚只先设置 `MORSE_CHAT_CONTEXT_PACKET_ENABLE
 
 ## 8. 当前生产状态与硬化余项
 
-首个生产实例在 `39849e1` 完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实对话 smoke 和公网 live/ready/release smoke。2026-07-28 当前应用 release 为 `f02e9de`：Controlled Context V2.2 使用已存在的 migration `001-012`、grants、公开知识与 Web-only digest Secret，只替换 Web/Worker，DB、Embedding 与 Edge 容器身份不变。单邀请码五轮冻结链已完成生产观察；收尾后 Context Packet 保持 enabled、percent `0`、空白名单，测试邀请码停用且 Session 过期。公网健康、发布 smoke、未授权边界和新鲜错误日志门禁通过；五轮缺少内联 `[来源N]` 的问题保留为非阻断质量债，未经新授权不进入百分比灰度。当前实例细节和脱敏证据以腾讯云实例手册及 `docs/verify/release/controlled-context-v22-production-closeout-2026-07-28.md` 为准。
+首个生产实例在 `39849e1` 完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实对话 smoke 和公网 live/ready/release smoke。2026-07-28 当前应用 release 为 `2220759`：招聘裸追问只在相邻同 Task 的 active 招聘上下文内续接；本次只替换 Web，Worker、DB、Embedding 与 Edge 容器身份不变。Context Packet 保持 enabled、percent `0`，白名单是精确 `HR interview` 标签的 capacity-eligible invite 与未过期 Session 所属 invite 的并集，最终共 6 个；未自动发送真实问题。公网健康、发布 smoke、未授权边界和新鲜错误日志门禁通过，真实回答质量等待用户亲自提问后观察。当前实例细节和脱敏证据以腾讯云实例手册及 `docs/verify/release/recruitment-bare-recheck-production-closeout-2026-07-28.md` 为准。
 
 以下事项完成前保持 `LIMITED_LAUNCH`，不标记完整 `ONLINE_READY`：
 

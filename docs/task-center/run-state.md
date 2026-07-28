@@ -4,10 +4,19 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**CONTROLLED_CONTEXT_V22_PRODUCTION_OBSERVED / INVITE_CANARY_COMPLETE / PERCENT_0**
+**RECRUITMENT_BARE_RECHECK_DEPLOYED_UNOBSERVED / HR_ALLOWLIST_6 / PERCENT_0**
 
 ## next_allowed_pointer
-当前生产应用运行 `f02e9de`。Controlled Context V2.2 的单邀请码五轮冻结链已经完成生产观察，收尾状态为 enabled、percent `0`、空白名单；测试邀请码停用且唯一 Session 过期。五轮均完成主回答，但均缺少内联 `[来源N]`，保留为非阻断质量债。未经新的当前授权，不进入 10% 或更高灰度；后续若推进，应先冻结 24 小时/20 轮自然样本的观察合同与引用质量门。
+当前生产应用运行 `2220759`。招聘裸追问修复已部署，Context Packet 为 enabled、percent `0`，精确 `HR interview` 白名单为 capacity-eligible invite 与未过期 Session 所属 invite 的并集，共 6 个。Agent 未代替用户发送真实面试问题；下一步由用户使用现有 HR invite 亲自提问，再按实际对话证据判断回答质量。未经新的当前授权，不进入百分比灰度，也不自动创建邀请码或重放真实问题。
+
+## 招聘裸追问修复与 HR 定向发布（2026-07-28）
+
+- 根因与修复：旧链路未把“你再去查一下”识别为招聘任务续问。新规则只在当前招聘 Task 为 active、相邻 completed 轮次的 `contextScopeId` 与 Task ID 相同时继续 `project_fit`；独立输入、临时话题之后和 waiting-input 状态均不继承。
+- Verification：resolver `16/16`、Controlled Context PostgreSQL integration `20/20`、typecheck、33-route build、`git diff --check` 和验收判定自测通过；“没有相关项目经验”与“请把岗位职责再发一次”会被验收门拦截。没有运行真实问题回放。
+- Release：运行提交 `2220759` 已进入 `origin/master`；冻结归档 19,579,605 bytes，SHA-256 `349883d721ac4b33b6d8b461f8191ca00b2bd740f42567f0a31f3a38616d9836`，本地与服务器一致。生产指针为 `/opt/revolution/releases/2220759/revolution`，Web 镜像为 `sha256:97e9488299793cfb05580b31e88850b0965488f8b6c1a2b77886c8c03cf35089`。
+- Runtime：只替换 Web；Worker、DB、Embedding、Edge 容器身份不变，五容器 healthy、restart count 0。Context Packet enabled、percent `0`；capacity-eligible 为 6、未过期 Session 所属 invite 为 2，精确并集与运行白名单一致且总数为 6。
+- Boundary：未读取或记录 UUID、邀请码明文、Session token、原始问题/回答、Provider payload 或密钥；未创建临时邀请码，未发送真实 Chat/Provider 请求。当前为 `DEPLOYED_UNOBSERVED`，真实回答等待用户亲自提问。
+- Evidence：`docs/verify/release/recruitment-bare-recheck-production-closeout-2026-07-28.md`。
 
 ## Controlled Context V2.2 单邀请码生产发布（2026-07-28）
 
