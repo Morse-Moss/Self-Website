@@ -4,10 +4,10 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**HR_JD_CONTEXT_FIX_LOCAL_VERIFIED / PREDEPLOY / PRODUCTION_ACECAFC**
+**HR_RECRUITER_JD_FIX_LOCAL_VERIFIED / REDEPLOY_PENDING / PRODUCTION_0C7F56A**
 
 ## next_allowed_pointer
-当前生产应用运行 `acecafc`。活动 Provider route revision 3 的两个 target 均为 digest V2、`reasoning=high`，未配置上下文或输出上限；schema 为 `001-013`，41 documents / 48 chunks，五容器健康且无长事务。本地已修复显式 JD 正文被误判为会话控制、以及多主题 JD 单块 embedding 稀释召回的双重根因。下一步只允许精确 commit/push 本任务文件，冻结归档并只重建 Web/Worker；发布健康门禁通过后停用旧测试邀请，创建新的 `HR interview` 单 Session 邀请，从完整 JD 开始逐轮执行 11 次真实 HR 验收。任一轮答非所问、无证据、编造、5xx 或拒答时立即停止并检查该 turn 元数据，不在失败历史上盲目重试。
+当前生产应用运行 `0c7f56a`，显式 `JD 匹配` 的完整 JD 已真实通过，但实际 HR 路径“招聘入口 -> 完整 JD”仍暴露同类边界：生产 turn `222aeccb` 被错误标为 `chat / recruiter / jd_match / correction / wait`，来源与 evidence 均为 0。第二次本地修复已将完整 JD 数据判定前置到所有 workflow，保留显式任务切换和普通纠正/清空行为，并逐字保存完整 JD slot。下一步只允许精确 commit/push 这次 resolver、回归测试和收尾知识文件，冻结归档并只重建 Web/Worker；发布后使用全新 `HR interview` 单 Session 邀请重新执行真实招聘入口、完整 JD 与 10 个追问。任一轮答非所问、无证据、编造、5xx 或拒答时立即停止并检查该 turn 元数据，不在失败历史上盲目重试。
 
 ## HR JD 正文与证据召回修复（2026-07-29，待部署）
 - 根因 1：显式 `jd_match` 请求仍对完整 JD 正文运行 correction/switch/completion/clear 检测，普通岗位描述中的“不、不是、不只”会把首轮误判为纠正或清空，因而没有创建 JD Task Frame。
@@ -16,6 +16,12 @@
 - Verification：聚焦边界 `104/104`、完整 unit `900/900`、PostgreSQL integration `343/343`、typecheck、33-route build、scoped ESLint、`git diff --check` 与敏感模式扫描均通过。仓库完整 lint 的 20 errors / 3 warnings 均来自本轮未修改的既有 React 文件。
 - Review：CRITICAL 独立质量与合规审查多次被共享 Responses 网关 HTTP 502 阻断，未返回任何 verdict；不得伪报通过。主控已检查完整 diff，当前无已知 blocker，发布必须以真实生产 11 轮 HR 对话作为最终效果门禁。
 - Evidence：`docs/verify/release/hr-jd-context-production-closeout-2026-07-29.md`。
+
+## HR 招聘会话完整 JD 修复（2026-07-29，待二次部署）
+- Production observation：release `0c7f56a` 的显式 `JD 匹配` 首轮召回 5 个来源并完成回答；实际招聘会话在入口回答后发送同一份完整 JD，服务端却记录为 `correction / wait`，Provider 前来源和 evidence 都是 0，回答错误声称没有可审核项目。
+- Root cause：上一修复只在 `workflow=jd_match` 时把正文视为数据；`workflow=chat / audience=recruiter` 的真实访客路径仍先运行 correction/completion/clear 检测。JD 中的普通否定与“完成”等岗位用语因此覆盖了已经成立的 JD 信号。
+- Fix：先根据完整文本、当前招聘 Task 和 workflow 判定 `jdLike`；JD 数据不再触发 correction/completion/clear，显式“换个岗位”仍执行 switch，非 JD 的真实纠正、清空和完成指令保持原行为。所有 `jd_match` intent 都把当前输入逐字保存为 JD slot，避免只截取最后一个“岗位要求”段落。
+- Verification：新增生产形状回归先红后绿；受影响边界 `44/44`、完整 unit、PostgreSQL integration `343/343`、typecheck、33-route build、scoped ESLint 和 `git diff --check` 通过。
 
 ## HR 项目经历拒答修复（2026-07-28，待部署）
 

@@ -409,7 +409,7 @@ function buildCandidateFrame(input: {
     || /(?:另一份|新的|完整)\s*(?:JD|职位描述)|(?:JD|职位描述)\s*(?:替换|改成)/iu.test(input.message);
   const extracted = extractSlotCaptures(input.message, {
     includeJobDescription: input.includeJd,
-    wholeJd: input.workflow === 'jd_match',
+    wholeJd: input.includeJd,
   }).map((capture) => slotFromCapture(input.message, capture, input.currentUserMessageId));
   for (const candidate of extracted) {
     if (candidate.slot === 'job_description') {
@@ -490,17 +490,16 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
   const capability = capabilities.find((candidate) => candidate.evidenceClass !== 'none')
     ?? capabilities[0]
     ?? null;
-  const explicitJdWorkflow = input.request.workflow === 'jd_match';
-  const correction = !explicitJdWorkflow && isCorrection(message);
-  const switchTask = !explicitJdWorkflow && isSwitch(message);
-  const completing = !explicitJdWorkflow && isCompletion(message) && activeRecruitment;
-  const clear = explicitJdWorkflow
-    ? new Set<ResolvedTaskSlotRef['slot']>()
-    : clearKinds(message);
   const jdLike = looksLikeRecruitmentJobDescription(message, {
     hasActiveRecruitmentFrame: activeRecruitment,
     workflow: input.request.workflow,
   });
+  const correction = !jdLike && isCorrection(message);
+  const switchTask = isSwitch(message);
+  const completing = !jdLike && isCompletion(message) && activeRecruitment;
+  const clear = jdLike
+    ? new Set<ResolvedTaskSlotRef['slot']>()
+    : clearKinds(message);
   const hasCurrentRecruitmentSlot = extractSlotCaptures(message, {
     includeJobDescription: jdLike,
     wholeJd: input.request.workflow === 'jd_match',

@@ -300,6 +300,25 @@ test('explicit JD workflow treats negative wording as job data instead of conver
   assert.equal(result.candidateFrame?.slots[0]?.text, message);
 });
 
+test('recruiter chat treats a full JD after the starter turn as data instead of correction', () => {
+  const message = [
+    '岗位：跨境电商产品经理（Vibe Coding 方向）',
+    '岗位背景：不是按部就班的传统代码机器，而是使用 AI 快速完成业务闭环。',
+    '岗位要求：不要求深奥的底层代码能力，需要使用 Claude Code 独立交付网站或工具。',
+    '工作内容：接手前后端，完成 Bug 修复和功能迭代，不只做日常修补。',
+  ].join('\n');
+  const result = resolve(message, { currentFrame: activeFrame() });
+
+  assert.equal(result.resolved.semantic.intent, 'jd_match');
+  assert.equal(result.resolved.semantic.taskAction, 'continue');
+  assert.equal(result.resolved.semantic.discourseAction, 'follow_up');
+  assert.equal(result.candidateFrame?.taskId, TASK_ID);
+  assert.equal(
+    result.candidateFrame?.slots.find((candidate) => candidate.slot === 'job_description')?.text,
+    message,
+  );
+});
+
 test('slot extraction records exact UTF-16 spans and hashes for company, role, and JD', () => {
   const message = '公司：甲方科技，岗位：AI 产品经理，负责 Agent 平台，熟悉 PostgreSQL';
   const result = resolve(message, { currentUserMessageId: '31' });

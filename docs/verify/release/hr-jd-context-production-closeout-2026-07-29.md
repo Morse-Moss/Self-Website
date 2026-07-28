@@ -2,7 +2,7 @@
 
 > Date: 2026-07-29
 > Mode: `GOAL / CRITICAL / DEPLOYED`
-> Status: `LOCAL_VERIFIED / PREDEPLOY`
+> Status: `PRODUCTION_FAILURE_OBSERVED / SECOND_FIX_LOCAL_VERIFIED / REDEPLOY_PENDING`
 
 ## Scope
 
@@ -37,6 +37,22 @@
 - Migration registry is exactly `001-013`; knowledge inventory is 41 documents / 48 chunks; long transactions over 30 seconds are zero.
 - No deployment, traffic switch, new invite, or new production question had occurred when this predeploy receipt was written.
 
+## First Deployment And Real Observation
+
+- Commit `0c7f56a` was pushed to `origin/master`, archived with SHA-256 `d30184e81280a888caf16b48b1375a462d7b1a4e54020c48696d5d33070f7e02`, and deployed to `/opt/revolution/releases/0c7f56a/revolution` by rebuilding only Web and Worker.
+- Public live, ready, compatibility health, root, works, admin, admin/api and `release:smoke` passed; unauthenticated private endpoints returned 401. Five containers were healthy with restart count 0, and DB/Embedding/Edge identities were unchanged.
+- The one-shot explicit `JD 匹配` production turn passed: `context_packet_v22 / jd_match / new_task / create`, five sources and five evidence IDs, primary target success, and a direct evidence-based answer.
+- The actual recruiter conversation then failed. After the recruiter starter, the same complete JD produced turn `222aeccb` as `chat / recruiter / jd_match / correction / wait`, with zero sources and zero evidence IDs. The answer incorrectly claimed that no audited project evidence was available.
+- A separate browser transport attempt remained pending before reaching the application and created no interaction turn. A cache-busted fresh tab produced the completed failing turn above, so the product failure is independently distinguished from the discarded browser transport incident.
+
+## Second Correction
+
+- JD-data recognition now precedes conversation-control classification for every workflow. A complete recruiter-chat JD cannot be converted into correction, completion, or clear merely because ordinary job text contains negative or completion wording.
+- Explicit task switching remains authoritative. Ordinary non-JD correction, clear, completion, and temporary-chat behavior retain their existing tests.
+- Every turn resolved as `jd_match` stores the complete current input as the JD slot. This prevents a structured JD from being reduced to only the tail following its final requirement heading.
+- The new production-shaped regression failed before the correction and passes after it with `jd_match / follow_up / continue`, the existing Task ID, and an exact full-text JD slot.
+- Fresh verification after the second correction: affected boundary `44/44`, full unit suite passed, PostgreSQL integration `343/343`, typecheck passed, 33-route production build passed, scoped ESLint passed, and `git diff --check` passed.
+
 ## Review Gate
 
 - Independent CRITICAL quality and compliance agents repeatedly failed at the shared Responses gateway with HTTP 502 before returning a verdict.
@@ -45,4 +61,4 @@
 
 ## Next Action
 
-Create an explicit scoped commit, push `master`, deploy the frozen commit to Web and Worker, then perform the fresh isolated HR conversation and update this receipt to `PRODUCTION_OBSERVED` only if every turn passes.
+Commit and push the second correction, redeploy the frozen commit to Web and Worker, expire the failed test invite/session, then run a fresh isolated recruiter conversation with the complete JD and ten follow-up questions. Update this receipt to `PRODUCTION_OBSERVED` only if every answer and its turn metadata pass.
