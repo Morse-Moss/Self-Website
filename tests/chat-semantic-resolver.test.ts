@@ -64,7 +64,7 @@ function activeFrame(overrides: Partial<ConversationTaskFrameV22> = {}): Convers
   };
 }
 
-function completedTurn(): CompletedContextTurn {
+function completedTurn(overrides: Partial<CompletedContextTurn> = {}): CompletedContextTurn {
   return {
     conversationId: CONVERSATION_ID,
     turnId: '44444444-4444-4444-8444-444444444444',
@@ -72,6 +72,7 @@ function completedTurn(): CompletedContextTurn {
     user: { id: '41', role: 'user', text: '先解释一下这个设计。' },
     assistant: { id: '42', role: 'assistant', text: '因为它能降低上下文污染。' },
     completedAt: new Date('2026-07-27T00:00:00.000Z'),
+    ...overrides,
   };
 }
 
@@ -158,6 +159,61 @@ test('recruitment context makes related project experience a Morse project-fit q
   assert.equal(result.resolved.semantic.taskAction, 'continue');
   assert.equal(result.candidateFrame?.taskId, TASK_ID);
   assert.deepEqual(result.resolved.semantic.evidencePlan, ['ranked_project_fit']);
+});
+
+test('bare recheck continues an active recruitment task without becoming general conversation', () => {
+  const acceptanceJd = '跟海外红人做合作式外贸，要求能全栈开发，了解自动化流程搭建，工具迭代与问题优化';
+  const jdCapture = resolve(acceptanceJd, {
+    currentFrame: activeFrame(),
+    discourseContext: completedTurn({ contextScopeId: TASK_ID }),
+  });
+  const capturedJd = jdCapture.candidateFrame?.slots.find((candidate) => candidate.slot === 'job_description');
+  assert.equal(jdCapture.resolved.semantic.intent, 'jd_match');
+  assert.equal(capturedJd?.text, acceptanceJd);
+  assert.equal(
+    capturedJd?.contentSha256,
+    createHash('sha256').update(acceptanceJd, 'utf8').digest('hex'),
+  );
+
+  const contextual = resolve('你再去查一下', {
+    currentFrame: activeFrame({
+      slots: [
+        slot('role', 'AI 产品经理', '11'),
+        slot('job_description', '海外红人合作式外贸，要求全栈开发和自动化流程搭建', '13'),
+      ],
+    }),
+    discourseContext: completedTurn({ contextScopeId: TASK_ID }),
+  });
+
+  assert.equal(contextual.resolved.semantic.intent, 'project_fit');
+  assert.equal(contextual.resolved.semantic.taskAction, 'continue');
+  assert.equal(contextual.resolved.semantic.discourseAction, 'follow_up');
+  assert.equal(contextual.resolved.legacyRoute.reasonCode, 'recruitment_context_follow_up');
+  assert.equal(contextual.resolved.legacyRoute.requiresEmbedding, true);
+  assert.equal(contextual.candidateFrame?.taskId, TASK_ID);
+  assert.deepEqual(contextual.resolved.semantic.evidencePlan, ['ranked_project_fit']);
+
+  const standalone = resolve('你再去查一下');
+  assert.equal(standalone.resolved.semantic.intent, 'general_conversation');
+  assert.equal(standalone.resolved.semantic.taskAction, 'temporary');
+
+  const afterTemporaryTurn = resolve('重新确认一下', {
+    currentFrame: activeFrame(),
+    discourseContext: completedTurn({
+      contextScopeId: '44444444-4444-4444-8444-444444444444',
+      user: { id: '41', role: 'user', text: '查一下今天的新闻。' },
+      assistant: { id: '42', role: 'assistant', text: '这是当前新闻摘要。' },
+    }),
+  });
+  assert.equal(afterTemporaryTurn.resolved.semantic.intent, 'general_conversation');
+  assert.equal(afterTemporaryTurn.resolved.semantic.taskAction, 'temporary');
+
+  const waitingForJd = resolve('你再去查一下', {
+    currentFrame: activeFrame({ status: 'waiting_input', waitingFor: ['job_description'] }),
+    discourseContext: completedTurn({ contextScopeId: TASK_ID }),
+  });
+  assert.equal(waitingForJd.resolved.semantic.intent, 'general_conversation');
+  assert.equal(waitingForJd.resolved.semantic.taskAction, 'temporary');
 });
 
 test('short and list-style job descriptions route without an 80-character or dual-heading requirement', () => {

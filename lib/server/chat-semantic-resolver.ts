@@ -242,6 +242,11 @@ function isPersonalHistoryQuestion(message: string): boolean {
   return /(?:你|morse|摩斯).{0,16}(?:做过|负责过|参与过|有).{0,24}(?:系统|项目|经验|经历)/iu.test(message);
 }
 
+function isBareRecheck(message: string): boolean {
+  const trimmed = message.trim().replace(/[。！!？?]+$/gu, '');
+  return /^(?:你)?(?:再|重新)(?:去)?(?:查|找|核对|确认)(?:一?下|一遍)?$/u.test(trimmed);
+}
+
 function isCorrection(message: string): boolean {
   return /(?:不是|不对|改成|更正|纠正)/iu.test(message);
 }
@@ -454,6 +459,10 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
   const reconstructedBridgeFrame = bridgeReconstruction.frame;
   const currentFrame = input.currentFrame ?? reconstructedBridgeFrame;
   const activeRecruitment = isActiveRecruitmentFrame(currentFrame);
+  const adjacentActiveRecruitment = Boolean(
+    currentFrame?.status === 'active'
+    && input.discourseContext?.contextScopeId === currentFrame.taskId,
+  );
   const baseRoute = routeChatTurn({
     request: input.request,
     ledger: input.ledger,
@@ -530,7 +539,9 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
     reasonCode = 'personal_capability_query';
     referent = { kind: 'capability', ref: capability.capabilityId! };
     capabilityEvidence = capability.evidenceClass === 'none' ? 'unavailable' : capability.evidenceClass;
-  } else if ((correction || /^(?:这些|那|这个|继续|还有|然后)/u.test(message)) && activeRecruitment) {
+  } else if ((correction
+    || (isBareRecheck(message) && adjacentActiveRecruitment)
+    || /^(?:这些|那|这个|继续|还有|然后)/u.test(message)) && activeRecruitment) {
     intent = 'project_fit';
     reasonCode = correction ? 'recruitment_context_correction' : 'recruitment_context_follow_up';
   } else if (clear.size > 0 && activeRecruitment) {
