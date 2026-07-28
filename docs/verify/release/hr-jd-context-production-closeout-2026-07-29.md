@@ -2,11 +2,11 @@
 
 > Date: 2026-07-29
 > Mode: `GOAL / CRITICAL / DEPLOYED`
-> Status: `SECOND_FIX_DEPLOYED / CAPABILITY_EVIDENCE_FAILURE_OBSERVED / THIRD_FIX_LOCAL_VERIFIED / REDEPLOY_PENDING`
+> Status: `THIRD_FIX_DEPLOYED / CURSOR_BOUNDARY_FAILURE_OBSERVED / FOURTH_FIX_LOCAL_VERIFIED / REDEPLOY_PENDING`
 
 ## Scope
 
-- Baseline release at task intake: `acecafc`; current production release: `e746ea4` on `master` and `origin/master`.
+- Baseline release at task intake: `acecafc`; current production release: `2440473` on `master` and `origin/master`.
 - Owned implementation: explicit JD semantic control isolation, recruitment retrieval chunking, and readiness resolution of the active Provider runtime.
 - Owned tests and operations knowledge: focused regressions, readiness/deployment contracts, two production runbooks, and the active Task Center pointer.
 - Excluded and untouched: `.github/`, `revolution-bc27857.tar.gz`, the absorbed `codex/dynamic-context` worktree, external repositories, production secrets, raw Provider payloads, invite codes, and Session values.
@@ -67,12 +67,28 @@
 - Failure-first planner regressions failed because `resume-facts` was absent, then passed after the correction both with ranked projects and with no threshold-qualified project. A production-shaped PostgreSQL integration proves a recruiter-chat JD projects the Claude Code resume fact into V2.2 while excluding Cursor from its evidence topics.
 - Fresh exit evidence: planner `14/14`, targeted PostgreSQL integration `1/1`, full unit suite `903/903`, PostgreSQL integration `344/344`, typecheck, scoped ESLint, 33-route production build, `git diff --check`, and the owned-diff sensitive-pattern scan all passed.
 
+## Third Deployment And Cursor Boundary Observation
+
+- Commit `2440473` was pushed to `origin/master`, archived as 19,656,329 bytes with SHA-256 `464eda6ab9f345ebc47b83a76544478bc911f41f36b770ac4c7f688a6f66b0a5`, and deployed to `/opt/revolution/releases/2440473/revolution` by rebuilding only Web and Worker.
+- Public health, protected 401 boundaries and `release:smoke` passed. All five containers stayed healthy with restart count 0; DB, Embedding and Edge identities were unchanged. Schema remained `001-013`, knowledge remained 41 documents / 48 chunks, and both active digest-V2 Provider targets retained `reasoning=high` with no context-window or output limit.
+- A new exact-label `HR interview` test Session completed recruiter entry turn `0a653ee5` as `project_fit / new_task / create` with five sources and evidence. The exact 682-character JD completed turn `1f270664` as `jd_match / follow_up / continue` with six sources and evidence and one Provider attempt.
+- Claude Code, Codex and WorkBuddy were correctly represented as direct evidence, closing the third defect. Acceptance stopped because the answer omitted Cursor entirely even though the same JD explicitly named it. No remaining follow-up question was sent on that failed history.
+
+## Fourth Correction
+
+- Root cause: when one capability had evidence, the planner emitted admissions only for the admitted knowledge sources and discarded `evidenceClass=none` assessments from the same query. `chat-service.ts` also never consumed unavailable admissions. The Provider therefore received direct Claude Code evidence but no trusted instruction that Cursor required an explicit evidence-boundary disclosure.
+- Correction: preserve unavailable capability admissions alongside direct or transferable evidence in normal and degraded JD planning. The service extracts only non-null unavailable capability IDs and passes them to a structured `<capability_evidence_boundaries>` block in trusted instructions. Every named ID must be disclosed as “当前审核资料无证据，建议面试核验”, may not be omitted, and may not be rewritten as “从未使用”. Cursor remains absent from `<approved_evidence>` and is not promoted into a synthetic source.
+- Failure-first evidence: planner, Context Packet and production-shaped PostgreSQL regressions each failed on the missing unavailable admission or boundary block, then passed after the correction. The Context Packet regression also proves duplicate IDs are canonicalized and that adding the boundary changes the signed generation request.
+- Fresh exit evidence: planner `14/14`, Context Packet `13/13`, targeted production-shaped PostgreSQL integration `1/1`, full unit suite `904/904`, PostgreSQL integration `344/344`, typecheck, scoped ESLint, 33-route production build, `git diff --check`, and the owned-diff sensitive scan all passed.
+- One initial full-unit run performed concurrently with typecheck and ESLint exposed a load-sensitive 10 ms/25 ms timeout-classification race in an untouched failover test. The exact test, its full file, and the serial full unit command all passed; neither failover code nor its tests were changed in this correction.
+
 ## Review Gate
 
 - Independent CRITICAL quality and compliance agents repeatedly failed at the shared Responses gateway with HTTP 502 before returning a verdict.
 - This is recorded as degraded independent assurance, not as a PASS. Controller inspection found no known blocker.
-- Final acceptance requires fresh production health gates plus 11 real HR turns beginning with the complete JD. Any irrelevant, unsupported, fabricated, refused, or failed answer stops the sequence for turn-level diagnosis.
+- Controller quality review confirmed unavailable admissions survive normal and degraded planning without affecting unrelated intents. Controller compliance review confirmed the IDs originate only from the audited capability ledger, are escaped as structured data, are not persisted as evidence, and enter the HMAC-protected trusted-instruction layer.
+- Final acceptance requires fresh production health gates plus 12 real HR turns: recruiter entry, the complete JD, and ten follow-up questions. Any irrelevant, omitted, unsupported, fabricated, refused, or failed answer stops the sequence for turn-level diagnosis.
 
 ## Next Action
 
-Commit and push the third correction's exact scope, redeploy the frozen commit to Web and Worker, expire the current test invite/session, then run a fresh isolated recruiter conversation with the complete JD and ten follow-up questions. Update this receipt to `PRODUCTION_OBSERVED` only if every answer and its turn metadata pass.
+Commit and push the fourth correction's exact scope, redeploy the frozen commit to Web and Worker, expire the current test invite/session, then run a fresh isolated recruiter conversation with the complete JD and ten follow-up questions. Update this receipt to `PRODUCTION_OBSERVED` only if every answer and its turn metadata pass.

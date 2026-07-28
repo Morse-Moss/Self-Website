@@ -180,6 +180,33 @@ test('stable serialization sorts object keys recursively without reordering arra
   assert.equal(Buffer.from(left).toString('utf8'), '{"list":[{"x":1,"y":2},3],"nested":{"a":1,"b":2},"z":1}');
 });
 
+test('unavailable capabilities are protected as mandatory evidence boundaries', () => {
+  const build = (capabilityEvidenceBoundaries: string[]) => buildContextPacket({
+    resolved: resolved('jd_match'),
+    currentInput: '需要使用 Claude Code 或 Cursor 独立交付网站。',
+    currentUserMessageId: '21',
+    projection: projection(),
+    digestKey: KEY,
+    digestKeyId: KEY_ID,
+    reasoningEffort: 'high',
+    capabilityEvidenceBoundaries,
+  });
+  const bounded = build(['cursor', 'cursor']);
+  const unbounded = build([]);
+  const instructions = bounded.normal.request.baseInstructions;
+
+  assert.match(instructions, /<capability_evidence_boundaries>/u);
+  assert.match(instructions, /"unavailableCapabilityIds":\["cursor"\]/u);
+  assert.match(instructions, /当前审核资料无证据，建议面试核验/u);
+  assert.match(instructions, /不得省略/u);
+  assert.match(instructions, /不得表述为“从未使用”/u);
+  assert.doesNotMatch(unbounded.normal.request.baseInstructions, /<capability_evidence_boundaries>/u);
+  assert.notEqual(
+    bounded.normal.generationRequestHmacSha256,
+    unbounded.normal.generationRequestHmacSha256,
+  );
+});
+
 test('v2 packet and generation HMACs bind target capabilities, variant and exact outbound body', () => {
   const buildPacket = (target: GenerationTargetBindingV2, revision = 1) => {
     const variant = v2Variant(target, revision);

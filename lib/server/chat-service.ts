@@ -662,6 +662,12 @@ function approvedEvidenceContext(knowledge: KnowledgeSource[]): string {
   )).join('\n\n');
 }
 
+function unavailableCapabilityIds(plannedEvidence: PlannedChatEvidence): string[] {
+  return [...new Set(plannedEvidence.admissions.flatMap((item) => (
+    item.level === 'unavailable' && item.capabilityId ? [item.capabilityId] : []
+  )))].sort();
+}
+
 function workflowSystemBoundary(
   request: NormalizedChatRequest,
   diagnosis: TurnDiagnosis | null,
@@ -891,6 +897,7 @@ async function prepareContextTurn(input: {
         status: bridgeStatus,
       } : null,
       degradedReason: plannedEvidence.degradedReason,
+      capabilityEvidenceBoundaries: unavailableCapabilityIds(plannedEvidence),
     });
     const canonicalSource = buildCanonicalAnswerSourceV2({
       ownerPipeline: 'context_packet_v22',

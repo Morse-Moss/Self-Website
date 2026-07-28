@@ -182,7 +182,7 @@ migration `012` 应用后，回滚只先设置 `MORSE_CHAT_CONTEXT_PACKET_ENABLE
 
 ## 8. 当前生产状态与硬化余项
 
-首个生产实例在 `39849e1` 完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实对话 smoke 和公网 live/ready/release smoke。2026-07-28 当前应用 release 为 `2220759`：招聘裸追问只在相邻同 Task 的 active 招聘上下文内续接；本次只替换 Web，Worker、DB、Embedding 与 Edge 容器身份不变。Context Packet 保持 enabled、percent `0`，白名单是精确 `HR interview` 标签的 capacity-eligible invite 与未过期 Session 所属 invite 的并集，最终共 6 个；未自动发送真实问题。公网健康、发布 smoke、未授权边界和新鲜错误日志门禁通过，真实回答质量等待用户亲自提问后观察。当前实例细节和脱敏证据以腾讯云实例手册及 `docs/verify/release/recruitment-bare-recheck-production-closeout-2026-07-28.md` 为准。
+首个生产实例在 `39849e1` 完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实对话 smoke 和公网 live/ready/release smoke。2026-07-29 当前应用 release 为 `2440473`：招聘入口与完整 JD 已稳定进入同一个 Context Packet V2.2 招聘 Task，完整 JD 会同时召回审核项目与 Claude Code/Codex/WorkBuddy direct evidence；但真实回答遗漏了 JD 明确询问的 Cursor，因此状态为 `PRODUCTION_OBSERVED_FAILURE / HR_ACCEPTANCE_STOPPED`，不得开始推广。该 release 只重建 Web/Worker，DB、Embedding 与 Edge 身份未变；Context Packet 保持 enabled、percent `0` 和精确 `HR interview` 标签准入。公网健康、发布 smoke、未授权边界和新鲜错误日志门禁通过，回答质量失败与第四次本地修复的脱敏证据以 `docs/verify/release/hr-jd-context-production-closeout-2026-07-29.md` 为准。
 
 以下事项完成前保持 `LIMITED_LAUNCH`，不标记完整 `ONLINE_READY`：
 
@@ -202,8 +202,8 @@ migration `012` 应用后，回滚只先设置 `MORSE_CHAT_CONTEXT_PACKET_ENABLE
 3. Web ready、对话失败：按主节点、备用 1、备用 2 的顺序检查 Chat Provider，再检查 Embedding/Search incident；不打印请求正文、响应正文或凭据。
 4. Outbox 堆积：检查 Worker 是否运行、alert mode、DB lease、Feishu 响应和 attempt cap。
 5. cleanup 过期：检查 Worker 稳定日志、DB lock 竞争和最后成功时间；不要手工绕过 10 天保留 SQL 顺序。
-# Latest release override (2026-07-28)
+# Latest release override (2026-07-29)
 
-- Current runtime commit: `bc27857`; `/opt/revolution/current` points to `/opt/revolution/releases/bc27857/revolution`.
+- Current runtime commit: `2440473`; `/opt/revolution/current` points to `/opt/revolution/releases/2440473/revolution`.
 - Context Packet remains enabled with percent `0`; exact label allowlist is `HR interview`, preserving the existing UUID allowlist.
-- Status is `DEPLOYED_UNOBSERVED`: deployment and health are observed, real answer quality awaits the user's own question.
+- Status is `PRODUCTION_OBSERVED_FAILURE`: route and direct capability evidence passed, but the complete-JD answer omitted Cursor; the fourth local correction must be deployed and pass a fresh isolated 12-turn HR chain before promotion.

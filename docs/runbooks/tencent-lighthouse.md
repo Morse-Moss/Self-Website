@@ -2,14 +2,14 @@
 
 本文对应 `aimorse.tech` 的生产部署。当前实例为腾讯云 Lighthouse 首尔节点，公网地址为 `43.133.68.202`。境外节点不需要 ICP 备案；DNS 解析和 HTTPS 证书签发已完成，域名实名状态继续由腾讯云注册控制台维护。
 
-## 当前生产状态（2026-07-28，招聘短追问修复与 HR 定向启用）
+## 当前生产状态（2026-07-29，HR 完整 JD 的 Cursor 边界失败）
 
-- 状态：`DEPLOYED_UNOBSERVED / HR_TARGETED / PERCENT_0`。当前运行提交为 `2220759`；`/opt/revolution/current` 与 Web Compose working directory 指向 `/opt/revolution/releases/2220759/revolution`，运行提交已在部署前进入 `origin/master`。本次未代替用户发送真实面试问题，因此只声明发布与配置已观察，不声明真实回答已通过。
-- 冻结归档为 19,579,605 bytes，SHA-256 `349883d721ac4b33b6d8b461f8191ca00b2bd740f42567f0a31f3a38616d9836`，本地与服务器哈希一致。Web 镜像为 `sha256:97e9488299793cfb05580b31e88850b0965488f8b6c1a2b77886c8c03cf35089`。
-- 修复只让“你再去查一下 / 重新确认一下”这类裸追问在相邻 completed 轮次仍属于同一个 active 招聘 Task 时继续项目匹配；独立输入、临时话题之后和等待 JD 补充时仍按普通对话处理，避免错误继承旧任务。
-- 本次只替换 Web。Worker 继续运行上一镜像 `sha256:22b6db3fd8a6b923c40f1c4a531b59f6b70bb43aca3dd9e92b32d734518ba65a`，Worker、DB、Embedding、Edge 容器身份未变；五容器均 healthy、restart count 为 0。没有运行 migration、grants 或 ingest。
-- Context Packet 保持 enabled、percent `0`。白名单严格等于“标签精确为 `HR interview` 且仍可创建 Session”的 invite ID 与“拥有未过期 HR Session”的 invite ID 并集；最终 capacity-eligible 为 6、未过期 Session 所属 invite 为 2，后者均已包含在前者中，因此白名单总数为 6。未输出 UUID、邀请码明文或个人信息。
-- 公网 live/ready/兼容 health、公开页面、未登录权限边界与 `release:smoke` 均通过；Web/Worker/Edge/DB 新鲜错误关键词计数为 0。没有临时验收邀请码、running turn 或自动真实 Chat/Provider 调用。受限环境备份为 `/opt/revolution/shared/.env.production.bak-hr-v22-targeted-20260728T040058Z`，完整脱敏证据见 `docs/verify/release/recruitment-bare-recheck-production-closeout-2026-07-28.md`。
+- 状态：`PRODUCTION_OBSERVED_FAILURE / HR_TARGETED / PERCENT_0`。当前运行提交为 `2440473`；`/opt/revolution/current` 与 Web/Worker Compose working directory 指向 `/opt/revolution/releases/2440473/revolution`，运行提交已在部署前进入 `origin/master`。第四次本地修复尚未部署，当前 release 不得用于正式 HR 推广。
+- 冻结归档为 19,656,329 bytes，SHA-256 `464eda6ab9f345ebc47b83a76544478bc911f41f36b770ac4c7f688a6f66b0a5`，本地与服务器一致；回滚 Web/Worker 镜像均保留 `rollback-e746ea4` 标签。
+- 该 release 让 V2.2 完整 JD 在审核项目之外合并 Claude Code、Codex、WorkBuddy 的 direct resume evidence。招聘入口与完整 JD 的路由、Task、JD slot、来源和 Provider attempt 均通过，但答案完全遗漏同一 JD 明确询问的 Cursor，真实十问门禁因此在 JD 轮停止。
+- 本次只替换 Web/Worker；DB、Embedding、Edge 身份未变，五容器均 healthy、restart count 为 0。没有运行 migration、grants 或 ingest；schema 保持 `001-013`，知识保持 41 documents / 48 chunks。
+- Context Packet 保持 enabled、percent `0` 和精确 `HR interview` 标签准入。活动 Provider route revision 3 的两个 target 均为 digest V2、`reasoning=high`，context/output limit 均未配置；没有因本轮缺口增加任何模型、输入、输出、历史、检索或 attempt 限制。
+- 公网 live/ready/兼容 health、公开页面、未登录权限边界与 `release:smoke` 均通过；发布后五类错误关键词计数均为 0。当前测试资源必须在第四次部署后停用并由全新单 Session 邀请替换；完整脱敏证据见 `docs/verify/release/hr-jd-context-production-closeout-2026-07-29.md`。
 
 ## 历史生产状态（2026-07-28，Controlled Context V2.2 单邀请码观察完成）
 
@@ -284,8 +284,8 @@ docker compose --env-file .env.production -f compose.production.yaml ps
 应用镜像按 Git 提交保留 digest。无 schema 变化的发布可以停止 `edge/web/worker` 并切回上一 digest；迁移是前向追加，不执行猜测性的 down migration。若已应用 migration `004`，旧镜像必须至少具备 Stage 1 兼容性并识别 004 manifest；否则停止发布并按前向修复恢复，不能删除配置表、回填假 checksum 或切回只认识 003 的镜像。
 
 公开知识继续从仓库重新 ingest，短期会话和交互分析按既定保留期处理，不把原始对话复制到临时备份。私密简历启用后不属于“可重建数据”：数据库、加密密文卷和对应密钥版本必须分离备份并共同恢复验证；任何备份都不得包含明文 PDF、邀请码明文或 Session token。是否启用腾讯云快照或独立加密备份，需要在首轮真实恢复演练后单独决定。
-# Latest release override (2026-07-28)
+# Latest release override (2026-07-29)
 
-- Current runtime commit: `bc27857`; `/opt/revolution/current` points to `/opt/revolution/releases/bc27857/revolution`.
-- Status: `DEPLOYED_UNOBSERVED / HR_TARGETED / PERCENT_0`. Only Web was replaced; no real interview question or Provider call was made.
-- Authoritative evidence: `docs/verify/release/hr-interview-context-recovery-production-closeout-2026-07-28.md`.
+- Current runtime commit: `2440473`; `/opt/revolution/current` points to `/opt/revolution/releases/2440473/revolution`.
+- Status: `PRODUCTION_OBSERVED_FAILURE / HR_TARGETED / PERCENT_0`. Route and direct capability evidence passed; the complete-JD answer omitted Cursor and stopped acceptance.
+- Authoritative evidence: `docs/verify/release/hr-jd-context-production-closeout-2026-07-29.md`.

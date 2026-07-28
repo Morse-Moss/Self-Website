@@ -244,6 +244,15 @@ test('JD match keeps audited resume capability evidence alongside ranked project
   assert.ok(resumeEvidence.topicIds?.includes('claude-code'));
   assert.equal(resumeEvidence.topicIds?.includes('cursor'), false);
   assert.ok(result.admissions.some((item) => item.evidenceId === resumeEvidence.chunkId));
+  assert.deepEqual(
+    result.admissions.filter((item) => item.level === 'unavailable'),
+    [{
+      evidenceId: null,
+      level: 'unavailable',
+      projectSlug: null,
+      capabilityId: 'cursor',
+    }],
+  );
 });
 
 test('JD match keeps audited resume capability evidence when no project qualifies', async () => {

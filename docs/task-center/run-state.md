@@ -4,12 +4,19 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**HR_JD_CAPABILITY_EVIDENCE_FIX_LOCAL_VERIFIED / REDEPLOY_PENDING / PRODUCTION_E746EA4**
+**HR_JD_CURSOR_BOUNDARY_FIX_LOCAL_VERIFIED / REDEPLOY_PENDING / PRODUCTION_2440473**
 
 ## next_allowed_pointer
-当前生产应用运行 `e746ea4`，实际 HR 路径“招聘入口 -> 完整 JD”已修复路由：生产 turn `02f72745` 为 `context_packet_v22 / jd_match / follow_up / continue`，召回 5 个项目来源和 5 个 evidence，并逐字保存完整 JD。但真实回答错误声称审核资料未披露 Claude Code，和 `content/site-content.json` 的直接 resume fact 冲突。第三次本地修复已让 V2.2 JD 规划器在语义项目证据之外合并命中的非项目审核能力证据；Claude Code 进入 direct evidence，Cursor 仍保持无证据边界，项目检索门槛不变。下一步只允许精确 commit/push 规划器、回归测试和收尾知识文件，冻结归档并只重建 Web/Worker；发布后停用当前测试资源，使用全新 `HR interview` 单 Session 邀请重新执行招聘入口、完整 JD 与 10 个追问。任一轮答非所问、无证据、编造、5xx 或拒答时立即停止并检查该 turn 元数据，不在失败历史上盲目重试。
+当前生产应用运行 `2440473`。招聘入口 turn `0a653ee5` 与完整 682 字 JD turn `1f270664` 的路由、项目和 Claude Code/Codex/WorkBuddy direct evidence 已正确，但回答遗漏同一 JD 明确询问的 Cursor。第四次修复已在混合能力查询中保留 `cursor/unavailable` admission，并把非空 unavailable capability IDs 写入受签名保护的 `<capability_evidence_boundaries>`；Provider 必须逐项说明“当前审核资料无证据、建议面试核验”，不得省略或改写成“从未使用”，同时 Cursor 仍不进入 `<approved_evidence>`。失败优先回归与完整本地出口均已通过。下一步只允许精确 commit/push 本轮代码、测试和收尾凭证，冻结归档并只重建 Web/Worker；随后过期当前测试资源，使用全新 `HR interview` 单 Session 邀请执行招聘入口、完整 JD 与 10 个追问。任一轮答非所问、无证据、编造、5xx、拒答或漏项时立即停止并检查该 turn 元数据，不在失败历史上盲目重试。
 
-## HR JD 正文与证据召回修复（2026-07-29，待部署）
+## HR JD Cursor 证据边界修复（2026-07-29，待四次部署）
+- Production observation：release `2440473` 的真实完整 JD turn 已召回 6 个来源和 evidence，Claude Code、Codex、WorkBuddy 为 direct，但回答完全遗漏同一 JD 明确询问的 Cursor，十问门禁因此暂停。
+- Root cause：规划器在混合能力命中时只从已有 knowledge 生成 admissions，丢弃 `evidenceClass=none` 的 Cursor；服务层也未消费 unavailable admissions，Provider 只看到正向证据而看不到必须披露的可信边界。
+- Fix：正常与检索降级路径都在真实来源 admissions 之外保留 unavailable capability；服务层只提取非空 ID，Context Packet 以结构化、转义、HMAC 保护的 `<capability_evidence_boundaries>` 强制逐项披露。Cursor 不伪造成 `KnowledgeSource`，不进入 `<approved_evidence>`，也不增加输入、输出、历史、检索、模型或 Provider attempt 限制。
+- Verification：planner `14/14`、Context Packet `13/13`、生产形状 PostgreSQL `1/1` 先红后绿；完整 unit `904/904`、PostgreSQL integration `344/344`、typecheck、scoped ESLint、33-route build、`git diff --check` 与敏感模式扫描通过。并行重负载曾触发一条未修改 failover 测试的 10 ms/25 ms 计时分类竞争；单用例、完整文件和串行完整 unit 均通过，本轮未扩大修改该边界。
+- Review：既有 CRITICAL 独立审查代理均在返回 verdict 前被共享 Responses HTTP 502 阻断；不得伪报通过。主控分别检查质量与合规视角，当前无已知 blocker；最终效果仍以全新生产 12 轮真实 HR 链为门禁。
+
+## HR JD 正文与证据召回修复（2026-07-29，已部署 `0c7f56a`）
 - 根因 1：显式 `jd_match` 请求仍对完整 JD 正文运行 correction/switch/completion/clear 检测，普通岗位描述中的“不、不是、不只”会把首轮误判为纠正或清空，因而没有创建 JD Task Frame。
 - 根因 2：默认 1024 字符检索分片使 682 字多主题 JD 只生成一个 embedding，相关项目在语义稀释后低于已校准的 `0.45` 门槛，Provider 前的来源与证据均为空。
 - 修复：显式 `jd_match` 把正文仅视为岗位数据；招聘/JD 证据检索按 256 字符完整边界分片，逐字保留全文，不降低相关性门槛，也不新增输入、输出、历史、检索或 Provider attempt 限制。
@@ -17,13 +24,13 @@
 - Review：CRITICAL 独立质量与合规审查多次被共享 Responses 网关 HTTP 502 阻断，未返回任何 verdict；不得伪报通过。主控已检查完整 diff，当前无已知 blocker，发布必须以真实生产 11 轮 HR 对话作为最终效果门禁。
 - Evidence：`docs/verify/release/hr-jd-context-production-closeout-2026-07-29.md`。
 
-## HR 招聘会话完整 JD 修复（2026-07-29，待二次部署）
+## HR 招聘会话完整 JD 修复（2026-07-29，已部署 `e746ea4`）
 - Production observation：release `0c7f56a` 的显式 `JD 匹配` 首轮召回 5 个来源并完成回答；实际招聘会话在入口回答后发送同一份完整 JD，服务端却记录为 `correction / wait`，Provider 前来源和 evidence 都是 0，回答错误声称没有可审核项目。
 - Root cause：上一修复只在 `workflow=jd_match` 时把正文视为数据；`workflow=chat / audience=recruiter` 的真实访客路径仍先运行 correction/completion/clear 检测。JD 中的普通否定与“完成”等岗位用语因此覆盖了已经成立的 JD 信号。
 - Fix：先根据完整文本、当前招聘 Task 和 workflow 判定 `jdLike`；JD 数据不再触发 correction/completion/clear，显式“换个岗位”仍执行 switch，非 JD 的真实纠正、清空和完成指令保持原行为。所有 `jd_match` intent 都把当前输入逐字保存为 JD slot，避免只截取最后一个“岗位要求”段落。
 - Verification：新增生产形状回归先红后绿；受影响边界 `44/44`、完整 unit、PostgreSQL integration `343/343`、typecheck、33-route build、scoped ESLint 和 `git diff --check` 通过。
 
-## HR JD 能力证据补全（2026-07-29，待三次部署）
+## HR JD 能力证据补全（2026-07-29，已部署 `2440473`）
 - Production observation：release `e746ea4` 的真实招聘入口为 `project_fit / new_task / create`，5 个来源和 evidence；完整 JD 为 `jd_match / follow_up / continue`，5 个项目来源和 evidence，路由问题已关闭。但回答称“现有资料未披露 Claude Code”，与审核事实源中“使用 Claude Code、Codex、WorkBuddy 完成开发、检查、测试、部署和维护”的 direct resume fact 冲突。
 - Root cause：V2.2 `rankedProjects()` 只保留带 `projectSlug` 的项目证据。JD 能力台账能正确识别 Claude Code direct 与 Cursor unavailable，但没有 projectSlug 的审核 resume fact 在 Context Packet 前被静默丢弃；旧 V2 JD 路径已有该类能力补充，V2.2 未吸收。
 - Fix：项目仍必须通过现有向量相关性门槛；另外只合并 JD 命中的非项目审核能力来源，按 document 聚合内容与 topic，避免重复。无项目通过门槛或检索降级时仍保留该审核能力来源，不增加模型、历史、输出或 Provider attempt 限制。

@@ -76,6 +76,23 @@ function admission(source: KnowledgeSource): EvidenceAdmission {
   };
 }
 
+function admissions(
+  knowledge: readonly KnowledgeSource[],
+  assessments: readonly CapabilityAssessment[] = [],
+): EvidenceAdmission[] {
+  return [
+    ...knowledge.map(admission),
+    ...assessments
+      .filter((assessment) => assessment.evidenceClass === 'none')
+      .map((assessment) => ({
+        evidenceId: null,
+        level: 'unavailable' as const,
+        projectSlug: null,
+        capabilityId: assessment.capabilityId,
+      })),
+  ];
+}
+
 function capabilitySource(
   reference: CapabilityEvidenceRef,
   level: 'direct' | 'transferable',
@@ -123,14 +140,7 @@ function capabilityEvidence(assessments: readonly CapabilityAssessment[]): Plann
   const knowledge = [...byKey.values()];
   return {
     knowledge,
-    admissions: knowledge.length > 0
-      ? knowledge.map(admission)
-      : assessments.map((assessment) => ({
-          evidenceId: null,
-          level: 'unavailable' as const,
-          projectSlug: null,
-          capabilityId: assessment.capabilityId,
-        })),
+    admissions: admissions(knowledge, assessments),
     retrievalScores: [],
     degradedReason: null,
   };
@@ -247,7 +257,7 @@ function fallbackProjects(
   const knowledge = mergeRankedCapabilitySources(projects, query, ledger);
   return {
     knowledge,
-    admissions: knowledge.map(admission),
+    admissions: admissions(knowledge, assessCapabilities(query, ledger)),
     retrievalScores: [],
     degradedReason,
   };
@@ -322,7 +332,7 @@ async function rankedProjects(input: PlanChatEvidenceInput): Promise<PlannedChat
   const knowledge = mergeRankedCapabilitySources(projects, query, input.ledger);
   return {
     knowledge,
-    admissions: knowledge.map(admission),
+    admissions: admissions(knowledge, assessCapabilities(query, input.ledger)),
     retrievalScores: selected.map(([slug, source]) => ({
       evidenceId: `project:${slug}`,
       score: source.score,

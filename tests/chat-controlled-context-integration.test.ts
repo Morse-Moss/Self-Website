@@ -1817,6 +1817,14 @@ test('recruiter-chat JD projects audited Claude Code evidence into V2.2', async 
     assert.match(resumeEvidence.content, /使用 Claude Code、Codex、WorkBuddy 完成开发/u);
     assert.ok(resumeEvidence.topicIds.includes('claude-code'));
     assert.equal(resumeEvidence.topicIds.includes('cursor'), false);
+    const boundaryBlock = provider.requests[1].instructions.match(
+      /<capability_evidence_boundaries>([\s\S]*?)<\/capability_evidence_boundaries>/u,
+    )?.[1];
+    assert.ok(boundaryBlock);
+    assert.match(boundaryBlock, /"unavailableCapabilityIds":\["cursor"\]/u);
+    assert.match(boundaryBlock, /当前审核资料无证据，建议面试核验/u);
+    assert.match(boundaryBlock, /不得省略/u);
+    assert.match(boundaryBlock, /不得表述为“从未使用”/u);
   } finally {
     await cleanupFixture(fixture);
   }

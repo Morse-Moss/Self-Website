@@ -178,6 +178,23 @@ function basePolicy(): string {
   ].join('\n');
 }
 
+function capabilityEvidenceBoundaryInstructions(capabilityIds: readonly string[]): string {
+  const unavailableCapabilityIds = [...new Set(capabilityIds)].sort();
+  if (unavailableCapabilityIds.length === 0) return '';
+  return [
+    '<capability_evidence_boundaries>',
+    renderData({
+      unavailableCapabilityIds,
+      requiredDisclosure: '当前审核资料无证据，建议面试核验',
+      requirements: [
+        '必须对 unavailableCapabilityIds 中的每一项逐项说明 requiredDisclosure，不得省略。',
+        '不得表述为“从未使用”或其他否定经历。',
+      ],
+    }),
+    '</capability_evidence_boundaries>',
+  ].join('\n');
+}
+
 function buildPacket(
   currentInput: string,
   currentUserMessageId: string,
@@ -231,10 +248,15 @@ function buildPacket(
   };
 }
 
-function buildInstructions(packet: CanonicalContextPacket, resolved: ResolvedChatTurn): string {
+function buildInstructions(
+  packet: CanonicalContextPacket,
+  resolved: ResolvedChatTurn,
+  capabilityEvidenceBoundaries: readonly string[],
+): string {
   const blocks = [
     basePolicy(),
     responseContract(resolved),
+    capabilityEvidenceBoundaryInstructions(capabilityEvidenceBoundaries),
     packet.taskFrame ? `<task_frame>${renderData(packet.taskFrame)}</task_frame>` : '',
     packet.taskInputs.length > 0 ? `<task_inputs>${renderData(packet.taskInputs)}</task_inputs>` : '',
     packet.approvedEvidence.length > 0
@@ -298,6 +320,7 @@ export interface BuildContextPacketInput {
     status: ContextPacketManifest['legacy_bridge_status'];
   } | null;
   degradedReason?: string | null;
+  capabilityEvidenceBoundaries?: readonly string[];
 }
 
 export type BuildCanonicalAnswerSourceV2Input = Omit<CanonicalAnswerSourceV2, 'schemaVersion'>;
@@ -471,7 +494,11 @@ export function buildContextPacket(input: BuildContextPacketInput): BuiltContext
   const normalRequest = buildGenerationRequest({
     packetHmacKeyId: input.digestKeyId,
     packetHmacSha256,
-    baseInstructions: buildInstructions(packet, input.resolved),
+    baseInstructions: buildInstructions(
+      packet,
+      input.resolved,
+      input.capabilityEvidenceBoundaries ?? [],
+    ),
     messages: buildMessages(packet),
     reasoningEffort: input.reasoningEffort,
   });
