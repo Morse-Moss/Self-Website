@@ -572,7 +572,7 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
       || (baseRoute.routeKind === 'personal_fact'
         && baseRoute.reasonCode === 'personal_history_query')
       || (baseRoute.routeKind === 'grounded'
-        && baseRoute.reasonCode === 'project_fact_query'))
+        && ['project_fact_query', 'portfolio_evidence_query'].includes(baseRoute.reasonCode)))
     && projectSlugs.length !== 1
     && recruitmentEvaluationQuestion,
   );

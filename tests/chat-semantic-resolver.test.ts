@@ -427,6 +427,7 @@ test('adjacent recruiter evaluation questions keep the exact JD frame without ex
     '如何依据用户反馈和业务数据持续迭代？',
     '独立技术负责时具体承担哪些工作？',
     '当前最明显的能力差距是什么？',
+    '从招聘方视角，候选人的三项核心能力分别有哪些项目事实可以核验？',
     '结合前文与 JD，比较最强项目和最大招聘风险。',
     '为什么你适合 AI 产品负责人岗位？',
   ];

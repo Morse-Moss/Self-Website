@@ -4,10 +4,10 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**AGENT_READY_QA_MVP / CLOSE / OBSERVED_D223AFE**
+**NIGHT_STABILITY_20260730 / BASELINE / ACTIVE**
 
 ## next_allowed_pointer
-当前 `master / origin/master`、功能分支与生产 Web/Worker release 均为 `d223afe`。Agent-Ready 基础问答 MVP 的单一真实招聘 Session 已完成入口、完整 JD 与 10 个正式问题：12/12 turn 完成，后 11 turn 各一次 Provider completed/winner，无失败或重复调用；同一 Task/JD、5 个审核项目、9 条审核证据、direct executor 与 `context_packet_v22` 保持稳定，所有正式回答通过相关性、拒答、错误证据否认、隐私和数字编造门禁。最终 15.53 分钟窗口内 live/ready、五容器健康/重启、Web/Worker/Edge/DB 错误与 Edge 5xx 全部通过；邀请和唯一 Session 已清理，清理后 release smoke 仍为 `{"ok":true}`。状态为 `OBSERVED / HR_QA_MVP_ACCEPTED / LIMITED_LAUNCH / PERCENT_0`。下一步不是继续堆功能，而是开始定向 HR 推广、收集自然 badcase；Skills、工具 Agent 与自动联网继续冻结，只有真实复现证明基础规划、证据或回答存在缺口时才重新进入开发。
+执行 `docs/task-center/night-stability-2026-07-30/stage-contracts/01-baseline.md`：先复核生产 release、容器、日志与清理基线，再通过一个隔离的真实 Edge Session 完成招聘入口、JD 和自然改写问答。任一答非所问、错误证据否认、编造、泄露、Task/JD/evidence 漂移、SSE 终态异常、重复计费或 5xx 立即停止当前波次并登记 failure；没有失败才进入多 Session 阶段。今晚不接 Skills、工具 Agent 或联网搜索。
 
 ## Agent-Ready 基础问答 MVP（2026-07-29，生产真实验收完成）
 - Architecture：单一确定性 TurnPlanner 生成版本化 TurnPlan，Evidence Admission、Direct Executor 与非阻断 Answer Validator 各自只有一个职责；不再有第二次语义模型调用、在线输出拒绝守卫或质量触发重生成。未来 Skills/工具/Agent 只能挂到 executor 边界，当前未接入。
