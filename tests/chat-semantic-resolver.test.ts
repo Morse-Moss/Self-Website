@@ -422,6 +422,7 @@ test('adjacent recruiter evaluation questions keep the exact JD frame without ex
     '如何接手陌生的 AI 生成前后端代码？',
     '如何保证快速交付仍可验证、可回滚？',
     '如何在主备模型之间切换并保证可回滚？',
+    '模型异常时，如何切换到备用渠道并防止同一请求跑两遍？',
     '你如何切换到新岗位并快速适应？',
     'Claude Code 与模型渠道的真实能力边界是什么？',
     '如何依据用户反馈和业务数据持续迭代？',

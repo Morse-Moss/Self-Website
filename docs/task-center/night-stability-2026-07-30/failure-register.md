@@ -44,3 +44,22 @@
 - Correction: under the existing strict recruiter, active-JD, adjacent-scope and evaluation-question constraints, admit both grounded evidence reason codes. No slot extraction, Task identity, evidence policy, Provider attempt policy, schema, configuration or feature surface changed.
 - Verification: a synthetic equivalent regression produces `recruitment_intake` under the old condition and `jd_match / recruitment_evaluation_follow_up` under the correction. Affected semantic, PostgreSQL, SSE and route-policy checks passed; deterministic chat evaluation passed `111/111` with zero external calls; typecheck, full `1262/1262` suite and 33-route production build passed.
 - Disposition: first authorized correction cycle; commit, push and Web/Worker-only deployment are pending. Fresh production testing must restart from a clean invite and Session.
+
+## NS-HARNESS-005 - Closed
+
+- Time: `2026-07-30T01:08:53+08:00`
+- Scope: first post-release Edge baseline attempt, second browser-backed turn.
+- Failure: the harness waited synchronously inside one CDP `/eval` call for a Provider-backed browser request. The proxy's 30-second evaluation window expired while the browser request itself remained a valid in-flight application operation.
+- Evidence: the first browser turn completed; the stop was public `CDP_EVAL_FAILED`, with no application 5xx or answer gate failure. The dedicated invite and Session were cleaned and release smoke passed.
+- Disposition: browser requests now start asynchronously in the page and are polled by job state, with a bounded 330-second client wait. The temporary runner also derives its release ID from the immutable release path. No product code or production data was changed.
+- Product impact: none observed; this was a browser-test transport contract failure.
+
+## NS-PRODUCT-006 - Corrected Locally, Deployment Pending
+
+- Time: `2026-07-30T01:14:12+08:00`
+- Scope: second post-release Edge baseline attempt, valid same-workflow recruiter Task with complete JD, final natural failover question.
+- Failure: the request completed with one Provider winner and a nonblank answer, but the durable route was `general_conversation / one_shot / temporary` with no evidence instead of continuing the active JD evaluation. The zero-tolerance Task/JD/evidence gate stopped the wave after 10 completed turns.
+- Root cause: `looksLikeRecruitmentEvaluationQuestion()` required a professional action cue; the operational verb `切换` was absent, so a model-failover question with a `模型` domain cue was treated as general conversation.
+- Correction: add `切换` to the existing professional action signal. The change remains bounded by the existing interviewer, recruiter, active-JD, adjacent-scope and evaluation-question gate; it does not broaden public routing, alter evidence policy, add calls or change any data/config contract.
+- Verification: old behavior reproduced `general_conversation / temporary / none`; the corrected production wording resolves to `jd_match / recruitment_evaluation_follow_up / continue / ranked_project_fit`. A synthetic equivalent regression is RED before the change and GREEN after it; affected suites passed `82/82`, PostgreSQL/SSE/service integration passed, `chat:eval` passed `111/111`, typecheck passed, full suite passed `1262/1262` with zero skips and build passed with 33 routes.
+- Disposition: second and final authorized correction cycle; commit, push and Web/Worker-only deployment are pending. Restart stability observation from a clean invite after this release.
