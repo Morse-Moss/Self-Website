@@ -3,9 +3,21 @@ import type {
   ConversationTaskFrameV22,
   ResolvedChatTurn,
 } from '../contracts/chat-context.ts';
+import type {
+  CompiledChatEvidenceCatalog,
+  CompiledEvidenceReference,
+  EvidenceBundle,
+} from '../contracts/chat-evidence-catalog.ts';
 import type { KnowledgeSource } from '../contracts/chat-runtime.ts';
+import type {
+  ConversationSessionSnapshot,
+  TurnPlanV1,
+} from '../contracts/chat-turn-plan.ts';
 import type { Project, ProjectSlug } from '../contracts/site-content.ts';
 import { siteContent } from '../site-content.ts';
+import {
+  allApprovedPortfolioEvidence,
+} from './chat-evidence-catalog.ts';
 import { approvedProjectSource } from './chat-project-evidence.ts';
 import {
   assessCapabilities,
@@ -42,6 +54,18 @@ export interface PlanChatEvidenceInput {
   retrieve?(embedding: number[], legacyLimit?: number): Promise<KnowledgeSource[]>;
   embedAll?(queries: readonly string[]): Promise<readonly number[][]>;
   retrieveAll?(embeddings: readonly number[][]): Promise<KnowledgeSource[]>;
+}
+
+export interface PlanEvidenceBundleInput {
+  plan: TurnPlanV1;
+  session: ConversationSessionSnapshot;
+  catalog: CompiledChatEvidenceCatalog;
+  retrieval: {
+    embed?(query: string): Promise<number[]>;
+    retrieve?(embedding: number[], legacyLimit?: number): Promise<KnowledgeSource[]>;
+    embedAll?(queries: readonly string[]): Promise<readonly number[][]>;
+    retrieveAll?(embeddings: readonly number[][]): Promise<KnowledgeSource[]>;
+  };
 }
 
 const projectOrder = new Map(
@@ -355,7 +379,7 @@ function noEvidence(): PlannedChatEvidence {
   return { knowledge: [], admissions: [], retrievalScores: [], degradedReason: null };
 }
 
-export async function planChatEvidence(input: PlanChatEvidenceInput): Promise<PlannedChatEvidence> {
+async function planLegacyChatEvidence(input: PlanChatEvidenceInput): Promise<PlannedChatEvidence> {
   switch (input.resolved.semantic.intent) {
     case 'identity_fact': {
       const knowledge = [identitySource()];
@@ -392,4 +416,172 @@ export async function planChatEvidence(input: PlanChatEvidenceInput): Promise<Pl
     default:
       return noEvidence();
   }
+}
+
+function evidenceIdForReference(
+  reference: CompiledEvidenceReference,
+): string {
+  return reference.kind === 'project'
+    ? `project:${reference.projectSlug}`
+    : `resume-fact:${reference.resumeFactId}`;
+}
+
+function approvedForPlan(input: PlanEvidenceBundleInput): {
+  approved: KnowledgeSource[];
+  unavailableCapabilityIds: string[];
+} {
+  const allApproved = allApprovedPortfolioEvidence(input.catalog);
+  switch (input.plan.evidence.kind) {
+    case 'none':
+    case 'controlled_search':
+      return { approved: [], unavailableCapabilityIds: [] };
+    case 'identity':
+      return { approved: [identitySource()], unavailableCapabilityIds: [] };
+    case 'portfolio_full':
+      return { approved: allApproved, unavailableCapabilityIds: [] };
+    case 'named_projects': {
+      const requested = new Set(input.plan.evidence.projectSlugs);
+      return {
+        approved: allApproved.filter((source) => (
+          source.projectSlug !== null
+          && source.projectSlug !== undefined
+          && requested.has(source.projectSlug as ProjectSlug)
+        )),
+        unavailableCapabilityIds: [],
+      };
+    }
+    case 'capabilities': {
+      const selectedEvidenceIds = new Set<string>();
+      const unavailableCapabilityIds: string[] = [];
+      for (const capabilityId of input.plan.evidence.capabilityIds) {
+        const capability = input.catalog.capabilities.get(capabilityId);
+        if (!capability) throw new Error(`CHAT_EVIDENCE_CATALOG_INVALID: unknown capability ${capabilityId}`);
+        if (capability.evidenceClass === 'unavailable') {
+          unavailableCapabilityIds.push(capability.id);
+          continue;
+        }
+        for (const reference of [...capability.direct, ...capability.transferable]) {
+          selectedEvidenceIds.add(evidenceIdForReference(reference));
+        }
+      }
+      return {
+        approved: input.plan.evidence.includePortfolio
+          ? allApproved
+          : allApproved.filter((source) => selectedEvidenceIds.has(source.chunkId)),
+        unavailableCapabilityIds,
+      };
+    }
+    default:
+      throw new Error('TURN_PLAN_EVIDENCE_UNSUPPORTED');
+  }
+}
+
+function bundleAdmissions(
+  approved: readonly KnowledgeSource[],
+  unavailableCapabilityIds: readonly string[],
+): EvidenceBundle['admissions'] {
+  return [
+    ...approved.map((source) => ({
+      evidenceId: source.chunkId,
+      level: source.evidenceLevel ?? 'direct' as const,
+      projectSlug: source.projectSlug ?? null,
+      capabilityId: source.topicIds?.find((topic) => topic !== 'resume'
+        && !projectOrder.has(topic as ProjectSlug)) ?? null,
+    })),
+    ...unavailableCapabilityIds.map((capabilityId) => ({
+      evidenceId: null,
+      level: 'unavailable' as const,
+      projectSlug: null,
+      capabilityId,
+    })),
+  ];
+}
+
+function emptyRelevance(approved: readonly KnowledgeSource[]): EvidenceBundle['relevance'] {
+  return approved.map((source) => ({ evidenceId: source.chunkId, score: null }));
+}
+
+async function rankApprovedEvidence(
+  input: PlanEvidenceBundleInput,
+  approved: readonly KnowledgeSource[],
+): Promise<{
+  relevance: EvidenceBundle['relevance'];
+  degradedReason: EvidenceBundle['degradedReason'];
+}> {
+  if (approved.length === 0 || (input.plan.evidence.kind === 'portfolio_full'
+    && !input.plan.evidence.rankForQuestion)) {
+    return { relevance: emptyRelevance(approved), degradedReason: null };
+  }
+  const queries = partitionCompleteRetrievalQuery(
+    input.session.currentInput,
+    RECRUITMENT_RETRIEVAL_CHUNK_CHARACTERS,
+  );
+  let embeddings: readonly number[][];
+  try {
+    if (input.retrieval.embedAll) {
+      embeddings = await input.retrieval.embedAll(queries);
+    } else if (input.retrieval.embed) {
+      embeddings = await Promise.all(queries.map((query) => input.retrieval.embed!(query)));
+    } else {
+      throw new Error('EMBEDDING_UNAVAILABLE');
+    }
+    if (embeddings.length !== queries.length) throw new Error('EMBEDDING_UNAVAILABLE');
+  } catch {
+    return { relevance: emptyRelevance(approved), degradedReason: 'embedding' };
+  }
+
+  let candidates: KnowledgeSource[];
+  try {
+    if (input.retrieval.retrieveAll) {
+      candidates = await input.retrieval.retrieveAll(embeddings);
+    } else if (input.retrieval.retrieve) {
+      candidates = (await Promise.all(
+        embeddings.map((embedding) => input.retrieval.retrieve!(embedding)),
+      )).flat();
+    } else {
+      throw new Error('RETRIEVAL_UNAVAILABLE');
+    }
+  } catch {
+    return { relevance: emptyRelevance(approved), degradedReason: 'retrieval' };
+  }
+
+  const scoreFor = (source: KnowledgeSource): number | null => {
+    const scores = candidates
+      .filter((candidate) => (
+        candidate.chunkId === source.chunkId
+        || (source.projectSlug && candidate.projectSlug === source.projectSlug)
+        || (source.projectSlug === null && candidate.documentId === source.documentId)
+      ))
+      .map((candidate) => candidate.score)
+      .filter(Number.isFinite);
+    return scores.length > 0 ? Math.max(...scores) : null;
+  };
+  return {
+    relevance: approved.map((source) => ({
+      evidenceId: source.chunkId,
+      score: scoreFor(source),
+    })),
+    degradedReason: null,
+  };
+}
+
+async function planEvidenceBundle(input: PlanEvidenceBundleInput): Promise<EvidenceBundle> {
+  const { approved, unavailableCapabilityIds } = approvedForPlan(input);
+  const { relevance, degradedReason } = await rankApprovedEvidence(input, approved);
+  return {
+    catalogVersion: 2,
+    approved,
+    admissions: bundleAdmissions(approved, unavailableCapabilityIds),
+    relevance,
+    unavailableCapabilityIds,
+    degradedReason,
+  };
+}
+
+export function planChatEvidence(input: PlanEvidenceBundleInput): Promise<EvidenceBundle>;
+export function planChatEvidence(input: PlanChatEvidenceInput): Promise<PlannedChatEvidence>;
+export function planChatEvidence(
+  input: PlanEvidenceBundleInput | PlanChatEvidenceInput,
+): Promise<EvidenceBundle | PlannedChatEvidence> {
+  return 'plan' in input ? planEvidenceBundle(input) : planLegacyChatEvidence(input);
 }

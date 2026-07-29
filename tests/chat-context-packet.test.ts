@@ -9,6 +9,7 @@ import type {
   GenerationVariantV2,
   ResolvedChatTurn,
 } from '../lib/contracts/chat-context.ts';
+import type { EvidenceBundle } from '../lib/contracts/chat-evidence-catalog.ts';
 import type { KnowledgeSource } from '../lib/contracts/chat-runtime.ts';
 import {
   buildTargetContextPacketV2,
@@ -205,6 +206,49 @@ test('unavailable capabilities are protected as mandatory evidence boundaries', 
     bounded.normal.generationRequestHmacSha256,
     unbounded.normal.generationRequestHmacSha256,
   );
+});
+
+test('context packet serializes bundle-approved evidence and current input exactly once', () => {
+  const currentInput = 'exact bundle current input';
+  const approved = [
+    evidence('content-agent', 'approved content agent', 1),
+    evidence('auto-operations', 'approved auto operations', 1),
+  ];
+  const bundle: EvidenceBundle = {
+    catalogVersion: 2,
+    approved,
+    admissions: approved.map((source) => ({
+      evidenceId: source.chunkId,
+      level: 'direct',
+      projectSlug: source.projectSlug ?? null,
+      capabilityId: null,
+    })),
+    relevance: [
+      { evidenceId: approved[0].chunkId, score: 0.12 },
+      { evidenceId: approved[1].chunkId, score: null },
+    ],
+    unavailableCapabilityIds: [],
+    degradedReason: null,
+  };
+
+  const built = buildContextPacket({
+    resolved: resolved('project_fit'),
+    currentInput,
+    currentUserMessageId: '21',
+    projection: projection({ evidence: [evidence('digital-morse', 'legacy projection')] }),
+    evidenceBundle: bundle,
+    digestKey: KEY,
+    digestKeyId: KEY_ID,
+    reasoningEffort: 'high',
+  });
+  const serialized = Buffer.from(built.canonicalPacketBytes).toString('utf8');
+
+  for (const source of bundle.approved) {
+    assert.equal(serialized.split(source.chunkId).length - 1, 1);
+  }
+  assert.equal(serialized.split(currentInput).length - 1, 1);
+  assert.deepEqual(built.manifest.evidence_ids, approved.map((source) => source.chunkId));
+  assert.deepEqual(built.manifest.retrieval_scores, bundle.relevance);
 });
 
 test('v2 packet and generation HMACs bind target capabilities, variant and exact outbound body', () => {

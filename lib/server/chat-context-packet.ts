@@ -21,6 +21,7 @@ import {
   type GenerationRequestIntegrity,
   type ResolvedChatTurn,
 } from '../contracts/chat-context.ts';
+import type { EvidenceBundle } from '../contracts/chat-evidence-catalog.ts';
 
 const CONTEXT_DOMAIN = Buffer.from('morse/context-packet/v1\0', 'utf8');
 const GENERATION_DOMAIN = Buffer.from('morse/generation-request/v1\0', 'utf8');
@@ -310,6 +311,7 @@ export interface BuildContextPacketInput {
   currentInput: string;
   currentUserMessageId: string;
   projection: ContextProjection;
+  evidenceBundle?: EvidenceBundle;
   digestKey: Buffer;
   digestKeyId: string;
   reasoningEffort: ContextReasoningEffort | null;
@@ -481,7 +483,7 @@ export function buildContextPacket(input: BuildContextPacketInput): BuiltContext
     throw new ContextPacketBuildError('CONTEXT_PACKET_SERIALIZATION_FAILED');
   }
   const history = [...input.projection.history];
-  const evidence = [...input.projection.evidence];
+  const evidence = [...(input.evidenceBundle?.approved ?? input.projection.evidence)];
   const packet = buildPacket(
     input.currentInput,
     input.currentUserMessageId,
@@ -497,7 +499,9 @@ export function buildContextPacket(input: BuildContextPacketInput): BuiltContext
     baseInstructions: buildInstructions(
       packet,
       input.resolved,
-      input.capabilityEvidenceBoundaries ?? [],
+      input.evidenceBundle?.unavailableCapabilityIds
+        ?? input.capabilityEvidenceBoundaries
+        ?? [],
     ),
     messages: buildMessages(packet),
     reasoningEffort: input.reasoningEffort,
@@ -542,11 +546,13 @@ export function buildContextPacket(input: BuildContextPacketInput): BuiltContext
     eviction_reason_codes: [],
     token_estimate_by_layer: layerTokenEstimates(packet),
     evidence_ids: packet.approvedEvidence.map((source) => String(source.evidenceId)),
-    retrieval_scores: packet.approvedEvidence.map((source) => ({
-      evidenceId: String(source.evidenceId),
-      score: Number(source.score),
-    })),
-    degraded_reason: input.degradedReason ?? null,
+    retrieval_scores: input.evidenceBundle
+      ? [...input.evidenceBundle.relevance]
+      : packet.approvedEvidence.map((source) => ({
+          evidenceId: String(source.evidenceId),
+          score: Number(source.score),
+        })),
+    degraded_reason: input.evidenceBundle?.degradedReason ?? input.degradedReason ?? null,
     packet_hmac_key_id: input.digestKeyId,
     packet_hmac_sha256: packetHmacSha256,
   };

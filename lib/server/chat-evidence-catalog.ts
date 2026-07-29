@@ -196,6 +196,7 @@ export function compileChatEvidenceCatalog(
   return {
     version: 2,
     projects,
+    resumeFacts: [...(content.profile.resumeFacts ?? [])],
     capabilities,
     unresolvedReferences: [],
     projectAliases: projectAliasRows.map(({ id, normalized }) => ({ slug: id, normalized })),
@@ -301,15 +302,7 @@ export function allApprovedPortfolioEvidence(
   catalog: CompiledChatEvidenceCatalog,
 ): KnowledgeSource[] {
   const projects = catalog.projects.map((entry) => approvedProjectSource(entry.project));
-  const resumeFacts = new Map<string, NonNullable<SiteContent['profile']['resumeFacts']>[number]>();
-  for (const capability of catalog.capabilities.values()) {
-    for (const reference of [...capability.direct, ...capability.transferable]) {
-      if (reference.kind === 'resume_fact') {
-        resumeFacts.set(reference.resumeFactId, reference.resumeFact);
-      }
-    }
-  }
-  return [...projects, ...resumeFacts.values().map(resumeFactSource)];
+  return [...projects, ...catalog.resumeFacts.map(resumeFactSource)];
 }
 
 export const compiledChatEvidenceCatalog = compileChatEvidenceCatalog(

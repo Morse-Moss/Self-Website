@@ -604,7 +604,7 @@ export const hrQaMvpChain = {
 } as const;
 ```
 
-- [ ] **Step 2: Write RED full-portfolio evidence tests**
+- [x] **Step 2: Write RED full-portfolio evidence tests**
 
 In `tests/chat-evidence-planner.test.ts`:
 
@@ -631,7 +631,7 @@ node --env-file-if-exists=.env.local --test tests/chat-evidence-planner.test.ts
 
 Expected: FAIL because the current ranked path applies `LOCAL_EVIDENCE_MIN_SCORE` to admission.
 
-- [ ] **Step 3: Implement `EvidenceBundle` policy**
+- [x] **Step 3: Implement `EvidenceBundle` policy**
 
 Change `planChatEvidence()` to accept `{ plan, session, catalog, ...retrieval }` and return `EvidenceBundle`.
 
@@ -652,7 +652,7 @@ return {
 
 Deduplicate by stable `chunkId`; preserve catalog order. `LOCAL_EVIDENCE_MIN_SCORE` remains in RAG evaluation and may annotate relevance, but it cannot remove a Catalog-approved item from HR bundles.
 
-- [ ] **Step 4: Serialize all approved facts exactly once**
+- [x] **Step 4: Serialize all approved facts exactly once**
 
 Modify `chat-context-packet.ts` so `CanonicalAnswerSourceV2.approvedEvidence` comes from `bundle.approved` and `retrieval_scores` comes from `bundle.relevance`. Add an assertion in `tests/chat-context-packet.test.ts`:
 
@@ -663,7 +663,7 @@ for (const source of bundle.approved) {
 assert.equal(serialized.split(session.currentInput).length - 1, 1);
 ```
 
-- [ ] **Step 5: Run evidence/packet/regression checks**
+- [x] **Step 5: Run evidence/packet/regression checks**
 
 ```powershell
 node --env-file-if-exists=.env.local --test tests/chat-evidence-catalog.test.ts tests/chat-evidence-planner.test.ts tests/chat-context-packet.test.ts tests/rag-integration.test.ts
@@ -672,7 +672,7 @@ npm run rag:eval
 
 Expected: PASS; RAG evaluation remains a retrieval metric, while full HR admission is proven separately.
 
-- [ ] **Step 6: Commit evidence separation**
+- [x] **Step 6: Commit evidence separation**
 
 ```powershell
 git add lib/server/chat-evidence-planner.ts lib/server/chat-context-packet.ts tests/chat-evidence-planner.test.ts tests/chat-context-packet.test.ts tests/fixtures/hr-qa-mvp-chain.ts
@@ -1312,8 +1312,8 @@ Do not recommend large HR promotion unless the real chain passes and the remaini
 
 ## Resume Pointer
 
-Current: `TASK_4 / RED / IN_PROGRESS`.
+Current: `TASK_5 / RED / IN_PROGRESS`.
 
-Last verified: Task 3 is locally committed as `ede44a7`; planner/semantic regressions passed `81/81`, TypeScript passed, and `chat:eval` passed `96/96` with `externalCalls=0`. All ten synthetic HR questions continue one task with full-portfolio or portfolio-backed capability requirements. No Provider call, push or deployment has occurred.
+Last verified: Task 4 is locally committed as `fdd7fc2`; focused regressions passed `43/43`, TypeScript passed, and loopback BGE/pgvector `rag:eval` passed top-3 `46/46` with both threshold gates passing. The task-started embedding listener on `127.0.0.1:18091` was stopped after evaluation. No real Provider call, push or deployment has occurred.
 
-Next action: add Task 4 RED assertions requiring every approved project and resume fact independently from retrieval scores and failures, then adapt the Evidence Planner to consume TurnPlan.
+Next action: add Task 5 RED coverage for TurnPlan and validation manifest projections, HMAC binding and JSONB round-trip without a schema migration.

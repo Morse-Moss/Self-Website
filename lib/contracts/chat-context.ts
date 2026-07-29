@@ -294,7 +294,7 @@ export interface ContextPacketManifest {
   eviction_reason_codes: string[];
   token_estimate_by_layer: Partial<Record<ContextLayerName | 'instructions', number>>;
   evidence_ids: string[];
-  retrieval_scores: Array<{ evidenceId: string; score: number }>;
+  retrieval_scores: Array<{ evidenceId: string; score: number | null }>;
   degraded_reason: string | null;
   packet_hmac_key_id: string | null;
   packet_hmac_sha256: string | null;

@@ -72,6 +72,7 @@ export interface CompiledCapabilityEntry {
 export interface CompiledChatEvidenceCatalog {
   version: 2;
   projects: readonly CompiledProjectEntry[];
+  resumeFacts: readonly PublicResumeFact[];
   capabilities: ReadonlyMap<string, CompiledCapabilityEntry>;
   unresolvedReferences: readonly string[];
   projectAliases: readonly { slug: ProjectSlug; normalized: string }[];

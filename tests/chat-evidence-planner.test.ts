@@ -8,11 +8,34 @@ import type {
   SemanticIntent,
 } from '../lib/contracts/chat-context.ts';
 import type { KnowledgeSource } from '../lib/contracts/chat-runtime.ts';
+import type { ConversationSessionSnapshot } from '../lib/contracts/chat-turn-plan.ts';
 import { compileCapabilityLedger } from '../lib/server/capability-evidence.ts';
+import { compiledChatEvidenceCatalog } from '../lib/server/chat-evidence-catalog.ts';
 import { planChatEvidence } from '../lib/server/chat-evidence-planner.ts';
+import { planChatTurn } from '../lib/server/chat-turn-planner.ts';
 import { chatEvidenceCatalog, siteContent } from '../lib/site-content.ts';
+import { hrQaMvpChain } from './fixtures/hr-qa-mvp-chain.ts';
 
 const ledger = compileCapabilityLedger(siteContent, chatEvidenceCatalog);
+
+function sessionSnapshot(
+  message: string,
+  workflow: ConversationSessionSnapshot['workflow'] = 'jd_match',
+): ConversationSessionSnapshot {
+  return Object.freeze({
+    conversationId: '11111111-1111-4111-8111-111111111111',
+    interactionTurnId: '22222222-2222-4222-8222-222222222222',
+    currentUserMessageId: '1',
+    currentInput: message,
+    workflow,
+    mode: 'interviewer',
+    audienceIntent: 'recruiter',
+    pageContext: null,
+    currentFrame: null,
+    adjacentCompletedTurn: null,
+    completedHistory: [],
+  });
+}
 
 function resolved(intent: SemanticIntent, referent: ResolvedChatTurn['semantic']['referent'] = null): ResolvedChatTurn {
   const plan = intent === 'project_catalog'
@@ -109,6 +132,83 @@ function dependencies(candidates: KnowledgeSource[] = []) {
     },
   };
 }
+
+test('full portfolio admission is invariant across retrieval scores and failures', async () => {
+  const session = sessionSnapshot(hrQaMvpChain.jd);
+  const plan = planChatTurn(session, compiledChatEvidenceCatalog);
+  const approvedFingerprints: string[] = [];
+
+  for (const mode of [
+    'success-low-score',
+    'empty',
+    'embedding-error',
+    'retrieval-error',
+  ] as const) {
+    const bundle = await planChatEvidence({
+      plan,
+      session,
+      catalog: compiledChatEvidenceCatalog,
+      retrieval: {
+        embedAll: async () => {
+          if (mode === 'embedding-error') throw new Error('embedding unavailable');
+          return [[1, 0, 0]];
+        },
+        retrieveAll: async () => {
+          if (mode === 'retrieval-error') throw new Error('retrieval unavailable');
+          if (mode === 'empty') return [];
+          return siteContent.projects.map((project, index) => source(
+            project.slug,
+            0.01 + index / 1_000,
+          ));
+        },
+      },
+    });
+
+    assert.deepEqual(
+      bundle.approved.filter((item) => item.projectSlug).map((item) => item.projectSlug),
+      siteContent.projects.map((project) => project.slug),
+      mode,
+    );
+    assert.ok(siteContent.profile.resumeFacts?.every((fact) => (
+      bundle.approved.some((item) => (
+        item.chunkId.includes(fact.id) || item.content.includes(fact.content)
+      ))
+    )), mode);
+    approvedFingerprints.push(bundle.approved.map((item) => item.chunkId).join('|'));
+    if (mode === 'success-low-score') {
+      assert.ok(bundle.relevance.some((item) => item.score !== null && item.score < 0.45));
+      assert.equal(bundle.degradedReason, null);
+    } else if (mode === 'empty') {
+      assert.ok(bundle.relevance.every((item) => item.score === null));
+      assert.equal(bundle.degradedReason, null);
+    } else {
+      assert.ok(bundle.relevance.every((item) => item.score === null));
+      assert.equal(bundle.degradedReason, mode === 'embedding-error' ? 'embedding' : 'retrieval');
+    }
+  }
+
+  assert.equal(new Set(approvedFingerprints).size, 1);
+});
+
+test('Cursor is unavailable metadata and never becomes an approved source', async () => {
+  const session = sessionSnapshot('你用过 Cursor 吗？', 'chat');
+  const plan = planChatTurn(session, compiledChatEvidenceCatalog);
+  const bundle = await planChatEvidence({
+    plan,
+    session,
+    catalog: compiledChatEvidenceCatalog,
+    retrieval: {
+      embedAll: async () => [[1, 0, 0]],
+      retrieveAll: async () => [],
+    },
+  });
+
+  assert.ok(bundle.unavailableCapabilityIds.includes('cursor'));
+  assert.equal(
+    bundle.approved.some((item) => item.topicIds?.includes('cursor')),
+    false,
+  );
+});
 
 test('project catalog returns the complete audited catalog without embedding', async () => {
   const deps = dependencies();
