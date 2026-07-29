@@ -93,7 +93,7 @@ npm run production:worker
 
 以下步骤每次都先保留当前已观察镜像，记录变更后只重启 Web，并复验 live、ready、公开页面和 v1 会话。真实 Provider 评审、故障注入和扩大流量分别需要明确授权，不能因配置已写入手册而自动执行：
 
-回答可靠性版本的默认时序为：`MORSE_PROVIDER_PROTOCOL_EVENT_TIMEOUT_MS=25000`、`MORSE_PROVIDER_MODEL_TEXT_TIMEOUT_MS=40000`、`MORSE_PROVIDER_STAGE_TIMEOUT_MS=80000`、`MORSE_CHAT_TURN_TIMEOUT_MS=90000`。启动时必须满足“协议事件 < 模型正文 <= Provider 阶段 < 完整 turn”；attempt 数不再由环境变量配置。normal 与仅由真实 Provider、协议或超时故障触发的串行 failover 共用同一个绝对 deadline；内容质量不得触发第二次调用、strict、reset 或节点切换。切换节点不得重置 80 秒预算，SSE heartbeat 不延长任何 deadline，hedging 保持关闭。
+回答可靠性版本的默认时序为：`MORSE_PROVIDER_FIRST_BYTE_TIMEOUT_MS=40000`、`MORSE_PROVIDER_PROTOCOL_EVENT_TIMEOUT_MS=35000`、`MORSE_PROVIDER_MODEL_TEXT_TIMEOUT_MS=70000`、`MORSE_PROVIDER_TOTAL_TIMEOUT_MS=300000`、`MORSE_PROVIDER_STAGE_TIMEOUT_MS=300000`、`MORSE_CHAT_TURN_TIMEOUT_MS=330000`。内部首包门限不得早于协调器协议门限；协议和正文活动门限仍让静默或无正文节点快速失败，已经开始返回正文的高推理回答可在共享 Provider 阶段内完成。启动时必须满足“首包 >= 协议事件 < 模型正文 <= Provider 阶段 < 完整 turn”；attempt 数不再由环境变量配置。normal 与仅由真实 Provider、协议或超时故障触发的串行 failover 共用一个绝对 deadline；内容质量不得触发第二次调用、strict、reset 或节点切换。切换节点不得重置 300 秒预算，SSE heartbeat 不延长任何 deadline，hedging 保持关闭。
 
 升级已有实例时，必须先独立验证 DB/Embedding healthy、PostgreSQL TLS 证书可解析且私钥为普通 `0600` 文件；migration、grants、ingest 和存储初始化使用 `docker compose run --rm --no-deps ...`。plain `compose run` 会协调 `depends_on`，配置或 bind 源漂移时可能重建依赖容器，不能用于升级路径。
 

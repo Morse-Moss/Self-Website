@@ -25,7 +25,7 @@ const completeEnv: Record<string, string> = {
   OPENAI_EMBEDDING_BASE_URL: 'http://127.0.0.1:18091/v1',
   OPENAI_EMBEDDING_MODEL: 'test-embedding',
   MORSE_EMBEDDING_TIMEOUT_MS: '7000',
-  MORSE_PROVIDER_FIRST_BYTE_TIMEOUT_MS: '19000',
+  MORSE_PROVIDER_FIRST_BYTE_TIMEOUT_MS: '39000',
   MORSE_PROVIDER_TOTAL_TIMEOUT_MS: '85000',
   MORSE_PROVIDER_CONCURRENCY: '3',
   MORSE_MAX_MESSAGES_PER_SESSION: '30',
@@ -51,7 +51,7 @@ test('loadServerConfig parses access, provider, lifecycle, and optional pricing 
   assert.equal(config.embeddingApiKey, 'embedding-key');
   assert.equal(config.embeddingBaseUrl, 'http://127.0.0.1:18091/v1');
   assert.equal(config.embeddingTimeoutMs, 7000);
-  assert.equal(config.providerFirstByteTimeoutMs, 19000);
+  assert.equal(config.providerFirstByteTimeoutMs, 39000);
   assert.equal(config.providerTotalTimeoutMs, 85000);
   assert.equal(config.providerConcurrency, 3);
   assert.equal(config.chatContextWindowTokens, null);
@@ -73,17 +73,19 @@ test('loadServerConfig parses access, provider, lifecycle, and optional pricing 
   });
 });
 
-test('v2 timing defaults are bounded and ordered', () => {
+test('v2 timing defaults preserve fast activity gates and allow long high-reasoning answers', () => {
   const env = { ...completeEnv };
   delete env.MORSE_PROVIDER_FIRST_BYTE_TIMEOUT_MS;
   delete env.MORSE_PROVIDER_TOTAL_TIMEOUT_MS;
 
   const config = loadServerConfig(env);
 
-  assert.equal(config.providerProtocolEventTimeoutMs, 25_000);
-  assert.equal(config.providerModelTextTimeoutMs, 40_000);
-  assert.equal(config.providerStageTimeoutMs, 80_000);
-  assert.equal(config.chatTurnTimeoutMs, 90_000);
+  assert.equal(config.providerFirstByteTimeoutMs, 40_000);
+  assert.equal(config.providerProtocolEventTimeoutMs, 35_000);
+  assert.equal(config.providerModelTextTimeoutMs, 70_000);
+  assert.equal(config.providerTotalTimeoutMs, 300_000);
+  assert.equal(config.providerStageTimeoutMs, 300_000);
+  assert.equal(config.chatTurnTimeoutMs, 330_000);
   assert.equal('providerMaxAttempts' in config, false);
 });
 
@@ -110,6 +112,10 @@ test('dynamic Provider context is an explicit strict feature gate', () => {
 
 test('v2 timing rejects unordered deadlines', () => {
   for (const [name, overrides] of [
+    ['inner first byte does not preempt coordinated protocol', {
+      MORSE_PROVIDER_FIRST_BYTE_TIMEOUT_MS: '30000',
+      MORSE_PROVIDER_PROTOCOL_EVENT_TIMEOUT_MS: '35000',
+    }],
     ['protocol before model text', {
       MORSE_PROVIDER_PROTOCOL_EVENT_TIMEOUT_MS: '40000',
       MORSE_PROVIDER_MODEL_TEXT_TIMEOUT_MS: '40000',

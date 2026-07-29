@@ -444,22 +444,27 @@ export function loadServerConfig(env: Env = process.env) {
     env,
     contextPacketEnabled || dynamicProviderContextEnabled,
   );
+  const providerFirstByteTimeoutMs = positiveNumber(
+    env,
+    'MORSE_PROVIDER_FIRST_BYTE_TIMEOUT_MS',
+    40_000,
+  );
   const providerProtocolEventTimeoutMs = positiveNumber(
     env,
     'MORSE_PROVIDER_PROTOCOL_EVENT_TIMEOUT_MS',
-    25_000,
+    35_000,
   );
   const providerModelTextTimeoutMs = positiveNumber(
     env,
     'MORSE_PROVIDER_MODEL_TEXT_TIMEOUT_MS',
-    40_000,
+    70_000,
   );
   const providerStageTimeoutMs = positiveNumber(
     env,
     'MORSE_PROVIDER_STAGE_TIMEOUT_MS',
-    80_000,
+    300_000,
   );
-  const chatTurnTimeoutMs = positiveNumber(env, 'MORSE_CHAT_TURN_TIMEOUT_MS', 90_000);
+  const chatTurnTimeoutMs = positiveNumber(env, 'MORSE_CHAT_TURN_TIMEOUT_MS', 330_000);
   const chatWindowSeconds = boundedPositiveInteger(
     env,
     'MORSE_CHAT_WINDOW_SECONDS',
@@ -475,12 +480,13 @@ export function loadServerConfig(env: Env = process.env) {
     100,
   );
   if (
-    providerProtocolEventTimeoutMs >= providerModelTextTimeoutMs
+    providerFirstByteTimeoutMs < providerProtocolEventTimeoutMs
+    || providerProtocolEventTimeoutMs >= providerModelTextTimeoutMs
     || providerModelTextTimeoutMs > providerStageTimeoutMs
     || providerStageTimeoutMs >= chatTurnTimeoutMs
   ) {
     throw new Error(
-      'MORSE_PROVIDER timing must satisfy protocol event < model text <= provider stage < chat turn.',
+      'MORSE_PROVIDER timing must satisfy first byte >= protocol event < model text <= provider stage < chat turn.',
     );
   }
   return {
@@ -498,12 +504,8 @@ export function loadServerConfig(env: Env = process.env) {
     embeddingModel: required(env, 'OPENAI_EMBEDDING_MODEL'),
     embeddingDimensions: EMBEDDING_DIMENSIONS,
     embeddingTimeoutMs: positiveNumber(env, 'MORSE_EMBEDDING_TIMEOUT_MS', 8_000),
-    providerFirstByteTimeoutMs: positiveNumber(
-      env,
-      'MORSE_PROVIDER_FIRST_BYTE_TIMEOUT_MS',
-      20_000,
-    ),
-    providerTotalTimeoutMs: positiveNumber(env, 'MORSE_PROVIDER_TOTAL_TIMEOUT_MS', 90_000),
+    providerFirstByteTimeoutMs,
+    providerTotalTimeoutMs: positiveNumber(env, 'MORSE_PROVIDER_TOTAL_TIMEOUT_MS', 300_000),
     providerProtocolEventTimeoutMs,
     providerModelTextTimeoutMs,
     providerStageTimeoutMs,
