@@ -50,9 +50,9 @@ import {
   type NormalizedChatRequest,
 } from './chat-core.ts';
 import {
-  runChatAnswer,
   type ChatAnswerRunnerEvent,
 } from './chat-answer-runner.ts';
+import { DirectAnswerExecutor } from './chat-answer-executor.ts';
 import { createChatExecutionBudget } from './chat-execution-budget.ts';
 import {
   routeChatTurn as routeLegacyChatTurn,
@@ -3130,10 +3130,12 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
     let summaryCallIndex = 0;
     const dynamicSource = canonicalSource;
     const dynamicDigest = input.config.contextPacketDigest ?? null;
-    answerIterator = runChatAnswer({
+    const directAnswerExecutor = new DirectAnswerExecutor();
+    answerIterator = directAnswerExecutor.stream({
       budget: executionBudget,
       now: () => Date.now(),
       releasePolicy: route.release,
+      sources: answerSources,
       generate({ remainingProviderMs }) {
         const executionId = randomUUID();
         const contextRequest = dynamicProviderContextEnabled
@@ -3283,7 +3285,7 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
             : undefined,
         }, input.signal);
       },
-    })[Symbol.asyncIterator]();
+    }, input.signal ?? new AbortController().signal)[Symbol.asyncIterator]();
 
     while (true) {
       let next: IteratorResult<ChatAnswerRunnerEvent>;
@@ -3332,13 +3334,6 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
         continue;
       }
       throwIfAborted(input.signal);
-      if (event.type === 'delta') {
-        answer += event.text;
-        if (answerSources.length === 0) answerSources = sources;
-        yield event;
-        continue;
-      }
-
       if (!event.answer.trim()) {
         await recordDependencyFailure({
           client: lockClient,
@@ -3348,6 +3343,8 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
         });
         throw new RuntimePhaseError('PROVIDER_INCOMPLETE', 'PROVIDER_INCOMPLETE');
       }
+      answer = event.answer;
+      if (answerSources.length === 0) answerSources = sources;
       providerAttempts = [...event.attempts];
       providerWinner = event.winner;
       const providerAggregate = providerAttempts.length > 0
@@ -3396,6 +3393,8 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
         );
       }
       completed = true;
+
+      yield { type: 'delta', text: event.answer };
 
       if (
         requestWorkflow(input.request) === 'diagnosis'

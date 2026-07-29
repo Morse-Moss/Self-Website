@@ -89,8 +89,10 @@ test('delivers a completed non-empty answer with one generation call', async () 
   }));
 
   assert.equal(calls.length, 1);
-  assert.equal(events.filter((event) => event.type === 'delta').map((event) => event.text).join(''), answer);
-  assert.equal(events.at(-1)?.type, 'complete');
+  assert.doesNotMatch(JSON.stringify(events), /"type":"delta"/u);
+  const terminal = events.at(-1);
+  assert.equal(terminal?.type, 'complete');
+  if (terminal?.type === 'complete') assert.equal(terminal.answer, answer);
   assert.doesNotMatch(JSON.stringify(events), /reset|strict|OUTPUT_GUARD_REJECTED/u);
 });
 
@@ -144,9 +146,9 @@ test('complete release buffers all text until protocol completion and emits it o
   assert.equal(settled, false);
 
   releaseDone();
-  assert.deepEqual(await firstVisible, { value: { type: 'delta', text: 'first second' }, done: false });
-  const complete = await iterator.next();
+  const complete = await firstVisible;
   assert.equal(complete.value?.type, 'complete');
+  if (complete.value?.type === 'complete') assert.equal(complete.value.answer, 'first second');
   assert.equal(await iterator.next().then((result) => result.done), true);
 });
 
@@ -179,10 +181,11 @@ test('segment release also buffers all text until terminal provider success', as
   assert.equal(settled, false);
 
   releaseDone();
-  assert.deepEqual(await firstVisible, {
-    value: { type: 'delta', text: 'private partial winner' },
-    done: false,
-  });
+  const complete = await firstVisible;
+  assert.equal(complete.value?.type, 'complete');
+  if (complete.value?.type === 'complete') {
+    assert.equal(complete.value.answer, 'private partial winner');
+  }
 });
 
 test('provider attempts and winner metadata are forwarded unchanged', async () => {
@@ -219,10 +222,9 @@ test('serial provider switching is forwarded without resetting visible text', as
     ),
   }));
 
-  assert.deepEqual(events.slice(0, 2), [
-    { type: 'switching' },
-    { type: 'delta', text: 'fallback answer' },
-  ]);
+  assert.equal(events[0]?.type, 'switching');
+  assert.equal(events[1]?.type, 'complete');
+  if (events[1]?.type === 'complete') assert.equal(events[1].answer, 'fallback answer');
 });
 
 test('empty and unknown provider results remain failures', async () => {

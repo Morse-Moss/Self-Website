@@ -9,7 +9,6 @@ import type { TokenUsage } from './budget.ts';
 import type { ChatExecutionBudget } from './chat-execution-budget.ts';
 
 export type ChatAnswerRunnerEvent =
-  | { type: 'delta'; text: string }
   | { type: 'switching' }
   | { type: 'attempt'; attempt: ProviderAttempt }
   | {
@@ -64,7 +63,6 @@ export async function* runChatAnswer(
       if (event.type === 'activity') continue;
 
       if (!answer.trim()) throw new AnswerExecutionError('PROVIDER_INCOMPLETE');
-      yield { type: 'delta', text: answer };
       for (const attempt of event.attempts ?? []) {
         attempts.set(attempt.attemptIndex, attempt);
       }

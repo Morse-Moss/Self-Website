@@ -2385,7 +2385,7 @@ test('recruiter evaluation follow-ups keep the original JD and audited evidence'
       assert.equal(row.status, 'completed', message);
       taskIds.push(row.context_scope_id);
       if (index >= 2) {
-        assert.equal(row.semantic_intent, 'jd_match', message);
+        assert.equal(row.semantic_intent, index === 6 ? 'project_fit' : 'jd_match', message);
         assert.equal(row.discourse_action, 'follow_up', message);
         assert.equal(row.task_action, 'continue', message);
         assert.equal(row.context_manifest.context_build_status, 'built', message);

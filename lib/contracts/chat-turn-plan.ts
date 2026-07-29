@@ -1,6 +1,8 @@
 import type {
   ChatAudienceIntent,
+  ChatSource,
   ChatMode,
+  TokenUsage,
   ChatWorkflow,
 } from './chat.ts';
 import type {
@@ -10,6 +12,7 @@ import type {
   SemanticTurnDecision,
 } from './chat-context.ts';
 import type { ProjectSlug } from './site-content.ts';
+import type { ProviderAttempt, ProviderWinner } from '../server/ai-provider.ts';
 
 export const TURN_PLAN_VERSION = 'turn-plan-v1' as const;
 export const TURN_PLANNER_VERSION = 'deterministic-turn-planner-v1' as const;
@@ -63,4 +66,17 @@ export interface AnswerValidationResult {
     code: AnswerValidationIssueCode;
     evidenceId: string | null;
   }[];
+}
+
+export interface AnswerCandidate {
+  executorKind: 'direct';
+  text: string;
+  usage: TokenUsage | null;
+  attempts: readonly ProviderAttempt[];
+  winner: ProviderWinner | null;
+  sources: readonly ChatSource[];
+}
+
+export interface AnswerExecutor<Input> {
+  execute(input: Input, signal: AbortSignal): Promise<AnswerCandidate>;
 }

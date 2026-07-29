@@ -759,7 +759,7 @@ git commit -m "feat: persist signed turn plan metadata"
 
 **Files:** create `lib/server/chat-answer-executor.ts`, `tests/chat-answer-executor.test.ts`; modify `lib/server/chat-answer-runner.ts`, `lib/server/chat-service.ts` only enough to delegate; retain `chat-context-coordinator.ts`, `chat-history-compaction.ts`, `failover-ai-provider.ts` behavior.
 
-- [ ] **Step 1: Write RED executor contract tests**
+- [x] **Step 1: Write RED executor contract tests**
 
 Create `tests/chat-answer-executor.test.ts` with fake Provider targets:
 
@@ -782,7 +782,7 @@ node --env-file-if-exists=.env.local --test tests/chat-answer-executor.test.ts t
 
 Expected: new test FAIL because execution is embedded in `chat-service.ts`.
 
-- [ ] **Step 2: Define executor and candidate contracts**
+- [x] **Step 2: Define executor and candidate contracts**
 
 Add to `lib/contracts/chat-turn-plan.ts`:
 
@@ -801,7 +801,7 @@ export interface AnswerExecutor {
 }
 ```
 
-- [ ] **Step 3: Extract provider coordination without changing it**
+- [x] **Step 3: Extract provider coordination without changing it**
 
 Move from `chat-service.ts` into `chat-answer-executor.ts`:
 
@@ -813,7 +813,7 @@ Move from `chat-service.ts` into `chat-answer-executor.ts`:
 
 The executor buffers candidate text and returns it. It may emit typed operational events (`attempt`, `switching`) to a callback, but never answer deltas.
 
-- [ ] **Step 4: Make the runner completion-only for answer text**
+- [x] **Step 4: Make the runner completion-only for answer text**
 
 Change `ChatAnswerRunnerEvent` to remove the pre-commit `delta` event. Its successful terminal event already contains `answer`; attempt and switching events remain.
 
@@ -824,7 +824,7 @@ export type ChatAnswerRunnerEvent =
   | { type: 'complete'; answer: string; /* existing metadata */ };
 ```
 
-- [ ] **Step 5: Run executor and recovery boundaries**
+- [x] **Step 5: Run executor and recovery boundaries**
 
 ```powershell
 node --env-file-if-exists=.env.local --test tests/chat-answer-executor.test.ts tests/chat-answer-runner.test.ts tests/chat-dynamic-context.test.ts tests/context-compaction-integration.test.ts tests/failover-provider.test.ts tests/provider-attempt-log.test.ts tests/openai-provider.test.ts
@@ -832,7 +832,7 @@ node --env-file-if-exists=.env.local --test tests/chat-answer-executor.test.ts t
 
 Expected: PASS; no external Provider call.
 
-- [ ] **Step 6: Commit executor extraction**
+- [x] **Step 6: Commit executor extraction**
 
 ```powershell
 git add lib/contracts/chat-turn-plan.ts lib/server/chat-answer-executor.ts lib/server/chat-answer-runner.ts lib/server/chat-service.ts tests/chat-answer-executor.test.ts tests/chat-answer-runner.test.ts
@@ -1312,8 +1312,8 @@ Do not recommend large HR promotion unless the real chain passes and the remaini
 
 ## Resume Pointer
 
-Current: `TASK_6 / RED / READY`.
+Current: `TASK_7 / RED / READY`.
 
-Last verified: Task 5 is locally verified for the current milestone. Its focused persistence suite passed `33/33`, TypeScript and `git diff --check` passed, plan kind changes alter V2 packet/request HMACs, relevance ordering cannot alter approved-fact identity, and `not_run/pass/warn/block` round-trip through the existing JSONB field without a migration. No real Provider call, push or deployment has occurred.
+Last verified: Task 5 is committed as `4ad1620`. Task 6's executor/recovery suite passed `100/100`, the affected service integration passed after correcting one stale Task 3 intent expectation, TypeScript passed, and DirectAnswerExecutor returns only complete candidates while chat-service releases the answer delta only after the success transaction. No real Provider call, push or deployment has occurred.
 
-Next action: add Task 6 RED coverage for a direct executor that preserves the existing dynamic-context, attempt, cancellation and failover semantics without owning Session or persistence state.
+Next action: add Task 7 RED coverage for deterministic pass/warn/block validation, then remove the old quality-rejection authority after all consumers migrate.
