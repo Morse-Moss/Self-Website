@@ -4,21 +4,22 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**HR_RECRUITMENT_EVALUATION_ROUTING_FIX / VERIFY / PRODUCTION_0D2FA84**
+**HR_RECRUITMENT_EVALUATION_ACCEPTANCE / OBSERVE / PRODUCTION_C449668**
 
 ## next_allowed_pointer
-当前生产为 `0d2fa84`，指针与 Web/Worker working directory 一致，五容器 healthy。招聘入口与完整 JD 通过，但首个真实验收问题被误路由为 `unsupported_personal_history / temporary`，创建新 Task 且为 0 sources / 0 evidence，十问已停止。新修复只在 `chat + interviewer + recruiter + active JD frame + adjacent same scope` 下接纳个人经历措辞、未命名项目方法题、能力方法题和多项目决策题；单项目事实、纯能力核验、外部实时、安全请求、显式切换和 JD 补充仍走原专用路由。精确十问现全部保持原 Task、原 JD slot、`jd_match / recruitment_evaluation_follow_up / continue` 与 `ranked_project_fit`。focused resolver `26/26`、完整 unit `911/911`、PostgreSQL integration `347/347`、typecheck、scoped ESLint、33-route build、dev smoke、diff check 均通过。下一步只允许精确 staging/commit/push，冻结归档并只重建 Web/Worker，再从全新 `HR interview` Session 重跑入口、完整 JD 与十问；任一答非所问、无 evidence、编造、拒答或 5xx 立即停止。
+当前生产为 `c449668`，已进入 `origin/master`；`/opt/revolution/current` 与 Web/Worker working directory 均指向 `/opt/revolution/releases/c449668/revolution`。本轮只重建 Web/Worker，DB、Embedding、Edge 未重建；五容器 healthy 且 restart count 为 0。Context Packet 保持 enabled、percent `0` 和精确 `HR interview` 标签准入。新修复只在 `chat + interviewer + recruiter + active JD frame + adjacent same scope` 下接纳个人经历措辞、未命名项目方法题、能力方法题和多项目决策题；单项目事实、纯能力核验、外部实时、安全请求、显式切换和 JD 补充仍走原专用路由。精确十问本地回归全部保持原 Task、原 JD slot、`jd_match / recruitment_evaluation_follow_up / continue` 与 `ranked_project_fit`；focused resolver `26/26`、完整 unit `911/911`、PostgreSQL integration `347/347`、typecheck、scoped ESLint、33-route build、dev smoke、diff check 均通过。公网 live/ready/首页为 200，受保护 Admin 接口为 401，`release:smoke` 通过，Web/Worker/Edge 近期错误关键词计数为 0。当前状态是 `DEPLOYED_UNOBSERVED`：用户正在从全新 `HR interview` Session 执行入口、完整 JD 与十问真实验收；任一答非所问、无 evidence、编造、拒答或 5xx 立即停止并按 turn 元数据诊断，不在收尾线程发送问题或读取原始问答。
 
 ## superseded_previous_pointer
 当前生产应用运行 `2267208`。全新 `HR interview` 单 Session 的招聘入口、完整 JD、问题 1 和问题 2 已分别以受控招聘 Task、原始 JD slot、审核来源和 evidence 完成；问题 3“如何把跨境电商业务想法转成可执行产品方案？”却落入 `general_conversation / one_shot / temporary`，Context Packet 为 0 sources / 0 evidence，真实十问门禁已按合同停止。根因是招聘 Task 只承接少数短追问，而自包含的招聘方法论问题被通用会话规则抢走；同时第一版修复会把评估问题误写为新增 JD，并可能覆盖原 frame 的 slot、task kind 和 temporary scope。下一步只允许先红后绿实现受控 `interviewer + recruiter + active JD frame + adjacent same scope` 评估续接，保证评估本轮不提取任何 slot、保留原 Task Frame 身份，并让所有 temporary turn 使用当前 turn 的隔离 scope；通过聚焦与完整本地门禁、CRITICAL 双视角审查后再精确 commit/push、冻结归档、只重建 Web/Worker，并从全新邀请重跑入口、完整 JD 与 10 问。任一轮答非所问、无证据、编造、5xx、拒答或漏项时立即停止并检查该 turn 元数据，不在失败历史上盲目重试。
 
-## HR 招聘评估续接与 temporary scope 修复（2026-07-29，本地验证完成，待发布）
+## HR 招聘评估续接与 temporary scope 修复（2026-07-29，已部署 `c449668`，待真实验收）
 - Production observation：`2267208` 的失败仍保留为历史事实：问题 3 曾落入 `general_conversation / one_shot / temporary`，Context Packet 为 0 sources / 0 evidence，真实十问在发布前停止。
 - Root cause and correction：招聘评估续接现在有严格的 `chat + interviewer + recruiter + active JD + adjacent same scope` 门禁；评估问句不提取 slot、不重算 task identity；temporary turn 保持自身 scope；结构化 JD 优先；显式切换只接受明确岗位/公司/JD 目标；通用定义题和“换个角度”不误续接。
 - Local verification：focused resolver `26/26`；完整 unit `911/911`；PostgreSQL integration `347/347`；`npm run typecheck`、变更文件 scoped ESLint、`npm run build`（33 routes）、`git diff --check` 和 owned-diff sensitive scan 全部通过。
 - Design authority：`docs/superpowers/specs/2026-07-27-digital-morse-conversation-v2-1-design.md` 已记录受控自包含招聘评估扩展、显式切换语法与通用定义题隔离规则。
 - CRITICAL correction review：独立复审 `PASS`；三类通用 JD 定义问句在有无活动 JD 时均为 `general_conversation / temporary` 且不创建 candidate frame，结构化 JD、招聘评估续接和假设性切换回归保持通过。
-- Next action：精确 staging/commit/push，冻结 release archive，只重建 Web/Worker；之后用全新 `HR interview` Session 完成入口、完整 JD 和 10 问真实对话验收，任何答非所问、无 evidence、编造、拒答或 5xx 立即停止。
+- Delivery：`c449668` 已精确提交、推送和部署；冻结归档 19,670,667 bytes，SHA-256 `aee58edc433a654ee17a64b84ca9ac991f5172e9b5abf1ee6f83ce14681381c1`。只重建 Web/Worker，DB、Embedding、Edge 保持不变；生产指针、镜像 working directory、健康状态、鉴权边界和 release smoke 已复核。
+- Next action：用户从全新 `HR interview` Session 完成入口、完整 JD 和 10 问真实对话验收；收尾线程不发送问题、不创建邀请码、不读取原始问答。任何答非所问、无 evidence、编造、拒答或 5xx 立即停止。
 
 ## HR 招聘评估续接与 temporary scope 修复（2026-07-29，历史基线）
 - Production observation：release `2267208` 的招聘入口、完整 JD、问题 1、问题 2 均有审核来源与 evidence；问题 3 被记录为 `general_conversation / one_shot / temporary`，0 sources / 0 evidence，十问门禁停止。

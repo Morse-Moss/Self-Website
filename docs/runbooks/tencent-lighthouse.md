@@ -2,14 +2,13 @@
 
 本文对应 `aimorse.tech` 的生产部署。当前实例为腾讯云 Lighthouse 首尔节点，公网地址为 `43.133.68.202`。境外节点不需要 ICP 备案；DNS 解析和 HTTPS 证书签发已完成，域名实名状态继续由腾讯云注册控制台维护。
 
-## 当前生产状态（2026-07-29，HR 招聘评估追问路由失败）
+## 当前生产状态（2026-07-29，HR 招聘评估修复已部署，待真实验收）
 
-- 状态：`PRODUCTION_OBSERVED_FAILURE / HR_TARGETED / PERCENT_0`。当前运行提交为 `0d2fa84`；`/opt/revolution/current` 与 Web/Worker Compose working directory 指向 `/opt/revolution/releases/0d2fa84/revolution`，运行提交已在部署前进入 `origin/master`。第五次本地修复尚未部署，当前 release 不得用于正式 HR 推广。
-- 本地冻结归档为 19,669,093 bytes，SHA-256 `90afc5636219e6a890e346a7555628221dc383a6ce82088e70b9cf226bd0d03f`。该 release 已补齐 Cursor unavailable 边界，并让招聘入口与完整 JD 保持同一受控 Task、审核来源和 evidence。
-- 首个十问验收问题包含“结合你做过的项目”后被路由为 `unsupported_personal_history / temporary`，创建新 Task 且为 0 sources / 0 evidence；Provider 正常完成，因此根因是语义路由优先级而非传输失败。十问门禁已在该轮停止。
-- Web/Worker 当前使用 `0d2fa84`；DB、Embedding、Edge 身份未变，五容器均 healthy。没有因本轮缺口运行 migration、grants 或 ingest，也没有新增模型、输入、输出、历史、检索、Provider attempt 或成本限制。
+- 状态：`DEPLOYED_UNOBSERVED / HR_TARGETED / PERCENT_0`。当前运行提交为 `c449668`；`/opt/revolution/current` 与 Web/Worker Compose working directory 指向 `/opt/revolution/releases/c449668/revolution`，运行提交已进入 `origin/master`。真实 HR 验收完成前不得大量推广。
+- 本地冻结归档为 19,670,667 bytes，SHA-256 `aee58edc433a654ee17a64b84ca9ac991f5172e9b5abf1ee6f83ce14681381c1`。该 release 修复首个 HR 评估问题被误路由为 `unsupported_personal_history / temporary`、新建 Task 且为 0 sources / 0 evidence 的问题。
+- Web 镜像为 `sha256:9646acb1aff547171c63ac061fc11d73e58885c180b5629ef2e44a7610d8933f`，Worker 镜像为 `sha256:4e9534fbadd56ea668080ed2c40247a48f531fa17ffbba0b53bb1b0d2f44448d`。本轮只重建 Web/Worker；DB、Embedding、Edge 身份未变，五容器均 healthy 且 restart count 为 0。没有运行 migration、grants 或 ingest，也没有新增模型、输入、输出、历史、检索、Provider attempt 或成本限制。
 - Context Packet 保持 enabled、percent `0` 和精确 `HR interview` 标签准入。新修复只扩展同一 recruiter/JD/same-scope Task 内的自包含评估问法，单项目事实、纯能力核验、外部实时、安全请求、显式切换和 JD 补充继续隔离。
-- 新修复必须先提交、冻结并只重建 Web/Worker，再用全新单 Session 邀请重跑入口、完整 JD 和十问；任一答非所问、无 evidence、编造、拒答或 5xx 立即停止。脱敏本地证据见 `docs/verify/release/hr-recruitment-evaluation-followup-local-closeout-2026-07-29.md`。
+- 公网 live/ready/首页为 200，受保护 Admin 接口为 401，release smoke 通过；Web/Worker/Edge 近期错误关键词计数为 0。用户正在用全新单 Session 重跑入口、完整 JD 和十问；任一答非所问、无 evidence、编造、拒答或 5xx 立即停止。脱敏部署证据见 `docs/verify/release/hr-recruitment-evaluation-followup-production-closeout-2026-07-29.md`。
 
 ## 历史生产状态（2026-07-28，Controlled Context V2.2 单邀请码观察完成）
 
@@ -286,6 +285,6 @@ docker compose --env-file .env.production -f compose.production.yaml ps
 公开知识继续从仓库重新 ingest，短期会话和交互分析按既定保留期处理，不把原始对话复制到临时备份。私密简历启用后不属于“可重建数据”：数据库、加密密文卷和对应密钥版本必须分离备份并共同恢复验证；任何备份都不得包含明文 PDF、邀请码明文或 Session token。是否启用腾讯云快照或独立加密备份，需要在首轮真实恢复演练后单独决定。
 # Latest release override (2026-07-29)
 
-- Current runtime commit: `2440473`; `/opt/revolution/current` points to `/opt/revolution/releases/2440473/revolution`.
-- Status: `PRODUCTION_OBSERVED_FAILURE / HR_TARGETED / PERCENT_0`. Route and direct capability evidence passed; the complete-JD answer omitted Cursor and stopped acceptance.
-- Authoritative evidence: `docs/verify/release/hr-jd-context-production-closeout-2026-07-29.md`.
+- Current runtime commit: `c449668`; `/opt/revolution/current` points to `/opt/revolution/releases/c449668/revolution`.
+- Status: `DEPLOYED_UNOBSERVED / HR_TARGETED / PERCENT_0`. Deployment, runtime health and authentication boundaries pass; the user is running the fresh real HR acceptance chain.
+- Authoritative evidence: `docs/verify/release/hr-recruitment-evaluation-followup-production-closeout-2026-07-29.md`.
