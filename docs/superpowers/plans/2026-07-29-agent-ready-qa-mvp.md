@@ -477,7 +477,7 @@ git commit -m "refactor: freeze conversation session snapshots"
 
 **Files:** modify `lib/contracts/chat-turn-plan.ts`; create `lib/server/chat-turn-planner.ts`, `tests/chat-turn-planner.test.ts`; modify `lib/server/chat-semantic-resolver.ts` only to remove duplicate evidence decisions after the planner owns them.
 
-- [ ] **Step 1: Write RED plan matrix tests**
+- [x] **Step 1: Write RED plan matrix tests**
 
 Create table-driven `tests/chat-turn-planner.test.ts`:
 
@@ -518,7 +518,7 @@ node --env-file-if-exists=.env.local --test tests/chat-turn-planner.test.ts
 
 Expected: FAIL because plan contracts and planner are incomplete.
 
-- [ ] **Step 2: Complete TurnPlan contracts**
+- [x] **Step 2: Complete TurnPlan contracts**
 
 Add to `lib/contracts/chat-turn-plan.ts`:
 
@@ -546,7 +546,7 @@ export interface TurnPlanV1 {
 }
 ```
 
-- [ ] **Step 3: Implement planning as a pure deterministic composition**
+- [x] **Step 3: Implement planning as a pure deterministic composition**
 
 Create `planChatTurn(snapshot, catalog)` in `lib/server/chat-turn-planner.ts`:
 
@@ -559,7 +559,7 @@ Create `planChatTurn(snapshot, catalog)` in `lib/server/chat-turn-planner.ts`:
 
 Use `assertNever(intent)` in the default branch; no general fallback may silently emit `none` for a new intent.
 
-- [ ] **Step 4: Run planner and semantic tests**
+- [x] **Step 4: Run planner and semantic tests**
 
 ```powershell
 node --env-file-if-exists=.env.local --test tests/chat-turn-planner.test.ts tests/chat-semantic-resolver.test.ts tests/chat-route-policy.test.ts
@@ -567,7 +567,7 @@ node --env-file-if-exists=.env.local --test tests/chat-turn-planner.test.ts test
 
 Expected: PASS. Legacy route tests remain compatibility tests; they no longer define V2.2 evidence policy.
 
-- [ ] **Step 5: Commit TurnPlan**
+- [x] **Step 5: Commit TurnPlan**
 
 ```powershell
 git add lib/contracts/chat-turn-plan.ts lib/server/chat-turn-planner.ts lib/server/chat-semantic-resolver.ts tests/chat-turn-planner.test.ts tests/chat-semantic-resolver.test.ts
@@ -578,7 +578,7 @@ git commit -m "feat: add deterministic chat turn plans"
 
 **Files:** modify `lib/server/chat-evidence-planner.ts`, `lib/server/chat-context-packet.ts`, `tests/chat-evidence-planner.test.ts`, `tests/chat-context-packet.test.ts`; create `tests/fixtures/hr-qa-mvp-chain.ts`.
 
-- [ ] **Step 1: Create the fixed synthetic HR chain**
+- [x] **Step 1: Create the fixed synthetic HR chain** (completed early for Task 3 HR invariants)
 
 Create `tests/fixtures/hr-qa-mvp-chain.ts` with this exact public fixture:
 
@@ -1312,8 +1312,8 @@ Do not recommend large HR promotion unless the real chain passes and the remaini
 
 ## Resume Pointer
 
-Current: `TASK_3 / RED / IN_PROGRESS`.
+Current: `TASK_4 / RED / IN_PROGRESS`.
 
-Last verified: Task 2 is locally committed as `85f8855`; Snapshot/state regressions passed `11/11` and TypeScript passed. The Snapshot reads the exact stored user envelope, filters to completed same-scope V2.2 history and freezes the result without an application length cap. No Provider call, push or deployment has occurred.
+Last verified: Task 3 is locally committed as `ede44a7`; planner/semantic regressions passed `81/81`, TypeScript passed, and `chat:eval` passed `96/96` with `externalCalls=0`. All ten synthetic HR questions continue one task with full-portfolio or portfolio-backed capability requirements. No Provider call, push or deployment has occurred.
 
-Next action: create Task 3 RED coverage for the deterministic plan matrix and HR-chain invariants, then confirm failure is caused by the incomplete TurnPlan contract/planner.
+Next action: add Task 4 RED assertions requiring every approved project and resume fact independently from retrieval scores and failures, then adapt the Evidence Planner to consume TurnPlan.

@@ -4,9 +4,12 @@ import type {
   ChatWorkflow,
 } from './chat.ts';
 import type {
+  CandidateConversationTaskFrameV22,
   CompletedContextTurn,
   ConversationTaskFrameV22,
+  SemanticTurnDecision,
 } from './chat-context.ts';
+import type { ProjectSlug } from './site-content.ts';
 
 export const TURN_PLAN_VERSION = 'turn-plan-v1' as const;
 export const TURN_PLANNER_VERSION = 'deterministic-turn-planner-v1' as const;
@@ -23,4 +26,26 @@ export interface ConversationSessionSnapshot {
   currentFrame: ConversationTaskFrameV22 | null;
   adjacentCompletedTurn: CompletedContextTurn | null;
   completedHistory: readonly CompletedContextTurn[];
+}
+
+export type EvidenceRequirement =
+  | { kind: 'none' }
+  | { kind: 'identity' }
+  | { kind: 'portfolio_full'; rankForQuestion: boolean }
+  | { kind: 'named_projects'; projectSlugs: readonly ProjectSlug[] }
+  | { kind: 'capabilities'; capabilityIds: readonly string[]; includePortfolio: boolean }
+  | { kind: 'controlled_search' };
+
+export interface TurnPlanV1 {
+  schemaVersion: typeof TURN_PLAN_VERSION;
+  plannerVersion: typeof TURN_PLANNER_VERSION;
+  conversationId: string;
+  interactionTurnId: string;
+  currentUserMessageId: string;
+  semantic: SemanticTurnDecision;
+  taskId: string | null;
+  candidateFrame: CandidateConversationTaskFrameV22 | null;
+  evidence: EvidenceRequirement;
+  executor: { kind: 'direct' };
+  reasonCodes: readonly string[];
 }

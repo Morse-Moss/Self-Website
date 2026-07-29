@@ -432,6 +432,7 @@ test('adjacent recruiter evaluation questions keep the exact JD frame without ex
   ];
 
   for (const [index, message] of questions.entries()) {
+    const projectProofQuestion = message === '哪个项目最能证明你能用 Vibe Coding 独立交付？';
     const result = resolve(message, {
       mode: 'interviewer',
       audienceIntent: 'recruiter',
@@ -440,11 +441,21 @@ test('adjacent recruiter evaluation questions keep the exact JD frame without ex
       discourseContext: completedTurn({ contextScopeId: TASK_ID }),
     });
 
-    assert.equal(result.resolved.semantic.intent, 'jd_match', message);
+    assert.equal(
+      result.resolved.semantic.intent,
+      projectProofQuestion ? 'project_fit' : 'jd_match',
+      message,
+    );
     assert.equal(result.resolved.semantic.taskAction, 'continue', message);
     assert.equal(result.resolved.semantic.discourseAction, 'follow_up', message);
-    assert.equal(result.resolved.semantic.reasonCodes[0], 'recruitment_evaluation_follow_up', message);
-    assert.deepEqual(result.resolved.semantic.referent, { kind: 'jd', ref: '13' }, message);
+    assert.equal(
+      result.resolved.semantic.reasonCodes[0],
+      projectProofQuestion ? 'recruitment_project_fit' : 'recruitment_evaluation_follow_up',
+      message,
+    );
+    if (!projectProofQuestion) {
+      assert.deepEqual(result.resolved.semantic.referent, { kind: 'jd', ref: '13' }, message);
+    }
     assert.equal(result.candidateFrame?.taskId, TASK_ID, message);
     assert.equal(result.candidateFrame?.taskKind, frame.taskKind, message);
     assert.deepEqual(result.candidateFrame?.slots, frame.slots, message);

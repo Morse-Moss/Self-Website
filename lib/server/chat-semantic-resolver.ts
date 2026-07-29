@@ -28,7 +28,6 @@ import {
   looksLikeRecruitmentJobDescription,
 } from './chat-message-signals.ts';
 import {
-  compiledChatEvidenceCatalog,
   matchCatalogProjects,
 } from './chat-evidence-catalog.ts';
 import { routeChatTurn, type RouteAnchor } from './chat-route-policy.ts';
@@ -245,7 +244,7 @@ function isProjectCatalog(message: string): boolean {
 }
 
 function isProjectFit(message: string): boolean {
-  return /(?:相关|匹配|适合|胜任|证明|最合适|最相关).{0,18}(?:项目|项目经验)|(?:项目|项目经验).{0,18}(?:相关|匹配|适合)|有什么相关项目经验/iu.test(message);
+  return /(?:相关|匹配|适合|胜任|证明|最合适|最相关).{0,18}(?:项目|项目经验)|(?:项目|项目经验).{0,18}(?:相关|匹配|适合|证明)|有什么相关项目经验/iu.test(message);
 }
 
 function isPersonalHistoryQuestion(message: string): boolean {
@@ -535,7 +534,7 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
     && baseRoute.inheritedFromTurnId === input.discourseContext.turnId
     && ['anaphoric_conversation_followup', 'anaphoric_project_catalog_followup']
       .includes(baseRoute.reasonCode));
-  const projectSlugs = matchCatalogProjects(message, compiledChatEvidenceCatalog);
+  const projectSlugs = matchCatalogProjects(message, input.ledger);
   const capabilities = assessCapabilities(message, input.ledger);
   const capability = capabilities.find((candidate) => candidate.evidenceClass !== 'none')
     ?? capabilities[0]
