@@ -5,6 +5,7 @@ import type { NormalizedChatRequest } from '../contracts/chat-runtime.ts';
 import {
   loadAdjacentCompletedContextTurn,
   loadCanonicalAnswerHistory,
+  loadCapturedLegacyContextBridge,
   loadContextTaskFrame,
 } from './conversation-context-state.ts';
 import { decodeTurnMessage } from './turn-codec.ts';
@@ -84,6 +85,7 @@ export async function loadConversationSessionSnapshot(
     input.conversationId,
     input.currentUserMessageId,
   );
+  const legacyBridge = await loadCapturedLegacyContextBridge(client, input.conversationId);
   const contextScopeId = currentFrame?.taskId ?? adjacentCompletedTurn?.contextScopeId ?? null;
   const completedHistory = contextScopeId
     ? await loadCanonicalAnswerHistory(client, {
@@ -106,5 +108,6 @@ export async function loadConversationSessionSnapshot(
     currentFrame,
     adjacentCompletedTurn,
     completedHistory,
+    legacyBridge,
   });
 }

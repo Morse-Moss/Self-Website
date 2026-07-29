@@ -29,6 +29,7 @@ export interface ConversationSessionSnapshot {
   currentFrame: ConversationTaskFrameV22 | null;
   adjacentCompletedTurn: CompletedContextTurn | null;
   completedHistory: readonly CompletedContextTurn[];
+  legacyBridge: readonly CompletedContextTurn[];
 }
 
 export type EvidenceRequirement =

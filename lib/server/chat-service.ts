@@ -27,6 +27,12 @@ import {
   type ConversationTaskFrameV22,
   type ResolvedChatTurn,
 } from '../contracts/chat-context.ts';
+import type { EvidenceBundle } from '../contracts/chat-evidence-catalog.ts';
+import type {
+  AnswerValidationResult,
+  ConversationSessionSnapshot,
+  TurnPlanV1,
+} from '../contracts/chat-turn-plan.ts';
 import { siteContent } from '../site-content.ts';
 import {
   ProviderRunError,
@@ -52,7 +58,10 @@ import {
 import {
   type ChatAnswerRunnerEvent,
 } from './chat-answer-runner.ts';
-import { DirectAnswerExecutor } from './chat-answer-executor.ts';
+import {
+  DirectAnswerExecutor,
+  type DirectAnswerExecutionInput,
+} from './chat-answer-executor.ts';
 import { createChatExecutionBudget } from './chat-execution-budget.ts';
 import {
   routeChatTurn as routeLegacyChatTurn,
@@ -67,14 +76,21 @@ import {
   buildContextPacket,
   buildTargetGenerationRequestV2,
   ContextPacketBuildError,
+  projectAnswerValidationManifest,
   stableSerialize,
   type BuiltContextPacket,
   type ContextPacketDigestConfig,
 } from './chat-context-packet.ts';
 import {
-  prepareTargetContext,
+  buildQaEvidence,
+  planQaTurn,
+  prepareQaTargetContext,
+  qaCapabilityLedger,
+  QaAnswerBlockedError,
+  runQaTurn,
+  type PlannedChatEvidence,
   type PreparedTargetContext,
-} from './chat-context-coordinator.ts';
+} from './chat-qa-runtime.ts';
 import {
   completeHistorySummaryAttempt,
   findReusableHistoryCompaction,
@@ -86,7 +102,6 @@ import {
   type TerminateHistorySummaryAttemptInput,
 } from './chat-history-compaction.ts';
 import { projectFinalContext } from './chat-context-projection.ts';
-import { planChatEvidence, type PlannedChatEvidence } from './chat-evidence-planner.ts';
 import {
   resolveChatSemanticTurn,
   type ChatSemanticResolution,
@@ -118,7 +133,6 @@ import {
 import {
   type CapabilityAssessment,
 } from './capability-evidence.ts';
-import { compiledChatEvidenceCatalog } from './chat-evidence-catalog.ts';
 import { resolveChatEvidence } from './chat-evidence.ts';
 import { approvedProjectCatalogSources } from './chat-project-evidence.ts';
 import { buildV2SystemInstructions } from './chat-prompt.ts';
@@ -183,7 +197,7 @@ import {
 } from './workflows/diagnosis.ts';
 import { buildJdMatchPrompt } from './workflows/jd-match.ts';
 
-const capabilityLedger = compiledChatEvidenceCatalog;
+const capabilityLedger = qaCapabilityLedger;
 
 export type { ChatServiceErrorCode, ChatServiceEvent } from '../contracts/chat.ts';
 
@@ -223,6 +237,7 @@ export interface ChatServiceConfig {
   providerModelTextTimeoutMs: number;
   providerStageTimeoutMs: number;
   chatTurnTimeoutMs: number;
+  privacyCanaries?: readonly string[];
 }
 
 export type PublicChatSource = ChatSource;
@@ -286,9 +301,12 @@ interface PreparedContextTurn {
   currentFrame: ConversationTaskFrameV22 | null;
   legacyBridgeResolution: 'consumed' | 'invalidated' | null;
   manifest: ContextPacketManifest;
+  evidenceBundle: EvidenceBundle;
   plannedEvidence: PlannedChatEvidence;
   projection: ContextProjection;
   resolution: ChatSemanticResolution;
+  sessionSnapshot: ConversationSessionSnapshot;
+  turnPlan: TurnPlanV1;
   search: SearchResponse | undefined;
 }
 
@@ -816,20 +834,42 @@ async function prepareContextTurn(input: {
           includeConversation: false,
         })
       : [];
-    const plannedEvidence: PlannedChatEvidence = resolved.legacyRoute.deterministicReply
-      ? { knowledge: [], admissions: [], retrievalScores: [], degradedReason: null }
-      : await planChatEvidence({
-          resolved,
-          currentInput: input.request.message,
-          frame: resolution.candidateFrame ?? currentFrame,
-          ledger: capabilityLedger,
-          async embedAll(queries) {
-            const embeddings = await input.provider.embed([...queries], input.signal);
-            if (embeddings.length !== queries.length) throw new Error('EMBEDDING_UNAVAILABLE');
-            return embeddings;
+    const sessionSnapshot: ConversationSessionSnapshot = Object.freeze({
+      conversationId: input.turn.conversationId,
+      interactionTurnId: input.turn.turnId,
+      currentUserMessageId: input.turn.userMessageId,
+      currentInput: input.request.message,
+      workflow: input.request.workflow ?? 'chat',
+      mode: input.request.mode,
+      audienceIntent: input.request.audienceIntent,
+      pageContext: null,
+      currentFrame,
+      adjacentCompletedTurn: discourse,
+      completedHistory: Object.freeze([...history]),
+      legacyBridge: Object.freeze([...legacyBridge]),
+    });
+    const turnPlan = planQaTurn(sessionSnapshot);
+    let evidenceBundle: EvidenceBundle = resolved.legacyRoute.deterministicReply
+      ? {
+          catalogVersion: 2,
+          approved: [],
+          admissions: [],
+          relevance: [],
+          unavailableCapabilityIds: [],
+          degradedReason: null,
+        }
+      : await buildQaEvidence({
+          plan: turnPlan,
+          session: sessionSnapshot,
+          retrieval: {
+            async embedAll(queries) {
+              const embeddings = await input.provider.embed([...queries], input.signal);
+              if (embeddings.length !== queries.length) throw new Error('EMBEDDING_UNAVAILABLE');
+              return embeddings;
+            },
+            retrieveAll: (embeddings) => retrieveFullRelevantKnowledge(input.client, embeddings),
           },
-          retrieveAll: (embeddings) => retrieveFullRelevantKnowledge(input.client, embeddings),
-         });
+        });
     const search = resolved.semantic.intent === 'external_current'
       ? await resolveSearch({
           pool: input.pool,
@@ -845,10 +885,38 @@ async function prepareContextTurn(input: {
           signal: input.signal,
         })
       : undefined;
-    const projectedEvidence = [
-      ...plannedEvidence.knowledge,
-      ...controlledSearchEvidence(search, input.now),
-    ];
+    const searchEvidence = controlledSearchEvidence(search, input.now);
+    if (searchEvidence.length > 0) {
+      evidenceBundle = {
+        ...evidenceBundle,
+        approved: [...evidenceBundle.approved, ...searchEvidence],
+        admissions: [
+          ...evidenceBundle.admissions,
+          ...searchEvidence.map((source) => ({
+            evidenceId: source.chunkId,
+            level: 'direct' as const,
+            projectSlug: null,
+            capabilityId: null,
+          })),
+        ],
+        relevance: [
+          ...evidenceBundle.relevance,
+          ...searchEvidence.map((source) => ({
+            evidenceId: source.chunkId,
+            score: source.score,
+          })),
+        ],
+      };
+    }
+    const plannedEvidence: PlannedChatEvidence = {
+      knowledge: [...evidenceBundle.approved],
+      admissions: [...evidenceBundle.admissions],
+      retrievalScores: evidenceBundle.relevance.flatMap((item) => (
+        item.score === null ? [] : [{ evidenceId: item.evidenceId, score: item.score }]
+      )),
+      degradedReason: evidenceBundle.degradedReason,
+    };
+    const projectedEvidence = [...evidenceBundle.approved];
     projection = projectFinalContext({
       resolved,
       currentUserMessageId: input.turn.userMessageId,
@@ -881,10 +949,13 @@ async function prepareContextTurn(input: {
           bridgeTurnIds,
           buildStatus: 'not_required',
         }),
+        evidenceBundle,
          plannedEvidence,
          projection,
          resolution,
+         sessionSnapshot,
          search,
+         turnPlan,
        };
     }
 
@@ -895,6 +966,9 @@ async function prepareContextTurn(input: {
       currentInput: input.request.message,
       currentUserMessageId: input.turn.userMessageId,
       projection,
+      evidenceBundle,
+      turnPlan,
+      answerValidation: null,
       digestKey: digest.key,
       digestKeyId: digest.keyId,
       reasoningEffort: adaptV2Route(resolved.legacyRoute).reasoningEffort ?? null,
@@ -915,6 +989,7 @@ async function prepareContextTurn(input: {
       currentUserMessageId: input.turn.userMessageId,
       currentInput: input.request.message,
       trustedInstructions: builtPacket.normal.request.baseInstructions,
+      turnPlanManifest: builtPacket.manifest.turn_plan,
       taskFrame: builtPacket.packet.taskFrame,
       taskInputs: builtPacket.packet.taskInputs,
       approvedEvidence: builtPacket.packet.approvedEvidence,
@@ -930,10 +1005,13 @@ async function prepareContextTurn(input: {
       currentFrame,
       legacyBridgeResolution,
       manifest: builtPacket.manifest,
+       evidenceBundle,
        plannedEvidence,
        projection,
        resolution,
+       sessionSnapshot,
        search,
+       turnPlan,
      };
   } catch (error) {
     const failure = stableContextBuildError(error);
@@ -953,9 +1031,15 @@ async function prepareContextTurn(input: {
   }
 }
 
-function contextSuccessManifest(prepared: PreparedContextTurn): ContextPacketManifest {
+function contextSuccessManifest(
+  prepared: PreparedContextTurn,
+  validation: AnswerValidationResult | null = null,
+): ContextPacketManifest {
   return {
     ...prepared.manifest,
+    ...(prepared.manifest.answer_validation ? {
+      answer_validation: projectAnswerValidationManifest(validation),
+    } : {}),
     legacy_bridge_status: prepared.legacyBridgeResolution
       ?? prepared.manifest.legacy_bridge_status,
   };
@@ -1708,6 +1792,7 @@ async function completeTurn(input: {
   completedAt: Date;
   route?: ChatRouteDecision | null;
   context?: PreparedContextTurn | null;
+  validation?: AnswerValidationResult | null;
   signal?: AbortSignal;
 }): Promise<TokenUsage | null> {
   const provider = input.config.providerName ?? 'openai';
@@ -1851,7 +1936,7 @@ async function completeTurn(input: {
         assistantMessageId,
         resolved: input.context.resolution.resolved,
         frame,
-        manifest: contextSuccessManifest(input.context),
+        manifest: contextSuccessManifest(input.context, input.validation ?? null),
         completedAt: input.completedAt,
         bridgeResolution: input.context.legacyBridgeResolution,
       });
@@ -2806,7 +2891,9 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
       capability = resolved.capability;
       capabilities = resolved.capabilities ?? [];
     }
-    const localSources = toLocalPublicSources(knowledge);
+    const localSources = toLocalPublicSources(knowledge.filter(
+      (source) => !source.sourcePath.startsWith('controlled-search/'),
+    ));
     sources = [
       ...localSources,
       ...(search?.status === 'completed'
@@ -3131,7 +3218,8 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
     const dynamicSource = canonicalSource;
     const dynamicDigest = input.config.contextPacketDigest ?? null;
     const directAnswerExecutor = new DirectAnswerExecutor();
-    answerIterator = directAnswerExecutor.stream({
+    let switchingEvents = 0;
+    const directExecutionInput: DirectAnswerExecutionInput = {
       budget: executionBudget,
       now: () => Date.now(),
       releasePolicy: route.release,
@@ -3192,7 +3280,7 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
                           outputTokens: numericOverflow.outputTokens,
                         }
                       : null;
-                    const prepared = await prepareTargetContext({
+                    const prepared = await prepareQaTargetContext({
                       source: dynamicSource,
                       target,
                       variantId,
@@ -3285,7 +3373,177 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
             : undefined,
         }, input.signal);
       },
-    }, input.signal ?? new AbortController().signal)[Symbol.asyncIterator]();
+      onOperationalEvent(event) {
+        if (event.type === 'attempt') {
+          providerAttempts = [
+            ...providerAttempts.filter(
+              (attempt) => attempt.attemptIndex !== event.attempt.attemptIndex,
+            ),
+            event.attempt,
+          ].sort((left, right) => left.attemptIndex - right.attemptIndex);
+        } else {
+          switchingEvents += 1;
+        }
+      },
+    };
+
+    if (preparedContext) {
+      const qaContext = preparedContext;
+      let actualUsage: TokenUsage | null = null;
+      try {
+        const committedTurn = await runQaTurn({
+          privacyCanaries: input.config.privacyCanaries ?? [],
+          signal: input.signal,
+        }, {
+          async loadSession() {
+            return qaContext.sessionSnapshot;
+          },
+          planTurn() {
+            return qaContext.turnPlan;
+          },
+          async buildEvidence() {
+            return qaContext.evidenceBundle;
+          },
+          async buildContext() {
+            return qaContext;
+          },
+          async executeDirect(_runtimeInput, signal) {
+            try {
+              const candidate = await directAnswerExecutor.execute(directExecutionInput, signal);
+              providerAttempts = [...candidate.attempts];
+              providerWinner = candidate.winner;
+              await recordDependencySuccess({
+                client: lockClient,
+                dependency: 'provider',
+                now: clock(),
+              });
+              return candidate;
+            } catch (error) {
+              if (error instanceof ProviderRunError) providerAttempts = [...error.attempts];
+              if (input.signal?.aborted) throw error;
+              await recordDependencyFailure({
+                client: lockClient,
+                dependency: 'provider',
+                errorCode: error instanceof OperationTimeoutError
+                  ? error.code
+                  : dependencyErrorCode(error) ?? 'PROVIDER_UNAVAILABLE',
+                now: clock(),
+              });
+              if (error instanceof OperationTimeoutError) throw error;
+              throw providerPhaseError(error);
+            }
+          },
+          async commitSuccess({ candidate, validation }) {
+            const providerAggregate = candidate.attempts.length > 0
+              ? aggregateProviderAttempts([...candidate.attempts])
+              : {
+                  usage: candidate.usage,
+                  knownCostUsd: null,
+                  usageComplete: candidate.usage !== null,
+                  costComplete: false,
+                };
+            try {
+              actualUsage = await completeTurn({
+                pool: input.pool,
+                client: lockClient,
+                accessSessionId: input.accessSessionId,
+                request: input.request,
+                turn: currentTurn,
+                answer: candidate.text,
+                sources: [...candidate.sources],
+                usage: candidate.usage,
+                attempts: [...candidate.attempts],
+                winner: candidate.winner,
+                usageComplete: providerAggregate.usageComplete,
+                costComplete: providerAggregate.costComplete,
+                knownCostUsd: providerAggregate.knownCostUsd,
+                config: input.config,
+                startedAt,
+                completedAt: clock(),
+                route: v2Route,
+                context: qaContext,
+                validation,
+                signal: input.signal,
+              });
+            } catch (error) {
+              throw new RuntimePhaseError(
+                'PROVIDER_UNAVAILABLE',
+                'PERSISTENCE_FAILED',
+                error,
+                true,
+              );
+            }
+          },
+          async compensateBlock({ validation }) {
+            contextTerminal = {
+              contextScopeId: qaContext.contextScopeId,
+              resolved: qaContext.resolution.resolved,
+              manifest: {
+                ...contextSuccessManifest(qaContext),
+                answer_validation: projectAnswerValidationManifest(validation),
+              },
+            };
+            const compensated = await compensateTurn({
+              client: lockClient,
+              pool: input.pool,
+              accessSessionId: input.accessSessionId,
+              turn: currentTurn,
+              status: 'failed',
+              errorCode: 'CONVERSATION_INVALID',
+              answer: null,
+              sources: [...answerSources],
+              attempts: providerAttempts,
+              winner: providerWinner,
+              config: input.config,
+              startedAt,
+              completedAt: clock(),
+              contextTerminal,
+            });
+            if (!compensated) {
+              throw new RuntimePhaseError(
+                'PROVIDER_UNAVAILABLE',
+                'PERSISTENCE_FAILED',
+                undefined,
+                true,
+              );
+            }
+            completed = true;
+          },
+        });
+
+        answer = committedTurn.publicAnswer;
+        answerSources = [...committedTurn.candidate.sources];
+        completed = true;
+        for (let index = 0; index < switchingEvents; index += 1) {
+          yield { type: 'status', stage: 'switching' };
+        }
+        yield { type: 'delta', text: committedTurn.publicAnswer };
+        const remainingMessages = await getRemainingMessages(
+          lockClient,
+          input.accessSessionId,
+          input.config.maxMessagesPerSession,
+        );
+        yield {
+          type: 'done',
+          usage: actualUsage,
+          budgetLevel: NORMAL_BUDGET_LEVEL,
+          consumed: true,
+          degraded: false,
+          remainingMessages,
+        };
+        return;
+      } catch (error) {
+        if (error instanceof QaAnswerBlockedError) {
+          throw new ChatServiceError('CONVERSATION_INVALID');
+        }
+        throw error;
+      }
+    }
+
+    answerIterator = directAnswerExecutor.stream(
+      directExecutionInput,
+      input.signal ?? new AbortController().signal,
+    )[Symbol.asyncIterator]();
 
     while (true) {
       let next: IteratorResult<ChatAnswerRunnerEvent>;

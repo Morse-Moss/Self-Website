@@ -594,6 +594,23 @@ class ExternalCurrentProvider implements AiProvider {
   }
 }
 
+class StaticContextAnswerProvider implements AiProvider {
+  private readonly answer: string;
+
+  constructor(answer: string) {
+    this.answer = answer;
+  }
+
+  async embed(): Promise<number[][]> {
+    throw new Error('project catalog validation fixture must not embed');
+  }
+
+  async *streamAnswer(): AsyncIterable<AnswerEvent> {
+    yield { type: 'delta', text: this.answer };
+    yield { type: 'done', usage: { inputTokens: 30, outputTokens: 12 } };
+  }
+}
+
 function coordinatedProvider(inner: AiProvider): AiProvider {
   return new FailoverAiProvider(inner, [inner], 90_000);
 }
@@ -1776,10 +1793,102 @@ test('V2.2 project catalog sends all audited projects without embedding', async 
     const meta = events.find((event) => event.type === 'meta');
     assert.equal(meta?.type, 'meta');
     if (meta?.type !== 'meta') return;
-    assert.equal(meta.sources.length, siteContent.projects.length);
+    assert.equal(
+      meta.sources.length,
+      siteContent.projects.length + (siteContent.profile.resumeFacts?.length ?? 0),
+    );
     for (const project of siteContent.projects) {
       assert.match(requests[0].instructions, new RegExp(project.name, 'u'));
     }
+  } finally {
+    await cleanupFixture(fixture);
+  }
+});
+
+test('V2.2 quality warnings commit and release the candidate answer', async () => {
+  const fixture = await createFixture('context-v22-validation-warn');
+  const turnId = randomUUID();
+  const answer = '只回答一个未覆盖完整证据的项目。[来源99]';
+  try {
+    const events = await collectChat({
+      pool,
+      provider: coordinatedProvider(new StaticContextAnswerProvider(answer)),
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        workflow: 'chat',
+        message: '你做过哪些项目？',
+        conversationId: null,
+        turnId,
+      }),
+      config: contextConfig(fixture),
+      now: fixtureNow,
+    });
+
+    assert.deepEqual(
+      events.filter((event) => event.type === 'delta').map((event) => event.text),
+      [answer],
+    );
+    const stored = await pool.query<{
+      answer_validation: { verdict: string; issue_codes: string[] };
+      status: string;
+    }>(
+      `SELECT status, context_manifest->'answer_validation' AS answer_validation
+         FROM interaction_turns WHERE id = $1`,
+      [turnId],
+    );
+    assert.equal(stored.rows[0].status, 'completed');
+    assert.equal(stored.rows[0].answer_validation.verdict, 'warn');
+    assert.ok(stored.rows[0].answer_validation.issue_codes.includes('missing_evidence_coverage'));
+    assert.ok(stored.rows[0].answer_validation.issue_codes.includes('invalid_citation'));
+  } finally {
+    await cleanupFixture(fixture);
+  }
+});
+
+test('V2.2 secret leakage blocks before delta and persists only the issue code', async () => {
+  const fixture = await createFixture('context-v22-validation-block');
+  const turnId = randomUUID();
+  const events: ChatServiceEvent[] = [];
+  try {
+    await assert.rejects(
+      async () => {
+        for await (const event of runChat({
+          pool,
+          provider: coordinatedProvider(new StaticContextAnswerProvider(
+            'Authorization: Bearer sk-12345678901234567890',
+          )),
+          accessSessionId: fixture.accessSessionId,
+          request: normalizeChatRequest({
+            workflow: 'chat',
+            message: '你做过哪些项目？',
+            conversationId: null,
+            turnId,
+          }),
+          config: contextConfig(fixture),
+          now: fixtureNow,
+        })) events.push(event);
+      },
+      (error: unknown) => error instanceof ChatServiceError
+        && error.code === 'CONVERSATION_INVALID',
+    );
+
+    assert.equal(events.some((event) => event.type === 'delta' || event.type === 'done'), false);
+    const stored = await pool.query<{
+      answer: string | null;
+      answer_validation: { verdict: string; issue_codes: string[] };
+      context_manifest: unknown;
+      status: string;
+    }>(
+      `SELECT status, answer, context_manifest,
+              context_manifest->'answer_validation' AS answer_validation
+         FROM interaction_turns WHERE id = $1`,
+      [turnId],
+    );
+    assert.equal(stored.rows[0].status, 'failed');
+    assert.equal(stored.rows[0].answer, null);
+    assert.equal(stored.rows[0].answer_validation.verdict, 'block');
+    assert.ok(stored.rows[0].answer_validation.issue_codes.includes('secret_leak'));
+    assert.doesNotMatch(JSON.stringify(stored.rows[0].context_manifest), /12345678901234567890/u);
   } finally {
     await cleanupFixture(fixture);
   }
@@ -1943,7 +2052,10 @@ test('V2.2 replays the five-turn recruitment failure chain with one bounded task
       conversationId = meta.conversationId;
       assert.deepEqual(
         meta.sources.map((source) => source.href),
-        step.expectedEvidence.map(({ projectSlug }) => `/works#${projectSlug}`),
+        [
+          ...siteContent.projects.map((project) => `/works#${project.slug}`),
+          ...(siteContent.profile.resumeFacts ?? []).map(() => '/'),
+        ],
       );
 
       const stored = await pool.query<{
@@ -1972,7 +2084,10 @@ test('V2.2 replays the five-turn recruitment failure chain with one bounded task
       taskIds.push(row.context_scope_id);
       assert.deepEqual(
         row.context_manifest.evidence_ids,
-        step.expectedEvidence.map(({ projectSlug }) => `project:${projectSlug}`),
+        [
+          ...siteContent.projects.map((project) => `project:${project.slug}`),
+          ...(siteContent.profile.resumeFacts ?? []).map((fact) => `resume-fact:${fact.id}`),
+        ],
       );
       assert.equal(row.context_manifest.packet_hmac_key_id, digest.keyId);
       assert.match(row.context_manifest.packet_hmac_sha256, /^[0-9a-f]{64}$/u);
@@ -1988,22 +2103,20 @@ test('V2.2 replays the five-turn recruitment failure chain with one bounded task
       )?.[1];
       assert.ok(evidenceBlock);
       const projected = JSON.parse(evidenceBlock) as Array<{
+        evidenceId: string;
         evidenceLevel: string;
-        projectSlug: string;
+        projectSlug: string | null;
       }>;
       assert.deepEqual(
-        projected.map((item) => item.projectSlug),
-        step.expectedEvidence.map((item) => item.projectSlug),
+        projected.map((item) => item.evidenceId),
+        [
+          ...siteContent.projects.map((project) => `project:${project.slug}`),
+          ...(siteContent.profile.resumeFacts ?? []).map((fact) => `resume-fact:${fact.id}`),
+        ],
       );
       assert.ok(projected.every((item) => (
         item.evidenceLevel === 'direct' || item.evidenceLevel === 'transferable'
       )));
-      if (index === controlledContextFailureChain.steps.length - 1) {
-        assert.deepEqual(
-          projected.map((item) => ({ projectSlug: item.projectSlug, level: item.evidenceLevel })),
-          step.expectedEvidence,
-        );
-      }
       for (const forbidden of step.forbiddenProjectSlugs) {
         assert.doesNotMatch(providerRequest.instructions, new RegExp(forbidden, 'u'));
       }

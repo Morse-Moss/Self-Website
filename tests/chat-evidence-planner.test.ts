@@ -34,6 +34,7 @@ function sessionSnapshot(
     currentFrame: null,
     adjacentCompletedTurn: null,
     completedHistory: [],
+    legacyBridge: [],
   });
 }
 
@@ -208,6 +209,27 @@ test('Cursor is unavailable metadata and never becomes an approved source', asyn
     bundle.approved.some((item) => item.topicIds?.includes('cursor')),
     false,
   );
+});
+
+test('full portfolio preserves unavailable capability boundaries named in the JD', async () => {
+  const session = sessionSnapshot(
+    '岗位要求：使用 Claude Code 或 Cursor 独立交付网站。',
+  );
+  const plan = planChatTurn(session, compiledChatEvidenceCatalog);
+  assert.equal(plan.evidence.kind, 'portfolio_full');
+
+  const bundle = await planChatEvidence({
+    plan,
+    session,
+    catalog: compiledChatEvidenceCatalog,
+    retrieval: {
+      embedAll: async () => [[1, 0, 0]],
+      retrieveAll: async () => [],
+    },
+  });
+
+  assert.deepEqual(bundle.unavailableCapabilityIds, ['cursor']);
+  assert.equal(bundle.approved.some((item) => item.topicIds?.includes('cursor')), false);
 });
 
 test('project catalog returns the complete audited catalog without embedding', async () => {

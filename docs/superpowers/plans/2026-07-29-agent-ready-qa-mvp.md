@@ -943,7 +943,7 @@ git commit -m "refactor: replace answer rejection with validation"
 
 **Files:** create `lib/server/chat-qa-runtime.ts`, `tests/chat-qa-runtime.test.ts`; modify `lib/server/chat-service.ts`, `lib/server/conversation-context-state.ts`, `tests/chat-sse.test.ts`, `tests/chat-controlled-context-integration.test.ts`.
 
-- [ ] **Step 1: Write RED orchestration-order tests**
+- [x] **Step 1: Write RED orchestration-order tests**
 
 Create `tests/chat-qa-runtime.test.ts` with dependency spies:
 
@@ -985,7 +985,7 @@ node --env-file-if-exists=.env.local --test tests/chat-qa-runtime.test.ts
 
 Expected: FAIL because runtime does not exist.
 
-- [ ] **Step 2: Implement one runtime composition**
+- [x] **Step 2: Implement one runtime composition**
 
 Create:
 
@@ -998,11 +998,11 @@ export async function runQaTurn(
 
 The function loads/fixes the Snapshot once, plans once, builds evidence once, builds one canonical source, executes one direct answer chain, validates once and invokes one success transaction. It returns only committed data. It does not write SSE or authenticate Sessions.
 
-- [ ] **Step 3: Extend the success transaction atomically**
+- [x] **Step 3: Extend the success transaction atomically**
 
 Pass `TurnPlanManifest` and `AnswerValidationManifest` into existing `completeTurn()` / `commitContextTurnSuccess()`. The same transaction must write assistant text, sources, usage, completed status, candidate Frame, completed index and final manifest.
 
-- [ ] **Step 4: Make `chat-service.ts` a lifecycle shell**
+- [x] **Step 4: Make `chat-service.ts` a lifecycle shell**
 
 For `context_packet_v22`, replace inline resolver/evidence/provider/commit blocks with `runQaTurn()`. Keep:
 
@@ -1014,7 +1014,7 @@ For `context_packet_v22`, replace inline resolver/evidence/provider/commit block
 
 Do not rewrite V1/V2 rollback behavior in this task. Add a source-level architecture test that `chat-service.ts` no longer imports catalog compiler, evidence planner internals, context coordinator internals or Validator implementation directly; it may import `runQaTurn()` and shared lifecycle types.
 
-- [ ] **Step 5: Prove commit happens before answer delta**
+- [x] **Step 5: Prove commit happens before answer delta**
 
 In `tests/chat-sse.test.ts`, inject a commit barrier:
 
@@ -1030,7 +1030,7 @@ assert.equal(events.at(-1)?.type, 'done');
 
 Add commit-failure assertion: no delta/done, candidate Frame unchanged, terminal compensation recorded.
 
-- [ ] **Step 6: Run orchestration and PostgreSQL boundaries**
+- [x] **Step 6: Run orchestration and PostgreSQL boundaries**
 
 ```powershell
 node --env-file-if-exists=.env.local --test tests/chat-qa-runtime.test.ts tests/chat-sse.test.ts tests/chat-controlled-context-integration.test.ts tests/context-state-integration.test.ts tests/context-persistence-integration.test.ts
@@ -1038,7 +1038,7 @@ node --env-file-if-exists=.env.local --test tests/chat-qa-runtime.test.ts tests/
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit runtime wiring**
+- [x] **Step 7: Commit runtime wiring**
 
 ```powershell
 git add lib/server/chat-qa-runtime.ts lib/server/chat-service.ts lib/server/conversation-context-state.ts tests/chat-qa-runtime.test.ts tests/chat-sse.test.ts tests/chat-controlled-context-integration.test.ts tests/context-state-integration.test.ts tests/context-persistence-integration.test.ts
@@ -1312,8 +1312,8 @@ Do not recommend large HR promotion unless the real chain passes and the remaini
 
 ## Resume Pointer
 
-Current: `TASK_8 / RED / READY`.
+Current: `TASK_9 / RED / READY`.
 
-Last verified: Task 6 is committed as `9b79215`. Task 7's validator and safety contracts passed `24/24`, chat integrations passed `126/126`, offline `chat:eval` passed `96/96` with `externalCalls=0`, TypeScript passed, and the removed output-guard authority has zero remaining symbol matches. Quality findings warn; only private-data or Secret findings block. No real Provider call, push or deployment has occurred.
+Last verified: Task 8 composes the V2.2 path through `runQaTurn()`: orchestration/context/SSE persistence boundaries passed `64/64`, Session/Planner/Evidence/runtime contracts passed `27/27`, shared chat-service integrations passed `88/88`, and TypeScript passed. Warnings commit before one answer delta; private-data or Secret findings compensate with no answer release; same-turn replay remains Provider-free. No real Provider call, push or deployment has occurred.
 
-Next action: add Task 8 RED orchestration-order and commit-barrier coverage, then compose Session, Plan, Evidence, Context, DirectAnswerExecutor and AnswerValidator behind one Q&A runtime.
+Next action: add Task 9 RED PostgreSQL coverage for the frozen ten-question HR chain and negative safety boundaries, then extend the offline eval authority without adding external calls.

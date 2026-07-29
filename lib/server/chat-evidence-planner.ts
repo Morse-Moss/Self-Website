@@ -17,6 +17,7 @@ import type { Project, ProjectSlug } from '../contracts/site-content.ts';
 import { siteContent } from '../site-content.ts';
 import {
   allApprovedPortfolioEvidence,
+  matchCatalogCapabilities,
 } from './chat-evidence-catalog.ts';
 import { approvedProjectSource } from './chat-project-evidence.ts';
 import {
@@ -431,6 +432,18 @@ function approvedForPlan(input: PlanEvidenceBundleInput): {
   unavailableCapabilityIds: string[];
 } {
   const allApproved = allApprovedPortfolioEvidence(input.catalog);
+  const requestedUnavailableCapabilities = (): string[] => {
+    const texts = [
+      input.session.currentInput,
+      ...input.session.currentFrame?.slots.map((slot) => slot.text) ?? [],
+      ...input.plan.candidateFrame?.slots.map((slot) => slot.text) ?? [],
+    ];
+    return texts
+      .flatMap((text) => matchCatalogCapabilities(text, input.catalog))
+      .filter((capability) => capability.evidenceClass === 'unavailable')
+      .map((capability) => capability.id)
+      .filter((id, index, ids) => ids.indexOf(id) === index);
+  };
   switch (input.plan.evidence.kind) {
     case 'none':
     case 'controlled_search':
@@ -438,7 +451,10 @@ function approvedForPlan(input: PlanEvidenceBundleInput): {
     case 'identity':
       return { approved: [identitySource()], unavailableCapabilityIds: [] };
     case 'portfolio_full':
-      return { approved: allApproved, unavailableCapabilityIds: [] };
+      return {
+        approved: allApproved,
+        unavailableCapabilityIds: requestedUnavailableCapabilities(),
+      };
     case 'named_projects': {
       const requested = new Set(input.plan.evidence.projectSlugs);
       return {

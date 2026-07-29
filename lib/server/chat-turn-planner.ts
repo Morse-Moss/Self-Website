@@ -94,6 +94,7 @@ export function planChatTurn(
     currentUserMessageId: snapshot.currentUserMessageId,
     currentFrame: snapshot.currentFrame,
     discourseContext: snapshot.adjacentCompletedTurn,
+    legacyBridge: snapshot.legacyBridge,
     taskIdFactory: () => snapshot.interactionTurnId,
   });
   const semantic = resolution.resolved.semantic;

@@ -63,6 +63,7 @@ function adjacentTurn(frame: ConversationTaskFrameV22): CompletedContextTurn {
 function snapshot(input: {
   message: string;
   frame?: ConversationTaskFrameV22 | null;
+  legacyBridge?: CompletedContextTurn[];
   audienceIntent?: ConversationSessionSnapshot['audienceIntent'];
   mode?: ConversationSessionSnapshot['mode'];
   workflow?: ConversationSessionSnapshot['workflow'];
@@ -81,8 +82,37 @@ function snapshot(input: {
     currentFrame: frame,
     adjacentCompletedTurn: adjacent,
     completedHistory: adjacent ? [adjacent] : [],
+    legacyBridge: input.legacyBridge ?? [],
   });
 }
+
+test('planner reconstructs the first V2.2 recruitment turn from the captured legacy bridge', () => {
+  const legacyJd = [
+    '岗位：跨境电商产品经理（Vibe Coding 方向）',
+    '工作内容：把业务想法转成产品方案，接手前后端并快速交付。',
+    '岗位要求：使用 Claude Code，依据用户反馈和业务数据持续迭代。',
+  ].join('\n');
+  const bridge: CompletedContextTurn[] = [{
+    conversationId,
+    turnId: '55555555-5555-4555-8555-555555555555',
+    contextScopeId: '55555555-5555-4555-8555-555555555555',
+    user: { id: '7', role: 'user', text: legacyJd },
+    assistant: { id: '8', role: 'assistant', text: '已记录岗位信息。' },
+    completedAt: new Date('2026-07-29T01:10:00.000Z'),
+  }];
+
+  const plan = planChatTurn(snapshot({
+    message: '如何把跨境电商业务想法转成可执行产品方案？',
+    legacyBridge: bridge,
+    audienceIntent: 'recruiter',
+    mode: 'interviewer',
+  }), compiledChatEvidenceCatalog);
+
+  assert.equal(plan.semantic.intent, 'jd_match');
+  assert.equal(plan.semantic.taskAction, 'continue');
+  assert.equal(plan.evidence.kind, 'portfolio_full');
+  assert.ok(plan.candidateFrame?.slots.some((slot) => slot.slot === 'job_description'));
+});
 
 test('planner maps the semantic matrix to one direct execution contract', () => {
   const frame = recruitmentFrame();
