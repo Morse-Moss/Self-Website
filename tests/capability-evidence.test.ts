@@ -60,6 +60,15 @@ test('sanitized resume facts provide direct evidence for Claude Code and Codex w
   );
 });
 
+test('AI programming collaboration aliases resolve to the same direct resume evidence', () => {
+  const ledger = compileCapabilityLedger(siteContent, chatCapabilityPolicy);
+  for (const alias of ['Vibe Coding', 'AI 编程协作', 'AI 辅助编程']) {
+    const results = assessCapabilities(`岗位要求：${alias} 独立交付网站。`, ledger);
+    assert.deepEqual(results.map((result) => result.capabilityId), ['ai-programming-collaboration']);
+    assert.match(results[0]?.direct[0]?.sourceText ?? '', /使用 Claude Code、Codex、WorkBuddy 完成开发/u);
+  }
+});
+
 test('CC shorthand resolves to the same direct Claude Code resume evidence', () => {
   const results = assessCapabilities(
     '你用过 CC 和 codex 吗？',

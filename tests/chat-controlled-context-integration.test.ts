@@ -2235,6 +2235,56 @@ test('recruiter-chat JD projects audited Claude Code evidence into V2.2', async 
   }
 });
 
+test('production Vibe Coding question keeps five project sources and audited AI programming evidence', async () => {
+  const fixture = await createFixture('HR interview');
+  const provider = new ControlledAnswerProvider();
+  try {
+    await seedFailureChainKnowledge();
+    const message = '岗位是跨境电商产品经理，强调 AI Native、Vibe Coding、独立站持续维护、把业务需求拆成产品方案并快速上线。请介绍与这个岗位最相关的三个项目和能力证据，只使用真实项目事实，也明确没有直接跨境电商经验这一类缺口。';
+    const events = await collectChat({
+      pool,
+      provider: coordinatedProvider(provider),
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        workflow: 'chat',
+        message,
+        mode: 'interviewer',
+        audienceIntent: 'recruiter',
+        conversationId: null,
+        turnId: randomUUID(),
+      }),
+      config: contextConfig(fixture, {
+        contextCanaryInviteIds: new Set(),
+        contextCanaryInviteLabels: new Set(['HR interview']),
+      }),
+      now: fixtureNow,
+    });
+
+    assert.ok(events.some((event) => event.type === 'done'));
+    assert.equal(provider.requests.length, 1);
+    const evidenceBlock = provider.requests[0].instructions.match(
+      /<approved_evidence>([\s\S]*?)<\/approved_evidence>/u,
+    )?.[1];
+    assert.ok(evidenceBlock);
+    const evidence = JSON.parse(evidenceBlock) as Array<{
+      content: string;
+      documentId: string;
+      projectSlug: string | null;
+      topicIds: string[];
+    }>;
+    assert.deepEqual(
+      new Set(evidence.filter((item) => item.projectSlug).map((item) => item.projectSlug)),
+      new Set(['ai-leadgen', 'auto-operations', 'content-agent', 'digital-morse', 'deep-research']),
+    );
+    const resumeEvidence = evidence.find((item) => item.documentId === 'resume-facts');
+    assert.ok(resumeEvidence);
+    assert.match(resumeEvidence.content, /使用 Claude Code、Codex、WorkBuddy 完成开发/u);
+    assert.ok(resumeEvidence.topicIds.includes('ai-programming-collaboration'));
+  } finally {
+    await cleanupFixture(fixture);
+  }
+});
+
 test('recruiter evaluation follow-ups keep the original JD and audited evidence', async () => {
   const fixture = await createFixture('HR interview');
   const provider = new ControlledAnswerProvider();

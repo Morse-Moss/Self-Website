@@ -33,6 +33,11 @@
       "projectSlugs": ["deep-research"]
     },
     {
+      "id": "ai-programming-collaboration",
+      "label": "AI 编程协作",
+      "aliases": ["Vibe Coding", "AI 编程协作", "AI 辅助编程"]
+    },
+    {
       "id": "claude-code",
       "label": "Claude Code",
       "aliases": ["Claude Code", "CC"]

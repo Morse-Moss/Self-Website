@@ -255,6 +255,35 @@ test('JD match keeps audited resume capability evidence alongside ranked project
   );
 });
 
+test('JD match maps Vibe Coding to audited AI programming collaboration evidence', async () => {
+  const deps = dependencies([
+    source('ai-leadgen', 0.95),
+    source('auto-operations', 0.92),
+    source('content-agent', 0.89),
+    source('digital-morse', 0.86),
+    source('deep-research', 0.83),
+  ]);
+  const currentInput = '岗位是跨境电商产品经理，强调 AI Native、Vibe Coding、独立站持续维护、把业务需求拆成产品方案并快速上线。请介绍与这个岗位最相关的三个项目和能力证据，只使用真实项目事实，也明确没有直接跨境电商经验这一类缺口。';
+  const result = await planChatEvidence({
+    resolved: resolved('jd_match'),
+    currentInput,
+    frame: frame([slot('job_description', currentInput)]),
+    ledger,
+    embed: deps.embed,
+    retrieve: deps.retrieve,
+  });
+
+  assert.deepEqual(
+    new Set(result.knowledge.filter((item) => item.projectSlug).map((item) => item.projectSlug)),
+    new Set(['ai-leadgen', 'auto-operations', 'content-agent', 'digital-morse', 'deep-research']),
+  );
+  const resumeEvidence = result.knowledge.find((item) => item.documentId === 'resume-facts');
+  assert.ok(resumeEvidence);
+  assert.equal(resumeEvidence.chunkId, 'resume-facts:ledger:jd');
+  assert.match(resumeEvidence.content, /使用 Claude Code、Codex、WorkBuddy 完成开发/u);
+  assert.ok(resumeEvidence.topicIds?.includes('ai-programming-collaboration'));
+});
+
 test('JD match keeps audited resume capability evidence when no project qualifies', async () => {
   const deps = dependencies([
     source('digital-morse', 0.44),

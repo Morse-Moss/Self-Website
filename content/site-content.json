@@ -61,7 +61,7 @@
         "id": "ai-application-role",
         "title": "AI 应用工程经历（公司信息已脱敏）",
         "content": "在 AI 应用团队对接内容创作、自动运营和外贸获客需求，把业务问题整理成 SOP、产品流程和 Agent 工作流；独立完成前后端开发、测试、部署上线与持续维护。搭建并维护企业内部 LLM 中转，整合 Claude 模型与多个上游渠道，供团队统一调用。使用 Claude Code、Codex、WorkBuddy 完成开发、代码检查、测试、部署和上线维护，覆盖内容创作与自动运营系统。",
-        "capabilityIds": ["claude-code", "codex", "workbuddy"]
+        "capabilityIds": ["ai-programming-collaboration", "claude-code", "codex", "workbuddy"]
       },
       {
         "id": "ai-leadgen-mvp",

@@ -4,10 +4,17 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**HR_PROJECT_ORDINAL_FOLLOWUP / VERIFY / LOCAL_READY_376C3FE_DIRTY**
+**HR_VIBE_CODING_EVIDENCE_RECALL / VERIFY / LOCAL_READY_49EB0F9_DIRTY**
 
 ## next_allowed_pointer
-当前 `master / origin/master` 与生产 Web release 均为 `376c3fe`。该 release 的真实 HR 首轮正确列出 AI 外贸获客系统、内容创作 Agent 系统和数字摩斯，但紧邻追问“只展开第一个”错误回答内容创作 Agent；turn 元数据虽为 `project_catalog / follow_up` 且继承正确，却将全部项目证据交给 Provider，未把序号解析成上一轮答案顺序中的实际项目。当前 owned diff 按上一轮回答的首次出现顺序解析项目，把唯一正向序号追问收窄为 `named_project_fact` 与单一项目 evidence，并让输出守卫拒绝显式回答其他项目；多候选、否定候选、非项目序号、跨句独立意图与切题 continuation 均保持保守隔离。独立 CRITICAL 复核 `PASS`；受影响单元 `121/121`、完整受控上下文 PostgreSQL integration `37/37`、串行完整 unit `922/922`、typecheck、33-route production build 与 `git diff --check` 已通过。下一步只允许精确提交当前实现、测试和本指针，推送冻结 commit，核验归档 SHA-256 后只重建 Web；Worker、DB、Embedding、Edge、migration、grants、ingest 保持不动。健康、指针、容器身份和 release smoke 通过后，从全新隔离 `HR interview` Session 重新执行 11 轮真实 HR 链，并逐轮核对 `interaction_turns`；任一答非所问、错误项目、0 evidence、编造、拒答、5xx 或 Task 切换立即停测。
+当前 `master / origin/master` 与生产 Web release 均为 `49eb0f9`。全新 `HR interview` Session 的真实首轮已完成并暴露新的效果失败：回答错误声称没有 Vibe Coding 工具链直接证据，而知识库实际已有 Claude Code、Codex、WorkBuddy 的开发、检查、测试、部署和维护事实。根因是能力策略只识别具体工具名，不识别本轮仅出现的 `Vibe Coding`，导致证据规划没有把 `resume-facts` 交给 Provider。当前 owned diff 新增受控能力 `ai-programming-collaboration`，只把 `Vibe Coding`、`AI 编程协作`、`AI 辅助编程` 映射到现有审核简历事实，不把 Vibe Coding 等同于单一工具或扩写成未经审核的方法论；生产原句仍保留 5 个项目 evidence，并新增包含 Claude Code、Codex、WorkBuddy 的 `resume-facts:ledger:jd`。双视角 CRITICAL 复核均无 blocker；聚焦边界 `124/124`、别名增量 `26/26`、串行完整 unit `924/924`、PostgreSQL integration `349/349`、typecheck、33-route production build 与 `git diff --check` 已通过。下一步只允许精确提交当前 5 个实现/测试文件与本指针，推送冻结 commit，核验归档 SHA-256 后只重建 Web；Worker、DB、Embedding、Edge、migration、grants、ingest 保持不动。健康、生产指针、容器身份和 release smoke 通过后，从全新隔离 `HR interview` Session 重新执行完整 11 轮真实 HR 链，并逐轮核对 `interaction_turns`；任一答非所问、错误项目、0 evidence、编造、拒答、5xx 或 Task 切换立即停测。
+
+## HR Vibe Coding 能力证据召回修复（2026-07-29，本地验证完成，待部署）
+- Production observation：`49eb0f9` 的真实首轮为 `context_packet_v22 / chat / general / jd_match / new_task / create`，5 个项目来源与 evidence 均正常，但回答错误否认 Vibe Coding 相关工具链直接证据；门禁已停止，未发送第 2 轮。
+- Root cause and correction：`chat-capability-policy` 缺少 Vibe Coding 对应能力，`assessCapabilities()` 返回空，`rankedCapabilitySources()` 因而没有加入 `resume-facts`。新增 `ai-programming-collaboration` 及三个受控别名，并关联现有 `ai-application-role` 简历事实；路由、Provider、Prompt、数据库结构和项目排序均未改动。
+- Verification：生产原句先红后绿；服务集成确认 5 个项目来源全部保留并新增审核简历事实；聚焦 `124/124`、别名增量 `26/26`、串行完整 unit `924/924`、PostgreSQL integration `349/349`、typecheck、33-route build 与 diff check 通过。
+- Review：CRITICAL 质量与合规双视角均返回 `PASS`，无 blocker；补充的中文别名覆盖已在评审后完成并通过聚焦测试。
+- Next action：精确 commit/push 后 Web-only 部署，再从全新 Session 重跑 11 轮真实对话；当前修复尚未部署，不得写成生产已修复或 `OBSERVED`。
 
 ## superseded_previous_pointer
 当前生产应用运行 `2267208`。全新 `HR interview` 单 Session 的招聘入口、完整 JD、问题 1 和问题 2 已分别以受控招聘 Task、原始 JD slot、审核来源和 evidence 完成；问题 3“如何把跨境电商业务想法转成可执行产品方案？”却落入 `general_conversation / one_shot / temporary`，Context Packet 为 0 sources / 0 evidence，真实十问门禁已按合同停止。根因是招聘 Task 只承接少数短追问，而自包含的招聘方法论问题被通用会话规则抢走；同时第一版修复会把评估问题误写为新增 JD，并可能覆盖原 frame 的 slot、task kind 和 temporary scope。下一步只允许先红后绿实现受控 `interviewer + recruiter + active JD frame + adjacent same scope` 评估续接，保证评估本轮不提取任何 slot、保留原 Task Frame 身份，并让所有 temporary turn 使用当前 turn 的隔离 scope；通过聚焦与完整本地门禁、CRITICAL 双视角审查后再精确 commit/push、冻结归档、只重建 Web/Worker，并从全新邀请重跑入口、完整 JD 与 10 问。任一轮答非所问、无证据、编造、5xx、拒答或漏项时立即停止并检查该 turn 元数据，不在失败历史上盲目重试。
