@@ -397,7 +397,7 @@ git commit -m "refactor: centralize chat evidence catalog"
 
 **Files:** create `lib/contracts/chat-turn-plan.ts`, `lib/server/chat-conversation-session.ts`, `tests/chat-conversation-session.test.ts`; modify `lib/server/conversation-context-state.ts` only to expose existing reads cleanly.
 
-- [ ] **Step 1: Write RED completed-only Snapshot tests**
+- [x] **Step 1: Write RED completed-only Snapshot tests**
 
 Create `tests/chat-conversation-session.test.ts` with a disposable PostgreSQL fixture containing completed, failed, stopped and running turns:
 
@@ -429,7 +429,7 @@ node --env-file-if-exists=.env.local --test tests/chat-conversation-session.test
 
 Expected: FAIL because the loader does not exist.
 
-- [ ] **Step 2: Define Snapshot and Plan base contracts**
+- [x] **Step 2: Define Snapshot and Plan base contracts**
 
 Create the exact base in `lib/contracts/chat-turn-plan.ts`:
 
@@ -454,11 +454,11 @@ export interface ConversationSessionSnapshot {
 
 Use existing exported request types for `ChatWorkflow`, `ChatMode` and `AudienceIntent`; do not redeclare string unions.
 
-- [ ] **Step 3: Implement one frozen loader**
+- [x] **Step 3: Implement one frozen loader** (`conversation-context-state.ts` checked-no-change)
 
 Create `loadConversationSessionSnapshot()` in `lib/server/chat-conversation-session.ts`. Reuse `loadContextTaskFrame()` and `loadCanonicalAnswerHistory()`; add one adjacent-completed query only if no existing helper expresses it. Validate current message ID, role and conversation, then deep-freeze arrays/objects.
 
-- [ ] **Step 4: Run Snapshot and state regressions**
+- [x] **Step 4: Run Snapshot and state regressions**
 
 ```powershell
 node --env-file-if-exists=.env.local --test tests/chat-conversation-session.test.ts tests/canonical-history.test.ts tests/context-state-integration.test.ts
@@ -466,7 +466,7 @@ node --env-file-if-exists=.env.local --test tests/chat-conversation-session.test
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the Session boundary**
+- [x] **Step 5: Commit the Session boundary**
 
 ```powershell
 git add lib/contracts/chat-turn-plan.ts lib/server/chat-conversation-session.ts lib/server/conversation-context-state.ts tests/chat-conversation-session.test.ts
@@ -1312,8 +1312,8 @@ Do not recommend large HR promotion unless the real chain passes and the remaini
 
 ## Resume Pointer
 
-Current: `TASK_2 / RED / IN_PROGRESS`.
+Current: `TASK_3 / RED / IN_PROGRESS`.
 
-Last verified: Task 1 is locally committed as `64bf402`; Catalog v2 focused regressions passed `122/122`, `chat-service-integration` passed `88/88`, `chat:eval` passed `96/96` with `externalCalls=0`, and TypeScript plus the old-authority scan passed after deleting policy v1. No Provider call, push or deployment has occurred.
+Last verified: Task 2 is locally committed as `85f8855`; Snapshot/state regressions passed `11/11` and TypeScript passed. The Snapshot reads the exact stored user envelope, filters to completed same-scope V2.2 history and freezes the result without an application length cap. No Provider call, push or deployment has occurred.
 
-Next action: create Task 2 RED coverage in `tests/chat-conversation-session.test.ts` and `tests/chat-turn-planner.test.ts`, then confirm failure is caused by the missing snapshot/planner implementation.
+Next action: create Task 3 RED coverage for the deterministic plan matrix and HR-chain invariants, then confirm failure is caused by the incomplete TurnPlan contract/planner.
