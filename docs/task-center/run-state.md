@@ -4,10 +4,18 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**HR_VIBE_CODING_EVIDENCE_RECALL / VERIFY / LOCAL_READY_49EB0F9_DIRTY**
+**AGENT_READY_QA_MVP / CLOSE / OBSERVED_D223AFE**
 
 ## next_allowed_pointer
-当前 `master / origin/master` 与生产 Web release 均为 `49eb0f9`。全新 `HR interview` Session 的真实首轮已完成并暴露新的效果失败：回答错误声称没有 Vibe Coding 工具链直接证据，而知识库实际已有 Claude Code、Codex、WorkBuddy 的开发、检查、测试、部署和维护事实。根因是能力策略只识别具体工具名，不识别本轮仅出现的 `Vibe Coding`，导致证据规划没有把 `resume-facts` 交给 Provider。当前 owned diff 新增受控能力 `ai-programming-collaboration`，只把 `Vibe Coding`、`AI 编程协作`、`AI 辅助编程` 映射到现有审核简历事实，不把 Vibe Coding 等同于单一工具或扩写成未经审核的方法论；生产原句仍保留 5 个项目 evidence，并新增包含 Claude Code、Codex、WorkBuddy 的 `resume-facts:ledger:jd`。双视角 CRITICAL 复核均无 blocker；聚焦边界 `124/124`、别名增量 `26/26`、串行完整 unit `924/924`、PostgreSQL integration `349/349`、typecheck、33-route production build 与 `git diff --check` 已通过。下一步只允许精确提交当前 5 个实现/测试文件与本指针，推送冻结 commit，核验归档 SHA-256 后只重建 Web；Worker、DB、Embedding、Edge、migration、grants、ingest 保持不动。健康、生产指针、容器身份和 release smoke 通过后，从全新隔离 `HR interview` Session 重新执行完整 11 轮真实 HR 链，并逐轮核对 `interaction_turns`；任一答非所问、错误项目、0 evidence、编造、拒答、5xx 或 Task 切换立即停测。
+当前 `master / origin/master`、功能分支与生产 Web/Worker release 均为 `d223afe`。Agent-Ready 基础问答 MVP 的单一真实招聘 Session 已完成入口、完整 JD 与 10 个正式问题：12/12 turn 完成，后 11 turn 各一次 Provider completed/winner，无失败或重复调用；同一 Task/JD、5 个审核项目、9 条审核证据、direct executor 与 `context_packet_v22` 保持稳定，所有正式回答通过相关性、拒答、错误证据否认、隐私和数字编造门禁。最终 15.53 分钟窗口内 live/ready、五容器健康/重启、Web/Worker/Edge/DB 错误与 Edge 5xx 全部通过；邀请和唯一 Session 已清理，清理后 release smoke 仍为 `{"ok":true}`。状态为 `OBSERVED / HR_QA_MVP_ACCEPTED / LIMITED_LAUNCH / PERCENT_0`。下一步不是继续堆功能，而是开始定向 HR 推广、收集自然 badcase；Skills、工具 Agent 与自动联网继续冻结，只有真实复现证明基础规划、证据或回答存在缺口时才重新进入开发。
+
+## Agent-Ready 基础问答 MVP（2026-07-29，生产真实验收完成）
+- Architecture：单一确定性 TurnPlanner 生成版本化 TurnPlan，Evidence Admission、Direct Executor 与非阻断 Answer Validator 各自只有一个职责；不再有第二次语义模型调用、在线输出拒绝守卫或质量触发重生成。未来 Skills/工具/Agent 只能挂到 executor 边界，当前未接入。
+- Delivery：`d223afe` 已吸收、推送并部署；冻结归档 19,727,911 bytes，SHA-256 `b3d07876cdaf15e620fd5a1ddd4a1168d29e32c0696f3e2bf05079aea98ab787`。Web/Worker 指向精确不可变 release，DB/Embedding/Edge 身份未变。
+- Local verification：typecheck、`1262/1262` 零 skip、33-route build、`chat:eval 111/111 externalCalls=0` 与 diff check 通过；CRITICAL 合规和质量视角均 PASS。
+- Real observation：入口 + JD + 10 问全部完成；11 个 Provider-backed turn 均单 attempt/single winner，Task/JD/evidence 稳定，无 search、拒答、编造、泄露、5xx 或重复 done。`missing_evidence_coverage` 为所有生成轮的非阻断告警，不改变正文或触发额外调用。
+- Stability and cleanup：15.53 分钟四个检查点全部通过；邀请停用、Session/conversation/turn 清理完成，清理后健康与 release smoke 复验通过。
+- Next action：开始定向 HR 推广并记录自然 badcase。固定十问通过不能替代真实流量分布；主要产品风险为自然问法覆盖，主要运行风险为 edge 限流、集中监控、托管备份恢复和更广国内可达性。
 
 ## HR Vibe Coding 能力证据召回修复（2026-07-29，本地验证完成，待部署）
 - Production observation：`49eb0f9` 的真实首轮为 `context_packet_v22 / chat / general / jd_match / new_task / create`，5 个项目来源与 evidence 均正常，但回答错误否认 Vibe Coding 相关工具链直接证据；门禁已停止，未发送第 2 轮。

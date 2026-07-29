@@ -1221,7 +1221,7 @@ All implementation files should already be in the reviewed task commits. If revi
 
 **Files:** no source changes unless an observed defect is first reproduced; create `docs/verify/release/agent-ready-qa-mvp-production-closeout-2026-07-29.md` and update current authority pointers after observation.
 
-- [ ] **Step 1: Recheck authorization and current release state**
+- [x] **Step 1: Recheck authorization and current release state**
 
 Before push or production mutation, reread `morse-dev-sop`, `closeout`, `docs/runbooks/production.md` and `docs/runbooks/tencent-lighthouse.md`. Confirm the user has explicitly resumed implementation/deployment at the intended reasoning level.
 
@@ -1234,7 +1234,7 @@ git -C E:\Revolution worktree list --porcelain
 
 Stop if mainline/ownership changed, reviews are not PASS or authorization is absent.
 
-- [ ] **Step 2: Absorb onto latest mainline and refresh invalidated checks**
+- [x] **Step 2: Absorb onto latest mainline and refresh invalidated checks**
 
 Use the current `closeout` absorption method. Preserve root untracked files. After absorption run:
 
@@ -1248,7 +1248,7 @@ git diff --check
 
 Expected: PASS at the exact absorbed commit.
 
-- [ ] **Step 3: Push only the frozen absorbed commit**
+- [x] **Step 3: Push only the frozen absorbed commit**
 
 ```powershell
 git push origin master
@@ -1258,7 +1258,7 @@ git rev-parse origin/master
 
 Expected: exact SHA equality. If GitHub transport fails, report local/remote separation; do not claim push.
 
-- [ ] **Step 4: Deploy through the current immutable-release runbook**
+- [x] **Step 4: Deploy through the current immutable-release runbook**
 
 Follow `docs/runbooks/tencent-lighthouse.md` from the exact pushed commit: create one archive outside the repo, record SHA-256, transfer, verify the same hash, create a new immutable release directory, link protected shared config/secrets without printing them, build required Web/Worker images, switch `/opt/revolution/current`, and restart only services required by the actual diff.
 
@@ -1271,7 +1271,7 @@ npm run release:smoke
 
 On the server verify five containers healthy, restart counts 0, release pointer and Web/Worker image working directories match the exact release. A healthy result is `DEPLOYED_UNOBSERVED`, not answer-quality proof.
 
-- [ ] **Step 5: Run one fresh authorized HR Session**
+- [x] **Step 5: Run one fresh authorized HR Session**
 
 Use one new exact-label `HR interview` Session. Keep Context Packet percent `0`; do not broaden public traffic. Send exactly:
 
@@ -1296,11 +1296,11 @@ exactly one done
 
 Immediately stop on an irrelevant answer, false fact, false evidence denial, 0 HR evidence, Task/JD drift, quality rejection, 5xx, missing done, duplicate charge or private/Secret exposure. Diagnose that exact turn before any further question.
 
-- [ ] **Step 6: Observe and record production evidence**
+- [x] **Step 6: Observe and record production evidence**
 
 After the final question, observe live/ready, container health/restarts, Web/Worker/Edge errors, attempt counts and Session terminal state for 15 minutes. Write `docs/verify/release/agent-ready-qa-mvp-production-closeout-2026-07-29.md` with exact commit/pointer/image IDs, bounded per-turn status counts, warning codes, stop signals, observation window and exclusions. Do not store raw JD, questions, answers, HMACs, Provider payloads, credentials or Session tokens.
 
-- [ ] **Step 7: Finish at OBSERVED / KNOWLEDGE_RECONCILED**
+- [x] **Step 7: Finish at OBSERVED / KNOWLEDGE_RECONCILED**
 
 Reconcile blueprint, production runbooks and task center with the observed state. Commit/push only the production evidence and justified authority updates under the same scoped authorization. The final claim may be:
 
@@ -1312,8 +1312,8 @@ Do not recommend large HR promotion unless the real chain passes and the remaini
 
 ## Resume Pointer
 
-Current: `TASK_11 / INTAKE / READY`.
+Current: `TASK_11 / CLOSE / OBSERVED`.
 
-Last verified: Task 10 removed the second semantic-planning call from `chat-service`, moved shared Provider result types back into the contracts layer, and restored an acyclic production dependency graph. The affected architecture/Planner/Evidence/Validator/Runtime/PostgreSQL/SSE boundary passed `112/112`; the full suite passed `1260/1260` with zero skips; deterministic chat evaluation passed `111/111` with `externalCalls=0`; RAG evaluation passed top-3 `46/46` and top-1 `36/46`; TypeScript and the 33-route production build passed. Fresh S10 Mock E2E passed all 26 scenarios at 1440x900 and 390x844 with 13 screenshots, no overflow, zero console/page errors, and no external Provider call. Duplicate-authority, privacy and Secret scans and both CRITICAL review views passed. No real Provider call, mainline absorption, push or deployment has occurred.
+Last verified: Task 11 absorbed, pushed and deployed `d223afe`, then completed one fresh isolated HR chain containing recruiter entry, complete JD and ten formal questions. All 12 turns completed; the 11 Provider-backed turns each had one completed/winning attempt, one `done`, the same Task/JD, exact five approved projects and exact nine evidence IDs. All ten formal answers passed relevance, refusal, evidence-denial, private/Secret and unsupported-quantity gates. A 15.53-minute production window kept live/ready at 200, five containers healthy with zero restarts, error-keyword and Edge 5xx counts at zero, and attempt/session totals unchanged. The test invite and Session were cleaned up and post-cleanup release smoke passed. Local typecheck, full `1262/1262` zero-skip suite, 33-route build, `chat:eval 111/111 externalCalls=0`, diff check and both CRITICAL review views remain the bound verification receipt.
 
-Next action: reread the deployment safety/runbook authority, recheck the shared root and worktree state, then absorb this reviewed branch onto the latest mainline before any push, deployment or real HR Session.
+Next action: none inside this closed implementation scope. Begin targeted HR promotion and collect natural badcases; reopen development only for a reproduced failure or a separately approved Skills/tool/search increment.

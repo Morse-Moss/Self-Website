@@ -2,13 +2,14 @@
 
 本文对应 `aimorse.tech` 的生产部署。当前实例为腾讯云 Lighthouse 首尔节点，公网地址为 `43.133.68.202`。境外节点不需要 ICP 备案；DNS 解析和 HTTPS 证书签发已完成，域名实名状态继续由腾讯云注册控制台维护。
 
-## 当前生产状态（2026-07-29，HR 招聘评估修复已部署，待真实验收）
+## 当前生产状态（2026-07-29，Agent-Ready 基础问答 MVP 已观察）
 
-- 状态：`DEPLOYED_UNOBSERVED / HR_TARGETED / PERCENT_0`。当前运行提交为 `c449668`；`/opt/revolution/current` 与 Web/Worker Compose working directory 指向 `/opt/revolution/releases/c449668/revolution`，运行提交已进入 `origin/master`。真实 HR 验收完成前不得大量推广。
-- 本地冻结归档为 19,670,667 bytes，SHA-256 `aee58edc433a654ee17a64b84ca9ac991f5172e9b5abf1ee6f83ce14681381c1`。该 release 修复首个 HR 评估问题被误路由为 `unsupported_personal_history / temporary`、新建 Task 且为 0 sources / 0 evidence 的问题。
-- Web 镜像为 `sha256:9646acb1aff547171c63ac061fc11d73e58885c180b5629ef2e44a7610d8933f`，Worker 镜像为 `sha256:4e9534fbadd56ea668080ed2c40247a48f531fa17ffbba0b53bb1b0d2f44448d`。本轮只重建 Web/Worker；DB、Embedding、Edge 身份未变，五容器均 healthy 且 restart count 为 0。没有运行 migration、grants 或 ingest，也没有新增模型、输入、输出、历史、检索、Provider attempt 或成本限制。
-- Context Packet 保持 enabled、percent `0` 和精确 `HR interview` 标签准入。新修复只扩展同一 recruiter/JD/same-scope Task 内的自包含评估问法，单项目事实、纯能力核验、外部实时、安全请求、显式切换和 JD 补充继续隔离。
-- 公网 live/ready/首页为 200，受保护 Admin 接口为 401，release smoke 通过；Web/Worker/Edge 近期错误关键词计数为 0。用户正在用全新单 Session 重跑入口、完整 JD 和十问；任一答非所问、无 evidence、编造、拒答或 5xx 立即停止。脱敏部署证据见 `docs/verify/release/hr-recruitment-evaluation-followup-production-closeout-2026-07-29.md`。
+- 状态：`OBSERVED / HR_QA_MVP_ACCEPTED / LIMITED_LAUNCH / PERCENT_0`。当前运行提交为 `d223afe`；`/opt/revolution/current` 与 Web/Worker Compose working directory 指向 `/opt/revolution/releases/d223afe/revolution`，运行提交已进入 `origin/master`。
+- 本地冻结归档为 19,727,911 bytes，SHA-256 `b3d07876cdaf15e620fd5a1ddd4a1168d29e32c0696f3e2bf05079aea98ab787`。Web 镜像为 `sha256:8c3131f04f0c758a8a3c0de73c22c479a89b19ac7461b5647f7014065d670b18`，Worker 镜像为 `sha256:7b707a1743f5f0401f6cb485e7ec458186ff98d80941786e6bf621d5ced714cb`。
+- 本轮只重建 Web/Worker；DB、Embedding、Edge 身份未变。五容器均 healthy 且 restart count 为 0；没有运行 migration、grants 或 ingest，也没有新增模型、输入、输出、历史、检索、Provider attempt 或成本限制。
+- 一次全新单 Session 真实 HR 链完成入口、完整 JD 与 10 个正式问题。12/12 turn 完成；入口不调用 Provider，后续 11 turn 各有且仅有一次 completed/winner attempt；同一 Task/JD、5 个审核项目、9 条审核证据和 direct executor 保持稳定，所有正式答案通过相关性与安全门禁。
+- 最终 15.53 分钟窗口内公网 live/ready 为 200，五容器无重启，Web/Worker/Edge/DB 错误关键词和 Edge 5xx 均为 0。测试邀请已停用，唯一 Session 及关联 conversation/turn 已清理；清理后 release smoke 仍通过。
+- 可开始定向 HR 推广，但继续按 `LIMITED_LAUNCH` 管理。主要产品风险是固定十问之外的自然措辞覆盖与 `missing_evidence_coverage` 非阻断告警；主要运行风险仍是 edge 独立限流、集中监控、托管备份恢复与更广国内可达性。完整脱敏证据见 `docs/verify/release/agent-ready-qa-mvp-production-closeout-2026-07-29.md`。
 
 ## 历史生产状态（2026-07-28，Controlled Context V2.2 单邀请码观察完成）
 
@@ -285,6 +286,6 @@ docker compose --env-file .env.production -f compose.production.yaml ps
 公开知识继续从仓库重新 ingest，短期会话和交互分析按既定保留期处理，不把原始对话复制到临时备份。私密简历启用后不属于“可重建数据”：数据库、加密密文卷和对应密钥版本必须分离备份并共同恢复验证；任何备份都不得包含明文 PDF、邀请码明文或 Session token。是否启用腾讯云快照或独立加密备份，需要在首轮真实恢复演练后单独决定。
 # Latest release override (2026-07-29)
 
-- Current runtime commit: `c449668`; `/opt/revolution/current` points to `/opt/revolution/releases/c449668/revolution`.
-- Status: `DEPLOYED_UNOBSERVED / HR_TARGETED / PERCENT_0`. Deployment, runtime health and authentication boundaries pass; the user is running the fresh real HR acceptance chain.
-- Authoritative evidence: `docs/verify/release/hr-recruitment-evaluation-followup-production-closeout-2026-07-29.md`.
+- Current runtime commit: `d223afe`; `/opt/revolution/current` points to `/opt/revolution/releases/d223afe/revolution`.
+- Status: `OBSERVED / HR_QA_MVP_ACCEPTED / LIMITED_LAUNCH / PERCENT_0`. The fresh HR entry, complete JD and ten-question chain passed, followed by a 15.53-minute healthy window and cleanup.
+- Authoritative evidence: `docs/verify/release/agent-ready-qa-mvp-production-closeout-2026-07-29.md`.

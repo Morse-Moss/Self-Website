@@ -405,3 +405,11 @@
 - **安全与完整性**：Chat、JD、诊断、已批准证据与同作用域完整历史不设置应用层字符数、消息数或固定 token 预算；只有目标模型返回可验证的上下文窗口溢出时，才允许按最老完整轮次生成私有摘要，并始终保留当前输入、Task Frame、任务输入和全部已批准证据。canonical packet 与 generation request 使用独立 Web-only HMAC。每个 Provider attempt 必须在网络调用前记录同 turn 一致的 builder/key/packet/request digest，manifest 只保留受约束 ID、枚举、计数和分数，不保留原始问答、JD、摘要、Provider payload 或 Secret。
 - **动态上下文发布边界**：migration `013` 为 additive、forward-only；Web 仅可读写自身的摘要尝试和压缩产物，Worker 只通过受限清理函数删除过期私有数据。013 生效后仅允许使用已验证的 013-aware 镜像；回滚必须关闭 `MORSE_DYNAMIC_PROVIDER_CONTEXT_ENABLED`，不得切回 pre-013 镜像或删除迁移记录。
 - **状态与发布**：migration `012` 为 additive、forward-only。上线先以 Context Packet percent `0` 和空白 UUID/标签白名单部署；定向 HR 发布可通过大小写敏感的 `HR interview` 标签与既有 UUID 并集准入，满额但仍有未过期 Session 的 invite 不能被排除。真实问题必须由用户明确发起，代理不得代发；扩大灰度不属于本轮授权。
+
+## 27. Agent-Ready 基础问答 MVP（2026-07-29，生产已观察）
+
+- **架构主线**：每轮只由一个确定性 TurnPlanner 生成版本化 TurnPlan；Evidence Admission 只决定哪些审核事实可用，Direct Executor 负责一次生成，Answer Validator 只记录质量告警。语义规划不再由第二次模型调用或隐藏 Agent 重算，Provider 成功正文不会因质量标签被拒绝、清空或重生成。
+- **可扩展边界**：当前 MVP 不接 Skills、工具执行、Agent loop 或自动联网。未来能力只能作为新的 executor 挂在 TurnPlan 之后，复用同一证据、隐私、Provider attempt、SSE、补偿和验证合同，不能绕回路由层形成第二套规划权威。
+- **效果优先**：Chat、JD、审核证据和同任务历史不设置人为字符数、消息数、token 或成本上限；只在目标 Provider 返回可验证的上下文窗口溢出时按完整旧轮次处理。短期访问额度、并发、超时、kill switch、隐私和保留策略仍属于安全/运行边界，不是回答质量裁剪器。
+- **真实验收**：release `d223afe` 的单一招聘 Session 完成招聘入口、完整 JD 和 10 个正式问题。12/12 turn 完成，11 个 Provider-backed turn 均为单次完成/单一 winner，保持同一 Task/JD、5 个审核项目和 9 条审核证据；所有正式答案通过相关性、拒答、错误证据否认、隐私和数字编造门禁。15.53 分钟窗口内 live/ready、五容器、重启、错误日志和 Edge 5xx 全部稳定，测试 Session 与邀请已清理。脱敏证据见 `docs/verify/release/agent-ready-qa-mvp-production-closeout-2026-07-29.md`。
+- **发布判断**：基础 HR 问答 MVP 达到 `OBSERVED / HR_QA_MVP_ACCEPTED / PERCENT_0`，允许开始定向 HR 推广并采集自然 badcase；仍保持 `LIMITED_LAUNCH`。固定十问通过不等于覆盖全部自然措辞，`missing_evidence_coverage` 继续作为非阻断质量债跟踪，后续只根据真实复现增量修改。

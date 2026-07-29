@@ -182,7 +182,7 @@ migration `012` 应用后，回滚只先设置 `MORSE_CHAT_CONTEXT_PACKET_ENABLE
 
 ## 8. 当前生产状态与硬化余项
 
-首个生产实例在 `39849e1` 完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实对话 smoke 和公网 live/ready/release smoke。2026-07-29 当前应用 release 为 `c449668`：第五次 HR 招聘评估路由修复已进入 `origin/master`，生产指针和 Web/Worker working directory 均指向该 release；本轮只重建 Web/Worker，DB、Embedding 与 Edge 身份未变，五容器 healthy 且 restart count 为 0。Context Packet 保持 enabled、percent `0` 和精确 `HR interview` 标签准入。公网 live/ready/首页、鉴权边界和 release smoke 已通过，但该 release 尚未完成全新入口、完整 JD 与十问的真实 Provider 链，因此状态为 `DEPLOYED_UNOBSERVED / HR_ACCEPTANCE_IN_PROGRESS`，不得据此开始大量推广。脱敏部署证据以 `docs/verify/release/hr-recruitment-evaluation-followup-production-closeout-2026-07-29.md` 为准。
+首个生产实例在 `39849e1` 完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实对话 smoke 和公网 live/ready/release smoke。2026-07-29 当前应用 release 为 `d223afe`：Agent-Ready 基础问答架构已进入 `origin/master`，生产指针和 Web/Worker working directory 均指向 `/opt/revolution/releases/d223afe/revolution`；DB、Embedding 与 Edge 身份未变，五容器 healthy 且 restart count 为 0。Context Packet 保持 enabled、percent `0` 和精确 `HR interview` 标签准入。单一真实招聘 Session 已完成入口、完整 JD 与 10 个正式问题：12/12 turn 完成，11 个 Provider-backed turn 各一次 completed/winner，保持同一 Task/JD、5 个审核项目与 9 条审核证据，所有正式答案通过相关性、拒答、错误证据否认、隐私与数字编造门禁。15.53 分钟观察和清理后复验通过，因此状态为 `OBSERVED / HR_QA_MVP_ACCEPTED / LIMITED_LAUNCH`，可开始定向 HR 推广并从自然 badcase 继续校准；不得把单一固定链写成无限自然问法或完整 `ONLINE_READY` 的证明。脱敏证据以 `docs/verify/release/agent-ready-qa-mvp-production-closeout-2026-07-29.md` 为准。
 
 以下事项完成前保持 `LIMITED_LAUNCH`，不标记完整 `ONLINE_READY`：
 
@@ -204,7 +204,7 @@ migration `012` 应用后，回滚只先设置 `MORSE_CHAT_CONTEXT_PACKET_ENABLE
 5. cleanup 过期：检查 Worker 稳定日志、DB lock 竞争和最后成功时间；不要手工绕过 10 天保留 SQL 顺序。
 # Latest release override (2026-07-29)
 
-- Current runtime commit: `c449668`; `/opt/revolution/current` points to `/opt/revolution/releases/c449668/revolution`.
+- Current runtime commit: `d223afe`; `/opt/revolution/current` points to `/opt/revolution/releases/d223afe/revolution`.
 - Context Packet remains enabled with percent `0`; exact label allowlist is `HR interview`, preserving the existing UUID allowlist.
-- Status is `DEPLOYED_UNOBSERVED / HR_ACCEPTANCE_IN_PROGRESS`: runtime health, authentication boundaries and the deployed artifact are observed, while the fresh entry, complete JD and ten-question real Provider chain is being run by the user. Do not promote broadly until that chain passes.
-- Authoritative evidence: `docs/verify/release/hr-recruitment-evaluation-followup-production-closeout-2026-07-29.md`.
+- Status is `OBSERVED / HR_QA_MVP_ACCEPTED / LIMITED_LAUNCH`: the fresh entry, complete JD and ten-question real Provider chain passed, followed by a 15.53-minute healthy window and cleanup. Begin targeted HR promotion, retain bounded monitoring and treat broader natural-language coverage as the main residual product risk.
+- Authoritative evidence: `docs/verify/release/agent-ready-qa-mvp-production-closeout-2026-07-29.md`.
