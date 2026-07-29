@@ -33,6 +33,7 @@ import {
 } from '../lib/server/chat-evidence-catalog.ts';
 import { encodeTurnMessage } from '../lib/server/turn-codec.ts';
 import { controlledContextFailureChain } from './fixtures/controlled-context-failure-chain.ts';
+import { hrQaMvpChain } from './fixtures/hr-qa-mvp-chain.ts';
 import { hrInterviewEightTurnChain } from './fixtures/hr-interview-eight-turn-chain.ts';
 import {
   createDisposablePostgresDatabase,
@@ -595,6 +596,7 @@ class ExternalCurrentProvider implements AiProvider {
 }
 
 class StaticContextAnswerProvider implements AiProvider {
+  readonly requests: AnswerRequest[] = [];
   private readonly answer: string;
 
   constructor(answer: string) {
@@ -605,7 +607,8 @@ class StaticContextAnswerProvider implements AiProvider {
     throw new Error('project catalog validation fixture must not embed');
   }
 
-  async *streamAnswer(): AsyncIterable<AnswerEvent> {
+  async *streamAnswer(request: AnswerRequest): AsyncIterable<AnswerEvent> {
+    this.requests.push(request);
     yield { type: 'delta', text: this.answer };
     yield { type: 'done', usage: { inputTokens: 30, outputTokens: 12 } };
   }
@@ -1809,10 +1812,11 @@ test('V2.2 quality warnings commit and release the candidate answer', async () =
   const fixture = await createFixture('context-v22-validation-warn');
   const turnId = randomUUID();
   const answer = '只回答一个未覆盖完整证据的项目。[来源99]';
+  const provider = new StaticContextAnswerProvider(answer);
   try {
     const events = await collectChat({
       pool,
-      provider: coordinatedProvider(new StaticContextAnswerProvider(answer)),
+      provider: coordinatedProvider(provider),
       accessSessionId: fixture.accessSessionId,
       request: normalizeChatRequest({
         workflow: 'chat',
@@ -1828,15 +1832,25 @@ test('V2.2 quality warnings commit and release the candidate answer', async () =
       events.filter((event) => event.type === 'delta').map((event) => event.text),
       [answer],
     );
+    assert.equal(provider.requests.length, 1);
     const stored = await pool.query<{
       answer_validation: { verdict: string; issue_codes: string[] };
+      generation_modes: string[];
       status: string;
     }>(
-      `SELECT status, context_manifest->'answer_validation' AS answer_validation
-         FROM interaction_turns WHERE id = $1`,
+      `SELECT turn.status,
+              turn.context_manifest->'answer_validation' AS answer_validation,
+              ARRAY(
+                SELECT attempt.generation_mode
+                  FROM interaction_provider_attempts AS attempt
+                 WHERE attempt.interaction_turn_id = turn.id
+                 ORDER BY attempt.attempt_index
+              ) AS generation_modes
+         FROM interaction_turns AS turn WHERE turn.id = $1`,
       [turnId],
     );
     assert.equal(stored.rows[0].status, 'completed');
+    assert.deepEqual(stored.rows[0].generation_modes, ['normal']);
     assert.equal(stored.rows[0].answer_validation.verdict, 'warn');
     assert.ok(stored.rows[0].answer_validation.issue_codes.includes('missing_evidence_coverage'));
     assert.ok(stored.rows[0].answer_validation.issue_codes.includes('invalid_citation'));
@@ -2404,34 +2418,13 @@ test('production Vibe Coding question keeps five project sources and audited AI 
   }
 });
 
-test('recruiter evaluation follow-ups keep the original JD and audited evidence', async () => {
+test('the agent-ready HR MVP keeps one JD-backed task through ten questions', async () => {
   const fixture = await createFixture('HR interview');
   const provider = new ControlledAnswerProvider();
-  const jobDescription = [
-    '岗位：跨境电商产品经理（Vibe Coding 方向）',
-    '工作内容：把业务想法转成产品方案，接手前后端并快速交付。',
-    '岗位要求：使用 Claude Code，依据用户反馈和业务数据持续迭代。',
-  ].join('\n');
   const messages = [
-    '请介绍与岗位最相关的项目和能力证据。',
-    jobDescription,
-    '综合这份 JD，匹配度如何？请给三项优势和两项缺口。',
-    '结合岗位要求，分析你最大的能力差距。',
-    '请结合这份 JD 分析：\n1. 三项优势\n2. 两项风险',
-    '请回答两个问题：\n1. 如何接手陌生代码\n2. 如何保证可回滚',
-    '哪个项目最能证明你能用 Vibe Coding 独立交付？',
-    '如何把跨境电商业务想法转成可执行产品方案？',
-    '如何接手陌生的 AI 生成前后端代码？',
-    '如何保证快速交付仍可验证、可回滚？',
-    '如何在主备模型之间切换并保证可回滚？',
-    '你如何适应新岗位并快速交付？',
-    '你如何切换到新岗位并快速适应？',
-    '切换到新岗位后，你如何快速适应并交付？',
-    'Claude Code 与模型渠道的真实能力边界是什么？',
-    '如何依据用户反馈和业务数据持续迭代？',
-    '独立技术负责时具体承担哪些工作？',
-    '当前最明显的能力差距是什么？',
-    '为什么你适合 AI 产品负责人岗位？',
+    hrQaMvpChain.recruiterEntry,
+    hrQaMvpChain.jd,
+    ...hrQaMvpChain.questions,
   ];
   const taskIds: string[] = [];
   type SlotSnapshot = {
@@ -2477,18 +2470,25 @@ test('recruiter evaluation follow-ups keep the original JD and audited evidence'
 
       const stored = await pool.query<{
         context_manifest: {
+          answer_validation: { verdict: string };
           context_build_status: string;
           evidence_ids: string[];
           included_layers: string[];
           projected_slot_kinds: string[];
+          turn_plan: {
+            evidence_kind: string;
+            executor_kind: string;
+            project_ids: string[];
+          };
         };
         context_scope_id: string;
         discourse_action: string;
+        execution_pipeline: string;
         semantic_intent: string;
         status: string;
         task_action: string;
       }>(
-        `SELECT status, semantic_intent, discourse_action, task_action,
+        `SELECT status, execution_pipeline, semantic_intent, discourse_action, task_action,
                 context_scope_id::text, context_manifest
            FROM interaction_turns
           WHERE id = $1`,
@@ -2496,17 +2496,61 @@ test('recruiter evaluation follow-ups keep the original JD and audited evidence'
       );
       const row = stored.rows[0];
       assert.equal(row.status, 'completed', message);
-      taskIds.push(row.context_scope_id);
+      if (index >= 1) taskIds.push(row.context_scope_id);
       if (index >= 2) {
-        assert.equal(row.semantic_intent, index === 6 ? 'project_fit' : 'jd_match', message);
-        assert.equal(row.discourse_action, 'follow_up', message);
-        assert.equal(row.task_action, 'continue', message);
+        assert.equal(row.execution_pipeline, 'context_packet_v22', message);
+        assert.equal(row.context_manifest.turn_plan.executor_kind, 'direct', message);
+        assert.ok(
+          ['portfolio_full', 'capabilities'].includes(
+            row.context_manifest.turn_plan.evidence_kind,
+          ),
+          message,
+        );
+        assert.deepEqual(
+          row.context_manifest.turn_plan.project_ids,
+          hrQaMvpChain.expectedProjectSlugs,
+          message,
+        );
         assert.equal(row.context_manifest.context_build_status, 'built', message);
+        assert.ok(
+          ['pass', 'warn'].includes(row.context_manifest.answer_validation.verdict),
+          message,
+        );
         assert.ok(row.context_manifest.evidence_ids.length > 0, message);
         assert.ok(meta.sources.length > 0, message);
         assert.ok(row.context_manifest.included_layers.includes('task_frame'), message);
         assert.ok(row.context_manifest.included_layers.includes('task_inputs'), message);
         assert.ok(row.context_manifest.projected_slot_kinds.includes('job_description'), message);
+        const visibleAnswer = events
+          .filter((event) => event.type === 'delta')
+          .map((event) => event.text)
+          .join('');
+        assert.equal(visibleAnswer.trim().length > 0, true, message);
+        assert.equal(events.filter((event) => event.type === 'done').length, 1, message);
+
+        const request = provider.requests.at(-1);
+        assert.ok(request, message);
+        const evidenceBlock = request.instructions.match(
+          /<approved_evidence>([\s\S]*?)<\/approved_evidence>/u,
+        )?.[1];
+        assert.ok(evidenceBlock, message);
+        const evidence = JSON.parse(evidenceBlock) as Array<{ evidenceId: string }>;
+        const expectedEvidenceIds = [
+          ...hrQaMvpChain.expectedProjectSlugs.map((slug) => `project:${slug}`),
+          ...hrQaMvpChain.expectedResumeFactIds.map((id) => `resume-fact:${id}`),
+        ];
+        assert.deepEqual(
+          evidence.map((item) => item.evidenceId),
+          expectedEvidenceIds,
+          message,
+        );
+        for (const evidenceId of expectedEvidenceIds) {
+          assert.equal(
+            evidence.filter((item) => item.evidenceId === evidenceId).length,
+            1,
+            `${message}: ${evidenceId}`,
+          );
+        }
       }
       if (index === 1) {
         const snapshot = await pool.query<SlotSnapshot>(
@@ -2533,8 +2577,8 @@ test('recruiter evaluation follow-ups keep the original JD and audited evidence'
       [conversationId],
     );
     assert.deepEqual(slots.rows, originalSlots);
-    assert.equal(provider.requests.length, messages.length);
-    assert.match(provider.requests.at(-1)!.instructions, /跨境电商产品经理/u);
+    assert.equal(provider.requests.length, messages.length - 1);
+    assert.match(provider.requests.at(-1)!.instructions, /跨境电商 AI 产品负责人/u);
     assert.match(provider.requests.at(-1)!.instructions, /用户反馈和业务数据/u);
 
     const temporaryTurnId = randomUUID();
@@ -2590,7 +2634,30 @@ test('recruiter evaluation follow-ups keep the original JD and audited evidence'
     assert.equal(temporary.rows[0].context_manifest.included_layers.includes('task_frame'), false);
     assert.equal(temporary.rows[0].context_manifest.included_layers.includes('task_inputs'), false);
     assert.deepEqual(temporaryMeta.sources, []);
-    assert.equal(provider.requests.length, messages.length + 1);
+    assert.equal(provider.requests.length, messages.length);
+    const temporaryPayload = [
+      provider.requests.at(-1)!.instructions,
+      ...provider.requests.at(-1)!.messages.map((message) => message.content),
+    ].join('\n');
+    assert.doesNotMatch(temporaryPayload, /跨境电商 AI 产品负责人/u);
+    for (const project of siteContent.projects) {
+      assert.doesNotMatch(temporaryPayload, new RegExp(project.name, 'u'));
+    }
+    const preservedFrame = await pool.query<{
+      closed_reason: string | null;
+      status: string;
+      task_id: string;
+    }>(
+      `SELECT task_id::text, status, closed_reason
+         FROM conversation_context_task_state
+        WHERE conversation_id = $1`,
+      [conversationId],
+    );
+    assert.deepEqual(preservedFrame.rows, [{
+      task_id: taskIds[0],
+      status: 'active',
+      closed_reason: null,
+    }]);
   } finally {
     await cleanupFixture(fixture);
   }

@@ -1,4 +1,5 @@
 export const hrQaMvpChain = {
+  recruiterEntry: '请帮我评估这个候选人与岗位的匹配度。',
   jd: [
     '岗位：跨境电商 AI 产品负责人（Vibe Coding 方向）',
     '工作内容：把业务想法转成产品方案，接手前后端并快速交付。',
@@ -15,5 +16,18 @@ export const hrQaMvpChain = {
     '如何在主备模型之间切换并保证可回滚？',
     '如何依据用户反馈和业务数据持续迭代？',
     '为什么你适合 AI 产品负责人岗位？',
+  ],
+  expectedProjectSlugs: [
+    'content-agent',
+    'auto-operations',
+    'ai-leadgen',
+    'deep-research',
+    'digital-morse',
+  ],
+  expectedResumeFactIds: [
+    'ai-application-role',
+    'ai-leadgen-mvp',
+    'auto-operations-role',
+    'internal-tool-role',
   ],
 } as const;

@@ -1049,7 +1049,7 @@ git commit -m "refactor: run chat through qa runtime"
 
 **Files:** modify `tests/chat-controlled-context-integration.test.ts`, `scripts/chat-eval.mjs`, `content/chat-eval.json`; add focused fixture expectations to `tests/fixtures/hr-qa-mvp-chain.ts`.
 
-- [ ] **Step 1: Add one full PostgreSQL HR chain**
+- [x] **Step 1: Add one full PostgreSQL HR chain**
 
 Use `hrQaMvpChain`: recruiter entry, exact synthetic JD, then ten questions in one Session. For every question assert:
 
@@ -1067,7 +1067,7 @@ assert.equal(doneEvents.length, 1, question);
 
 After the JD, assert one task ID and unchanged slot hashes. Inspect the Provider request for every turn and assert all project IDs plus every approved resume fact ID are present once.
 
-- [ ] **Step 2: Add non-rejection Provider candidates**
+- [x] **Step 2: Add non-rejection Provider candidates**
 
 Make a fake Provider answer deliberately omit citations or one project. Assert:
 
@@ -1079,7 +1079,7 @@ assert.equal(visibleAnswer, providerAnswer);
 assert.equal(attempts.some((attempt) => attempt.generationMode === 'strict'), false);
 ```
 
-- [ ] **Step 3: Add isolation and security negatives**
+- [x] **Step 3: Add isolation and security negatives**
 
 Cover:
 
@@ -1089,11 +1089,11 @@ Cover:
 - private resume canary or Secret canary -> block before delta, no matched content in manifest/log;
 - same completed turn replay -> zero additional plan/evidence/Provider calls.
 
-- [ ] **Step 4: Extend deterministic chat evaluation**
+- [x] **Step 4: Extend deterministic chat evaluation**
 
 Add cases to `content/chat-eval.json` for the ten questions and negatives. `scripts/chat-eval.mjs` must assert plan intent/evidence kind, Catalog admissions, warning/block classification and `externalCalls=0`; it must not grade prose style.
 
-- [ ] **Step 5: Run acceptance boundaries**
+- [x] **Step 5: Run acceptance boundaries**
 
 ```powershell
 node --env-file-if-exists=.env.local --test tests/chat-turn-planner.test.ts tests/chat-evidence-planner.test.ts tests/chat-answer-validator.test.ts tests/chat-qa-runtime.test.ts tests/chat-controlled-context-integration.test.ts tests/chat-sse.test.ts
@@ -1102,7 +1102,7 @@ npm run chat:eval
 
 Expected: all PASS and evaluation reports `externalCalls=0`.
 
-- [ ] **Step 6: Commit acceptance coverage**
+- [x] **Step 6: Commit acceptance coverage**
 
 ```powershell
 git add tests/chat-controlled-context-integration.test.ts tests/chat-sse.test.ts tests/fixtures/hr-qa-mvp-chain.ts scripts/chat-eval.mjs content/chat-eval.json
@@ -1312,8 +1312,8 @@ Do not recommend large HR promotion unless the real chain passes and the remaini
 
 ## Resume Pointer
 
-Current: `TASK_9 / RED / READY`.
+Current: `TASK_10 / ASSESS / READY`.
 
-Last verified: Task 8 composes the V2.2 path through `runQaTurn()`: orchestration/context/SSE persistence boundaries passed `64/64`, Session/Planner/Evidence/runtime contracts passed `27/27`, shared chat-service integrations passed `88/88`, and TypeScript passed. Warnings commit before one answer delta; private-data or Secret findings compensate with no answer release; same-turn replay remains Provider-free. No real Provider call, push or deployment has occurred.
+Last verified: Task 9 proves the frozen recruiter entry, exact synthetic JD and ten questions in one PostgreSQL Session. The affected Planner/Evidence/Validator/Runtime/PostgreSQL/SSE boundary passed `81/81`; completed-only Session coverage passed `2/2`; evaluation contracts passed `17/17`; deterministic chat evaluation passed `111/111` with `externalCalls=0`; TypeScript and diff checks passed. Every HR question completed on V2.2 with one direct TurnPlan, one stable JD Task, all five projects and four approved resume facts exactly once, one visible answer and one `done`. Quality warnings remained single-attempt and non-rejecting; unrelated questions carried no old JD/evidence and preserved the active Frame. No real Provider call, push or deployment has occurred.
 
-Next action: add Task 9 RED PostgreSQL coverage for the frozen ten-question HR chain and negative safety boundaries, then extend the offline eval authority without adding external calls.
+Next action: run Task 10 duplicate-authority scans, inspect module ownership against the frozen architecture table, then perform the full local verification and split CRITICAL review before any absorption, push or deployment.

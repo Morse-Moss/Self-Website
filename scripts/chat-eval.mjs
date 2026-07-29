@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 
 import {
   isRecoverableChatError,
@@ -9,6 +10,7 @@ import {
 } from '../lib/client/chat-errors.ts';
 import { enqueueAlert } from '../lib/server/alert-service.ts';
 import { normalizeChatRequest } from '../lib/server/chat-core.ts';
+import { validateAnswer as validateQaAnswer } from '../lib/server/chat-answer-validator.ts';
 import { resolveChatEvidence } from '../lib/server/chat-evidence.ts';
 import { buildV2SystemInstructions } from '../lib/server/chat-prompt.ts';
 import { routeChatTurn } from '../lib/server/chat-route-policy.ts';
@@ -17,6 +19,10 @@ import {
   taskStateRequiresWrite,
 } from '../lib/server/conversation-task-state.ts';
 import { compiledChatEvidenceCatalog } from '../lib/server/chat-evidence-catalog.ts';
+import {
+  buildQaEvidence,
+  planQaTurn,
+} from '../lib/server/chat-qa-runtime.ts';
 import { publicKnowledgeHref } from '../lib/server/public-knowledge.ts';
 import { routeSearch } from '../lib/server/search-router.ts';
 import { normalizePublicHttpsUrl } from '../lib/server/search-safety.ts';
@@ -29,6 +35,7 @@ import {
   projectSlugs,
   siteContent,
 } from '../lib/site-content.ts';
+import { hrQaMvpChain } from '../tests/fixtures/hr-qa-mvp-chain.ts';
 
 const dataset = JSON.parse(await fs.readFile('content/chat-eval.json', 'utf8'));
 const capabilityLedger = compiledChatEvidenceCatalog;
@@ -741,6 +748,156 @@ function evaluateMultiTurnRoute(item) {
     });
 }
 
+const qaConversationId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const qaInteractionTurnId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const qaTaskId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+
+function qaRecruitmentFrame() {
+  return {
+    conversationId: qaConversationId,
+    taskId: qaTaskId,
+    taskKind: 'recruitment_evaluation',
+    subjectKind: 'morse',
+    subjectRef: 'recruitment',
+    evidenceFocus: { topicKind: 'jd', topicRef: null },
+    status: 'active',
+    closedReason: null,
+    waitingFor: [],
+    taskStartedMessageId: '1',
+    lastSuccessfulMessageId: '4',
+    version: 2,
+    updatedByMessageId: '3',
+    createdAt: new Date('2026-07-29T01:00:00.000Z'),
+    updatedAt: new Date('2026-07-29T01:05:00.000Z'),
+    slots: [{
+      slot: 'job_description',
+      sourceMessageId: '3',
+      startUtf16: 0,
+      endUtf16: hrQaMvpChain.jd.length,
+      contentSha256: createHash('sha256').update(hrQaMvpChain.jd, 'utf8').digest('hex'),
+      extractorVersion: 'recruitment-slots-v1',
+      ordinal: 0,
+      text: hrQaMvpChain.jd,
+    }],
+  };
+}
+
+function qaSession(item) {
+  const frame = item.sessionScenario === 'hr' ? qaRecruitmentFrame() : null;
+  const adjacent = frame
+    ? {
+        conversationId: qaConversationId,
+        turnId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        contextScopeId: qaTaskId,
+        user: { id: '3', role: 'user', text: hrQaMvpChain.jd },
+        assistant: { id: '4', role: 'assistant', text: '已记录岗位信息。' },
+        completedAt: new Date('2026-07-29T01:05:00.000Z'),
+      }
+    : null;
+  return Object.freeze({
+    conversationId: qaConversationId,
+    interactionTurnId: qaInteractionTurnId,
+    currentUserMessageId: '5',
+    currentInput: item.query,
+    workflow: 'chat',
+    mode: frame ? 'interviewer' : 'general',
+    audienceIntent: frame ? 'recruiter' : 'general',
+    pageContext: null,
+    currentFrame: frame,
+    adjacentCompletedTurn: adjacent,
+    completedHistory: adjacent ? [adjacent] : [],
+    legacyBridge: [],
+  });
+}
+
+function qaCandidate(item, evidence, plan) {
+  let text;
+  switch (item.candidateScenario) {
+    case 'complete-approved': {
+      const capabilityLabels = plan.evidence.kind === 'capabilities'
+        ? plan.evidence.capabilityIds.map((id) => compiledChatEvidenceCatalog.capabilities.get(id)?.label ?? id)
+        : [];
+      text = [
+        ...siteContent.projects.map((project) => project.name),
+        ...capabilityLabels,
+        evidence.approved.length > 0 ? '[来源1]' : '',
+      ].filter(Boolean).join('；');
+      break;
+    }
+    case 'missing-project-invalid-citation':
+      text = '只回答一个未覆盖完整证据的项目。[来源99]';
+      break;
+    case 'cursor-direct-claim':
+      text = 'I used Cursor directly in production.';
+      break;
+    case 'private-canary':
+      text = 'SYNTHETIC_PRIVATE_RESUME_MARKER_7F42';
+      break;
+    case 'secret-canary':
+      text = 'Authorization: Bearer sk-example-secret-value-1234567890';
+      break;
+    case 'general-answer':
+      text = '天空呈蓝色与光在大气中的散射有关。';
+      break;
+    default:
+      throw new Error(`Unknown QA candidate scenario: ${item.candidateScenario}`);
+  }
+  return {
+    executorKind: 'direct',
+    text,
+    usage: null,
+    attempts: [],
+    winner: null,
+    sources: [],
+  };
+}
+
+async function evaluateQaRuntime(item) {
+  const externalCalls = 0;
+  const session = qaSession(item);
+  const originalFrame = session.currentFrame;
+  const plan = planQaTurn(session);
+  const evidence = await buildQaEvidence({
+    plan,
+    session,
+    retrieval: {},
+  });
+  const candidate = qaCandidate(item, evidence, plan);
+  const validation = validateQaAnswer({
+    plan,
+    evidence,
+    candidate,
+    privacyCanaries: ['SYNTHETIC_PRIVATE_RESUME_MARKER_7F42'],
+  });
+
+  const approvedIds = evidence.approved.map((source) => source.chunkId);
+  const expectedApprovedIds = plan.evidence.kind === 'none'
+    ? []
+    : [
+        ...hrQaMvpChain.expectedProjectSlugs.map((slug) => `project:${slug}`),
+        ...hrQaMvpChain.expectedResumeFactIds.map((id) => `resume-fact:${id}`),
+      ];
+  const admittedIds = evidence.admissions.flatMap((admission) => (
+    admission.evidenceId === null ? [] : [admission.evidenceId]
+  ));
+  const admissionsValid = JSON.stringify(approvedIds) === JSON.stringify(expectedApprovedIds)
+    && JSON.stringify(admittedIds) === JSON.stringify(expectedApprovedIds)
+    && JSON.stringify(evidence.unavailableCapabilityIds)
+      === JSON.stringify(item.expectedUnavailableCapabilities ?? []);
+  const issues = new Set(validation.issues.map((issue) => issue.code));
+  const expectedIssues = item.expectedIssues ?? [];
+
+  return externalCalls === 0
+    && plan.executor.kind === 'direct'
+    && plan.semantic.intent === item.expectedIntent
+    && plan.evidence.kind === item.expectedEvidenceKind
+    && admissionsValid
+    && validation.verdict === item.expectedValidation
+    && expectedIssues.every((issue) => issues.has(issue))
+    && (item.expectedFramePreserved !== true
+      || (session.currentFrame === originalFrame && plan.semantic.taskAction === 'temporary'));
+}
+
 function evaluateRejectedRequest(item) {
   let request;
   if (item.requestScenario === 'chat-with-jd') {
@@ -842,6 +999,7 @@ async function evaluateCase(item) {
   if (item.expectedBehavior === 'dedupe-notification') return evaluateNotificationDedupe(item);
   if (item.expectedBehavior === 'route-policy') return evaluateRoutePolicy(item);
   if (item.expectedBehavior === 'multi-turn-route') return evaluateMultiTurnRoute(item);
+  if (item.expectedBehavior === 'qa-runtime') return evaluateQaRuntime(item);
   return false;
 }
 

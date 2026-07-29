@@ -44,8 +44,8 @@ interface ReviewCase {
 const dataPath = path.join(process.cwd(), 'content', 'chat-eval.json');
 const reviewCasesPath = path.join(process.cwd(), 'content', 'chat-review-cases.json');
 const runnerPath = path.join(process.cwd(), 'scripts', 'chat-eval.mjs');
-const EXPECTED_DATASET_VERSION = 8;
-const EXPECTED_CASE_COUNT = 96;
+const EXPECTED_DATASET_VERSION = 9;
+const EXPECTED_CASE_COUNT = 111;
 
 function hasValidEvalInput(item: EvalCase): boolean {
   if (item.expectedBehavior === 'multi-turn-route') {
@@ -69,6 +69,10 @@ test(`S10 deterministic evaluation freezes ${EXPECTED_CASE_COUNT} cases around t
   assert.equal(dataset.cases.length, EXPECTED_CASE_COUNT);
   assert.equal(new Set(dataset.cases.map((item) => item.id)).size, EXPECTED_CASE_COUNT);
   assert.ok(dataset.cases.every((item) => hasValidEvalInput(item) && item.expectedBehavior.trim()));
+  assert.equal(
+    dataset.cases.filter((item) => item.expectedBehavior === 'qa-runtime').length,
+    15,
+  );
 
   assert.deepEqual(
     dataset.cases
