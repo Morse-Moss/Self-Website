@@ -39,6 +39,22 @@ export function matchChatProjectSlugs(value: string): ProjectSlug[] {
     .map((project) => project.slug);
 }
 
+export function matchOrderedChatProjectSlugs(value: string): ProjectSlug[] {
+  const normalized = normalizeChatProjectReference(value);
+  return chatProjectReferences
+    .flatMap((project, projectIndex) => {
+      const firstIndex = project.aliases.reduce((earliest, alias) => {
+        const index = normalized.indexOf(normalizeChatProjectReference(alias));
+        return index >= 0 && index < earliest ? index : earliest;
+      }, Number.MAX_SAFE_INTEGER);
+      return firstIndex === Number.MAX_SAFE_INTEGER
+        ? []
+        : [{ slug: project.slug, firstIndex, projectIndex }];
+    })
+    .sort((left, right) => left.firstIndex - right.firstIndex || left.projectIndex - right.projectIndex)
+    .map((project) => project.slug);
+}
+
 export function mentionsChatProject(value: string, slug: ProjectSlug): boolean {
   const project = chatProjectReferences.find((candidate) => candidate.slug === slug);
   if (!project) return false;

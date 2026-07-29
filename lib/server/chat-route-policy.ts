@@ -9,7 +9,10 @@ import {
   type CapabilityLedger,
 } from './capability-evidence.ts';
 import { looksLikeFullJobDescription } from './chat-message-signals.ts';
-import { matchChatProjectSlugs } from './chat-projects.ts';
+import {
+  matchChatProjectSlugs,
+  matchOrderedChatProjectSlugs,
+} from './chat-projects.ts';
 
 export type { ChatRouteDecision } from '../contracts/chat-runtime.ts';
 
@@ -161,11 +164,105 @@ function isUnresolvedReference(message: string): boolean {
     || /^(?:哪(?:一)?个(?:最好|更好|最合适)|最(?:有)?代表性的|最推荐哪个|哪个最能代表你|那代表作)(?:呢|吗)?$/iu.test(trimmed);
 }
 
-function isProjectCatalogDiscourseFollowup(message: string, previous: RouteAnchor): boolean {
-  const priorAnswerReference = /(?:刚才|前面|上面|上一(?:轮|条)|上述|这些|这几个|其中)/iu.test(message);
-  const projectOrdinal = /(?:第[一二三四五六七八九十\d]+个|前者|后者)/iu.test(message);
-  const priorProjects = new Set(matchChatProjectSlugs(previous.answer ?? ''));
-  return priorAnswerReference && projectOrdinal && priorProjects.size >= 2;
+function projectCatalogDiscourseReferent(message: string, previous: RouteAnchor): string | null {
+  const normalizedMessage = message.normalize('NFKC');
+  const priorAnswerReference = /(?:刚才|前面|上面|上一(?:轮|条)|上述|这些|这几个|其中)/iu.test(normalizedMessage);
+  if (!priorAnswerReference) return null;
+  const priorProjects = matchOrderedChatProjectSlugs(previous.answer ?? '');
+  if (priorProjects.length < 2) return null;
+  const selectionAction = /(?:介绍|展开|说明|讲讲|讲|说说|分析|选择|选|聊聊|聊|讨论|谈谈|谈|看|考虑|比较|对比|聚焦|处理)/iu;
+  const detailCue = /(?:重点|具体|详细|怎么|如何|为什么|什么|哪(?:个|一)|是什么|呢)/iu;
+  const projectDetailSemantic = /(?:故障|失败|根因|架构|设计|实现|验证|结果|能力|职责|项目|业务|交付|技术|取舍|上线|恢复|部署|流程|风险)/iu;
+  const topicSwitch = /^(?:另外|顺便|再问|然后|接着|换个|还有)/iu;
+  const negativeSelection = /(?:(?:不要|不想|不愿|不再|不必|不用|无需|无须|别|先不|暂不|不|未|莫)[^，,。；;！？!?\n]{0,12}(?:考虑|选择|选|介绍|展开|说明|讲|说|聊|讨论|谈|看|比较|对比|聚焦|处理))|(?:跳过|略过|忽略|排除|剔除|舍弃|放弃)/iu;
+  const selectionClause = (index: number): string => {
+    const before = normalizedMessage.slice(0, index);
+    const clauseStart = Math.max(
+      before.lastIndexOf('，'), before.lastIndexOf(','), before.lastIndexOf('。'),
+      before.lastIndexOf('；'), before.lastIndexOf(';'), before.lastIndexOf('！'),
+      before.lastIndexOf('!'), before.lastIndexOf('？'), before.lastIndexOf('?'),
+      before.lastIndexOf('\n'),
+    );
+    const after = normalizedMessage.slice(index);
+    const clauseEnd = /[，,。；;！？!?\n]/u.exec(after)?.index ?? after.length;
+    return normalizedMessage.slice(clauseStart + 1, index + clauseEnd);
+  };
+  const continuationClause = (endIndex: number): string => {
+    const tail = normalizedMessage.slice(endIndex).trimStart();
+    if (!/^[，,：:]/u.test(tail)) return '';
+    return tail
+      .replace(/^[，,：:]\s*/u, '')
+      .split(/[，,。；;！？!?\n]/u, 1)[0]
+      ?.trim() ?? '';
+  };
+  const candidateRefs = new Set<string>();
+  const addCandidate = (ordinal: string, index: number, endIndex: number): void => {
+    const clause = selectionClause(index);
+    const continuation = continuationClause(endIndex);
+    if (negativeSelection.test(clause) || negativeSelection.test(continuation)) return;
+    const clauseSelectsCandidate = selectionAction.test(clause)
+      || (detailCue.test(clause) && projectDetailSemantic.test(clause));
+    const continuationExpandsCandidate = !topicSwitch.test(continuation)
+      && projectDetailSemantic.test(continuation)
+      && (selectionAction.test(continuation) || detailCue.test(continuation));
+    if (!clauseSelectsCandidate && !continuationExpandsCandidate) return;
+    const chineseOrdinals: Record<string, number> = {
+      一: 1, 二: 2, 三: 3, 四: 4, 五: 5,
+      六: 6, 七: 7, 八: 8, 九: 9, 十: 10,
+    };
+    const position = /^\d+$/u.test(ordinal) ? Number(ordinal) : chineseOrdinals[ordinal];
+    const ref = position && position <= priorProjects.length ? priorProjects[position - 1] : null;
+    if (ref) candidateRefs.add(ref);
+  };
+  if (priorProjects.length === 2) {
+    for (const match of normalizedMessage.matchAll(/(?:前者|后者)(?=$|[，,。；;：:！？!?的和与及、])/giu)) {
+      addCandidate(match[0] === '前者' ? '1' : '2', match.index, match.index + match[0].length);
+    }
+  }
+  for (const match of normalizedMessage.matchAll(/第([一二三四五六七八九十\d]+)个(?:项目|案例|作品|系统)(?=$|[，,。；;：:！？!?的和与及、])/giu)) {
+    if (match[1]) addCandidate(match[1], match.index, match.index + match[0].length);
+  }
+  for (const clauseMatch of normalizedMessage.matchAll(/[^，,。；;！？!?\n]+/gu)) {
+    const clause = clauseMatch[0];
+    for (const head of clause.matchAll(/(?:项目|案例|作品|系统)(?=$|[：:的和与及、])/gu)) {
+      const prefix = clause.slice(0, head.index);
+      for (const ordinal of prefix.matchAll(/第([一二三四五六七八九十\d]+)(?:个)?/gu)) {
+        if (!ordinal[1]) continue;
+        const between = prefix.slice(ordinal.index + ordinal[0].length);
+        const residue = between
+          .replace(/第[一二三四五六七八九十\d]+(?:个)?/gu, '')
+          .replace(/(?:或者|以及|、|和|与|及|或|\s)/gu, '');
+        if (residue) continue;
+        const index = clauseMatch.index + ordinal.index;
+        const sharedHeadEnd = clauseMatch.index + head.index + head[0].length;
+        addCandidate(ordinal[1], index, sharedHeadEnd);
+      }
+    }
+  }
+  const addOmittedReferentCandidates = (expression: RegExp): void => {
+    for (const match of normalizedMessage.matchAll(expression)) {
+      if (!match[1]) continue;
+    const tail = normalizedMessage.slice(match.index + match[0].length).trimStart();
+      if (!tail) {
+        addCandidate(match[1], match.index, match.index + match[0].length);
+        continue;
+      }
+    const continuation = /^[，,：:]/u.test(tail)
+      ? tail.replace(/^[，,：:]\s*/u, '')
+      : null;
+    const firstClause = continuation?.split(/[。；;！？!?\n]/u, 1)[0]?.trim() ?? '';
+    if (!firstClause
+        || negativeSelection.test(firstClause)
+      || !/^(?:请)?(?:说明|介绍|展开|具体|详细|其中|重点|说说|讲讲|分析)/iu.test(firstClause)
+      || !/(?:故障|根因|架构|设计|实现|验证|结果|能力|职责|项目|业务|交付|技术|取舍|上线|恢复|部署|流程|风险)/iu.test(firstClause)) {
+        continue;
+      }
+      addCandidate(match[1], match.index, match.index + match[0].length);
+    }
+  };
+  addOmittedReferentCandidates(/(?:展开|介绍|说明|讲讲|说说|分析|选择|选|聊聊)(?:一下|具体|详细)?(?:其中)?第([一二三四五六七八九十\d]+)个/giu);
+  addOmittedReferentCandidates(/(?:其中|上述|这几个|这些)(?:项目|案例|作品|系统)?(?:的|中|里)?第([一二三四五六七八九十\d]+)个/giu);
+  return candidateRefs.size === 1 ? [...candidateRefs][0] ?? null : null;
 }
 
 function isPendingPersonalScopeClarification(previous?: RouteAnchor | null): previous is RouteAnchor {
@@ -428,14 +525,15 @@ export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
       requiresEmbedding: true,
     });
   }
-  if (usablePrevious
-    && input.hasUsableHistory
-    && isProjectCatalogDiscourseFollowup(message, usablePrevious)) {
+  const projectCatalogReferent = usablePrevious && input.hasUsableHistory
+    ? projectCatalogDiscourseReferent(message, usablePrevious)
+    : null;
+  if (usablePrevious && projectCatalogReferent) {
     return decision({
       routeKind: 'grounded',
       reasonCode: 'anaphoric_project_catalog_followup',
       topicKind: 'project',
-      topicRef: null,
+      topicRef: projectCatalogReferent,
       evidenceClass: 'direct',
       inheritedFromTurnId: usablePrevious.turnId,
       release: 'complete',

@@ -333,17 +333,30 @@ function validateControlledProjectEvidence(
   complete: boolean,
 ): void {
   const projectExperience = input.route?.reasonCode === 'project_experience_query';
+  const namedProjectFact = input.semanticIntent === 'named_project_fact'
+    && input.route?.topicKind === 'project'
+    && Boolean(input.route.topicRef);
   if (!complete || (
     !projectExperience
+    && !namedProjectFact
     && !['project_fit', 'jd_match'].includes(input.semanticIntent ?? '')
   )) return;
   const approved = new Set(input.approvedProjectSlugs ?? []);
   if (approved.size === 0) return;
   const mentioned = matchChatProjectSlugs(input.answer);
+  if (namedProjectFact) {
+    const expected = input.route?.topicRef ?? '';
+    if (!approved.has(expected) || mentioned.some((slug) => !approved.has(slug))) {
+      reasons.add('unsupported_evidence_upgrade');
+    }
+    if (mentioned.length > 0 && !mentioned.some((slug) => slug === expected)) {
+      reasons.add('answer_not_direct');
+    }
+  }
   if (projectExperience && mentioned.filter((slug) => approved.has(slug)).length !== 1) {
     reasons.add('answer_not_direct');
   }
-  if (!mentioned.some((slug) => approved.has(slug))) reasons.add('answer_not_direct');
+  if (!namedProjectFact && !mentioned.some((slug) => approved.has(slug))) reasons.add('answer_not_direct');
   if (mentioned.some((slug) => !approved.has(slug))) reasons.add('unsupported_evidence_upgrade');
   if (/(?:没有|暂无|不存在)(?:任何|相关)?(?:可核验|公开)?(?:的)?(?:项目)?(?:资料|证据)|(?:没有|暂无|不存在).{0,28}(?:可核验|公开).{0,36}(?:项目|项目经验|项目经历)|(?:无法|不能).{0,20}(?:核验|确认).{0,24}(?:项目|项目经验|项目经历|资料|证据)/iu.test(input.answer)) {
     reasons.add('unsupported_evidence_upgrade');

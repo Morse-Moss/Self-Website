@@ -2106,12 +2106,12 @@ test('V2.2 project ordinal follow-up requires an adjacent successful project cat
          FROM interaction_turns WHERE id = $1`,
       [followupTurnId],
     );
-    assert.equal(followed.rows[0].semantic_intent, 'project_catalog');
+    assert.equal(followed.rows[0].semantic_intent, 'named_project_fact');
     assert.equal(followed.rows[0].discourse_action, 'follow_up');
     assert.equal(followed.rows[0].inherited_from_turn_id, firstTurnId);
     assert.ok(followed.rows[0].context_manifest.included_layers.includes('discourse_context'));
     assert.ok(followed.rows[0].context_manifest.included_layers.includes('approved_evidence'));
-    assert.ok(followed.rows[0].context_manifest.evidence_ids.length > 0);
+    assert.deepEqual(followed.rows[0].context_manifest.evidence_ids, ['project:content-agent']);
 
     await assert.rejects(
       collectChat({

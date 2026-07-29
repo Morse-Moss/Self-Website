@@ -352,7 +352,7 @@ test('a project ordinal that explicitly points to the prior answer keeps the adj
     ...projectAnchor('digital-morse'),
     reasonCode: 'context_packet_discourse',
     topicRef: null,
-    answer: '1. 数字摩斯\n2. 内容创作 Agent 系统\n3. 深度研究 Agent 系统',
+    answer: '1. AI 外贸获客系统\n2. 内容创作 Agent 系统\n3. 数字摩斯',
   };
   const message = '你刚才列了三个项目。只展开第一个，说明其中最难的一次线上故障：具体症状、根因、你做了什么、最后如何验证。不要重复介绍另外两个项目。';
   const decision = routeChatTurn({
@@ -365,10 +365,28 @@ test('a project ordinal that explicitly points to the prior answer keeps the adj
   assert.equal(decision.routeKind, 'grounded');
   assert.equal(decision.reasonCode, 'anaphoric_project_catalog_followup');
   assert.equal(decision.topicKind, 'project');
-  assert.equal(decision.topicRef, null);
+  assert.equal(decision.topicRef, 'ai-leadgen');
   assert.equal(decision.evidenceClass, 'direct');
   assert.equal(decision.inheritedFromTurnId, previous.turnId);
   assert.equal(decision.requiresEmbedding, true);
+});
+
+test('a fullwidth project ordinal resolves against the prior answer order', () => {
+  const previous: RouteAnchor = {
+    ...projectAnchor('digital-morse'),
+    reasonCode: 'context_packet_discourse',
+    topicRef: null,
+    answer: '1. AI 外贸获客系统\n2. 内容创作 Agent 系统\n3. 数字摩斯',
+  };
+  const decision = routeChatTurn({
+    request: request('请展开你刚才列的第３个项目。', 'recruiter', 'interviewer'),
+    previous,
+    hasUsableHistory: true,
+    ledger,
+  });
+
+  assert.equal(decision.reasonCode, 'anaphoric_project_catalog_followup');
+  assert.equal(decision.topicRef, 'digital-morse');
 });
 
 test('a project ordinal does not inherit an unrelated list or a failed adjacent turn', () => {
@@ -399,6 +417,182 @@ test('a project ordinal does not inherit an unrelated list or a failed adjacent 
   assert.equal(unrelated.inheritedFromTurnId, null);
   assert.notEqual(failed.reasonCode, 'anaphoric_project_catalog_followup');
   assert.equal(failed.inheritedFromTurnId, null);
+});
+
+test('former and latter resolve only for an adjacent two-project comparison', () => {
+  const twoProjects: RouteAnchor = {
+    ...projectAnchor('digital-morse'),
+    reasonCode: 'context_packet_discourse',
+    topicRef: null,
+    answer: '前者是 AI 外贸获客系统，后者是内容创作 Agent 系统。',
+  };
+  const latter = routeChatTurn({
+    request: request('你刚才说的后者，具体怎么处理失败恢复？', 'recruiter', 'interviewer'),
+    previous: twoProjects,
+    hasUsableHistory: true,
+    ledger,
+  });
+  const ambiguous = routeChatTurn({
+    request: request('你刚才列的三个项目里，后者具体怎么处理失败恢复？', 'recruiter', 'interviewer'),
+    previous: {
+      ...twoProjects,
+      answer: '1. AI 外贸获客系统\n2. 内容创作 Agent 系统\n3. 数字摩斯',
+    },
+    hasUsableHistory: true,
+    ledger,
+  });
+
+  assert.equal(latter.reasonCode, 'anaphoric_project_catalog_followup');
+  assert.equal(latter.topicRef, 'content-agent');
+  assert.notEqual(ambiguous.reasonCode, 'anaphoric_project_catalog_followup');
+  assert.equal(ambiguous.inheritedFromTurnId, null);
+});
+
+test('an ordinal for the interviewer question does not select a project from prior discourse', () => {
+  const previous: RouteAnchor = {
+    ...projectAnchor('digital-morse'),
+    reasonCode: 'context_packet_discourse',
+    topicRef: null,
+    answer: '1. AI 外贸获客系统\n2. 内容创作 Agent 系统\n3. 数字摩斯',
+  };
+  const decision = routeChatTurn({
+    request: request(
+      '你刚才列的项目我知道了。我的第一个问题是：你为什么转行？',
+      'recruiter',
+      'interviewer',
+    ),
+    previous,
+    hasUsableHistory: true,
+    ledger,
+  });
+
+  assert.notEqual(decision.reasonCode, 'anaphoric_project_catalog_followup');
+  assert.equal(decision.inheritedFromTurnId, null);
+});
+
+test('a selection verb does not turn an ordinal question noun into a project referent', () => {
+  const previous: RouteAnchor = {
+    ...projectAnchor('digital-morse'),
+    reasonCode: 'context_packet_discourse',
+    topicRef: null,
+    answer: '1. AI 外贸获客系统\n2. 内容创作 Agent 系统\n3. 数字摩斯',
+  };
+  const decision = routeChatTurn({
+    request: request(
+      '你刚才列的项目我知道了。请介绍第一个问题的答案。',
+      'recruiter',
+      'interviewer',
+    ),
+    previous,
+    hasUsableHistory: true,
+    ledger,
+  });
+
+  assert.notEqual(decision.reasonCode, 'anaphoric_project_catalog_followup');
+  assert.equal(decision.inheritedFromTurnId, null);
+});
+
+test('project ordinals reject non-project head nouns and a second independent intent', () => {
+  const previous: RouteAnchor = {
+    ...projectAnchor('digital-morse'),
+    reasonCode: 'context_packet_discourse',
+    topicRef: null,
+    answer: '1. AI 外贸获客系统\n2. 内容创作 Agent 系统\n3. 数字摩斯',
+  };
+  for (const message of [
+    '你刚才列了三个项目。请介绍第一个具体问题。',
+    '你刚才列了三个项目。请说明第一个相关问题。',
+    '你刚才列了三个项目。请分析第一个处理步骤。',
+    '你刚才列了三个项目。请介绍第一个系统问题。',
+    '你刚才列了三个项目。请介绍第一个。然后回答我为什么转行。',
+    '你刚才列了三个项目。请介绍第一个，说明这个问题。然后聊聊你的项目经验。',
+    '你刚才列了三个项目。请介绍第一个，说明为什么不想聊项目。',
+  ]) {
+    const decision = routeChatTurn({
+      request: request(message, 'recruiter', 'interviewer'),
+      previous,
+      hasUsableHistory: true,
+      ledger,
+    });
+
+    assert.notEqual(decision.reasonCode, 'anaphoric_project_catalog_followup', message);
+    assert.equal(decision.inheritedFromTurnId, null, message);
+  }
+});
+
+test('project ordinal selection excludes negated candidates and requires one positive referent', () => {
+  const previous: RouteAnchor = {
+    ...projectAnchor('digital-morse'),
+    reasonCode: 'context_packet_discourse',
+    topicRef: null,
+    answer: '1. AI 外贸获客系统\n2. 内容创作 Agent 系统\n3. 数字摩斯',
+  };
+  const twoProjects: RouteAnchor = {
+    ...previous,
+    answer: '前者是 AI 外贸获客系统，后者是内容创作 Agent 系统。',
+  };
+  for (const [message, anchor, expectedRef] of [
+    ['你刚才列了三个项目。不要介绍第一个项目，介绍第二个项目。', previous, 'content-agent'],
+    ['你刚才列了三个项目。跳过第一个项目，展开第二个项目。', previous, 'content-agent'],
+    ['你刚才列了两个项目。不要讲前者，讲后者。', twoProjects, 'content-agent'],
+  ] as const) {
+    const decision = routeChatTurn({
+      request: request(message, 'recruiter', 'interviewer'),
+      previous: anchor,
+      hasUsableHistory: true,
+      ledger,
+    });
+
+    assert.equal(decision.reasonCode, 'anaphoric_project_catalog_followup', message);
+    assert.equal(decision.topicRef, expectedRef, message);
+  }
+
+  for (const message of [
+    '你刚才列了三个项目。介绍第一个，说明为什么不要展开这个项目。',
+    '你刚才列了三个项目。介绍第一个，说明为什么不聊这个项目。',
+    '你刚才列了三个项目。对比第一个项目和第二个项目。',
+    '你刚才列了三个项目。对比第一个和第二个项目。',
+    '你刚才列了三个项目。介绍第一个、第二个项目的差异。',
+    '你刚才列了三个项目。展开第一和第二个项目。',
+    '你刚才列了三个项目。第一个、第二个项目，具体说说恢复流程。',
+    '你刚才列了两个项目。对比前者和后者。',
+    '你刚才列了三个项目。第一个项目，另外聊聊职业规划。',
+    '你刚才列了三个项目。第一个项目，聊聊职业规划，再具体说说项目风险。',
+    '你刚才列了两个项目。后者，另外什么是 RAG？',
+  ]) {
+    const decision = routeChatTurn({
+      request: request(message, 'recruiter', 'interviewer'),
+      previous: /(?:前者|后者)/u.test(message) ? twoProjects : previous,
+      hasUsableHistory: true,
+      ledger,
+    });
+
+    assert.notEqual(decision.reasonCode, 'anaphoric_project_catalog_followup', message);
+    assert.equal(decision.inheritedFromTurnId, null, message);
+  }
+
+  for (const message of [
+    '你刚才列了三个项目。先略过第一个项目。',
+    '你刚才列了三个项目。忽略第一个项目。',
+    '你刚才列了三个项目。排除第一个项目。',
+    '你刚才列了三个项目。不考虑第一个项目。',
+    '你刚才列了三个项目。不选择第一个项目。',
+    '你刚才列了三个项目。先放弃第一个项目。',
+    '你刚才列了三个项目。不看第一个项目。',
+    '你刚才列了三个项目。不需要考虑第一个项目。',
+    '你刚才列了三个项目。不用再详细介绍第一个项目。',
+    '你刚才列了三个项目。不打算介绍第一个项目。',
+  ]) {
+    const decision = routeChatTurn({
+      request: request(message, 'recruiter', 'interviewer'),
+      previous,
+      hasUsableHistory: true,
+      ledger,
+    });
+
+    assert.notEqual(decision.reasonCode, 'anaphoric_project_catalog_followup', message);
+    assert.equal(decision.inheritedFromTurnId, null, message);
+  }
 });
 
 test('a new explicit topic starting with 那 does not inherit the project anchor', () => {

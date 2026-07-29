@@ -596,8 +596,9 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
     intent = 'project_catalog';
     reasonCode = baseRoute.reasonCode;
   } else if (baseRoute.reasonCode === 'anaphoric_project_catalog_followup') {
-    intent = 'project_catalog';
+    intent = baseRoute.topicRef ? 'named_project_fact' : 'project_catalog';
     reasonCode = baseRoute.reasonCode;
+    referent = baseRoute.topicRef ? { kind: 'project', ref: baseRoute.topicRef } : null;
   } else if (jdLike) {
     intent = 'jd_match';
     reasonCode = activeRecruitment ? 'contextual_jd_match' : 'short_jd_detected';

@@ -449,6 +449,35 @@ test('project experience answers use exactly one admitted project and cannot ref
   }).reasons.includes('unsupported_evidence_upgrade'));
 });
 
+test('an ordinal project follow-up rejects a different project but allows a natural project pronoun', () => {
+  const input = {
+    route: groundedRoute({
+      reasonCode: 'anaphoric_project_catalog_followup',
+      topicRef: 'ai-leadgen',
+      inheritedFromTurnId: '11111111-1111-4111-8111-111111111111',
+      release: 'complete',
+    }),
+    semanticIntent: 'named_project_fact' as const,
+    approvedProjectSlugs: ['ai-leadgen'],
+    workflow: 'chat' as const,
+    question: '你刚才列了三个项目。只展开第一个，说明其中最难的一次线上故障。',
+    sourceCount: 1,
+  };
+
+  const wrongProject = inspectChatAnswer({
+    ...input,
+    answer: '内容创作 Agent 系统通过任务状态机处理生成失败并完成验证。[来源1]',
+  });
+  const naturalReference = inspectChatAnswer({
+    ...input,
+    answer: '这个项目通过人工闸门、状态回写和真实链路验证来控制失败风险。[来源1]',
+  });
+
+  assert.ok(wrongProject.reasons.includes('unsupported_evidence_upgrade'));
+  assert.ok(wrongProject.reasons.includes('answer_not_direct'));
+  assert.equal(naturalReference.ok, true);
+});
+
 test('generic project questions reject meta-only evidence templates', () => {
   const result = inspectChatAnswer({
     answer: '我会根据公开资料保持诚实表达，并保留可核验来源。',

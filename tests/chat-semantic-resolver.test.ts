@@ -226,7 +226,7 @@ test('an ordinal follow-up to a prior project catalog keeps discourse and approv
     assistant: {
       id: '42',
       role: 'assistant',
-      text: '1. 数字摩斯\n2. 内容创作 Agent 系统\n3. 深度研究 Agent 系统',
+      text: '1. AI 外贸获客系统\n2. 内容创作 Agent 系统\n3. 数字摩斯',
     },
   });
   const result = resolve(
@@ -240,10 +240,11 @@ test('an ordinal follow-up to a prior project catalog keeps discourse and approv
 
   assert.equal(result.resolved.legacyRoute.reasonCode, 'anaphoric_project_catalog_followup');
   assert.equal(result.resolved.legacyRoute.inheritedFromTurnId, discourse.turnId);
-  assert.equal(result.resolved.semantic.intent, 'project_catalog');
+  assert.equal(result.resolved.semantic.intent, 'named_project_fact');
+  assert.deepEqual(result.resolved.semantic.referent, { kind: 'project', ref: 'ai-leadgen' });
   assert.equal(result.resolved.semantic.discourseAction, 'follow_up');
   assert.equal(result.resolved.semantic.taskAction, 'temporary');
-  assert.deepEqual(result.resolved.semantic.evidencePlan, ['approved_project_catalog']);
+  assert.deepEqual(result.resolved.semantic.evidencePlan, ['named_approved_project']);
   assert.ok(result.resolved.semantic.reasonCodes.includes('explicit_discourse_reference'));
 });
 
