@@ -166,10 +166,9 @@ test('deterministic evaluation has no automatic safe or degraded answer path', (
   const source = fs.readFileSync(runnerPath, 'utf8');
   assert.doesNotMatch(source, /buildSafeChatAnswer|safeAnswer\s*:|degraded\s*===\s*true/u);
   assert.match(source, /expectedDependencies/u);
-  assert.match(source, /inspectChatAnswer/u);
 });
 
-test('all answer-quality cases execute the production v2 route, evidence and guard chain', () => {
+test('all answer-quality cases execute the production v2 route and evidence chain', () => {
   const source = fs.readFileSync(runnerPath, 'utf8');
   assert.doesNotMatch(source, /routeLegacyChatTurn|\.\/chat-behavior\.ts/u);
 

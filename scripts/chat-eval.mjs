@@ -10,7 +10,6 @@ import {
 import { enqueueAlert } from '../lib/server/alert-service.ts';
 import { normalizeChatRequest } from '../lib/server/chat-core.ts';
 import { resolveChatEvidence } from '../lib/server/chat-evidence.ts';
-import { inspectChatAnswer } from '../lib/server/chat-output-guard.ts';
 import { buildV2SystemInstructions } from '../lib/server/chat-prompt.ts';
 import { routeChatTurn } from '../lib/server/chat-route-policy.ts';
 import {
@@ -347,36 +346,20 @@ function hasMatchPercentage(answer) {
 }
 
 function validateRecruitment(answer, sourceCount, item, normalized, route) {
-  const guard = inspectChatAnswer({
-    answer,
-    route,
-    workflow: normalized.workflow,
-    question: normalized.message,
-    sourceCount,
-  });
   return validateGrounded(answer, sourceCount, item)
     && /岗位|候选人|可迁移能力/iu.test(answer)
     && !hasGapList(answer)
     && !hasMatchPercentage(answer)
     && (answer.match(/建议面谈确认/gu)?.length ?? 0) <= 2
-    && !hasNextStepLabel(answer)
-    && guard.ok;
+    && !hasNextStepLabel(answer);
 }
 
 function validateExplicitUnknown(answer, sourceCount, item, normalized, route) {
-  const guard = inspectChatAnswer({
-    answer,
-    route,
-    workflow: normalized.workflow,
-    question: normalized.message,
-    sourceCount,
-  });
   return answer.includes('建议面谈确认')
     && !hasGapList(answer)
     && !hasMatchPercentage(answer)
     && !hasUnsafeContent(answer)
-    && hasValidCitations(answer, sourceCount)
-    && guard.ok;
+    && hasValidCitations(answer, sourceCount);
 }
 
 function validateSafetyRefusal(answer, sourceCount, item) {
@@ -578,14 +561,7 @@ async function evaluateSearchDegradation(item) {
     && /不得(?:使用模型记忆冒充已经核验|声称已经核验)的?最新信息/u.test(instructions)
     && route.routeKind === 'external_current'
     && answer.includes('无法完成外部时效核验')
-    && !answer.includes('已经核验最新信息')
-    && inspectChatAnswer({
-      answer,
-      route,
-      workflow: normalized.workflow,
-      question: normalized.message,
-      sourceCount: 0,
-    }).ok;
+    && !answer.includes('已经核验最新信息');
 }
 
 function previousAnchor(item) {
@@ -667,16 +643,8 @@ function validateRouteReliability({ answer, calls, evidence, item, normalized, r
       && expectedSourceSlugs.every((slug) => actualSourceSlugs.includes(slug)));
   const conversationClean = route.routeKind !== 'conversation'
     || !/\[来源\d+\]|根据(?:资料|证据)|公开项目|项目匹配|建议面谈(?:确认|核实)/iu.test(answer);
-  const guard = route.deterministicReply !== null
-    ? { ok: answer === route.deterministicReply }
-    : inspectChatAnswer({
-        answer,
-        route,
-        workflow: normalized.workflow,
-        question: normalized.message,
-        sourceCount: evidence.knowledge.length + (evidence.search?.results.length ?? 0),
-        hasResumeEvidence: evidence.knowledge.some((source) => source.documentId === 'resume-facts'),
-      });
+  const deterministicAnswerValid = route.deterministicReply === null
+    || answer === route.deterministicReply;
   const expectedInheritedFromTurnId = item.expectedInherited === true
     ? '11111111-1111-4111-8111-111111111111'
     : null;
@@ -688,7 +656,7 @@ function validateRouteReliability({ answer, calls, evidence, item, normalized, r
     && forbiddenFragments
     && sourceSlugsValid
     && conversationClean
-    && guard.ok;
+    && deterministicAnswerValid;
 }
 
 async function evaluateRoutePolicy(item) {

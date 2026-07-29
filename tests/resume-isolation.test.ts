@@ -6,7 +6,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 
 import { buildSystemInstructions, normalizeChatRequest } from '../lib/server/chat-core.ts';
-import { inspectChatAnswer } from '../lib/server/chat-output-guard.ts';
+import { validateAnswer } from '../lib/server/chat-answer-validator.ts';
 import { buildSafeChatAnswer } from '../lib/server/chat-safe-answer.ts';
 import { extractPublicKnowledge } from '../lib/server/public-knowledge.ts';
 
@@ -119,7 +119,7 @@ test('Docker build context excludes every local private resume artifact form', (
   assert.match(dockerignore, /^\*\.morsepdf$/mu);
 });
 
-test('chat guard inputs and safe answers contain no private resume data', () => {
+test('answer validation blocks private resume canaries without persisting their value', () => {
   const publicSources = extractPublicKnowledge(JSON.parse(
     fs.readFileSync(path.resolve('content/site-content.json'), 'utf8'),
   ));
@@ -135,17 +135,35 @@ test('chat guard inputs and safe answers contain no private resume data', () => 
       score: 1,
     })),
   });
-  const guardInput = {
-    answer: safe?.text ?? '',
-    intent: 'project' as const,
-    workflow: 'chat' as const,
-    question: '介绍公开项目。',
-    sourceCount: safe?.sources.length ?? 0,
-  };
+  const validation = validateAnswer({
+    plan: {
+      schemaVersion: 'turn-plan-v1',
+      plannerVersion: 'deterministic-turn-planner-v1',
+      conversationId: '11111111-1111-4111-8111-111111111111',
+      interactionTurnId: '22222222-2222-4222-8222-222222222222',
+      currentUserMessageId: '1',
+      semantic: {
+        discourseAction: 'one_shot', subject: 'morse', intent: 'general_conversation',
+        taskAction: 'temporary', referent: null, evidencePlan: ['none'],
+        confidence: 1, reasonCodes: ['isolation_test'],
+      },
+      taskId: null, candidateFrame: null, evidence: { kind: 'none' },
+      executor: { kind: 'direct' }, reasonCodes: ['isolation_test'],
+    },
+    evidence: {
+      catalogVersion: 2, approved: [], admissions: [], relevance: [],
+      unavailableCapabilityIds: [], degradedReason: null,
+    },
+    candidate: {
+      executorKind: 'direct', text: marker, usage: null, attempts: [], winner: null, sources: [],
+    },
+    privacyCanaries: [marker],
+  });
 
-  assert.equal(inspectChatAnswer(guardInput).ok, true);
+  assert.equal(validation.verdict, 'block');
+  assert.deepEqual(validation.issues.map((issue) => issue.code), ['private_data_leak']);
   assert.doesNotMatch(
-    JSON.stringify({ guardInput, safe }),
-    /morse_resume_access|resume_documents|private[\\/]resume|trustedPersonNote/i,
+    JSON.stringify({ validation, safe }),
+    /SYNTHETIC_PRIVATE_RESUME_MARKER_7F42|morse_resume_access|resume_documents|private[\\/]resume|trustedPersonNote/i,
   );
 });

@@ -93,7 +93,7 @@ test('delivers a completed non-empty answer with one generation call', async () 
   const terminal = events.at(-1);
   assert.equal(terminal?.type, 'complete');
   if (terminal?.type === 'complete') assert.equal(terminal.answer, answer);
-  assert.doesNotMatch(JSON.stringify(events), /reset|strict|OUTPUT_GUARD_REJECTED/u);
+  assert.doesNotMatch(JSON.stringify(events), /reset|strict/u);
 });
 
 test('network and timeout errors propagate without a second generation call', async () => {

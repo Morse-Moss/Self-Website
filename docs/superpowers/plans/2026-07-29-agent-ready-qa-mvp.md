@@ -843,7 +843,7 @@ git commit -m "refactor: extract direct answer executor"
 
 **Files:** create `lib/server/chat-answer-validator.ts`, `tests/chat-answer-validator.test.ts`; modify integration/eval tests; delete `lib/server/chat-output-guard.ts`, `tests/chat-output-guard.test.ts` after all runtime imports are absent.
 
-- [ ] **Step 1: Write RED pass/warn/block tests**
+- [x] **Step 1: Write RED pass/warn/block tests**
 
 Create `tests/chat-answer-validator.test.ts`:
 
@@ -883,7 +883,7 @@ node --env-file-if-exists=.env.local --test tests/chat-answer-validator.test.ts
 
 Expected: FAIL because Validator does not exist.
 
-- [ ] **Step 2: Define exact issue codes and severity**
+- [x] **Step 2: Define exact issue codes and severity**
 
 Add to `lib/contracts/chat-turn-plan.ts`:
 
@@ -901,7 +901,7 @@ export interface AnswerValidationResult {
 }
 ```
 
-- [ ] **Step 3: Implement deterministic checks**
+- [x] **Step 3: Implement deterministic checks**
 
 Create `validateAnswer()` with these fixed severities:
 
@@ -914,7 +914,7 @@ const BLOCKING = new Set<AnswerValidationIssueCode>([
 
 Coverage compares requested IDs with Catalog aliases/projects in the final text. Citation validity accepts absent citations as a warning and rejects no answer. Unsupported capability detection only checks capabilities explicitly requested and marked unavailable. Privacy/Secret patterns reuse existing isolation/canary utilities; do not persist matched substrings.
 
-- [ ] **Step 4: Prove old guard has no runtime consumer, then delete it**
+- [x] **Step 4: Prove old guard has no runtime consumer, then delete it**
 
 ```powershell
 rg -n "chat-output-guard|inspectChatAnswer|inspectTemplateRepetition|OUTPUT_GUARD_REJECTED" lib app scripts tests
@@ -922,7 +922,7 @@ rg -n "chat-output-guard|inspectChatAnswer|inspectTemplateRepetition|OUTPUT_GUAR
 
 Migrate any remaining quality-only consumer to `validateAnswer()` and ensure warning cannot enter Provider recovery. Delete `lib/server/chat-output-guard.ts` and `tests/chat-output-guard.test.ts`.
 
-- [ ] **Step 5: Run validator and non-rejection tests**
+- [x] **Step 5: Run validator and non-rejection tests**
 
 ```powershell
 node --env-file-if-exists=.env.local --test tests/chat-answer-validator.test.ts tests/chat-safe-answer.test.ts tests/chat-controlled-context-integration.test.ts tests/chat-service-integration.test.ts
@@ -931,7 +931,7 @@ rg -n "inspectChatAnswer|inspectTemplateRepetition|OUTPUT_GUARD_REJECTED|unsolic
 
 Expected: tests PASS and `rg` returns no runtime/test authority match.
 
-- [ ] **Step 6: Commit Validator convergence**
+- [x] **Step 6: Commit Validator convergence**
 
 ```powershell
 git add lib/contracts/chat-turn-plan.ts lib/server/chat-answer-validator.ts tests/chat-answer-validator.test.ts tests/chat-safe-answer.test.ts tests/chat-controlled-context-integration.test.ts tests/chat-service-integration.test.ts
@@ -1312,8 +1312,8 @@ Do not recommend large HR promotion unless the real chain passes and the remaini
 
 ## Resume Pointer
 
-Current: `TASK_7 / RED / READY`.
+Current: `TASK_8 / RED / READY`.
 
-Last verified: Task 5 is committed as `4ad1620`. Task 6's executor/recovery suite passed `100/100`, the affected service integration passed after correcting one stale Task 3 intent expectation, TypeScript passed, and DirectAnswerExecutor returns only complete candidates while chat-service releases the answer delta only after the success transaction. No real Provider call, push or deployment has occurred.
+Last verified: Task 6 is committed as `9b79215`. Task 7's validator and safety contracts passed `24/24`, chat integrations passed `126/126`, offline `chat:eval` passed `96/96` with `externalCalls=0`, TypeScript passed, and the removed output-guard authority has zero remaining symbol matches. Quality findings warn; only private-data or Secret findings block. No real Provider call, push or deployment has occurred.
 
-Next action: add Task 7 RED coverage for deterministic pass/warn/block validation, then remove the old quality-rejection authority after all consumers migrate.
+Next action: add Task 8 RED orchestration-order and commit-barrier coverage, then compose Session, Plan, Evidence, Context, DirectAnswerExecutor and AnswerValidator behind one Q&A runtime.
