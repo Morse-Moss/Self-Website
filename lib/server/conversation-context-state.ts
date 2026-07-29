@@ -17,6 +17,7 @@ import {
   type TaskSlotRef,
 } from '../contracts/chat-context.ts';
 import { decodeTurnMessage } from './turn-codec.ts';
+import { validateContextPacketManifest } from './chat-context-packet.ts';
 
 export class LegacyBridgeValidationError extends Error {
   readonly code = 'LEGACY_BRIDGE_INVALID';
@@ -727,6 +728,7 @@ export async function persistContextTerminalManifest(
     manifest: ContextPacketManifest;
   },
 ): Promise<void> {
+  validateContextPacketManifest(input.manifest);
   const semanticIntent = input.resolved?.semantic.intent ?? input.manifest.semantic_intent;
   const discourseAction = input.resolved?.semantic.discourseAction
     ?? input.manifest.discourse_action;

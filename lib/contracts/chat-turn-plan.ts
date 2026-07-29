@@ -49,3 +49,18 @@ export interface TurnPlanV1 {
   executor: { kind: 'direct' };
   reasonCodes: readonly string[];
 }
+
+export type AnswerValidationIssueCode =
+  | 'missing_evidence_coverage'
+  | 'invalid_citation'
+  | 'unsupported_capability_claim'
+  | 'private_data_leak'
+  | 'secret_leak';
+
+export interface AnswerValidationResult {
+  verdict: 'pass' | 'warn' | 'block';
+  issues: readonly {
+    code: AnswerValidationIssueCode;
+    evidenceId: string | null;
+  }[];
+}

@@ -83,6 +83,18 @@ function builtManifest(taskId: string): ContextPacketManifest {
     evidence_ids: ['project:digital-morse'],
     retrieval_scores: [{ evidenceId: 'project:digital-morse', score: 0.9 }],
     degraded_reason: null,
+    turn_plan: {
+      schema_version: 'turn-plan-v1',
+      planner_version: 'deterministic-turn-planner-v1',
+      evidence_kind: 'portfolio_full',
+      executor_kind: 'direct',
+      project_ids: ['digital-morse'],
+      capability_ids: ['ai-programming-collaboration'],
+    },
+    answer_validation: {
+      verdict: 'pass',
+      issue_codes: [],
+    },
     packet_hmac_key_id: '2026-07-v1',
     packet_hmac_sha256: 'c'.repeat(64),
   };
@@ -601,6 +613,11 @@ test('context success state is atomic while terminal failure persists only a red
       [turnId],
     );
     assert.equal(completed.rows[0].context_manifest.semantic_intent, 'project_fit');
+    assert.deepEqual(completed.rows[0].context_manifest.turn_plan, builtManifest(taskId).turn_plan);
+    assert.deepEqual(completed.rows[0].context_manifest.answer_validation, {
+      verdict: 'pass',
+      issue_codes: [],
+    });
     assert.equal((await loadCanonicalAnswerHistory(pool, {
       conversationId: fixture.conversationId,
       ownerPipeline: 'context_packet_v22',
@@ -626,6 +643,10 @@ test('context success state is atomic while terminal failure persists only a red
       packet_hmac_sha256: null,
       evidence_ids: [],
       retrieval_scores: [],
+      answer_validation: {
+        verdict: 'not_run' as const,
+        issue_codes: [],
+      },
     };
     await persistContextTerminalManifest(pool, {
       interactionTurnId: failureTurnId,
@@ -639,6 +660,10 @@ test('context success state is atomic while terminal failure persists only a red
       [failureTurnId],
     );
     assert.equal(failure.rows[0].context_manifest.context_build_status, 'failed');
+    assert.deepEqual(failure.rows[0].context_manifest.answer_validation, {
+      verdict: 'not_run',
+      issue_codes: [],
+    });
     assert.equal((await loadContextTaskFrame(pool, fixture.conversationId))?.taskId, taskId);
   } finally {
     await pool.end();

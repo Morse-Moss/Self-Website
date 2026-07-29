@@ -11,13 +11,20 @@ import type {
 } from '../lib/contracts/chat-context.ts';
 import type { EvidenceBundle } from '../lib/contracts/chat-evidence-catalog.ts';
 import type { KnowledgeSource } from '../lib/contracts/chat-runtime.ts';
+import type { TurnPlanV1 } from '../lib/contracts/chat-turn-plan.ts';
+import { siteContent } from '../lib/site-content.ts';
 import {
+  buildCanonicalAnswerSourceV2,
   buildTargetContextPacketV2,
   buildTargetGenerationRequestV2,
   buildContextPacket,
   parseContextPacketDigestConfig,
   stableSerialize,
 } from '../lib/server/chat-context-packet.ts';
+import {
+  allApprovedPortfolioEvidence,
+  compiledChatEvidenceCatalog,
+} from '../lib/server/chat-evidence-catalog.ts';
 
 const KEY = Buffer.alloc(32, 7);
 const KEY_ID = 'context-key-v1';
@@ -148,6 +155,46 @@ function v2Source(): CanonicalAnswerSourceV2 {
   };
 }
 
+function turnPlan(
+  evidence: TurnPlanV1['evidence'] = { kind: 'portfolio_full', rankForQuestion: true },
+): TurnPlanV1 {
+  return {
+    schemaVersion: 'turn-plan-v1',
+    plannerVersion: 'deterministic-turn-planner-v1',
+    conversationId: '11111111-1111-4111-8111-111111111111',
+    interactionTurnId: '22222222-2222-4222-8222-222222222222',
+    currentUserMessageId: '21',
+    semantic: resolved('project_fit').semantic,
+    taskId: '22222222-2222-4222-8222-222222222222',
+    candidateFrame: null,
+    evidence,
+    executor: { kind: 'direct' },
+    reasonCodes: ['test_reason'],
+  };
+}
+
+function fullPortfolioBundle(
+  relevance?: EvidenceBundle['relevance'],
+): EvidenceBundle {
+  const approved = allApprovedPortfolioEvidence(compiledChatEvidenceCatalog);
+  return {
+    catalogVersion: 2,
+    approved,
+    admissions: approved.map((source, index) => ({
+      evidenceId: source.chunkId,
+      level: 'direct',
+      projectSlug: source.projectSlug ?? null,
+      capabilityId: index === 0 ? 'ai-programming-collaboration' : null,
+    })),
+    relevance: relevance ?? approved.map((source, index) => ({
+      evidenceId: source.chunkId,
+      score: Math.max(0, 1 - index / 100),
+    })),
+    unavailableCapabilityIds: [],
+    degradedReason: null,
+  };
+}
+
 function v2Target(overrides: Partial<GenerationTargetBindingV2> = {}): GenerationTargetBindingV2 {
   return {
     configDigestVersion: 2,
@@ -249,6 +296,173 @@ test('context packet serializes bundle-approved evidence and current input exact
   assert.equal(serialized.split(currentInput).length - 1, 1);
   assert.deepEqual(built.manifest.evidence_ids, approved.map((source) => source.chunkId));
   assert.deepEqual(built.manifest.retrieval_scores, bundle.relevance);
+});
+
+test('manifest projects only bounded TurnPlan and validation metadata', () => {
+  const bundle = fullPortfolioBundle();
+  const built = buildContextPacket({
+    resolved: resolved('project_fit'),
+    currentInput: 'SENSITIVE_CURRENT_INPUT cross-border ecommerce Vibe Coding',
+    currentUserMessageId: '21',
+    projection: projection(),
+    evidenceBundle: bundle,
+    turnPlan: turnPlan(),
+    answerValidation: null,
+    digestKey: KEY,
+    digestKeyId: KEY_ID,
+    reasoningEffort: 'high',
+  });
+
+  assert.deepEqual(built.manifest.turn_plan, {
+    schema_version: 'turn-plan-v1',
+    planner_version: 'deterministic-turn-planner-v1',
+    evidence_kind: 'portfolio_full',
+    executor_kind: 'direct',
+    project_ids: siteContent.projects.map((project) => project.slug),
+    capability_ids: ['ai-programming-collaboration'],
+  });
+  assert.deepEqual(built.manifest.answer_validation, {
+    verdict: 'not_run',
+    issue_codes: [],
+  });
+  assert.doesNotMatch(
+    JSON.stringify(built.manifest),
+    /cross-border ecommerce|Vibe Coding|SENSITIVE_CURRENT_INPUT/u,
+  );
+  assert.doesNotMatch(
+    JSON.stringify(built.manifest.turn_plan),
+    /current_input|approved_evidence/u,
+  );
+});
+
+test('turn plan projection is signed while relevance order cannot change approved identity', () => {
+  const bundle = fullPortfolioBundle();
+  const build = (plan: TurnPlanV1, evidenceBundle = bundle) => buildContextPacket({
+    resolved: resolved('project_fit'),
+    currentInput: 'exact signed plan input',
+    currentUserMessageId: '21',
+    projection: projection(),
+    evidenceBundle,
+    turnPlan: plan,
+    answerValidation: null,
+    digestKey: KEY,
+    digestKeyId: KEY_ID,
+    reasoningEffort: 'high',
+  });
+  const baseline = build(turnPlan());
+  const changedKind = build(turnPlan({ kind: 'identity' }));
+  const reordered = build(turnPlan(), {
+    ...bundle,
+    relevance: [...bundle.relevance].reverse(),
+  });
+  const target = v2Target();
+  const variant = v2Variant(target);
+  const buildSigned = (built: ReturnType<typeof build>) => {
+    const source = buildCanonicalAnswerSourceV2({
+      ...v2Source(),
+      turnPlanManifest: built.manifest.turn_plan,
+    });
+    const packet = buildTargetContextPacketV2({
+      source,
+      target,
+      variant,
+      historySummary: null,
+      rawHistory: source.completeHistory,
+      digestKey: KEY,
+      digestKeyId: KEY_ID,
+    });
+    const request = buildTargetGenerationRequestV2({
+      variant,
+      packetHmacKeyId: packet.packetHmacKeyId,
+      packetHmacSha256: packet.packetHmacSha256,
+      instructions: source.trustedInstructions,
+      messages: [{ role: 'user', content: source.currentInput }],
+      reasoningEffort: target.reasoningEffort,
+      maxOutputTokens: target.maxOutputTokens,
+      outboundBody: { model: target.modelId, input: source.currentInput, stream: true },
+      digestKey: KEY,
+    });
+    return { packet, request, source };
+  };
+  const baselineSigned = buildSigned(baseline);
+  const changedSigned = buildSigned(changedKind);
+  const reorderedSigned = buildSigned(reordered);
+
+  assert.notEqual(changedSigned.packet.packetHmacSha256, baselineSigned.packet.packetHmacSha256);
+  assert.notEqual(
+    changedSigned.request.generationRequestHmacSha256,
+    baselineSigned.request.generationRequestHmacSha256,
+  );
+  assert.equal(reorderedSigned.packet.packetHmacSha256, baselineSigned.packet.packetHmacSha256);
+  assert.deepEqual(
+    reorderedSigned.source.approvedEvidence.map((source) => source.evidenceId),
+    baselineSigned.source.approvedEvidence.map((source) => source.evidenceId),
+  );
+  assert.match(baselineSigned.source.trustedInstructions, /<turn_plan>/u);
+});
+
+test('manifest projection rejects project and capability IDs outside Catalog v2', () => {
+  const validBundle = fullPortfolioBundle();
+  const invalidProjectBundle: EvidenceBundle = {
+    ...validBundle,
+    approved: [evidence('not-in-catalog')],
+    admissions: [{
+      evidenceId: 'project:not-in-catalog',
+      level: 'direct',
+      projectSlug: 'not-in-catalog',
+      capabilityId: null,
+    }],
+  };
+  const invalidCapabilityBundle: EvidenceBundle = {
+    ...validBundle,
+    admissions: [{
+      evidenceId: validBundle.approved[0].chunkId,
+      level: 'direct',
+      projectSlug: validBundle.approved[0].projectSlug ?? null,
+      capabilityId: 'not-in-catalog',
+    }],
+  };
+  const build = (evidenceBundle: EvidenceBundle) => buildContextPacket({
+    resolved: resolved('project_fit'),
+    currentInput: 'validate ids',
+    currentUserMessageId: '21',
+    projection: projection(),
+    evidenceBundle,
+    turnPlan: turnPlan(),
+    answerValidation: null,
+    digestKey: KEY,
+    digestKeyId: KEY_ID,
+    reasoningEffort: 'high',
+  });
+
+  assert.throws(() => build(invalidProjectBundle), /TURN_PLAN_MANIFEST_PROJECT_ID_INVALID/u);
+  assert.throws(() => build(invalidCapabilityBundle), /TURN_PLAN_MANIFEST_CAPABILITY_ID_INVALID/u);
+
+  const validManifest = build(validBundle).manifest.turn_plan;
+  assert.ok(validManifest);
+  assert.throws(
+    () => buildCanonicalAnswerSourceV2({
+      ...v2Source(),
+      turnPlanManifest: {
+        ...validManifest,
+        project_ids: [...validManifest.project_ids].reverse(),
+      },
+    }),
+    /TURN_PLAN_MANIFEST_PROJECT_ID_ORDER_INVALID/u,
+  );
+  assert.throws(
+    () => buildCanonicalAnswerSourceV2({
+      ...v2Source(),
+      turnPlanManifest: {
+        ...validManifest,
+        capability_ids: [
+          ...validManifest.capability_ids,
+          ...validManifest.capability_ids,
+        ],
+      },
+    }),
+    /TURN_PLAN_MANIFEST_CAPABILITY_ID_ORDER_INVALID/u,
+  );
 });
 
 test('v2 packet and generation HMACs bind target capabilities, variant and exact outbound body', () => {

@@ -10,6 +10,7 @@ import {
   type CanonicalContextPacketV2,
   type CanonicalGenerationRequest,
   type CanonicalGenerationRequestV2,
+  type AnswerValidationManifest,
   type CompletedContextTurn,
   type ContextChatMessage,
   type ContextLayerName,
@@ -20,14 +21,38 @@ import {
   type GenerationVariantV2,
   type GenerationRequestIntegrity,
   type ResolvedChatTurn,
+  type TurnPlanManifest,
 } from '../contracts/chat-context.ts';
 import type { EvidenceBundle } from '../contracts/chat-evidence-catalog.ts';
+import type {
+  AnswerValidationIssueCode,
+  AnswerValidationResult,
+  TurnPlanV1,
+} from '../contracts/chat-turn-plan.ts';
+import {
+  compiledChatEvidenceCatalog,
+} from './chat-evidence-catalog.ts';
 
 const CONTEXT_DOMAIN = Buffer.from('morse/context-packet/v1\0', 'utf8');
 const GENERATION_DOMAIN = Buffer.from('morse/generation-request/v1\0', 'utf8');
 const CONTEXT_V2_DOMAIN = Buffer.from('morse/context-packet/v2\0', 'utf8');
 const GENERATION_V2_DOMAIN = Buffer.from('morse/generation-request/v2\0', 'utf8');
 const SUMMARY_REQUEST_V1_DOMAIN = Buffer.from('morse/history-summary-request/v1\0', 'utf8');
+const ANSWER_VALIDATION_ISSUE_ORDER: readonly AnswerValidationIssueCode[] = [
+  'missing_evidence_coverage',
+  'invalid_citation',
+  'unsupported_capability_claim',
+  'private_data_leak',
+  'secret_leak',
+];
+const EVIDENCE_KINDS = new Set([
+  'none',
+  'identity',
+  'portfolio_full',
+  'named_projects',
+  'capabilities',
+  'controlled_search',
+]);
 const LAYER_ORDER: readonly ContextLayerName[] = [
   'current_input',
   'discourse_context',
@@ -124,6 +149,155 @@ function escapeData(value: string): string {
 
 function renderData(value: unknown): string {
   return escapeData(Buffer.from(stableSerialize(value)).toString('utf8'));
+}
+
+function orderedCatalogIds(
+  ids: ReadonlySet<string>,
+  catalogIds: readonly string[],
+  errorCode: string,
+): string[] {
+  for (const id of ids) {
+    if (!catalogIds.includes(id)) throw new Error(errorCode);
+  }
+  return catalogIds.filter((id) => ids.has(id));
+}
+
+export function projectTurnPlanManifest(
+  plan: TurnPlanV1,
+  bundle: EvidenceBundle,
+): TurnPlanManifest {
+  if (plan.schemaVersion !== 'turn-plan-v1'
+    || plan.plannerVersion !== 'deterministic-turn-planner-v1'
+    || plan.executor.kind !== 'direct'
+    || bundle.catalogVersion !== 2) {
+    throw new Error('TURN_PLAN_MANIFEST_INVALID');
+  }
+  const projectIds = new Set<string>();
+  const capabilityIds = new Set<string>();
+  if (plan.evidence.kind === 'named_projects') {
+    for (const projectId of plan.evidence.projectSlugs) projectIds.add(projectId);
+  }
+  if (plan.evidence.kind === 'capabilities') {
+    for (const capabilityId of plan.evidence.capabilityIds) capabilityIds.add(capabilityId);
+  }
+  for (const source of bundle.approved) {
+    if (source.projectSlug) projectIds.add(source.projectSlug);
+  }
+  for (const admission of bundle.admissions) {
+    if (admission.projectSlug) projectIds.add(admission.projectSlug);
+    if (admission.capabilityId) capabilityIds.add(admission.capabilityId);
+  }
+  for (const capabilityId of bundle.unavailableCapabilityIds) capabilityIds.add(capabilityId);
+
+  return {
+    schema_version: plan.schemaVersion,
+    planner_version: plan.plannerVersion,
+    evidence_kind: plan.evidence.kind,
+    executor_kind: plan.executor.kind,
+    project_ids: orderedCatalogIds(
+      projectIds,
+      compiledChatEvidenceCatalog.projects.map((entry) => entry.slug),
+      'TURN_PLAN_MANIFEST_PROJECT_ID_INVALID',
+    ),
+    capability_ids: orderedCatalogIds(
+      capabilityIds,
+      [...compiledChatEvidenceCatalog.capabilities.keys()],
+      'TURN_PLAN_MANIFEST_CAPABILITY_ID_INVALID',
+    ),
+  };
+}
+
+export function projectAnswerValidationManifest(
+  result: AnswerValidationResult | null,
+): AnswerValidationManifest {
+  if (result === null) return { verdict: 'not_run', issue_codes: [] };
+  const issueCodes = new Set(result.issues.map((issue) => issue.code));
+  for (const issueCode of issueCodes) {
+    if (!ANSWER_VALIDATION_ISSUE_ORDER.includes(issueCode)) {
+      throw new Error('ANSWER_VALIDATION_MANIFEST_ISSUE_CODE_INVALID');
+    }
+  }
+  return {
+    verdict: result.verdict,
+    issue_codes: ANSWER_VALIDATION_ISSUE_ORDER.filter((code) => issueCodes.has(code)),
+  };
+}
+
+export function renderTrustedTurnPlan(manifest: TurnPlanManifest): string {
+  validateTurnPlanManifest(manifest);
+  return `<turn_plan>${renderData(manifest)}</turn_plan>`;
+}
+
+function exactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
+  const actual = Object.keys(value).sort();
+  const sortedExpected = [...expected].sort();
+  return actual.length === expected.length
+    && actual.every((key, index) => key === sortedExpected[index]);
+}
+
+function validateCatalogIdOrder(
+  ids: readonly string[],
+  catalogIds: readonly string[],
+  invalidIdCode: string,
+  invalidOrderCode: string,
+): void {
+  const ordered = orderedCatalogIds(new Set(ids), catalogIds, invalidIdCode);
+  if (ordered.length !== ids.length || ordered.some((id, index) => id !== ids[index])) {
+    throw new Error(invalidOrderCode);
+  }
+}
+
+function validateTurnPlanManifest(manifest: TurnPlanManifest): void {
+  if (!exactKeys(manifest as unknown as Record<string, unknown>, [
+    'schema_version',
+    'planner_version',
+    'evidence_kind',
+    'executor_kind',
+    'project_ids',
+    'capability_ids',
+  ])
+    || manifest.schema_version !== 'turn-plan-v1'
+    || manifest.planner_version !== 'deterministic-turn-planner-v1'
+    || !EVIDENCE_KINDS.has(manifest.evidence_kind)
+    || manifest.executor_kind !== 'direct'
+    || !Array.isArray(manifest.project_ids)
+    || !Array.isArray(manifest.capability_ids)) {
+    throw new Error('TURN_PLAN_MANIFEST_INVALID');
+  }
+  validateCatalogIdOrder(
+    manifest.project_ids,
+    compiledChatEvidenceCatalog.projects.map((entry) => entry.slug),
+    'TURN_PLAN_MANIFEST_PROJECT_ID_INVALID',
+    'TURN_PLAN_MANIFEST_PROJECT_ID_ORDER_INVALID',
+  );
+  validateCatalogIdOrder(
+    manifest.capability_ids,
+    [...compiledChatEvidenceCatalog.capabilities.keys()],
+    'TURN_PLAN_MANIFEST_CAPABILITY_ID_INVALID',
+    'TURN_PLAN_MANIFEST_CAPABILITY_ID_ORDER_INVALID',
+  );
+}
+
+function validateAnswerValidationManifest(manifest: AnswerValidationManifest): void {
+  if (!exactKeys(manifest as unknown as Record<string, unknown>, ['verdict', 'issue_codes'])
+    || !['not_run', 'pass', 'warn', 'block'].includes(manifest.verdict)
+    || !Array.isArray(manifest.issue_codes)
+    || manifest.issue_codes.some((code) => !ANSWER_VALIDATION_ISSUE_ORDER.includes(code))) {
+    throw new Error('ANSWER_VALIDATION_MANIFEST_INVALID');
+  }
+  const ordered = ANSWER_VALIDATION_ISSUE_ORDER.filter((code) => manifest.issue_codes.includes(code));
+  if (ordered.length !== manifest.issue_codes.length
+    || ordered.some((code, index) => code !== manifest.issue_codes[index])) {
+    throw new Error('ANSWER_VALIDATION_MANIFEST_ISSUE_CODE_ORDER_INVALID');
+  }
+}
+
+export function validateContextPacketManifest(manifest: ContextPacketManifest): void {
+  if ((manifest.turn_plan === undefined) !== (manifest.answer_validation === undefined)) {
+    throw new Error('CONTEXT_PACKET_MANIFEST_PROJECTION_INCOMPLETE');
+  }
+  if (manifest.turn_plan) validateTurnPlanManifest(manifest.turn_plan);
+  if (manifest.answer_validation) validateAnswerValidationManifest(manifest.answer_validation);
 }
 
 export function completedTurnsSha256(turns: readonly CompletedContextTurn[]): string {
@@ -312,6 +486,8 @@ export interface BuildContextPacketInput {
   currentUserMessageId: string;
   projection: ContextProjection;
   evidenceBundle?: EvidenceBundle;
+  turnPlan?: TurnPlanV1;
+  answerValidation?: AnswerValidationResult | null;
   digestKey: Buffer;
   digestKeyId: string;
   reasoningEffort: ContextReasoningEffort | null;
@@ -325,7 +501,9 @@ export interface BuildContextPacketInput {
   capabilityEvidenceBoundaries?: readonly string[];
 }
 
-export type BuildCanonicalAnswerSourceV2Input = Omit<CanonicalAnswerSourceV2, 'schemaVersion'>;
+export type BuildCanonicalAnswerSourceV2Input = Omit<CanonicalAnswerSourceV2, 'schemaVersion'> & {
+  turnPlanManifest?: TurnPlanManifest;
+};
 
 function cloneAndFreeze<T>(value: T): T {
   if (value instanceof Date) return Object.freeze(new Date(value.getTime())) as T;
@@ -345,6 +523,9 @@ function cloneAndFreeze<T>(value: T): T {
 export function buildCanonicalAnswerSourceV2(
   input: BuildCanonicalAnswerSourceV2Input,
 ): CanonicalAnswerSourceV2 {
+  const trustedInstructions = input.turnPlanManifest
+    ? `${input.trustedInstructions}\n\n${renderTrustedTurnPlan(input.turnPlanManifest)}`
+    : input.trustedInstructions;
   return cloneAndFreeze({
     schemaVersion: CANONICAL_ANSWER_SOURCE_VERSION,
     ownerPipeline: input.ownerPipeline,
@@ -353,7 +534,7 @@ export function buildCanonicalAnswerSourceV2(
     contextScopeId: input.contextScopeId,
     currentUserMessageId: input.currentUserMessageId,
     currentInput: input.currentInput,
-    trustedInstructions: input.trustedInstructions,
+    trustedInstructions,
     taskFrame: input.taskFrame,
     taskInputs: input.taskInputs,
     approvedEvidence: input.approvedEvidence,
@@ -518,6 +699,15 @@ export function buildContextPacket(input: BuildContextPacketInput): BuiltContext
     return packet.approvedEvidence.length > 0;
   });
   const bridge = input.legacyBridge ?? null;
+  if (input.turnPlan && !input.evidenceBundle) {
+    throw new Error('TURN_PLAN_MANIFEST_EVIDENCE_BUNDLE_REQUIRED');
+  }
+  const turnPlanManifest = input.turnPlan && input.evidenceBundle
+    ? projectTurnPlanManifest(input.turnPlan, input.evidenceBundle)
+    : undefined;
+  const answerValidationManifest = turnPlanManifest
+    ? projectAnswerValidationManifest(input.answerValidation ?? null)
+    : undefined;
   const manifest: ContextPacketManifest = {
     pipeline_version: CONTEXT_PIPELINE_VERSION,
     semantic_intent: input.resolved.semantic.intent,
@@ -553,9 +743,14 @@ export function buildContextPacket(input: BuildContextPacketInput): BuiltContext
           score: Number(source.score),
         })),
     degraded_reason: input.evidenceBundle?.degradedReason ?? input.degradedReason ?? null,
+    ...(turnPlanManifest ? {
+      turn_plan: turnPlanManifest,
+      answer_validation: answerValidationManifest,
+    } : {}),
     packet_hmac_key_id: input.digestKeyId,
     packet_hmac_sha256: packetHmacSha256,
   };
+  validateContextPacketManifest(manifest);
   const builtRequest = (
     request: CanonicalGenerationRequest,
     canonicalBytes: Uint8Array,

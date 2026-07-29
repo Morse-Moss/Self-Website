@@ -6,6 +6,8 @@ import { test } from 'node:test';
 
 import pg from 'pg';
 
+import type { ContextPacketManifest } from '../lib/contracts/chat-context.ts';
+import { persistContextTerminalManifest } from '../lib/server/conversation-context-state.ts';
 import { createDisposablePostgresDatabase } from './postgres-test-utils.ts';
 
 const { Pool } = pg;
@@ -147,6 +149,107 @@ test('controlled completed turns bind one user and assistant pair to the same co
       ),
       /foreign key/iu,
     );
+  } finally {
+    await pool.end();
+    await database.dispose();
+  }
+});
+
+test('bounded plan metadata round-trips through existing context_manifest JSONB only', async () => {
+  const database = await createDisposablePostgresDatabase();
+  const pool = new Pool({ connectionString: database.connectionString });
+  try {
+    await runMigrations(database.connectionString);
+    const fixture = await insertConversationFixture(pool);
+    const turnId = randomUUID();
+    await pool.query(
+      `INSERT INTO interaction_turns
+        (id, access_session_id, conversation_id, workflow, audience_intent,
+         question, status, created_at, delete_after)
+       VALUES ($1,$2,$3,'chat','recruiter','sensitive question','running',now(),
+               now() + interval '1 day')`,
+      [turnId, fixture.sessionId, fixture.conversationId],
+    );
+    const manifest = {
+      pipeline_version: 'context-packet-v22',
+      semantic_intent: 'project_fit',
+      discourse_action: 'new_task',
+      task_action: 'create',
+      task_id: turnId,
+      task_state_version: 0,
+      context_builder_version: 'context-packet-builder-v1',
+      projection_policy_version: 'final-context-projection-v1',
+      release_policy: 'complete',
+      context_build_status: 'failed',
+      context_build_error_code: 'EXECUTION_FAILED',
+      discourse_source_turn_ids: [],
+      legacy_bridge_policy_version: null,
+      legacy_bridge_source_turn_ids: [],
+      legacy_bridge_status: 'not_eligible',
+      included_layers: [],
+      excluded_layers: [],
+      projected_slot_kinds: [],
+      evicted_layers: [],
+      projection_reason_codes: [],
+      eviction_reason_codes: [],
+      token_estimate_by_layer: {},
+      evidence_ids: [],
+      retrieval_scores: [],
+      degraded_reason: null,
+      turn_plan: {
+        schema_version: 'turn-plan-v1',
+        planner_version: 'deterministic-turn-planner-v1',
+        evidence_kind: 'portfolio_full',
+        executor_kind: 'direct',
+        project_ids: ['digital-morse'],
+        capability_ids: ['ai-programming-collaboration'],
+      },
+      answer_validation: { verdict: 'not_run', issue_codes: [] },
+      packet_hmac_key_id: null,
+      packet_hmac_sha256: null,
+    } satisfies ContextPacketManifest;
+
+    await persistContextTerminalManifest(pool, {
+      interactionTurnId: turnId,
+      conversationId: fixture.conversationId,
+      contextScopeId: turnId,
+      resolved: null,
+      manifest,
+    });
+    const stored = await pool.query<{ context_manifest: ContextPacketManifest }>(
+      `SELECT context_manifest FROM interaction_turns WHERE id = $1`,
+      [turnId],
+    );
+    assert.deepEqual(stored.rows[0].context_manifest.turn_plan, manifest.turn_plan);
+    assert.deepEqual(stored.rows[0].context_manifest.answer_validation, manifest.answer_validation);
+    assert.doesNotMatch(JSON.stringify(stored.rows[0].context_manifest), /sensitive question/u);
+
+    const validationCases: ContextPacketManifest['answer_validation'][] = [
+      { verdict: 'not_run', issue_codes: [] },
+      { verdict: 'pass', issue_codes: [] },
+      { verdict: 'warn', issue_codes: ['missing_evidence_coverage', 'invalid_citation'] },
+      { verdict: 'block', issue_codes: ['private_data_leak', 'secret_leak'] },
+    ];
+    for (const answerValidation of validationCases) {
+      assert.ok(answerValidation);
+      await persistContextTerminalManifest(pool, {
+        interactionTurnId: turnId,
+        conversationId: fixture.conversationId,
+        contextScopeId: turnId,
+        resolved: null,
+        manifest: { ...manifest, answer_validation: answerValidation },
+      });
+      const persisted = await pool.query<{ context_manifest: ContextPacketManifest }>(
+        `SELECT context_manifest FROM interaction_turns WHERE id = $1`,
+        [turnId],
+      );
+      assert.deepEqual(persisted.rows[0].context_manifest.answer_validation, answerValidation);
+    }
+
+    const migrationVersions = await pool.query<{ version: string }>(
+      `SELECT version FROM schema_migrations ORDER BY version`,
+    );
+    assert.equal(migrationVersions.rows.at(-1)?.version, '013');
   } finally {
     await pool.end();
     await database.dispose();

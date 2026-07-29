@@ -683,7 +683,7 @@ git commit -m "refactor: separate evidence admission from relevance"
 
 **Files:** modify `lib/contracts/chat-context.ts`, `lib/server/chat-context-packet.ts`, `lib/server/conversation-context-state.ts`, `lib/server/interaction-log.ts`, `tests/chat-context-packet.test.ts`, `tests/context-state-integration.test.ts`, `tests/context-persistence-integration.test.ts`.
 
-- [ ] **Step 1: Write RED manifest projection tests**
+- [x] **Step 1: Write RED manifest projection tests**
 
 Add:
 
@@ -711,7 +711,7 @@ node --env-file-if-exists=.env.local --test tests/chat-context-packet.test.ts te
 
 Expected: FAIL because fields do not exist.
 
-- [ ] **Step 2: Extend `ContextPacketManifest` with bounded projections**
+- [x] **Step 2: Extend `ContextPacketManifest` with bounded projections**
 
 Add exact fields:
 
@@ -732,15 +732,15 @@ answer_validation: {
 
 Create pure projectors `projectTurnPlanManifest(plan, bundle)` and `projectAnswerValidationManifest(result)`. Validate every ID against Catalog before persistence.
 
-- [ ] **Step 3: Include the plan projection in existing HMAC coverage**
+- [x] **Step 3: Include the plan projection in existing HMAC coverage**
 
 Implement `renderTrustedTurnPlan(planManifest)` with stable key and array ordering. Append its `<turn_plan>` block to `CanonicalAnswerSourceV2.trustedInstructions` before building `context-packet-v2`; do not put it in `taskInputs`, add an unsigned side channel or introduce a new packet schema. Existing packet/request V2 HMACs then cover the exact plan projection through signed trusted instructions. Tests must prove changing `evidence_kind` changes packet and request HMAC while changing RAG score order alone does not change approved-fact identity.
 
-- [ ] **Step 4: Persist through existing JSONB paths**
+- [x] **Step 4: Persist through existing JSONB paths**
 
 Modify completed, failed, stopped and compensation manifest builders. Build `answer_validation.verdict='not_run'` only in the in-memory pre-validation manifest; do not perform an interim database write. The success transaction persists `pass` or `warn`; a security compensation persists `block` with issue codes; an earlier execution failure persists `not_run`. No SQL migration is allowed.
 
-- [ ] **Step 5: Run persistence checks**
+- [x] **Step 5: Run persistence checks**
 
 ```powershell
 node --env-file-if-exists=.env.local --test tests/chat-context-packet.test.ts tests/context-state-integration.test.ts tests/context-persistence-integration.test.ts tests/provider-attempt-log.test.ts
@@ -748,7 +748,7 @@ node --env-file-if-exists=.env.local --test tests/chat-context-packet.test.ts te
 
 Expected: PASS with no plaintext input, answer, JD, Secret or Provider body in manifest rows.
 
-- [ ] **Step 6: Commit plan integrity and persistence**
+- [x] **Step 6: Commit plan integrity and persistence**
 
 ```powershell
 git add lib/contracts/chat-context.ts lib/server/chat-context-packet.ts lib/server/conversation-context-state.ts lib/server/interaction-log.ts tests/chat-context-packet.test.ts tests/context-state-integration.test.ts tests/context-persistence-integration.test.ts tests/provider-attempt-log.test.ts
@@ -1312,8 +1312,8 @@ Do not recommend large HR promotion unless the real chain passes and the remaini
 
 ## Resume Pointer
 
-Current: `TASK_5 / RED / IN_PROGRESS`.
+Current: `TASK_6 / RED / READY`.
 
-Last verified: Task 4 is locally committed as `fdd7fc2`; focused regressions passed `43/43`, TypeScript passed, and loopback BGE/pgvector `rag:eval` passed top-3 `46/46` with both threshold gates passing. The task-started embedding listener on `127.0.0.1:18091` was stopped after evaluation. No real Provider call, push or deployment has occurred.
+Last verified: Task 5 is locally verified for the current milestone. Its focused persistence suite passed `33/33`, TypeScript and `git diff --check` passed, plan kind changes alter V2 packet/request HMACs, relevance ordering cannot alter approved-fact identity, and `not_run/pass/warn/block` round-trip through the existing JSONB field without a migration. No real Provider call, push or deployment has occurred.
 
-Next action: add Task 5 RED coverage for TurnPlan and validation manifest projections, HMAC binding and JSONB round-trip without a schema migration.
+Next action: add Task 6 RED coverage for a direct executor that preserves the existing dynamic-context, attempt, cancellation and failover semantics without owning Session or persistence state.

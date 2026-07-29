@@ -1,4 +1,8 @@
 import type { ChatRouteDecision, KnowledgeSource } from './chat-runtime.ts';
+import type {
+  AnswerValidationIssueCode,
+  EvidenceRequirement,
+} from './chat-turn-plan.ts';
 
 export interface ContextChatMessage {
   role: 'user' | 'assistant';
@@ -296,8 +300,24 @@ export interface ContextPacketManifest {
   evidence_ids: string[];
   retrieval_scores: Array<{ evidenceId: string; score: number | null }>;
   degraded_reason: string | null;
+  turn_plan?: TurnPlanManifest;
+  answer_validation?: AnswerValidationManifest;
   packet_hmac_key_id: string | null;
   packet_hmac_sha256: string | null;
+}
+
+export interface TurnPlanManifest {
+  schema_version: 'turn-plan-v1';
+  planner_version: 'deterministic-turn-planner-v1';
+  evidence_kind: EvidenceRequirement['kind'];
+  executor_kind: 'direct';
+  project_ids: string[];
+  capability_ids: string[];
+}
+
+export interface AnswerValidationManifest {
+  verdict: 'not_run' | 'pass' | 'warn' | 'block';
+  issue_codes: AnswerValidationIssueCode[];
 }
 
 export interface CanonicalContextPacket {
