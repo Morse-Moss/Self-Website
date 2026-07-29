@@ -19,6 +19,7 @@ export interface RouteAnchor {
   reasonCode: string;
   topicKind: ChatTopicKind;
   topicRef: string | null;
+  answer?: string;
   question?: string;
   legacyClarificationEligible?: boolean;
   previousTurnCompleted?: boolean;
@@ -160,6 +161,13 @@ function isUnresolvedReference(message: string): boolean {
     || /^(?:哪(?:一)?个(?:最好|更好|最合适)|最(?:有)?代表性的|最推荐哪个|哪个最能代表你|那代表作)(?:呢|吗)?$/iu.test(trimmed);
 }
 
+function isProjectCatalogDiscourseFollowup(message: string, previous: RouteAnchor): boolean {
+  const priorAnswerReference = /(?:刚才|前面|上面|上一(?:轮|条)|上述|这些|这几个|其中)/iu.test(message);
+  const projectOrdinal = /(?:第[一二三四五六七八九十\d]+个|前者|后者)/iu.test(message);
+  const priorProjects = new Set(matchChatProjectSlugs(previous.answer ?? ''));
+  return priorAnswerReference && projectOrdinal && priorProjects.size >= 2;
+}
+
 function isPendingPersonalScopeClarification(previous?: RouteAnchor | null): previous is RouteAnchor {
   return previous?.routeKind === 'clarify'
     && previous.reasonCode === 'personal_scope_ambiguous'
@@ -285,6 +293,9 @@ function inheritFromTaskState(
 
 export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
   const message = input.request.message.trim();
+  const usablePrevious = input.previous?.previousTurnCompleted === false
+    ? null
+    : input.previous ?? null;
   if (isUnsafeOrUnverifiableRequest(message)) {
     return decision({
       routeKind: 'clarify',
@@ -417,6 +428,20 @@ export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
       requiresEmbedding: true,
     });
   }
+  if (usablePrevious
+    && input.hasUsableHistory
+    && isProjectCatalogDiscourseFollowup(message, usablePrevious)) {
+    return decision({
+      routeKind: 'grounded',
+      reasonCode: 'anaphoric_project_catalog_followup',
+      topicKind: 'project',
+      topicRef: null,
+      evidenceClass: 'direct',
+      inheritedFromTurnId: usablePrevious.turnId,
+      release: 'complete',
+      requiresEmbedding: true,
+    });
+  }
   if (isProjectFact(message)) {
     return decision({
       routeKind: 'grounded',
@@ -427,9 +452,6 @@ export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
       requiresEmbedding: true,
     });
   }
-  const usablePrevious = input.previous?.previousTurnCompleted === false
-    ? null
-    : input.previous ?? null;
   if (usablePrevious && isExplicitCapabilityContinuation(message, usablePrevious, input.ledger)) {
     return inheritRoute(usablePrevious, input.ledger)!;
   }

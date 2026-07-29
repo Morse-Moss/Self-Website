@@ -347,6 +347,60 @@ test('natural Chinese portfolio follow-ups inherit the active project topic', ()
   }
 });
 
+test('a project ordinal that explicitly points to the prior answer keeps the adjacent project context', () => {
+  const previous: RouteAnchor = {
+    ...projectAnchor('digital-morse'),
+    reasonCode: 'context_packet_discourse',
+    topicRef: null,
+    answer: '1. 数字摩斯\n2. 内容创作 Agent 系统\n3. 深度研究 Agent 系统',
+  };
+  const message = '你刚才列了三个项目。只展开第一个，说明其中最难的一次线上故障：具体症状、根因、你做了什么、最后如何验证。不要重复介绍另外两个项目。';
+  const decision = routeChatTurn({
+    request: request(message, 'recruiter', 'interviewer'),
+    previous,
+    hasUsableHistory: true,
+    ledger,
+  });
+
+  assert.equal(decision.routeKind, 'grounded');
+  assert.equal(decision.reasonCode, 'anaphoric_project_catalog_followup');
+  assert.equal(decision.topicKind, 'project');
+  assert.equal(decision.topicRef, null);
+  assert.equal(decision.evidenceClass, 'direct');
+  assert.equal(decision.inheritedFromTurnId, previous.turnId);
+  assert.equal(decision.requiresEmbedding, true);
+});
+
+test('a project ordinal does not inherit an unrelated list or a failed adjacent turn', () => {
+  const message = '你刚才列了三个项目。只展开第一个，说明其中最难的一次线上故障。';
+  const unrelated = routeChatTurn({
+    request: request(message, 'recruiter', 'interviewer'),
+    previous: {
+      ...projectAnchor('digital-morse'),
+      topicRef: null,
+      answer: '1. 北京\n2. 上海\n3. 深圳',
+    },
+    hasUsableHistory: true,
+    ledger,
+  });
+  const failed = routeChatTurn({
+    request: request(message, 'recruiter', 'interviewer'),
+    previous: {
+      ...projectAnchor('digital-morse'),
+      topicRef: null,
+      answer: '1. 数字摩斯\n2. 内容创作 Agent 系统\n3. 深度研究 Agent 系统',
+      previousTurnCompleted: false,
+    },
+    hasUsableHistory: true,
+    ledger,
+  });
+
+  assert.notEqual(unrelated.reasonCode, 'anaphoric_project_catalog_followup');
+  assert.equal(unrelated.inheritedFromTurnId, null);
+  assert.notEqual(failed.reasonCode, 'anaphoric_project_catalog_followup');
+  assert.equal(failed.inheritedFromTurnId, null);
+});
+
 test('a new explicit topic starting with 那 does not inherit the project anchor', () => {
   const decision = routeChatTurn({
     request: request('那 Kubernetes 是什么？'),

@@ -309,7 +309,11 @@ test('completed context history remains authoritative after interaction retentio
     }
 
     await pool.query('DELETE FROM interaction_turns WHERE delete_after < $1', [new Date('2026-07-20T00:00:00.000Z')]);
-    const adjacent = await loadAdjacentCompletedContextTurn(pool, fixture.conversationId);
+    const adjacent = await loadAdjacentCompletedContextTurn(
+      pool,
+      fixture.conversationId,
+      (BigInt(secondPair.assistantMessageId) + 1n).toString(),
+    );
     assert.equal(adjacent?.turnId, secondTurn);
     assert.equal(adjacent?.user.text, '还要求做 RAG 评测');
     assert.equal(adjacent?.assistant.text, '这会影响相关项目排序。');

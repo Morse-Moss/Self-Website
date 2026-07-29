@@ -2053,6 +2053,120 @@ test('V2.2 replays the five-turn recruitment failure chain with one bounded task
   }
 });
 
+test('V2.2 project ordinal follow-up requires an adjacent successful project catalog', async () => {
+  const fixture = await createFixture('context-v22-project-ordinal-follow-up');
+  const provider = new ControlledAnswerProvider();
+  const failedProvider = new ControlledAnswerProvider({ fail: true });
+  const config = contextConfig(fixture);
+  let conversationId: string | null = null;
+  try {
+    await seedFailureChainKnowledge();
+    const firstTurnId = randomUUID();
+    const first = await collectChat({
+      pool,
+      provider: coordinatedProvider(provider),
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        message: '请介绍与岗位最相关的项目和能力证据。',
+        mode: 'interviewer',
+        audienceIntent: 'recruiter',
+        turnId: firstTurnId,
+      }),
+      config,
+      now: fixtureNow,
+    });
+    const firstMeta = first.find((event) => event.type === 'meta');
+    assert.equal(firstMeta?.type, 'meta');
+    if (firstMeta?.type !== 'meta') return;
+    conversationId = firstMeta.conversationId;
+
+    const followupTurnId = randomUUID();
+    await collectChat({
+      pool,
+      provider: coordinatedProvider(provider),
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        message: '你刚才列了三个项目。只展开第一个，说明其中最难的一次线上故障。',
+        mode: 'interviewer',
+        audienceIntent: 'recruiter',
+        conversationId,
+        turnId: followupTurnId,
+      }),
+      config,
+      now: new Date(fixtureNow.getTime() + 1_000),
+    });
+    const followed = await pool.query<{
+      context_manifest: { included_layers: string[]; evidence_ids: string[] };
+      discourse_action: string;
+      inherited_from_turn_id: string;
+      semantic_intent: string;
+    }>(
+      `SELECT semantic_intent, discourse_action, inherited_from_turn_id::text,
+              context_manifest
+         FROM interaction_turns WHERE id = $1`,
+      [followupTurnId],
+    );
+    assert.equal(followed.rows[0].semantic_intent, 'project_catalog');
+    assert.equal(followed.rows[0].discourse_action, 'follow_up');
+    assert.equal(followed.rows[0].inherited_from_turn_id, firstTurnId);
+    assert.ok(followed.rows[0].context_manifest.included_layers.includes('discourse_context'));
+    assert.ok(followed.rows[0].context_manifest.included_layers.includes('approved_evidence'));
+    assert.ok(followed.rows[0].context_manifest.evidence_ids.length > 0);
+
+    await assert.rejects(
+      collectChat({
+        pool,
+        provider: coordinatedProvider(failedProvider),
+        accessSessionId: fixture.accessSessionId,
+        request: normalizeChatRequest({
+          message: '请把上一条回答压缩成一句话。',
+          mode: 'interviewer',
+          audienceIntent: 'recruiter',
+          conversationId,
+          turnId: randomUUID(),
+        }),
+        config,
+        now: new Date(fixtureNow.getTime() + 2_000),
+      }),
+      (error: unknown) => error instanceof ChatServiceError
+        && error.code === 'PROVIDER_UNAVAILABLE',
+    );
+
+    const afterFailureTurnId = randomUUID();
+    await collectChat({
+      pool,
+      provider: coordinatedProvider(provider),
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        message: '你刚才列了三个项目。只展开第一个，说明其中最难的一次线上故障。',
+        mode: 'interviewer',
+        audienceIntent: 'recruiter',
+        conversationId,
+        turnId: afterFailureTurnId,
+      }),
+      config,
+      now: new Date(fixtureNow.getTime() + 3_000),
+    });
+    const isolated = await pool.query<{
+      context_manifest: { included_layers: string[]; evidence_ids: string[] };
+      discourse_action: string;
+      inherited_from_turn_id: string | null;
+      semantic_intent: string;
+    }>(
+      `SELECT semantic_intent, discourse_action, inherited_from_turn_id::text,
+              context_manifest
+         FROM interaction_turns WHERE id = $1`,
+      [afterFailureTurnId],
+    );
+    assert.equal(isolated.rows[0].discourse_action, 'one_shot');
+    assert.equal(isolated.rows[0].inherited_from_turn_id, null);
+    assert.equal(isolated.rows[0].context_manifest.included_layers.includes('discourse_context'), false);
+    assert.deepEqual(isolated.rows[0].context_manifest.evidence_ids, []);
+  } finally {
+    await cleanupFixture(fixture);
+  }
+});
+
 test('recruiter-chat JD projects audited Claude Code evidence into V2.2', async () => {
   const fixture = await createFixture('HR interview');
   const provider = new ControlledAnswerProvider();

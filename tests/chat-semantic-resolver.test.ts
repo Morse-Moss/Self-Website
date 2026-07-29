@@ -220,6 +220,51 @@ test('recruitment context makes related project experience a Morse project-fit q
   assert.deepEqual(result.resolved.semantic.evidencePlan, ['ranked_project_fit']);
 });
 
+test('an ordinal follow-up to a prior project catalog keeps discourse and approved project evidence', () => {
+  const discourse = completedTurn({
+    user: { id: '41', role: 'user', text: '请介绍与岗位最相关的项目和能力证据。' },
+    assistant: {
+      id: '42',
+      role: 'assistant',
+      text: '1. 数字摩斯\n2. 内容创作 Agent 系统\n3. 深度研究 Agent 系统',
+    },
+  });
+  const result = resolve(
+    '你刚才列了三个项目。只展开第一个，说明其中最难的一次线上故障：具体症状、根因、你做了什么、最后如何验证。不要重复介绍另外两个项目。',
+    {
+      audienceIntent: 'recruiter',
+      mode: 'interviewer',
+      discourseContext: discourse,
+    },
+  );
+
+  assert.equal(result.resolved.legacyRoute.reasonCode, 'anaphoric_project_catalog_followup');
+  assert.equal(result.resolved.legacyRoute.inheritedFromTurnId, discourse.turnId);
+  assert.equal(result.resolved.semantic.intent, 'project_catalog');
+  assert.equal(result.resolved.semantic.discourseAction, 'follow_up');
+  assert.equal(result.resolved.semantic.taskAction, 'temporary');
+  assert.deepEqual(result.resolved.semantic.evidencePlan, ['approved_project_catalog']);
+  assert.ok(result.resolved.semantic.reasonCodes.includes('explicit_discourse_reference'));
+});
+
+test('an ordinal follow-up to a non-project list stays isolated from project evidence', () => {
+  const result = resolve(
+    '你刚才列了三个项目。只展开第一个，说明其中最难的一次线上故障。',
+    {
+      audienceIntent: 'recruiter',
+      mode: 'interviewer',
+      discourseContext: completedTurn({
+        assistant: { id: '42', role: 'assistant', text: '1. 北京\n2. 上海\n3. 深圳' },
+      }),
+    },
+  );
+
+  assert.notEqual(result.resolved.legacyRoute.reasonCode, 'anaphoric_project_catalog_followup');
+  assert.equal(result.resolved.legacyRoute.inheritedFromTurnId, null);
+  assert.equal(result.resolved.semantic.discourseAction, 'one_shot');
+  assert.deepEqual(result.resolved.semantic.evidencePlan, ['none']);
+});
+
 test('bare recheck continues an active recruitment task without becoming general conversation', () => {
   const acceptanceJd = '跟海外红人做合作式外贸，要求能全栈开发，了解自动化流程搭建，工具迭代与问题优化';
   const jdCapture = resolve(acceptanceJd, {

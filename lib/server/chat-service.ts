@@ -779,7 +779,11 @@ async function prepareContextTurn(input: {
       throw new RuntimePhaseError('CONVERSATION_INVALID', 'LEGACY_BRIDGE_INVALID');
     }
     const currentFrame = await loadContextTaskFrame(input.client, input.turn.conversationId);
-    const discourse = await loadAdjacentCompletedContextTurn(input.client, input.turn.conversationId);
+    const discourse = await loadAdjacentCompletedContextTurn(
+      input.client,
+      input.turn.conversationId,
+      input.turn.userMessageId,
+    );
     const legacyBridge = await loadCapturedLegacyContextBridge(
       input.client,
       input.turn.conversationId,

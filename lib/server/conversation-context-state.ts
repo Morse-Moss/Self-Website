@@ -406,13 +406,14 @@ const completedTurnSelection = `
 export async function loadAdjacentCompletedContextTurn(
   client: Queryable,
   conversationId: string,
+  currentUserMessageId: string,
 ): Promise<CompletedContextTurn | null> {
   const result = await client.query<CompletedTurnRow>(
     `${completedTurnSelection}
       WHERE completed.conversation_id = $1
-      ORDER BY completed.completed_at DESC, completed.turn_id DESC
+        AND completed.assistant_message_id + 1 = $2::bigint
       LIMIT 1`,
-    [conversationId],
+    [conversationId, currentUserMessageId],
   );
   return result.rows[0] ? toCompletedContextTurn(result.rows[0]) : null;
 }

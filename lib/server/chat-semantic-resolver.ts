@@ -157,6 +157,8 @@ function previousAnchor(turn: CompletedContextTurn | null | undefined): RouteAnc
     reasonCode: 'context_packet_discourse',
     topicKind: 'none',
     topicRef: null,
+    answer: turn.assistant.text,
+    question: turn.user.text,
     previousTurnCompleted: true,
   };
 }
@@ -189,13 +191,14 @@ function evidencePlanForIntent(intent: SemanticIntent): EvidencePlanCode[] {
 function legacyRouteForSemantic(input: {
   intent: SemanticIntent;
   reasonCode: string;
+  inheritedFromTurnId?: string | null;
   deterministicReply?: string | null;
   referent?: SemanticTurnDecision['referent'];
   capabilityEvidence?: ChatEvidenceClass;
 }): ChatRouteDecision {
   const common = {
     reasonCode: input.reasonCode,
-    inheritedFromTurnId: null,
+    inheritedFromTurnId: input.inheritedFromTurnId ?? null,
     release: releaseForIntent(input.intent),
     requiresEmbedding: false,
     requiresSearch: false,
@@ -527,7 +530,8 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
   });
   const explicitDiscourseReference = Boolean(input.discourseContext
     && baseRoute.inheritedFromTurnId === input.discourseContext.turnId
-    && baseRoute.reasonCode === 'anaphoric_conversation_followup');
+    && ['anaphoric_conversation_followup', 'anaphoric_project_catalog_followup']
+      .includes(baseRoute.reasonCode));
   const projectSlugs = matchChatProjectSlugs(message);
   const capabilities = assessCapabilities(message, input.ledger);
   const capability = capabilities.find((candidate) => candidate.evidenceClass !== 'none')
@@ -589,6 +593,9 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
     intent = currentFrame?.evidenceFocus.topicKind === 'jd' ? 'jd_match' : 'project_fit';
     reasonCode = 'recruitment_task_complete';
   } else if (baseRoute.reasonCode === 'project_experience_query') {
+    intent = 'project_catalog';
+    reasonCode = baseRoute.reasonCode;
+  } else if (baseRoute.reasonCode === 'anaphoric_project_catalog_followup') {
     intent = 'project_catalog';
     reasonCode = baseRoute.reasonCode;
   } else if (jdLike) {
@@ -734,6 +741,7 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
   const legacyRoute = legacyRouteForSemantic({
     intent,
     reasonCode,
+    inheritedFromTurnId: baseRoute.inheritedFromTurnId,
     deterministicReply,
     referent,
     capabilityEvidence,
