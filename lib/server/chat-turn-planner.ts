@@ -12,7 +12,15 @@ import {
   matchCatalogCapabilities,
   matchCatalogProjects,
 } from './chat-evidence-catalog.ts';
-import { resolveChatSemanticTurn } from './chat-semantic-resolver.ts';
+import {
+  resolveChatSemanticTurn,
+  type ChatSemanticResolution,
+} from './chat-semantic-resolver.ts';
+
+export interface PlannedChatTurn {
+  plan: TurnPlanV1;
+  resolution: ChatSemanticResolution;
+}
 
 function assertNever(value: never): never {
   throw new Error(`TURN_PLAN_INTENT_UNSUPPORTED: ${String(value)}`);
@@ -87,6 +95,13 @@ export function planChatTurn(
   snapshot: ConversationSessionSnapshot,
   catalog: CompiledChatEvidenceCatalog,
 ): TurnPlanV1 {
+  return planChatTurnWithResolution(snapshot, catalog).plan;
+}
+
+export function planChatTurnWithResolution(
+  snapshot: ConversationSessionSnapshot,
+  catalog: CompiledChatEvidenceCatalog,
+): PlannedChatTurn {
   const resolution = resolveChatSemanticTurn({
     request: requestFromSnapshot(snapshot),
     ledger: catalog,
@@ -101,7 +116,7 @@ export function planChatTurn(
   const evidence = evidenceForIntent(semantic.intent, snapshot, catalog, semantic.referent);
   const taskId = resolution.candidateFrame?.taskId ?? null;
 
-  return deepFreeze({
+  const plan: TurnPlanV1 = deepFreeze({
     schemaVersion: TURN_PLAN_VERSION,
     plannerVersion: TURN_PLANNER_VERSION,
     conversationId: snapshot.conversationId,
@@ -114,4 +129,5 @@ export function planChatTurn(
     executor: { kind: 'direct' },
     reasonCodes: [...semantic.reasonCodes],
   });
+  return { plan, resolution };
 }

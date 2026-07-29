@@ -16,6 +16,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import http from 'node:http';
+import { createRequire } from 'node:module';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -76,6 +77,7 @@ export const S10_SCENARIOS = Object.freeze([
 ]);
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const require = createRequire(import.meta.url);
 const MOCK_OPENAI_SCRIPT = 'scripts/mock-openai.mjs';
 const MOCK_BOCHA_SCRIPT = 'scripts/mock-bocha.mjs';
 const CONNECTION_TIMEOUT_MS = 8_000;
@@ -312,7 +314,23 @@ function assertOwnedRuntimeDirectory(directory) {
   return resolved;
 }
 
-function createRuntimeSnapshot() {
+export function resolveS10NextInstallation() {
+  let packagePath;
+  try {
+    packagePath = require.resolve('next/package.json');
+  } catch {
+    throw new HarnessError('setup:next-missing');
+  }
+  const packageDirectory = path.dirname(packagePath);
+  const nextCli = path.join(packageDirectory, 'dist', 'bin', 'next');
+  check(existsSync(nextCli), 'setup:next-missing');
+  return {
+    nextCli,
+    nodeModules: path.dirname(packageDirectory),
+  };
+}
+
+function createRuntimeSnapshot(nodeModules) {
   const runtimeParent = path.join(repoRoot, '.next');
   mkdirSync(runtimeParent, { recursive: true });
   const runtimeDir = mkdtempSync(path.join(runtimeParent, 's10-runtime-'));
@@ -321,8 +339,6 @@ function createRuntimeSnapshot() {
     if (!existsSync(source)) continue;
     cpSync(source, path.join(runtimeDir, entry), { recursive: true });
   }
-  const nodeModules = path.join(repoRoot, 'node_modules');
-  check(existsSync(path.join(nodeModules, 'next', 'dist', 'bin', 'next')), 'setup:next-missing');
   symlinkSync(nodeModules, path.join(runtimeDir, 'node_modules'), 'junction');
   return runtimeDir;
 }
@@ -1854,8 +1870,8 @@ export async function runS10MockE2E() {
 
     openAiProxy = createControllableOpenAiProxy(openAiPort);
     await listen(openAiProxy.server, proxyPort);
-    runtimeDir = createRuntimeSnapshot();
-    const nextCli = path.join(repoRoot, 'node_modules', 'next', 'dist', 'bin', 'next');
+    const { nextCli, nodeModules } = resolveS10NextInstallation();
+    runtimeDir = createRuntimeSnapshot(nodeModules);
     const appEnv = {
       ...process.env,
       NEXT_TELEMETRY_DISABLED: '1',
@@ -1886,8 +1902,12 @@ export async function runS10MockE2E() {
       BOCHA_BASE_URL: `http://127.0.0.1:${bochaPort}/v1`,
       MORSE_INPUT_USD_PER_MILLION: '0.01',
       MORSE_OUTPUT_USD_PER_MILLION: '0.02',
+      MORSE_PROVIDER_PROTOCOL_EVENT_TIMEOUT_MS: '8000',
       MORSE_PROVIDER_FIRST_BYTE_TIMEOUT_MS: '10000',
+      MORSE_PROVIDER_MODEL_TEXT_TIMEOUT_MS: '20000',
+      MORSE_PROVIDER_STAGE_TIMEOUT_MS: '30000',
       MORSE_PROVIDER_TOTAL_TIMEOUT_MS: '30000',
+      MORSE_CHAT_TURN_TIMEOUT_MS: '45000',
       MORSE_SEARCH_TIMEOUT_MS: '5000',
       MORSE_SSE_HEARTBEAT_MS: '1000',
       MORSE_ADMIN_PASSWORD_HASH: adminPasswordHash,

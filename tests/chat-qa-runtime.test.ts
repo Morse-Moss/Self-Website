@@ -125,8 +125,10 @@ test('chat service depends on the Q&A runtime instead of its planning internals'
     './chat-context-coordinator.ts',
     './chat-evidence-catalog.ts',
     './chat-evidence-planner.ts',
+    './chat-semantic-resolver.ts',
     './chat-turn-planner.ts',
   ]) {
     assert.doesNotMatch(source, new RegExp(`from '${forbiddenImport.replaceAll('.', '\\.')}';`, 'u'));
   }
+  assert.doesNotMatch(source, /resolveChatSemanticTurn\(/u);
 });

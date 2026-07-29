@@ -16,14 +16,25 @@ import {
   type PlanEvidenceBundleInput,
   type PlannedChatEvidence,
 } from './chat-evidence-planner.ts';
-import { planChatTurn } from './chat-turn-planner.ts';
+import {
+  planChatTurn,
+  planChatTurnWithResolution,
+  type PlannedChatTurn,
+} from './chat-turn-planner.ts';
 
 export type { PlannedChatEvidence, PreparedTargetContext };
+export type { PlannedChatTurn };
 
 export const qaCapabilityLedger = compiledChatEvidenceCatalog;
 
 export function planQaTurn(session: ConversationSessionSnapshot): TurnPlanV1 {
   return planChatTurn(session, compiledChatEvidenceCatalog);
+}
+
+export function planQaTurnWithResolution(
+  session: ConversationSessionSnapshot,
+): PlannedChatTurn {
+  return planChatTurnWithResolution(session, compiledChatEvidenceCatalog);
 }
 
 export function buildQaEvidence(

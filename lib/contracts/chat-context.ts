@@ -1,8 +1,19 @@
 import type { ChatRouteDecision, KnowledgeSource } from './chat-runtime.ts';
-import type {
-  AnswerValidationIssueCode,
-  EvidenceRequirement,
-} from './chat-turn-plan.ts';
+
+export type EvidenceRequirementKind =
+  | 'none'
+  | 'identity'
+  | 'portfolio_full'
+  | 'named_projects'
+  | 'capabilities'
+  | 'controlled_search';
+
+export type AnswerValidationIssueCode =
+  | 'missing_evidence_coverage'
+  | 'invalid_citation'
+  | 'unsupported_capability_claim'
+  | 'private_data_leak'
+  | 'secret_leak';
 
 export interface ContextChatMessage {
   role: 'user' | 'assistant';
@@ -309,7 +320,7 @@ export interface ContextPacketManifest {
 export interface TurnPlanManifest {
   schema_version: 'turn-plan-v1';
   planner_version: 'deterministic-turn-planner-v1';
-  evidence_kind: EvidenceRequirement['kind'];
+  evidence_kind: EvidenceRequirementKind;
   executor_kind: 'direct';
   project_ids: string[];
   capability_ids: string[];

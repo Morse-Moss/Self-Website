@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 
+import * as s10Harness from '../scripts/s10-chat-smoke.mjs';
+
 import {
   S10_SCENARIOS,
   S10_VIEWPORTS,
@@ -22,6 +24,19 @@ const packageJson = JSON.parse(readFileSync(new URL('package.json', repoRoot), '
 test('S10 exposes one repeatable mock E2E command', () => {
   assert.ok(existsSync(harnessUrl));
   assert.equal(packageJson.scripts['visual:s10'], 'node scripts/s10-chat-smoke.mjs');
+});
+
+test('S10 resolves its installed Next runtime from a worktree', () => {
+  const resolveInstallation = (
+    s10Harness as typeof s10Harness & {
+      resolveS10NextInstallation?: () => { nextCli: string; nodeModules: string };
+    }
+  ).resolveS10NextInstallation;
+
+  assert.equal(typeof resolveInstallation, 'function');
+  const installation = resolveInstallation();
+  assert.ok(existsSync(installation.nextCli));
+  assert.ok(existsSync(installation.nodeModules));
 });
 
 test('S10 locks the required desktop and mobile acceptance viewports', () => {
@@ -208,6 +223,16 @@ test('S10 runtime snapshot builds and starts production without a junction file 
   assert.match(source, /MORSE_PROVIDER_MOCK_ORIGIN:\s*`http:\/\/127\.0\.0\.1:\$\{proxyPort\}`/u);
   assert.match(source, /env:\s*\{ \.\.\.appEnv, NODE_ENV: 'production' \}/u);
   assert.doesNotMatch(source, /\[nextCli, 'dev'/u);
+});
+
+test('S10 mock runtime satisfies the production Provider timing order', () => {
+  const source = readFileSync(harnessUrl, 'utf8');
+
+  assert.match(source, /MORSE_PROVIDER_PROTOCOL_EVENT_TIMEOUT_MS:\s*'8000'/u);
+  assert.match(source, /MORSE_PROVIDER_FIRST_BYTE_TIMEOUT_MS:\s*'10000'/u);
+  assert.match(source, /MORSE_PROVIDER_MODEL_TEXT_TIMEOUT_MS:\s*'20000'/u);
+  assert.match(source, /MORSE_PROVIDER_STAGE_TIMEOUT_MS:\s*'30000'/u);
+  assert.match(source, /MORSE_CHAT_TURN_TIMEOUT_MS:\s*'45000'/u);
 });
 
 test('S10 desktop touch emulation never sends an invalid zero touch-point count', () => {

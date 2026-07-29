@@ -1113,7 +1113,7 @@ git commit -m "test: cover agent ready qa acceptance"
 
 **Files:** modify/delete only files proven obsolete by `rg`; create a dated local verification receipt; reconcile authority docs only when implementation facts differ.
 
-- [ ] **Step 1: Run duplicate-authority scans**
+- [x] **Step 1: Run duplicate-authority scans**
 
 ```powershell
 rg -n "chatCapabilityPolicy|chat-capability-policy|CapabilityPolicy|MANUAL_ALIASES" content lib scripts tests
@@ -1123,7 +1123,7 @@ rg -n "planChatEvidence|prepareTargetContext|validateAnswer|compileChatEvidenceC
 
 Expected: first two scans have no active runtime/test authority; `chat-service.ts` only delegates to `runQaTurn()` and does not own planner/evidence/executor/validator internals. Historical schema readers may retain `strict-overlay-v1` only if a test proves they are read-only and new runtime cannot create it.
 
-- [ ] **Step 2: Check size and responsibility, not an arbitrary line target**
+- [x] **Step 2: Check size and responsibility, not an arbitrary line target**
 
 Review `chat-service.ts` and new modules against this ownership table:
 
@@ -1141,7 +1141,7 @@ conversation-context-state persistence and atomic state
 
 Move any misplaced business decision to its owner before review. Do not create forwarding-only modules with no ownership.
 
-- [ ] **Step 3: Run focused and full verification once**
+- [x] **Step 3: Run focused and full verification once**
 
 ```powershell
 node --env-file-if-exists=.env.local --test tests/chat-evidence-catalog.test.ts tests/chat-conversation-session.test.ts tests/chat-turn-planner.test.ts tests/chat-evidence-planner.test.ts tests/chat-context-packet.test.ts tests/chat-answer-executor.test.ts tests/chat-answer-validator.test.ts tests/chat-qa-runtime.test.ts tests/chat-sse.test.ts tests/chat-controlled-context-integration.test.ts
@@ -1156,7 +1156,7 @@ git status --short --branch
 
 Expected: all exit 0; no unexplained skip; only task-owned files differ.
 
-- [ ] **Step 4: Run visual Chat verification**
+- [x] **Step 4: Run visual Chat verification**
 
 Start the fresh production build using the existing S10 harness and run:
 
@@ -1166,7 +1166,7 @@ npm run visual:s10
 
 Inspect 1440x900 and 390x844. Confirm one answer appears only after commit, status/switching does not resize controls, replay shows one answer, no overlap/horizontal overflow, console/page errors 0 and no unexpected external runtime asset.
 
-- [ ] **Step 5: Run scoped privacy and Secret scans**
+- [x] **Step 5: Run scoped privacy and Secret scans**
 
 ```powershell
 git diff --name-only master...HEAD
@@ -1175,7 +1175,7 @@ rg -n -i "authorization:|bearer [a-z0-9._-]{12,}|api[_-]?key[=:][^< ]|private re
 
 Classify every match. Expected: schema names, synthetic canaries, tests and redacted placeholders only; no credential, private resume text, real JD/answer, raw Provider payload, production value or Session token.
 
-- [ ] **Step 6: Perform split CRITICAL review**
+- [x] **Step 6: Perform split CRITICAL review**
 
 Review 1, compliance/spec:
 
@@ -1195,13 +1195,13 @@ Review 2, quality/safety:
 
 Each finding needs severity, exact file/location, evidence and minimum closure. Use at most three root-cause correction batches; rerun only invalidated focused checks and delta-review fixes. Both final verdicts must be PASS before release.
 
-- [ ] **Step 7: Write local VerificationReceipt and reconcile knowledge**
+- [x] **Step 7: Write local VerificationReceipt and reconcile knowledge**
 
 Create `docs/verify/release/agent-ready-qa-mvp-local-closeout-2026-07-29.md` recording branch/HEAD, diff inventory, exact test counts, eval results, visual evidence, scans, review verdicts, exclusions and invalidation conditions. Do not include real questions/answers, private JD, Prompt, HMAC value, Provider payload or Secret.
 
 Run `closeout` and `neat-freak`. Update `docs/portfolio-blueprint.md`, runbooks or task center only for facts that are now true; otherwise record `checked-no-change`. Final knowledge verdict must be `KNOWLEDGE_RECONCILED`.
 
-- [ ] **Step 8: Commit the reviewed local milestone**
+- [x] **Step 8: Commit the reviewed local milestone**
 
 First write the exact reviewed paths to a PowerShell array from `git diff --name-only HEAD`; compare it with the StagePacket inventory and stop on any unknown path. Stage only those literal paths plus the local receipt and justified authority updates:
 
@@ -1312,8 +1312,8 @@ Do not recommend large HR promotion unless the real chain passes and the remaini
 
 ## Resume Pointer
 
-Current: `TASK_10 / ASSESS / READY`.
+Current: `TASK_11 / INTAKE / READY`.
 
-Last verified: Task 9 proves the frozen recruiter entry, exact synthetic JD and ten questions in one PostgreSQL Session. The affected Planner/Evidence/Validator/Runtime/PostgreSQL/SSE boundary passed `81/81`; completed-only Session coverage passed `2/2`; evaluation contracts passed `17/17`; deterministic chat evaluation passed `111/111` with `externalCalls=0`; TypeScript and diff checks passed. Every HR question completed on V2.2 with one direct TurnPlan, one stable JD Task, all five projects and four approved resume facts exactly once, one visible answer and one `done`. Quality warnings remained single-attempt and non-rejecting; unrelated questions carried no old JD/evidence and preserved the active Frame. No real Provider call, push or deployment has occurred.
+Last verified: Task 10 removed the second semantic-planning call from `chat-service`, moved shared Provider result types back into the contracts layer, and restored an acyclic production dependency graph. The affected architecture/Planner/Evidence/Validator/Runtime/PostgreSQL/SSE boundary passed `112/112`; the full suite passed `1260/1260` with zero skips; deterministic chat evaluation passed `111/111` with `externalCalls=0`; RAG evaluation passed top-3 `46/46` and top-1 `36/46`; TypeScript and the 33-route production build passed. Fresh S10 Mock E2E passed all 26 scenarios at 1440x900 and 390x844 with 13 screenshots, no overflow, zero console/page errors, and no external Provider call. Duplicate-authority, privacy and Secret scans and both CRITICAL review views passed. No real Provider call, mainline absorption, push or deployment has occurred.
 
-Next action: run Task 10 duplicate-authority scans, inspect module ownership against the frozen architecture table, then perform the full local verification and split CRITICAL review before any absorption, push or deployment.
+Next action: reread the deployment safety/runbook authority, recheck the shared root and worktree state, then absorb this reviewed branch onto the latest mainline before any push, deployment or real HR Session.

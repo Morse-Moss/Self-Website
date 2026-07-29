@@ -11,13 +11,21 @@ import type {
   TaskHistorySummaryLayer,
 } from '../contracts/chat-context.ts';
 import type {
-  AiConfigDigestVersion,
   AnswerReasoningEffort,
-  ModelCapabilities,
 } from './ai-config.ts';
 import type { SanitizedProviderFailure } from './provider-failure.ts';
+import type {
+  ProviderAttempt,
+  ProviderTargetSnapshot,
+  ProviderWinner,
+} from '../contracts/chat-turn-plan.ts';
 
 export type { AnswerReasoningEffort } from './ai-config.ts';
+export type {
+  ProviderAttempt,
+  ProviderTargetSnapshot,
+  ProviderWinner,
+} from '../contracts/chat-turn-plan.ts';
 
 export interface AiMessage {
   role: 'user' | 'assistant';
@@ -98,53 +106,6 @@ export class AnswerExecutionError extends Error {
     this.name = 'AnswerExecutionError';
     this.code = code;
   }
-}
-
-export type ProviderSourceType = 'database' | 'environment';
-
-export interface ProviderTargetSnapshot extends ModelCapabilities {
-  configDigest: string;
-  configDigestVersion: AiConfigDigestVersion;
-  connectionDisplayName: string;
-  connectionVersionId: string | null;
-  inputUsdPerMillion: string | null;
-  modelDisplayName: string;
-  modelId: string;
-  modelVersionId: string | null;
-  outputUsdPerMillion: string | null;
-  position: number;
-  protocol: 'responses' | 'chat_completions';
-  reasoningEffort: AnswerReasoningEffort | null;
-  routeRevisionId: string | null;
-  sourceType: ProviderSourceType;
-}
-
-export interface ProviderAttempt extends ProviderTargetSnapshot {
-  attemptIndex: number;
-  completedAt: Date;
-  costComplete: boolean;
-  errorCode: string | null;
-  firstByteLatencyMs: number | null;
-  firstModelTextMs: number | null;
-  firstProtocolEventMs: number | null;
-  firstUserVisibleMs: number | null;
-  generationMode: 'normal' | 'strict';
-  generationVariantTrigger?: GenerationVariantV2['trigger'] | null;
-  knownCostUsd: number | null;
-  launchKind: 'primary' | 'hedge' | 'failover' | 'overflow_retry';
-  startedAt: Date;
-  status: 'completed' | 'failed' | 'stopped';
-  totalLatencyMs: number;
-  usage: TokenUsage | null;
-  usageComplete: boolean;
-  executionId?: string;
-  attemptNo?: number;
-  integrity?: GenerationRequestIntegrity | null;
-  failure?: SanitizedProviderFailure | null;
-}
-
-export interface ProviderWinner extends ProviderTargetSnapshot {
-  attemptIndex: number;
 }
 
 export interface ProviderAnswerTarget {

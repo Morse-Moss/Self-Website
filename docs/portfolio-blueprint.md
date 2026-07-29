@@ -395,7 +395,7 @@
 - **交付不变量**：Provider 已完成协议并返回非空正文，且成功事务可以提交时，服务端必须原样交付并持久化该正文。回答中的措辞、结构、引用、百分比、文件名或任何质量标签都不得把成功结果改写为失败。
 - **质量检查定位**：输出质量规则只用于离线评测或不影响成功状态的非阻断观测；它们没有丢弃正文、触发重生成、清空前端、切换 Provider、记录 Provider incident 或返回 `PROVIDER_UNAVAILABLE` 的权限。
 - **重试与切换边界**：第二次 Provider 调用只允许发生在尚无用户可见正文的真实网络、协议、限流、超时、空完成或 incomplete 故障后。不得因内容质量执行 strict 重生成；一旦已有正文则继续沿用现有单 Provider 锁定规则。
-- **兼容边界**：历史 `generation_mode='strict'`、guard 错误和 attempt 记录继续可读，不做破坏性 migration；新运行时只生成 normal 请求。`chat-output-guard.ts` 可继续服务离线 `chat:eval`，但不得重新接回在线成功/失败状态机。
+- **兼容边界**：历史 `generation_mode='strict'`、guard 错误和 attempt 记录继续可读，不做破坏性 migration；新运行时只生成 normal 请求。原 `chat-output-guard.ts` 及其测试已删除；离线 `chat:eval` 使用场景专属的确定性断言，不保留第二套在线或离线输出守卫权威。
 
 ## 26. 数字 Morse Controlled Context V2.2（2026-07-28）
 

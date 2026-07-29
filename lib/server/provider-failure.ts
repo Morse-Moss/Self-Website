@@ -1,32 +1,14 @@
-export type ProviderFailureCategory =
-  | 'context_overflow'
-  | 'output_truncated'
-  | 'incomplete'
-  | 'provider_failed'
-  | 'transport'
-  | 'timeout'
-  | 'cancelled';
+import type {
+  ProviderFailureCategory,
+  ProviderFailureReason,
+  SanitizedProviderFailure,
+} from '../contracts/chat-turn-plan.ts';
 
-export type ProviderFailureReason =
-  | 'http_413'
-  | 'context_length_exceeded'
-  | 'max_output_tokens'
-  | 'length'
-  | 'response_incomplete'
-  | 'response_failed'
-  | 'stream_failed'
-  | 'transport'
-  | 'timeout'
-  | 'cancelled';
-
-export interface SanitizedProviderFailure {
-  category: ProviderFailureCategory;
-  reason: ProviderFailureReason;
-  httpStatus: number | null;
-  inputTokens: number | null;
-  outputTokens: number | null;
-  contextWindowTokens: number | null;
-}
+export type {
+  ProviderFailureCategory,
+  ProviderFailureReason,
+  SanitizedProviderFailure,
+} from '../contracts/chat-turn-plan.ts';
 
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object'

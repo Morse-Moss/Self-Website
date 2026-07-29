@@ -83,12 +83,13 @@ import {
 } from './chat-context-packet.ts';
 import {
   buildQaEvidence,
-  planQaTurn,
+  planQaTurnWithResolution,
   prepareQaTargetContext,
   qaCapabilityLedger,
   QaAnswerBlockedError,
   runQaTurn,
   type PlannedChatEvidence,
+  type PlannedChatTurn,
   type PreparedTargetContext,
 } from './chat-qa-runtime.ts';
 import {
@@ -102,10 +103,6 @@ import {
   type TerminateHistorySummaryAttemptInput,
 } from './chat-history-compaction.ts';
 import { projectFinalContext } from './chat-context-projection.ts';
-import {
-  resolveChatSemanticTurn,
-  type ChatSemanticResolution,
-} from './chat-semantic-resolver.ts';
 import {
   routeChatTurn as routeV2ChatTurn,
   type ChatRouteDecision,
@@ -304,7 +301,7 @@ interface PreparedContextTurn {
   evidenceBundle: EvidenceBundle;
   plannedEvidence: PlannedChatEvidence;
   projection: ContextProjection;
-  resolution: ChatSemanticResolution;
+  resolution: PlannedChatTurn['resolution'];
   sessionSnapshot: ConversationSessionSnapshot;
   turnPlan: TurnPlanV1;
   search: SearchResponse | undefined;
@@ -807,16 +804,22 @@ async function prepareContextTurn(input: {
       input.turn.conversationId,
     );
     bridgeTurnIds = legacyBridge.map((turn) => turn.turnId);
-    const resolution = resolveChatSemanticTurn({
-      request: input.request,
-      ledger: capabilityLedger,
+    const planningSessionSnapshot: ConversationSessionSnapshot = Object.freeze({
       conversationId: input.turn.conversationId,
+      interactionTurnId: input.turn.turnId,
       currentUserMessageId: input.turn.userMessageId,
+      currentInput: input.request.message,
+      workflow: input.request.workflow ?? 'chat',
+      mode: input.request.mode,
+      audienceIntent: input.request.audienceIntent,
+      pageContext: null,
       currentFrame,
-      discourseContext: discourse,
-      legacyBridge,
-      taskIdFactory: () => input.turn.contextTaskId ?? input.turn.turnId,
+      adjacentCompletedTurn: discourse,
+      completedHistory: Object.freeze([]),
+      legacyBridge: Object.freeze([...legacyBridge]),
     });
+    const planning = planQaTurnWithResolution(planningSessionSnapshot);
+    const { resolution } = planning;
     resolved = resolution.resolved;
     bridgeStatus = resolution.legacyBridgeStatus;
     const isolatedTurn = resolved.semantic.taskAction === 'temporary'
@@ -835,20 +838,10 @@ async function prepareContextTurn(input: {
         })
       : [];
     const sessionSnapshot: ConversationSessionSnapshot = Object.freeze({
-      conversationId: input.turn.conversationId,
-      interactionTurnId: input.turn.turnId,
-      currentUserMessageId: input.turn.userMessageId,
-      currentInput: input.request.message,
-      workflow: input.request.workflow ?? 'chat',
-      mode: input.request.mode,
-      audienceIntent: input.request.audienceIntent,
-      pageContext: null,
-      currentFrame,
-      adjacentCompletedTurn: discourse,
+      ...planningSessionSnapshot,
       completedHistory: Object.freeze([...history]),
-      legacyBridge: Object.freeze([...legacyBridge]),
     });
-    const turnPlan = planQaTurn(sessionSnapshot);
+    const turnPlan = planning.plan;
     let evidenceBundle: EvidenceBundle = resolved.legacyRoute.deterministicReply
       ? {
           catalogVersion: 2,
