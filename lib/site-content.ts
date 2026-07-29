@@ -1,7 +1,7 @@
 import contentJson from "../content/site-content.json" with { type: "json" };
-import capabilityPolicyJson from "../content/chat-capability-policy.json" with { type: "json" };
+import evidenceCatalogJson from "../content/chat-evidence-catalog.json" with { type: "json" };
 
-import type { CapabilityPolicy } from "./contracts/capability.ts";
+import type { ChatEvidenceCatalogV2 } from "./contracts/chat-evidence-catalog.ts";
 import {
   projectSlugs,
   type Project,
@@ -29,7 +29,7 @@ export type {
 export const siteUrl = "https://aimorse.tech";
 
 export const siteContent = contentJson as SiteContent;
-export const chatCapabilityPolicy = capabilityPolicyJson as CapabilityPolicy;
+export const chatEvidenceCatalog = evidenceCatalogJson as ChatEvidenceCatalogV2;
 
 export const getAllProjects = (): Project[] => siteContent.projects;
 

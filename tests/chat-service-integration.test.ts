@@ -32,7 +32,7 @@ import {
   loadPreviousRouteAnchor,
   recordInteractionRoute,
 } from '../lib/server/interaction-log.ts';
-import { chatCapabilityPolicy, siteContent } from '../lib/site-content.ts';
+import { chatEvidenceCatalog, siteContent } from '../lib/site-content.ts';
 
 const { Pool } = pg;
 const connectionString = process.env.DATABASE_URL;
@@ -1217,7 +1217,7 @@ test('route anchors preserve the latest meaningful topic across follow-ups', {
   const firstTurnId = randomUUID();
   const secondTurnId = randomUUID();
   const thirdTurnId = randomUUID();
-  const ledger = compileCapabilityLedger(siteContent, chatCapabilityPolicy);
+  const ledger = compileCapabilityLedger(siteContent, chatEvidenceCatalog);
   try {
     for (const [turnId, question, createdAt] of [
       [firstTurnId, '数字 Morse 怎么实现 RAG？', new Date(now.getTime() + 1_000)],

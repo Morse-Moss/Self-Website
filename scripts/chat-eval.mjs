@@ -17,7 +17,7 @@ import {
   deriveTaskStateTransition,
   taskStateRequiresWrite,
 } from '../lib/server/conversation-task-state.ts';
-import { compileCapabilityLedger } from '../lib/server/capability-evidence.ts';
+import { compiledChatEvidenceCatalog } from '../lib/server/chat-evidence-catalog.ts';
 import { publicKnowledgeHref } from '../lib/server/public-knowledge.ts';
 import { routeSearch } from '../lib/server/search-router.ts';
 import { normalizePublicHttpsUrl } from '../lib/server/search-safety.ts';
@@ -27,13 +27,12 @@ import {
 } from '../lib/server/workflows/diagnosis.ts';
 import { buildJdMatchPrompt } from '../lib/server/workflows/jd-match.ts';
 import {
-  chatCapabilityPolicy,
   projectSlugs,
   siteContent,
 } from '../lib/site-content.ts';
 
 const dataset = JSON.parse(await fs.readFile('content/chat-eval.json', 'utf8'));
-const capabilityLedger = compileCapabilityLedger(siteContent, chatCapabilityPolicy);
+const capabilityLedger = compiledChatEvidenceCatalog;
 
 const projectSources = {
   'content-agent': {

@@ -10,9 +10,10 @@ import {
 } from './capability-evidence.ts';
 import { looksLikeFullJobDescription } from './chat-message-signals.ts';
 import {
-  matchChatProjectSlugs,
-  matchOrderedChatProjectSlugs,
-} from './chat-projects.ts';
+  compiledChatEvidenceCatalog,
+  matchCatalogProjects,
+  matchOrderedCatalogProjects,
+} from './chat-evidence-catalog.ts';
 
 export type { ChatRouteDecision } from '../contracts/chat-runtime.ts';
 
@@ -101,7 +102,7 @@ function isIdentityQuestion(message: string): boolean {
 }
 
 function projectTopics(message: string): string[] {
-  return matchChatProjectSlugs(message);
+  return matchCatalogProjects(message, compiledChatEvidenceCatalog);
 }
 
 function projectTopic(message: string): string | null {
@@ -168,7 +169,10 @@ function projectCatalogDiscourseReferent(message: string, previous: RouteAnchor)
   const normalizedMessage = message.normalize('NFKC');
   const priorAnswerReference = /(?:刚才|前面|上面|上一(?:轮|条)|上述|这些|这几个|其中)/iu.test(normalizedMessage);
   if (!priorAnswerReference) return null;
-  const priorProjects = matchOrderedChatProjectSlugs(previous.answer ?? '');
+  const priorProjects = matchOrderedCatalogProjects(
+    previous.answer ?? '',
+    compiledChatEvidenceCatalog,
+  );
   if (priorProjects.length < 2) return null;
   const selectionAction = /(?:介绍|展开|说明|讲讲|讲|说说|分析|选择|选|聊聊|聊|讨论|谈谈|谈|看|考虑|比较|对比|聚焦|处理)/iu;
   const detailCue = /(?:重点|具体|详细|怎么|如何|为什么|什么|哪(?:个|一)|是什么|呢)/iu;

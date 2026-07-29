@@ -27,7 +27,7 @@ import {
   type ConversationTaskFrameV22,
   type ResolvedChatTurn,
 } from '../contracts/chat-context.ts';
-import { chatCapabilityPolicy, siteContent } from '../site-content.ts';
+import { siteContent } from '../site-content.ts';
 import {
   ProviderRunError,
   type AiMessage,
@@ -116,9 +116,9 @@ import {
   type UpsertContextTaskFrameInput,
 } from './conversation-context-state.ts';
 import {
-  compileCapabilityLedger,
   type CapabilityAssessment,
 } from './capability-evidence.ts';
+import { compiledChatEvidenceCatalog } from './chat-evidence-catalog.ts';
 import { resolveChatEvidence } from './chat-evidence.ts';
 import { approvedProjectCatalogSources } from './chat-project-evidence.ts';
 import { buildV2SystemInstructions } from './chat-prompt.ts';
@@ -183,7 +183,7 @@ import {
 } from './workflows/diagnosis.ts';
 import { buildJdMatchPrompt } from './workflows/jd-match.ts';
 
-const capabilityLedger = compileCapabilityLedger(siteContent, chatCapabilityPolicy);
+const capabilityLedger = compiledChatEvidenceCatalog;
 
 export type { ChatServiceErrorCode, ChatServiceEvent } from '../contracts/chat.ts';
 

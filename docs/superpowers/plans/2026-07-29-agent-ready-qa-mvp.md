@@ -162,7 +162,7 @@ refresh_when: implementation starts, project rules change, ownership changes, ma
 
 **Files:** create the worktree; modify existing tests only to characterize current successful behavior; do not change runtime.
 
-- [ ] **Step 1: Re-read authority and verify topology**
+- [x] **Step 1: Re-read authority and verify topology**
 
 Run from `E:\Revolution`:
 
@@ -176,7 +176,7 @@ git worktree list --porcelain
 
 Expected: the dynamic-context commit is an ancestor; root untracked `.github/` and `revolution-*.tar.gz` remain untouched. If HEAD or ownership has changed, refresh the StagePacket before continuing.
 
-- [ ] **Step 2: Create an isolated implementation worktree**
+- [x] **Step 2: Create an isolated implementation worktree**
 
 ```powershell
 git worktree add E:\Revolution\.worktrees\agent-ready-qa-mvp -b codex/agent-ready-qa-mvp master
@@ -185,7 +185,7 @@ git -C E:\Revolution\.worktrees\agent-ready-qa-mvp status --short --branch
 
 Expected: clean `codex/agent-ready-qa-mvp` worktree at the refreshed mainline.
 
-- [ ] **Step 3: Add characterization assertions before extraction**
+- [x] **Step 3: Add characterization assertions before extraction** (`checked-no-change`: assertions already existed)
 
 In `tests/chat-controlled-context-integration.test.ts`, extend the existing Vibe/JD/follow-up cases to record these pre-refactor invariants:
 
@@ -205,7 +205,7 @@ assert.equal(secondRunDone.consumed, false);
 assert.equal(secondRunAnswer, firstRunAnswer);
 ```
 
-- [ ] **Step 4: Run characterization checks**
+- [x] **Step 4: Run characterization checks**
 
 ```powershell
 node --env-file-if-exists=.env.local --test tests/chat-controlled-context-integration.test.ts tests/chat-sse.test.ts
@@ -213,7 +213,7 @@ node --env-file-if-exists=.env.local --test tests/chat-controlled-context-integr
 
 Expected: PASS. A failure is a baseline issue; stop and record it rather than changing expectations.
 
-- [ ] **Step 5: Commit the frozen baseline**
+- [x] **Step 5: Commit the frozen baseline** (`checked-no-change`: no duplicate test edit to commit)
 
 ```powershell
 git add tests/chat-controlled-context-integration.test.ts tests/chat-sse.test.ts
@@ -224,7 +224,7 @@ git commit -m "test: freeze qa pipeline behavior"
 
 **Files:** create `content/chat-evidence-catalog.json`, `lib/contracts/chat-evidence-catalog.ts`, `lib/server/chat-evidence-catalog.ts`, `tests/chat-evidence-catalog.test.ts`; modify `lib/site-content.ts`, `lib/server/capability-evidence.ts`, `lib/server/chat-projects.ts`, `lib/server/interaction-log.ts`, capability/project tests; delete `content/chat-capability-policy.json` only at the final step.
 
-- [ ] **Step 1: Write RED schema and coverage tests**
+- [x] **Step 1: Write RED schema and coverage tests**
 
 Create `tests/chat-evidence-catalog.test.ts` with these core assertions:
 
@@ -271,7 +271,7 @@ node --env-file-if-exists=.env.local --test tests/chat-evidence-catalog.test.ts
 
 Expected: FAIL because Catalog v2 and compiler do not exist.
 
-- [ ] **Step 2: Define exact Catalog contracts**
+- [x] **Step 2: Define exact Catalog contracts**
 
 Create `lib/contracts/chat-evidence-catalog.ts`:
 
@@ -310,7 +310,7 @@ export interface EvidenceBundle {
 }
 ```
 
-- [ ] **Step 3: Create Catalog v2 without changing facts**
+- [x] **Step 3: Create Catalog v2 without changing facts**
 
 Create `content/chat-evidence-catalog.json` by migrating every current capability ID, label and alias from `content/chat-capability-policy.json`, every manual project alias from `lib/server/chat-projects.ts`, and every direct/transferable relation currently compiled from approved project data or `profile.resumeFacts`.
 
@@ -328,7 +328,7 @@ kubernetes -> docker/docker-compose evidence represented as transferable, never 
 
 All other current IDs retain at least the same direct evidence reachability they had under policy v1. Do not add a fact not present in `site-content.json`.
 
-- [ ] **Step 4: Implement fail-closed compilation and matching**
+- [x] **Step 4: Implement fail-closed compilation and matching**
 
 Create `lib/server/chat-evidence-catalog.ts` with these exported functions:
 
@@ -355,7 +355,7 @@ export function allApprovedPortfolioEvidence(
 
 Use the existing NFKC/case/punctuation normalization, stable catalog order and exact source IDs. Reject duplicate normalized aliases owned by different entries and unknown references.
 
-- [ ] **Step 5: Migrate consumers and prove no semantic loss**
+- [x] **Step 5: Migrate consumers and prove no semantic loss**
 
 Modify `lib/site-content.ts`, `lib/server/capability-evidence.ts`, `lib/server/chat-projects.ts`, `lib/server/interaction-log.ts`, `scripts/chat-eval.mjs` and their tests to consume the compiled Catalog. Temporary wrappers may retain existing function names, but they must delegate to one compiled catalog and may not compile policy v1 separately.
 
@@ -368,7 +368,7 @@ npm run chat:eval
 
 Expected: PASS; `chat:eval` reports `externalCalls=0`.
 
-- [ ] **Step 6: Delete the old authority**
+- [x] **Step 6: Delete the old authority**
 
 ```powershell
 rg -n "chatCapabilityPolicy|chat-capability-policy|CapabilityPolicy" lib scripts tests content
@@ -385,7 +385,7 @@ rg -n "chatCapabilityPolicy|chat-capability-policy|MANUAL_ALIASES" lib scripts t
 
 Expected: tests PASS and `rg` returns no match.
 
-- [ ] **Step 7: Commit Catalog convergence**
+- [x] **Step 7: Commit Catalog convergence**
 
 ```powershell
 git add content lib/contracts lib/server tests scripts/chat-eval.mjs
@@ -1312,8 +1312,8 @@ Do not recommend large HR promotion unless the real chain passes and the remaini
 
 ## Resume Pointer
 
-Current: `CONTRACT_FROZEN / DOCUMENTATION_ONLY / LOCAL`.
+Current: `TASK_2 / RED / IN_PROGRESS`.
 
-Last verified: plan-time `master` is `15aaf98290f788cbf60d1ae3799865ea2ada0ecc`; `origin/master` is `49eb0f935a44d53a96fe62d39780eecb31f0d53b`; dynamic-context milestone `b59006c631252d95878bd0863b4dba66fa16c905` is already an ancestor of current master. The architecture spec and this implementation plan are the only owned artifacts in the current documentation turn. No product code, Provider call, push or deployment is authorized by this plan-writing step.
+Last verified: Task 1 is locally committed as `64bf402`; Catalog v2 focused regressions passed `122/122`, `chat-service-integration` passed `88/88`, `chat:eval` passed `96/96` with `externalCalls=0`, and TypeScript plus the old-authority scan passed after deleting policy v1. No Provider call, push or deployment has occurred.
 
-Next action: after the user switches to the intended reasoning level and explicitly resumes implementation, refresh the StagePacket/Git/production state, create `codex/agent-ready-qa-mvp` in an isolated worktree, and execute Task 0 characterization before any runtime edit.
+Next action: create Task 2 RED coverage in `tests/chat-conversation-session.test.ts` and `tests/chat-turn-planner.test.ts`, then confirm failure is caused by the missing snapshot/planner implementation.

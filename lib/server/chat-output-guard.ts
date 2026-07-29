@@ -1,18 +1,26 @@
 import type { ChatWorkflow } from '../contracts/chat.ts';
 import type { SemanticIntent } from '../contracts/chat-context.ts';
-import { chatCapabilityPolicy } from '../site-content.ts';
 import type { TurnIntent } from './chat-behavior.ts';
 import type { ChatRouteDecision } from './chat-route-policy.ts';
 import { containsCapabilityAlias } from './capability-evidence.ts';
 import {
-  chatProjectReferences,
-  matchChatProjectSlugs,
-  mentionsChatProject,
-} from './chat-projects.ts';
+  compiledChatEvidenceCatalog,
+  matchCatalogProjects,
+  mentionsCatalogProject,
+} from './chat-evidence-catalog.ts';
 import {
   asksRealtimePersonalState,
   preservesDigitalStateBoundary,
 } from './chat-personal-state.ts';
+
+const chatProjectReferences = compiledChatEvidenceCatalog.projects;
+const catalogCapabilities = [...compiledChatEvidenceCatalog.capabilities.values()];
+const matchChatProjectSlugs = (value: string) => (
+  matchCatalogProjects(value, compiledChatEvidenceCatalog)
+);
+const mentionsChatProject = (value: string, slug: (typeof chatProjectReferences)[number]['slug']) => (
+  mentionsCatalogProject(value, slug, compiledChatEvidenceCatalog)
+);
 
 export type ChatGuardReason =
   | 'invalid_citation'
@@ -111,7 +119,7 @@ function validateUnsolicitedBoundaries(input: ChatGuardInput, reasons: ReasonSet
     reasons.add('unsolicited_gap_list');
   }
   if (!personalFactQuestion || boundaryQuestion) return;
-  const requestedCapabilities = chatCapabilityPolicy.canonical.filter((capability) => (
+  const requestedCapabilities = catalogCapabilities.filter((capability) => (
     capability.aliases.some((alias) => containsCapabilityAlias(input.question, alias))
   ));
   if (requestedCapabilities.length === 0) return;
@@ -196,7 +204,7 @@ function validateDirectAnswer(input: ChatGuardInput, reasons: ReasonSet): void {
   }
 
   const namedProjects = matchChatProjectSlugs(input.question);
-  const requestedCapabilities = chatCapabilityPolicy.canonical.filter((capability) => (
+  const requestedCapabilities = catalogCapabilities.filter((capability) => (
     containsCapabilityAlias(input.question, capability.label)
       || capability.aliases.some((alias) => containsCapabilityAlias(input.question, alias))
   ));
@@ -286,9 +294,9 @@ function validatePersonalFact(input: ChatGuardInput, reasons: ReasonSet, complet
   if (!complete) return;
   const route = input.route;
   if (route?.routeKind !== 'personal_fact' || route.topicKind !== 'capability' || !route.topicRef) return;
-  const policy = chatCapabilityPolicy.canonical.find((entry) => entry.id === route.topicRef);
+  const policy = catalogCapabilities.find((entry) => entry.id === route.topicRef);
   const aliases = policy?.aliases ?? [route.topicRef];
-  const requestedCapabilities = chatCapabilityPolicy.canonical.filter((capability) => (
+  const requestedCapabilities = catalogCapabilities.filter((capability) => (
     capability.aliases.some((alias) => containsCapabilityAlias(input.question, alias))
   ));
   if (requestedCapabilities.some((capability) => (

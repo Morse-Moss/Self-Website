@@ -7,10 +7,10 @@ import {
   type ResolveChatEvidenceInput,
 } from '../lib/server/chat-evidence.ts';
 import { compileCapabilityLedger } from '../lib/server/capability-evidence.ts';
-import { chatCapabilityPolicy, siteContent } from '../lib/site-content.ts';
+import { chatEvidenceCatalog, siteContent } from '../lib/site-content.ts';
 import type { KnowledgeSource } from '../lib/server/rag.ts';
 
-const ledger = compileCapabilityLedger(siteContent, chatCapabilityPolicy);
+const ledger = compileCapabilityLedger(siteContent, chatEvidenceCatalog);
 
 function route(
   routeKind: ChatRouteDecision['routeKind'],

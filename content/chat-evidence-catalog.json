@@ -1,0 +1,179 @@
+{
+  "version": 2,
+  "projects": [
+    {
+      "slug": "content-agent",
+      "aliases": ["内容创作 Agent 系统", "content-agent", "内容创作", "内容创作agent", "内容生成agent", "内容agent", "contentagent"]
+    },
+    {
+      "slug": "auto-operations",
+      "aliases": ["自动运营 Agent 系统", "auto-operations", "自动运营agent", "自动运营", "autooperations"]
+    },
+    {
+      "slug": "ai-leadgen",
+      "aliases": ["AI 外贸获客系统", "ai-leadgen", "ai外贸获客", "外贸获客系统", "外贸获客", "aileadgen"]
+    },
+    {
+      "slug": "deep-research",
+      "aliases": ["深度研究 Agent 系统", "deep-research", "深度研究agent", "深度研究", "deepresearch"]
+    },
+    {
+      "slug": "digital-morse",
+      "aliases": ["数字摩斯", "digital-morse", "数字morse", "digitalmorse"]
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "kubernetes",
+      "label": "Kubernetes",
+      "aliases": ["Kubernetes", "K8s"],
+      "evidenceRefs": [
+        { "kind": "project", "projectSlug": "auto-operations", "level": "transferable" },
+        { "kind": "project", "projectSlug": "deep-research", "level": "transferable" },
+        { "kind": "project", "projectSlug": "digital-morse", "level": "transferable" }
+      ],
+      "unavailableBoundary": "公开项目能确认 Docker 与 Docker Compose 的容器化部署基础，但不能据此确认 Kubernetes 生产实践，建议面谈核实。"
+    },
+    {
+      "id": "docker",
+      "label": "Docker",
+      "aliases": ["Docker", "Docker 多阶段构建"],
+      "evidenceRefs": [
+        { "kind": "project", "projectSlug": "auto-operations", "level": "direct" },
+        { "kind": "resume_fact", "resumeFactId": "auto-operations-role", "level": "direct" }
+      ],
+      "unavailableBoundary": null
+    },
+    {
+      "id": "docker-compose",
+      "label": "Docker Compose",
+      "aliases": ["Docker Compose", "容器化部署"],
+      "evidenceRefs": [
+        { "kind": "project", "projectSlug": "deep-research", "level": "direct" },
+        { "kind": "project", "projectSlug": "digital-morse", "level": "direct" }
+      ],
+      "unavailableBoundary": null
+    },
+    {
+      "id": "postgresql",
+      "label": "PostgreSQL",
+      "aliases": ["PostgreSQL", "Postgres", "PostgreSQL 16"],
+      "evidenceRefs": [
+        { "kind": "project", "projectSlug": "digital-morse", "level": "direct" }
+      ],
+      "unavailableBoundary": null
+    },
+    {
+      "id": "rag",
+      "label": "RAG",
+      "aliases": ["RAG", "检索增强生成"],
+      "evidenceRefs": [
+        { "kind": "project", "projectSlug": "digital-morse", "level": "direct" }
+      ],
+      "unavailableBoundary": null
+    },
+    {
+      "id": "multi-agent",
+      "label": "多 Agent",
+      "aliases": ["多 Agent", "多Agent", "multi-agent", "multi agent"],
+      "evidenceRefs": [
+        { "kind": "project", "projectSlug": "deep-research", "level": "direct" }
+      ],
+      "unavailableBoundary": null
+    },
+    {
+      "id": "ai-programming-collaboration",
+      "label": "AI 编程协作",
+      "aliases": ["Vibe Coding", "AI 编程协作", "AI 辅助编程"],
+      "evidenceRefs": [
+        { "kind": "resume_fact", "resumeFactId": "ai-application-role", "level": "direct" }
+      ],
+      "unavailableBoundary": null
+    },
+    {
+      "id": "claude-code",
+      "label": "Claude Code",
+      "aliases": ["Claude Code", "CC"],
+      "evidenceRefs": [
+        { "kind": "resume_fact", "resumeFactId": "ai-application-role", "level": "direct" }
+      ],
+      "unavailableBoundary": null
+    },
+    {
+      "id": "codex",
+      "label": "Codex",
+      "aliases": ["Codex"],
+      "evidenceRefs": [
+        { "kind": "resume_fact", "resumeFactId": "ai-application-role", "level": "direct" }
+      ],
+      "unavailableBoundary": null
+    },
+    {
+      "id": "workbuddy",
+      "label": "WorkBuddy",
+      "aliases": ["WorkBuddy"],
+      "evidenceRefs": [
+        { "kind": "resume_fact", "resumeFactId": "ai-application-role", "level": "direct" }
+      ],
+      "unavailableBoundary": null
+    },
+    {
+      "id": "cursor",
+      "label": "Cursor",
+      "aliases": ["Cursor"],
+      "evidenceRefs": [],
+      "unavailableBoundary": "当前公开审核资料没有 Cursor 使用事实，不能据此声称使用过。"
+    },
+    {
+      "id": "react",
+      "label": "React",
+      "aliases": ["React"],
+      "evidenceRefs": [
+        { "kind": "project", "projectSlug": "auto-operations", "level": "direct" },
+        { "kind": "project", "projectSlug": "ai-leadgen", "level": "direct" },
+        { "kind": "project", "projectSlug": "deep-research", "level": "direct" },
+        { "kind": "resume_fact", "resumeFactId": "ai-leadgen-mvp", "level": "direct" },
+        { "kind": "resume_fact", "resumeFactId": "auto-operations-role", "level": "direct" }
+      ],
+      "unavailableBoundary": null
+    },
+    {
+      "id": "typescript",
+      "label": "TypeScript",
+      "aliases": ["TypeScript"],
+      "evidenceRefs": [
+        { "kind": "project", "projectSlug": "content-agent", "level": "direct" },
+        { "kind": "project", "projectSlug": "auto-operations", "level": "direct" },
+        { "kind": "project", "projectSlug": "ai-leadgen", "level": "direct" },
+        { "kind": "project", "projectSlug": "deep-research", "level": "direct" },
+        { "kind": "project", "projectSlug": "digital-morse", "level": "direct" },
+        { "kind": "resume_fact", "resumeFactId": "ai-leadgen-mvp", "level": "direct" },
+        { "kind": "resume_fact", "resumeFactId": "auto-operations-role", "level": "direct" }
+      ],
+      "unavailableBoundary": null
+    },
+    {
+      "id": "fastapi",
+      "label": "FastAPI",
+      "aliases": ["FastAPI"],
+      "evidenceRefs": [
+        { "kind": "project", "projectSlug": "content-agent", "level": "direct" },
+        { "kind": "project", "projectSlug": "auto-operations", "level": "direct" },
+        { "kind": "project", "projectSlug": "ai-leadgen", "level": "direct" },
+        { "kind": "project", "projectSlug": "deep-research", "level": "direct" },
+        { "kind": "resume_fact", "resumeFactId": "ai-leadgen-mvp", "level": "direct" },
+        { "kind": "resume_fact", "resumeFactId": "auto-operations-role", "level": "direct" }
+      ],
+      "unavailableBoundary": null
+    },
+    {
+      "id": "java",
+      "label": "Java",
+      "aliases": ["Java"],
+      "evidenceRefs": [
+        { "kind": "resume_fact", "resumeFactId": "internal-tool-role", "level": "direct" }
+      ],
+      "unavailableBoundary": null
+    }
+  ]
+}

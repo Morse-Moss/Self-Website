@@ -6,11 +6,17 @@ import {
   routeChatTurn,
   type RouteAnchor,
 } from '../lib/server/chat-route-policy.ts';
-import { matchChatProjectSlugs } from '../lib/server/chat-projects.ts';
+import {
+  compiledChatEvidenceCatalog,
+  matchCatalogProjects,
+} from '../lib/server/chat-evidence-catalog.ts';
 import { compileCapabilityLedger } from '../lib/server/capability-evidence.ts';
-import { chatCapabilityPolicy, siteContent } from '../lib/site-content.ts';
+import { chatEvidenceCatalog, siteContent } from '../lib/site-content.ts';
 
-const ledger = compileCapabilityLedger(siteContent, chatCapabilityPolicy);
+const ledger = compileCapabilityLedger(siteContent, chatEvidenceCatalog);
+const matchChatProjectSlugs = (value: string) => (
+  matchCatalogProjects(value, compiledChatEvidenceCatalog)
+);
 
 function request(
   message: string,

@@ -27,7 +27,10 @@ import {
   looksLikeRecruitmentEvaluationQuestion,
   looksLikeRecruitmentJobDescription,
 } from './chat-message-signals.ts';
-import { matchChatProjectSlugs } from './chat-projects.ts';
+import {
+  compiledChatEvidenceCatalog,
+  matchCatalogProjects,
+} from './chat-evidence-catalog.ts';
 import { routeChatTurn, type RouteAnchor } from './chat-route-policy.ts';
 
 const RECRUITMENT_CLARIFY_REPLY = '请补充要匹配的公司或岗位；有其中一项，我就能先基于公开项目证据继续。';
@@ -532,7 +535,7 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
     && baseRoute.inheritedFromTurnId === input.discourseContext.turnId
     && ['anaphoric_conversation_followup', 'anaphoric_project_catalog_followup']
       .includes(baseRoute.reasonCode));
-  const projectSlugs = matchChatProjectSlugs(message);
+  const projectSlugs = matchCatalogProjects(message, compiledChatEvidenceCatalog);
   const capabilities = assessCapabilities(message, input.ledger);
   const capability = capabilities.find((candidate) => candidate.evidenceClass !== 'none')
     ?? capabilities[0]

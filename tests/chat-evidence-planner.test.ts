@@ -10,9 +10,9 @@ import type {
 import type { KnowledgeSource } from '../lib/contracts/chat-runtime.ts';
 import { compileCapabilityLedger } from '../lib/server/capability-evidence.ts';
 import { planChatEvidence } from '../lib/server/chat-evidence-planner.ts';
-import { chatCapabilityPolicy, siteContent } from '../lib/site-content.ts';
+import { chatEvidenceCatalog, siteContent } from '../lib/site-content.ts';
 
-const ledger = compileCapabilityLedger(siteContent, chatCapabilityPolicy);
+const ledger = compileCapabilityLedger(siteContent, chatEvidenceCatalog);
 
 function resolved(intent: SemanticIntent, referent: ResolvedChatTurn['semantic']['referent'] = null): ResolvedChatTurn {
   const plan = intent === 'project_catalog'

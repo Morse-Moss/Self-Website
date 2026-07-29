@@ -6,7 +6,10 @@ import type {
 } from '../contracts/chat-runtime.ts';
 import { EMBEDDING_DIMENSIONS, serializeVector } from './embedding.ts';
 import { publicKnowledgeHref } from './public-knowledge.ts';
-import { matchChatProjectSlugs } from './chat-projects.ts';
+import {
+  compiledChatEvidenceCatalog,
+  matchCatalogProjects,
+} from './chat-evidence-catalog.ts';
 
 export type { KnowledgeSource } from '../contracts/chat-runtime.ts';
 
@@ -34,7 +37,9 @@ export function admitKnowledgeForRoute(
   }
   if (route.routeKind !== 'grounded') return [];
   if (route.topicKind === 'project') {
-    const namedProjects = question ? matchChatProjectSlugs(question) : [];
+    const namedProjects = question
+      ? matchCatalogProjects(question, compiledChatEvidenceCatalog)
+      : [];
     const projectSlugs = namedProjects.length > 0
       ? namedProjects
       : route.topicRef

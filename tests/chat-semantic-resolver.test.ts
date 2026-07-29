@@ -11,9 +11,9 @@ import type { ChatAudienceIntent, ChatMode } from '../lib/contracts/chat.ts';
 import { normalizeChatRequest } from '../lib/server/chat-core.ts';
 import { compileCapabilityLedger } from '../lib/server/capability-evidence.ts';
 import { resolveChatSemanticTurn } from '../lib/server/chat-semantic-resolver.ts';
-import { chatCapabilityPolicy, siteContent } from '../lib/site-content.ts';
+import { chatEvidenceCatalog, siteContent } from '../lib/site-content.ts';
 
-const ledger = compileCapabilityLedger(siteContent, chatCapabilityPolicy);
+const ledger = compileCapabilityLedger(siteContent, chatEvidenceCatalog);
 const CONVERSATION_ID = '11111111-1111-4111-8111-111111111111';
 const TASK_ID = '22222222-2222-4222-8222-222222222222';
 const NEXT_TASK_ID = '33333333-3333-4333-8333-333333333333';

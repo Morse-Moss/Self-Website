@@ -1,5 +1,5 @@
 import type { ChatRouteDecision } from './chat-route-policy.ts';
-import { chatProjectReferences } from './chat-projects.ts';
+import { compiledChatEvidenceCatalog } from './chat-evidence-catalog.ts';
 import { approvedProjectCatalogSources } from './chat-project-evidence.ts';
 import {
   assessCapability,
@@ -135,7 +135,9 @@ function retrievalQuery(route: ChatRouteDecision, question: string): string {
   ) {
     return question;
   }
-  const project = chatProjectReferences.find((candidate) => candidate.slug === route.topicRef);
+  const project = compiledChatEvidenceCatalog.projects.find(
+    (candidate) => candidate.slug === route.topicRef,
+  );
   const projectName = project?.aliases[0];
   return projectName ? `${projectName}：${question}` : question;
 }

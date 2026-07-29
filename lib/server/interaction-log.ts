@@ -26,7 +26,8 @@ import {
   type ChatRouteDecision,
   type RouteAnchor,
 } from './chat-route-policy.ts';
-import { chatCapabilityPolicy, projectSlugs } from '../site-content.ts';
+import { projectSlugs } from '../site-content.ts';
+import { compiledChatEvidenceCatalog } from './chat-evidence-catalog.ts';
 
 export type InteractionStatus = 'running' | 'completed' | 'stopped' | 'failed';
 
@@ -39,7 +40,7 @@ const routeKinds = new Set<ChatRouteKind>([
 const topicKinds = new Set<ChatTopicKind>([
   'none', 'external', 'project', 'capability', 'jd',
 ]);
-const capabilityIds = new Set(chatCapabilityPolicy.canonical.map((entry) => entry.id));
+const capabilityIds = new Set(compiledChatEvidenceCatalog.capabilities.keys());
 const publicProjectSlugs = new Set<string>(projectSlugs);
 
 function validateTopicRef(decision: ChatRouteDecision): void {

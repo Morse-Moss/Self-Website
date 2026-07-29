@@ -27,7 +27,10 @@ import { insertRunningInteraction } from '../lib/server/interaction-log.ts';
 import { hashSecret } from '../lib/server/security.ts';
 import type { SearchProvider } from '../lib/server/search-provider.ts';
 import { siteContent } from '../lib/site-content.ts';
-import { matchChatProjectSlugs } from '../lib/server/chat-projects.ts';
+import {
+  compiledChatEvidenceCatalog,
+  matchCatalogProjects,
+} from '../lib/server/chat-evidence-catalog.ts';
 import { encodeTurnMessage } from '../lib/server/turn-codec.ts';
 import { controlledContextFailureChain } from './fixtures/controlled-context-failure-chain.ts';
 import { hrInterviewEightTurnChain } from './fixtures/hr-interview-eight-turn-chain.ts';
@@ -44,6 +47,9 @@ const digest = {
   key: Buffer.alloc(32, 0x31),
   keyId: 'context-test-v1',
 };
+const matchChatProjectSlugs = (value: string) => (
+  matchCatalogProjects(value, compiledChatEvidenceCatalog)
+);
 
 let database: DisposablePostgresDatabase;
 let pool: InstanceType<typeof Pool>;
