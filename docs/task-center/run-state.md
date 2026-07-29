@@ -4,10 +4,10 @@
 > 启动:2026-07-08 · S10 启动:2026-07-15 · 执行授权只以当前阶段合同为准,不继承历史阶段授权 · 模式:Morse 开发模式 + morse-goal
 
 ## current_pointer
-**HR_RECRUITMENT_EVALUATION_FOLLOWUP_FIX / VERIFY / PRODUCTION_2267208**
+**HR_RECRUITMENT_EVALUATION_ROUTING_FIX / VERIFY / PRODUCTION_0D2FA84**
 
 ## next_allowed_pointer
-本轮本地实现与验证已完成，当前生产仍为 `2267208`，尚未 commit、push 或部署。最新 focused resolver 为 `26/26`，完整 unit 为 `911/911`，PostgreSQL integration 为 `347/347`；typecheck、scoped ESLint、33-route production build、`git diff --check` 与 owned-diff 敏感扫描均通过。实现现在只在 `chat + interviewer + recruiter + active JD frame + adjacent same scope` 下承接自包含招聘评估，评估问句不提取或覆盖 slot；显式岗位/公司/JD 目标才切换，角度式“换个角度”与通用定义题保持当前任务或 temporary。设计决策已写回 V2.1 权威文档。下一步只允许按 closeout 精确 staging、commit、push，冻结归档并只重建 Web/Worker；随后用全新 `HR interview` Session 做入口、完整 JD 和 10 问真实对话验收。任何答非所问、0 evidence、编造、拒答或 5xx 立即停止并检查该 turn 元数据。
+当前生产为 `0d2fa84`，指针与 Web/Worker working directory 一致，五容器 healthy。招聘入口与完整 JD 通过，但首个真实验收问题被误路由为 `unsupported_personal_history / temporary`，创建新 Task 且为 0 sources / 0 evidence，十问已停止。新修复只在 `chat + interviewer + recruiter + active JD frame + adjacent same scope` 下接纳个人经历措辞、未命名项目方法题、能力方法题和多项目决策题；单项目事实、纯能力核验、外部实时、安全请求、显式切换和 JD 补充仍走原专用路由。精确十问现全部保持原 Task、原 JD slot、`jd_match / recruitment_evaluation_follow_up / continue` 与 `ranked_project_fit`。focused resolver `26/26`、完整 unit `911/911`、PostgreSQL integration `347/347`、typecheck、scoped ESLint、33-route build、dev smoke、diff check 均通过。下一步只允许精确 staging/commit/push，冻结归档并只重建 Web/Worker，再从全新 `HR interview` Session 重跑入口、完整 JD 与十问；任一答非所问、无 evidence、编造、拒答或 5xx 立即停止。
 
 ## superseded_previous_pointer
 当前生产应用运行 `2267208`。全新 `HR interview` 单 Session 的招聘入口、完整 JD、问题 1 和问题 2 已分别以受控招聘 Task、原始 JD slot、审核来源和 evidence 完成；问题 3“如何把跨境电商业务想法转成可执行产品方案？”却落入 `general_conversation / one_shot / temporary`，Context Packet 为 0 sources / 0 evidence，真实十问门禁已按合同停止。根因是招聘 Task 只承接少数短追问，而自包含的招聘方法论问题被通用会话规则抢走；同时第一版修复会把评估问题误写为新增 JD，并可能覆盖原 frame 的 slot、task kind 和 temporary scope。下一步只允许先红后绿实现受控 `interviewer + recruiter + active JD frame + adjacent same scope` 评估续接，保证评估本轮不提取任何 slot、保留原 Task Frame 身份，并让所有 temporary turn 使用当前 turn 的隔离 scope；通过聚焦与完整本地门禁、CRITICAL 双视角审查后再精确 commit/push、冻结归档、只重建 Web/Worker，并从全新邀请重跑入口、完整 JD 与 10 问。任一轮答非所问、无证据、编造、5xx、拒答或漏项时立即停止并检查该 turn 元数据，不在失败历史上盲目重试。

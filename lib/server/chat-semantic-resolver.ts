@@ -562,8 +562,12 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
     && !completing
     && clear.size === 0
     && (baseRoute.routeKind === 'conversation'
-      || (baseRoute.routeKind === 'jd_intake' && baseRoute.reasonCode === 'jd_required'))
-    && projectSlugs.length === 0
+      || (baseRoute.routeKind === 'jd_intake' && baseRoute.reasonCode === 'jd_required')
+      || (baseRoute.routeKind === 'personal_fact'
+        && baseRoute.reasonCode === 'personal_history_query')
+      || (baseRoute.routeKind === 'grounded'
+        && baseRoute.reasonCode === 'project_fact_query'))
+    && projectSlugs.length !== 1
     && recruitmentEvaluationQuestion,
   );
 
@@ -617,16 +621,16 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
     intent = 'named_project_fact';
     reasonCode = baseRoute.reasonCode;
     referent = { kind: 'project', ref: projectSlugs[0] };
-  } else if (capability && /(?:你|morse|摩斯).{0,16}(?:熟悉|掌握|会不会|会|是否|用过|能力)/iu.test(message)) {
-    intent = 'capability_fact';
-    reasonCode = 'personal_capability_query';
-    referent = { kind: 'capability', ref: capability.capabilityId! };
-    capabilityEvidence = capability.evidenceClass === 'none' ? 'unavailable' : capability.evidenceClass;
   } else if (adjacentRecruitmentEvaluation) {
     intent = 'jd_match';
     reasonCode = 'recruitment_evaluation_follow_up';
     const jdSlot = currentFrame?.slots.find((candidate) => candidate.slot === 'job_description');
     referent = jdSlot ? { kind: 'jd', ref: jdSlot.sourceMessageId } : null;
+  } else if (capability && /(?:你|morse|摩斯).{0,16}(?:熟悉|掌握|会不会|会|是否|用过|能力)/iu.test(message)) {
+    intent = 'capability_fact';
+    reasonCode = 'personal_capability_query';
+    referent = { kind: 'capability', ref: capability.capabilityId! };
+    capabilityEvidence = capability.evidenceClass === 'none' ? 'unavailable' : capability.evidenceClass;
   } else if ((correction
     || (isBareRecheck(message) && adjacentActiveRecruitment)
     || (isRecruitmentContinuationCue(message) && adjacentActiveRecruitment)) && activeRecruitment) {

@@ -182,7 +182,7 @@ migration `012` 应用后，回滚只先设置 `MORSE_CHAT_CONTEXT_PACKET_ENABLE
 
 ## 8. 当前生产状态与硬化余项
 
-首个生产实例在 `39849e1` 完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实对话 smoke 和公网 live/ready/release smoke。2026-07-29 当前应用 release 为 `2440473`：招聘入口与完整 JD 已稳定进入同一个 Context Packet V2.2 招聘 Task，完整 JD 会同时召回审核项目与 Claude Code/Codex/WorkBuddy direct evidence；但真实回答遗漏了 JD 明确询问的 Cursor，因此状态为 `PRODUCTION_OBSERVED_FAILURE / HR_ACCEPTANCE_STOPPED`，不得开始推广。该 release 只重建 Web/Worker，DB、Embedding 与 Edge 身份未变；Context Packet 保持 enabled、percent `0` 和精确 `HR interview` 标签准入。公网健康、发布 smoke、未授权边界和新鲜错误日志门禁通过，回答质量失败与第四次本地修复的脱敏证据以 `docs/verify/release/hr-jd-context-production-closeout-2026-07-29.md` 为准。
+首个生产实例在 `39849e1` 完成平台、域名、TLS edge、生产 BGE、独立数据库角色、最小 grants、PostgreSQL TLS、迁移换行/checksum、2 MB body limit、SSE flush、CSP、真实对话 smoke 和公网 live/ready/release smoke。2026-07-29 当前应用 release 为 `0d2fa84`：招聘入口、完整 JD、审核能力证据和 unavailable 能力边界已通过，但首个十问评估问题被误路由为 `unsupported_personal_history / temporary`，新建 Task 且为 0 sources / 0 evidence，因此状态仍是 `PRODUCTION_OBSERVED_FAILURE / HR_ACCEPTANCE_STOPPED`，不得开始推广。该 release 只重建 Web/Worker，DB、Embedding 与 Edge 身份未变；Context Packet 保持 enabled、percent `0` 和精确 `HR interview` 标签准入。第五次本地修复须冻结发布后通过全新入口、完整 JD 和十问真实链，脱敏证据以 `docs/verify/release/hr-recruitment-evaluation-followup-local-closeout-2026-07-29.md` 为准。
 
 以下事项完成前保持 `LIMITED_LAUNCH`，不标记完整 `ONLINE_READY`：
 
@@ -204,6 +204,6 @@ migration `012` 应用后，回滚只先设置 `MORSE_CHAT_CONTEXT_PACKET_ENABLE
 5. cleanup 过期：检查 Worker 稳定日志、DB lock 竞争和最后成功时间；不要手工绕过 10 天保留 SQL 顺序。
 # Latest release override (2026-07-29)
 
-- Current runtime commit: `2440473`; `/opt/revolution/current` points to `/opt/revolution/releases/2440473/revolution`.
+- Current runtime commit: `0d2fa84`; `/opt/revolution/current` points to `/opt/revolution/releases/0d2fa84/revolution`.
 - Context Packet remains enabled with percent `0`; exact label allowlist is `HR interview`, preserving the existing UUID allowlist.
-- Status is `PRODUCTION_OBSERVED_FAILURE`: route and direct capability evidence passed, but the complete-JD answer omitted Cursor; the fourth local correction must be deployed and pass a fresh isolated 12-turn HR chain before promotion.
+- Status is `PRODUCTION_OBSERVED_FAILURE`: the entry and complete JD passed, but the first HR evaluation follow-up switched to an unsupported personal-history task with zero evidence. The fifth local correction must be deployed and pass a fresh isolated 12-turn HR chain before promotion.

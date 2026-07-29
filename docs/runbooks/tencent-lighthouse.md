@@ -2,14 +2,14 @@
 
 本文对应 `aimorse.tech` 的生产部署。当前实例为腾讯云 Lighthouse 首尔节点，公网地址为 `43.133.68.202`。境外节点不需要 ICP 备案；DNS 解析和 HTTPS 证书签发已完成，域名实名状态继续由腾讯云注册控制台维护。
 
-## 当前生产状态（2026-07-29，HR 完整 JD 的 Cursor 边界失败）
+## 当前生产状态（2026-07-29，HR 招聘评估追问路由失败）
 
-- 状态：`PRODUCTION_OBSERVED_FAILURE / HR_TARGETED / PERCENT_0`。当前运行提交为 `2440473`；`/opt/revolution/current` 与 Web/Worker Compose working directory 指向 `/opt/revolution/releases/2440473/revolution`，运行提交已在部署前进入 `origin/master`。第四次本地修复尚未部署，当前 release 不得用于正式 HR 推广。
-- 冻结归档为 19,656,329 bytes，SHA-256 `464eda6ab9f345ebc47b83a76544478bc911f41f36b770ac4c7f688a6f66b0a5`，本地与服务器一致；回滚 Web/Worker 镜像均保留 `rollback-e746ea4` 标签。
-- 该 release 让 V2.2 完整 JD 在审核项目之外合并 Claude Code、Codex、WorkBuddy 的 direct resume evidence。招聘入口与完整 JD 的路由、Task、JD slot、来源和 Provider attempt 均通过，但答案完全遗漏同一 JD 明确询问的 Cursor，真实十问门禁因此在 JD 轮停止。
-- 本次只替换 Web/Worker；DB、Embedding、Edge 身份未变，五容器均 healthy、restart count 为 0。没有运行 migration、grants 或 ingest；schema 保持 `001-013`，知识保持 41 documents / 48 chunks。
-- Context Packet 保持 enabled、percent `0` 和精确 `HR interview` 标签准入。活动 Provider route revision 3 的两个 target 均为 digest V2、`reasoning=high`，context/output limit 均未配置；没有因本轮缺口增加任何模型、输入、输出、历史、检索或 attempt 限制。
-- 公网 live/ready/兼容 health、公开页面、未登录权限边界与 `release:smoke` 均通过；发布后五类错误关键词计数均为 0。当前测试资源必须在第四次部署后停用并由全新单 Session 邀请替换；完整脱敏证据见 `docs/verify/release/hr-jd-context-production-closeout-2026-07-29.md`。
+- 状态：`PRODUCTION_OBSERVED_FAILURE / HR_TARGETED / PERCENT_0`。当前运行提交为 `0d2fa84`；`/opt/revolution/current` 与 Web/Worker Compose working directory 指向 `/opt/revolution/releases/0d2fa84/revolution`，运行提交已在部署前进入 `origin/master`。第五次本地修复尚未部署，当前 release 不得用于正式 HR 推广。
+- 本地冻结归档为 19,669,093 bytes，SHA-256 `90afc5636219e6a890e346a7555628221dc383a6ce82088e70b9cf226bd0d03f`。该 release 已补齐 Cursor unavailable 边界，并让招聘入口与完整 JD 保持同一受控 Task、审核来源和 evidence。
+- 首个十问验收问题包含“结合你做过的项目”后被路由为 `unsupported_personal_history / temporary`，创建新 Task 且为 0 sources / 0 evidence；Provider 正常完成，因此根因是语义路由优先级而非传输失败。十问门禁已在该轮停止。
+- Web/Worker 当前使用 `0d2fa84`；DB、Embedding、Edge 身份未变，五容器均 healthy。没有因本轮缺口运行 migration、grants 或 ingest，也没有新增模型、输入、输出、历史、检索、Provider attempt 或成本限制。
+- Context Packet 保持 enabled、percent `0` 和精确 `HR interview` 标签准入。新修复只扩展同一 recruiter/JD/same-scope Task 内的自包含评估问法，单项目事实、纯能力核验、外部实时、安全请求、显式切换和 JD 补充继续隔离。
+- 新修复必须先提交、冻结并只重建 Web/Worker，再用全新单 Session 邀请重跑入口、完整 JD 和十问；任一答非所问、无 evidence、编造、拒答或 5xx 立即停止。脱敏本地证据见 `docs/verify/release/hr-recruitment-evaluation-followup-local-closeout-2026-07-29.md`。
 
 ## 历史生产状态（2026-07-28，Controlled Context V2.2 单邀请码观察完成）
 

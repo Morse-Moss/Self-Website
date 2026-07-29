@@ -1,13 +1,13 @@
 # HR Recruitment Evaluation Follow-up Local Receipt
 
 > Date: 2026-07-29
-> Mode: `GOAL / CRITICAL / DEPLOYED`
-> Status: `LOCAL_VERIFIED / DEPLOY_PENDING / PRODUCTION_2267208`
+> Mode: `STAGED / CRITICAL / DEPLOYED`
+> Status: `LOCAL_VERIFIED / REDEPLOY_PENDING / PRODUCTION_0D2FA84`
 
 ## Scope
 
-- Owned behavior: recruiter/interviewer JD Task Frame continuation, temporary-turn scope isolation, explicit task switching, structured-JD precedence, legacy bridge consumption, and generic-question isolation.
-- Owned files: `lib/server/chat-message-signals.ts`, `lib/server/chat-semantic-resolver.ts`, `lib/server/chat-service.ts`, the two controlled-context test files, the V2.1 design decision, and the Task Center run state.
+- Owned behavior: recruiter/interviewer JD Task Frame continuation for self-contained HR questions that include personal-history, unnamed-project, capability-method, or multi-project wording.
+- Owned files: `lib/server/chat-message-signals.ts`, `lib/server/chat-semantic-resolver.ts`, `tests/chat-semantic-resolver.test.ts`, this receipt, and the Task Center run state.
 - Excluded and untouched: `.github/`, all existing `revolution-*.tar.gz` archives, production secrets, invite/session values, raw Provider payloads, external repositories, database schema, embeddings, Edge, and unrelated worktree changes.
 
 ## Corrections
@@ -16,6 +16,7 @@
 2. Temporary/general turns keep their own turn scope and cannot consume a legacy bridge after a completed V2.2 temporary turn.
 3. Structured JD input is classified before project-fit/capability/general branches, and legacy JD reconstruction retains the full JD span.
 4. Explicit switching accepts a direct recruitment target with bounded qualifiers. Angle/method phrasing does not create a new task, and generic definition questions do not inherit recruiter evidence.
+5. Release `0d2fa84` still routed the first production acceptance question as `unsupported_personal_history / temporary`, created a new Task, and supplied zero sources/evidence. The correction admits personal-history and unnamed-project base routes only inside the existing recruiter/JD/same-scope boundary, lets method questions outrank generic capability matching, and treats multi-project decision questions as evaluation without capturing their text as JD data. A single named-project fact and a pure capability check remain temporary specialist routes.
 
 ## Verification Receipt
 
@@ -27,8 +28,9 @@
 - `npm run build`: passed; 33 routes generated.
 - `git diff --check`: passed.
 - Owned-diff sensitive-pattern scan: no matches.
+- Local dev smoke: current source returned HTTP 200 for `/api/health/live` and `/` on an isolated port, then released the listener.
 
-The final CRITICAL correction-delta review passed. Direct replay confirmed that `JD 是什么意思？`, `职位描述是什么？`, and `岗位职责是什么？` remain `general_conversation / temporary` with no candidate frame both with and without an active JD; structured JD inputs, recruiter evaluation follow-ups, and hypothetical switch phrasing preserve the intended task and slots.
+The final CRITICAL correction-delta review passed. The exact ten production acceptance questions now retain one Task ID, the original JD slot, `jd_match / recruitment_evaluation_follow_up / continue`, and `ranked_project_fit`. Direct replay also confirms that generic JD definitions, a pure capability check, and a single named-project fact remain isolated from the recruiter task.
 
 ## Review And Delivery Boundary
 
