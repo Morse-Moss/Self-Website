@@ -257,6 +257,21 @@ test('an ordinal follow-up to a prior project catalog keeps discourse and approv
   assert.ok(result.resolved.semantic.reasonCodes.includes('explicit_discourse_reference'));
 });
 
+test('a bare project pronoun keeps the uniquely named adjacent project grounded', () => {
+  const result = resolve('那它在真实运行里有哪些保护措施？', {
+    discourseContext: completedTurn({
+      user: { id: '41', role: 'user', text: '那数字摩斯项目里，他具体负责的模块有哪些，最后如何验证效果？' },
+      assistant: { id: '42', role: 'assistant', text: '数字摩斯包含对话编排、来源核验和生产运行保护。' },
+    }),
+  });
+
+  assert.equal(result.resolved.legacyRoute.reasonCode, 'anaphoric_project_followup');
+  assert.equal(result.resolved.semantic.intent, 'named_project_fact');
+  assert.deepEqual(result.resolved.semantic.referent, { kind: 'project', ref: 'digital-morse' });
+  assert.equal(result.resolved.semantic.discourseAction, 'follow_up');
+  assert.deepEqual(result.resolved.semantic.evidencePlan, ['named_approved_project']);
+});
+
 test('an ordinal follow-up to a non-project list stays isolated from project evidence', () => {
   const result = resolve(
     '你刚才列了三个项目。只展开第一个，说明其中最难的一次线上故障。',

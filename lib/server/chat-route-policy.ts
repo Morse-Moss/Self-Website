@@ -155,6 +155,9 @@ function isStableGeneralConversation(message: string): boolean {
 function isUnresolvedReference(message: string): boolean {
   const trimmed = message.trim().replace(/[。！!？?]+$/gu, '');
   if (trimmed.length > 40) return false;
+  if (/^(?:(?:那)?它|它们|这(?:个|套)?(?:项目|系统|方案|做法|设计|架构)|那(?:个|套)?(?:项目|系统|方案|做法|设计|架构)).{1,32}$/iu.test(trimmed)) {
+    return true;
+  }
   return /^(?:这个|那个|它|这(?:一)?点|那(?:一)?点|上述|前面|刚才)(?:呢|怎么样|如何|为什么(?:这样|这么)?(?:设计|选)?|怎么(?:做|设计)?(?:的)?|有什么(?:优缺点|问题)?|是否(?:可以|需要)?|可以吗|(?:再)?(?:展开|详细)(?:讲讲|说说|解释一下))?$/iu.test(trimmed)
     || /^(?:为什么(?:这样|这么)?(?:选|设计|做|说)(?:的)?|怎么(?:做|设计)(?:的)?|那结果|然后呢|还有呢|那(?:什么时候|什么情况下)(?:升级)?|那怎么做)(?:呢)?$/iu.test(trimmed)
     || /^(?:(?:这|那)(?:套|个)?(?:方案|做法|设计|思路|架构))(?:呢|怎么样|如何)?$/iu.test(trimmed)

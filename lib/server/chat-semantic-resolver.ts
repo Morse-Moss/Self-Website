@@ -155,14 +155,19 @@ function extractSlotCaptures(
   return captures;
 }
 
-function previousAnchor(turn: CompletedContextTurn | null | undefined): RouteAnchor | null {
+function previousAnchor(
+  turn: CompletedContextTurn | null | undefined,
+  ledger: CapabilityLedger,
+): RouteAnchor | null {
   if (!turn) return null;
+  const priorProjects = matchCatalogProjects(turn.user.text, ledger);
+  const projectRef = priorProjects.length === 1 ? priorProjects[0] : null;
   return {
     turnId: turn.turnId,
     routeKind: 'conversation',
     reasonCode: 'context_packet_discourse',
-    topicKind: 'none',
-    topicRef: null,
+    topicKind: projectRef ? 'project' : 'none',
+    topicRef: projectRef,
     answer: turn.assistant.text,
     question: turn.user.text,
     previousTurnCompleted: true,
@@ -406,12 +411,16 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
   const baseRoute = routeChatTurn({
     request: input.request,
     ledger: input.ledger,
-    previous: previousAnchor(input.discourseContext),
+    previous: previousAnchor(input.discourseContext, input.ledger),
     hasUsableHistory: Boolean(input.discourseContext),
   });
   const explicitDiscourseReference = Boolean(input.discourseContext
     && baseRoute.inheritedFromTurnId === input.discourseContext.turnId
-    && ['anaphoric_conversation_followup', 'anaphoric_project_catalog_followup']
+    && [
+      'anaphoric_conversation_followup',
+      'anaphoric_project_catalog_followup',
+      'anaphoric_project_followup',
+    ]
       .includes(baseRoute.reasonCode));
   const projectSlugs = matchCatalogProjects(message, input.ledger);
   const capabilities = assessCapabilities(message, input.ledger);
@@ -473,7 +482,10 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
   } else if (baseRoute.reasonCode === 'project_experience_query') {
     intent = 'project_catalog';
     reasonCode = baseRoute.reasonCode;
-  } else if (baseRoute.reasonCode === 'anaphoric_project_catalog_followup') {
+  } else if (
+    baseRoute.reasonCode === 'anaphoric_project_catalog_followup'
+    || baseRoute.reasonCode === 'anaphoric_project_followup'
+  ) {
     intent = baseRoute.topicRef ? 'named_project_fact' : 'project_catalog';
     reasonCode = baseRoute.reasonCode;
     referent = baseRoute.topicRef ? { kind: 'project', ref: baseRoute.topicRef } : null;
