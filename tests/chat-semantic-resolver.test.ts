@@ -199,6 +199,14 @@ test('named project implementation question keeps named approved project evidenc
   assert.equal(result.resolved.legacyRoute.reasonCode, 'project_fact_query');
 });
 
+test('a unique catalog project name stays grounded without a legacy route keyword', () => {
+  const result = resolve('请介绍数字摩斯在真实运行里的保护措施。');
+
+  assert.equal(result.resolved.semantic.intent, 'named_project_fact');
+  assert.equal(result.resolved.semantic.referent?.ref, 'digital-morse');
+  assert.deepEqual(result.resolved.semantic.evidencePlan, ['named_approved_project']);
+});
+
 test('named project fit questions keep ranked project-fit semantics with or without an active frame', () => {
   for (const frame of [null, activeFrame()] as const) {
     const result = resolve('数字摩斯这个项目适合投 React 岗位吗？', { currentFrame: frame });
