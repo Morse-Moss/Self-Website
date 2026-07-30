@@ -161,7 +161,7 @@ function previousAnchor(
 ): RouteAnchor | null {
   if (!turn) return null;
   const priorProjects = matchCatalogProjects(turn.user.text, ledger);
-  const projectRef = priorProjects.length === 1 ? priorProjects[0] : null;
+  const projectRef = turn.projectRef ?? (priorProjects.length === 1 ? priorProjects[0] : null);
   return {
     turnId: turn.turnId,
     routeKind: 'conversation',

@@ -67,6 +67,8 @@ interface CompletedTurnRow {
   completed_at: Date;
   context_scope_id: string;
   conversation_id: string;
+  project_ref: string | null;
+  topic_kind: string | null;
   turn_id: string;
   user_content: string;
   user_message_id: string;
@@ -339,6 +341,7 @@ function toCompletedContextTurn(row: CompletedTurnRow): CompletedContextTurn {
     conversationId: row.conversation_id,
     turnId: row.turn_id,
     contextScopeId: row.context_scope_id,
+    projectRef: row.topic_kind === 'project' ? row.project_ref : null,
     user: { id: row.user_message_id, role: 'user', text: user.content },
     assistant: { id: row.assistant_message_id, role: 'assistant', text: assistant.content },
     completedAt: row.completed_at,
@@ -392,9 +395,11 @@ const completedTurnSelection = `
   SELECT completed.conversation_id::text, completed.turn_id::text,
          completed.context_scope_id::text, completed.user_message_id::text,
          completed.assistant_message_id::text, completed.completed_at,
+         turn_record.topic_kind, turn_record.topic_ref AS project_ref,
          user_message.content AS user_content,
          assistant_message.content AS assistant_content
     FROM conversation_context_completed_turns AS completed
+    JOIN interaction_turns AS turn_record ON turn_record.id = completed.turn_id
     JOIN conversation_messages AS user_message
       ON user_message.conversation_id = completed.conversation_id
      AND user_message.id = completed.user_message_id
@@ -474,10 +479,12 @@ export async function loadCanonicalAnswerHistory(
       `SELECT completed.conversation_id::text, completed.turn_id::text,
               completed.context_scope_id::text, completed.user_message_id::text,
               completed.assistant_message_id::text, completed.completed_at,
+              turn_record.topic_kind, turn_record.topic_ref AS project_ref,
               user_message.role AS user_role, user_message.content AS user_content,
               assistant_message.role AS assistant_role,
               assistant_message.content AS assistant_content
          FROM conversation_context_completed_turns AS completed
+         JOIN interaction_turns AS turn_record ON turn_record.id = completed.turn_id
          LEFT JOIN conversation_messages AS user_message
            ON user_message.conversation_id = completed.conversation_id
           AND user_message.id = completed.user_message_id

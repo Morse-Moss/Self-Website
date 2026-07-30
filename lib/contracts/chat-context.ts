@@ -185,6 +185,7 @@ export interface CompletedContextTurn {
   conversationId: string;
   turnId: string;
   contextScopeId: string;
+  projectRef?: string | null;
   user: CompletedContextMessage & { role: 'user' };
   assistant: CompletedContextMessage & { role: 'assistant' };
   completedAt: Date;
