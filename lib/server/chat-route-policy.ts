@@ -111,6 +111,11 @@ function isProjectFact(message: string): boolean {
   return /(?:morse|摩斯|你|你的).{0,24}(?:项目|作品|实现|架构|做法|成果|职责)|(?:有哪些|介绍).{0,12}(?:项目|作品)/iu.test(message);
 }
 
+function hasDeicticProjectReference(message: string): boolean {
+  if (/(?:第[一二三四五六七八九十\d]+(?:个|项|个项目)?|首个|最后一个|前者|后者)/iu.test(message)) return false;
+  return /(?:这个|那个|它)(?:项目|系统|产品|作品|方案)(?:里|中|上)?/iu.test(message);
+}
+
 function isProjectCollectionQuestion(message: string): boolean {
   if (projectTopics(message).length > 0) return false;
   if (isPortfolioEvidenceQuestion(message)) return false;
@@ -544,6 +549,9 @@ export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
     });
   }
   if (isProjectFact(message)) {
+    if (!projectTopic(message) && usablePrevious?.topicKind === 'project' && hasDeicticProjectReference(message)) {
+      return inheritRoute(usablePrevious, input.ledger)!;
+    }
     return decision({
       routeKind: 'grounded',
       reasonCode: 'project_fact_query',

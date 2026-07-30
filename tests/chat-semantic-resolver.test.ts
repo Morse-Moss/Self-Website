@@ -291,6 +291,23 @@ test('a bare project pronoun keeps the uniquely named adjacent project grounded'
   assert.deepEqual(result.resolved.semantic.evidencePlan, ['named_approved_project']);
 });
 
+test('a deictic ownership question keeps the uniquely named adjacent project grounded', () => {
+  const result = resolve('你在这个项目里具体负责什么？是团队协作，还是你主导完成的？', {
+    audienceIntent: 'recruiter',
+    mode: 'interviewer',
+    discourseContext: completedTurn({
+      user: { id: '41', role: 'user', text: '内容创作 Agent 具体解决什么问题？现在有实际使用场景吗？' },
+      assistant: { id: '42', role: 'assistant', text: '它服务于企业内容生产，可处理素材、提示词和生成任务。' },
+    }),
+  });
+
+  assert.equal(result.resolved.legacyRoute.reasonCode, 'anaphoric_project_followup');
+  assert.equal(result.resolved.semantic.intent, 'named_project_fact');
+  assert.deepEqual(result.resolved.semantic.referent, { kind: 'project', ref: 'content-agent' });
+  assert.equal(result.resolved.semantic.discourseAction, 'follow_up');
+  assert.deepEqual(result.resolved.semantic.evidencePlan, ['named_approved_project']);
+});
+
 test('an ordinal follow-up to a non-project list stays isolated from project evidence', () => {
   const result = resolve(
     '你刚才列了三个项目。只展开第一个，说明其中最难的一次线上故障。',
