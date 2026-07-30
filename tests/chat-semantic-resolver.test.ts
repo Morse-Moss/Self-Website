@@ -181,6 +181,17 @@ test('semantic resolver distinguishes catalog, fit, named project, capability, a
   }
 });
 
+test('a natural recruiter opening for the most representative recent project uses the approved catalog', () => {
+  const result = resolve('你好，我想了解一下你最近做的项目，哪个最能代表你的能力？', {
+    audienceIntent: 'recruiter',
+    mode: 'interviewer',
+  });
+
+  assert.equal(result.resolved.semantic.intent, 'project_catalog');
+  assert.equal(result.resolved.legacyRoute.reasonCode, 'portfolio_project_collection_query');
+  assert.deepEqual(result.resolved.semantic.evidencePlan, ['approved_project_catalog']);
+});
+
 test('explicit conversational follow-up keeps exactly the adjacent completed turn', () => {
   const result = resolve('为什么这么说？', { discourseContext: completedTurn() });
 

@@ -116,6 +116,7 @@ function isProjectCollectionQuestion(message: string): boolean {
   if (isPortfolioEvidenceQuestion(message)) return false;
   const hasPublicSubject = /(?:你|你的|morse|摩斯)/iu.test(message);
   if (!hasPublicSubject) return false;
+  if (/你最近做的项目.{0,16}(?:哪个|哪一个).{0,8}(?:最能)?代表你的能力/iu.test(message)) return true;
   return /(?:有|做过|完成过|负责过|还做过)(?:的)?(?:哪些|哪一些|什么)(?:其他|别的)?(?:项目|作品)(?!管理|经验|能力|证据)|(?:其他|别的)(?:项目|作品).{0,6}(?:有哪些|是什么|呢)|(?:项目|作品).{0,6}(?:有哪些|有哪一些)|(?:介绍|说说|聊聊).{0,8}(?:你|你的|morse|摩斯).{0,8}(?:项目|作品)(?!管理|经验)/iu.test(message);
 }
 
