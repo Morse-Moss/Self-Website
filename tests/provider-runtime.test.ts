@@ -93,15 +93,7 @@ const chatServiceConfig: ChatServiceConfig = {
   maxMessagesPerSession: 2,
   interactionRetentionDays: 10,
   tokenRates: null,
-  chatV2Enabled: false,
-  chatV2CanaryPercent: 0,
-  chatV2CanaryInviteIds: new Set<string>(),
-  contextPacketEnabled: false,
-  contextCanaryPercent: 0,
-  contextCanaryInviteIds: new Set<string>(),
   contextPacketDigest: null,
-  hedgedFailoverEnabled: false,
-  chatSafeMode: false,
   providerTotalTimeoutMs: 90_000,
   providerProtocolEventTimeoutMs: 25_000,
   providerModelTextTimeoutMs: 40_000,
@@ -745,8 +737,6 @@ test('omitted and false dynamic-context flags keep legacy v2 chat on schema 012'
         },
         config: {
           ...chatServiceConfig,
-          chatV2Enabled: true,
-          chatV2CanaryPercent: 100,
           ...(dynamicProviderContextEnabled === undefined
             ? {}
             : { dynamicProviderContextEnabled }),
@@ -1249,8 +1239,6 @@ test('v2 stopped compensation keeps completeness false when an active attempt ha
       config: {
         ...chatServiceConfig,
         tokenRates: { inputUsdPerMillion: 1, outputUsdPerMillion: 2 },
-        chatV2Enabled: true,
-        chatV2CanaryPercent: 100,
       },
       now: runtimeNow,
       signal: controller.signal,

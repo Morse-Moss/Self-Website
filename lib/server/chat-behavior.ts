@@ -1,6 +1,3 @@
-import { createHash } from 'node:crypto';
-
-import type { ChatBehaviorVersion } from '../contracts/chat.ts';
 import type { NormalizedChatRequest } from '../contracts/chat-runtime.ts';
 import { looksLikeFullJobDescription } from './chat-message-signals.ts';
 
@@ -17,7 +14,8 @@ export const TURN_INTENTS = [
 
 export type TurnIntent = typeof TURN_INTENTS[number];
 export type GenerationProfile = 'social' | 'grounded' | 'jd';
-export type ChatBehavior = ChatBehaviorVersion | 'safe';
+// Historical values remain typed only to read existing rows. New turns are fixed to V2.2 in chat-service.
+export type ChatBehavior = 'v1' | 'v2' | 'safe';
 
 export interface TurnRoute {
   intent: TurnIntent;
@@ -26,17 +24,6 @@ export interface TurnRoute {
   release: 'segment' | 'complete';
   reasoningEffort?: 'low';
 }
-
-export interface ChatBehaviorSelectionInput {
-  safeMode: boolean;
-  v2Enabled: boolean;
-  canaryPercent: number;
-  accessSessionId: string;
-  inviteCodeId: string | null;
-  canaryInviteIds: ReadonlySet<string>;
-}
-
-const CANONICAL_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 export function routeChatTurn(request: NormalizedChatRequest): TurnRoute {
   if (request.workflow === 'jd_match' || looksLikeFullJobDescription(request.message)) {
@@ -69,30 +56,4 @@ export function routeChatTurn(request: NormalizedChatRequest): TurnRoute {
     return { intent: 'technical', profile: 'grounded', evidence: 'rag', release: 'segment' };
   }
   return { intent: 'project', profile: 'grounded', evidence: 'rag', release: 'segment' };
-}
-
-export function stableChatCanaryBucket(accessSessionId: string): number {
-  const normalized = accessSessionId.trim().toLowerCase();
-  if (!CANONICAL_UUID_PATTERN.test(normalized)) {
-    throw new TypeError('accessSessionId must be a canonical UUID.');
-  }
-  const digest = createHash('sha256').update(normalized, 'utf8').digest();
-  return digest.readUInt32BE(0) % 100;
-}
-
-export function selectChatBehavior(input: ChatBehaviorSelectionInput): ChatBehavior {
-  if (input.safeMode) return 'safe';
-  if (!input.v2Enabled) return 'v1';
-  if (!Number.isSafeInteger(input.canaryPercent)
-    || input.canaryPercent < 0
-    || input.canaryPercent > 100) {
-    throw new RangeError('canaryPercent must be an integer between 0 and 100.');
-  }
-  if (
-    input.inviteCodeId
-    && input.canaryInviteIds.has(input.inviteCodeId.trim().toLowerCase())
-  ) {
-    return 'v2';
-  }
-  return stableChatCanaryBucket(input.accessSessionId) < input.canaryPercent ? 'v2' : 'v1';
 }

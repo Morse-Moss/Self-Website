@@ -10,6 +10,7 @@ import {
 } from '../lib/server/config.ts';
 
 const completeEnv: Record<string, string> = {
+  NODE_ENV: 'test',
   DATABASE_URL: 'postgresql://localhost/revolution',
   OPENAI_API_KEY: 'test-key',
   OPENAI_BASE_URL: 'http://127.0.0.1:8080/v1',
@@ -31,6 +32,8 @@ const completeEnv: Record<string, string> = {
   MORSE_MAX_MESSAGES_PER_SESSION: '30',
   MORSE_INPUT_USD_PER_MILLION: '1.25',
   MORSE_OUTPUT_USD_PER_MILLION: '10',
+  MORSE_CONTEXT_PACKET_DIGEST_KEY: Buffer.alloc(32, 1).toString('base64'),
+  MORSE_CONTEXT_PACKET_DIGEST_KEY_ID: 'test-context-key',
 };
 
 test('loadServerConfig parses access, provider, lifecycle, and optional pricing settings', () => {
@@ -290,148 +293,72 @@ test('loadServerConfig parses kill switch, heartbeat, and fixed retention settin
   );
 });
 
-test('loadServerConfig parses chat v2 rollout controls with fail-closed defaults', () => {
-  const defaults = loadServerConfig(completeEnv);
-  assert.equal(defaults.chatV2Enabled, false);
-  assert.equal(defaults.chatV2CanaryPercent, 0);
-  assert.deepEqual(defaults.chatV2CanaryInviteIds, new Set());
-  assert.equal(defaults.hedgedFailoverEnabled, false);
-  assert.equal(defaults.chatSafeMode, false);
-
-  const inviteId = '22222222-2222-4222-8222-222222222222';
-  const enabled = loadServerConfig({
+test('legacy chat rollout controls are absent from runtime configuration', () => {
+  const config = loadServerConfig({
     ...completeEnv,
-    MORSE_CHAT_V2_ENABLED: 'true',
-    MORSE_CHAT_V2_CANARY_PERCENT: '25',
-    MORSE_CHAT_V2_CANARY_INVITE_IDS: `${inviteId.toUpperCase()}, ${inviteId}`,
-    MORSE_CHAT_HEDGED_FAILOVER_ENABLED: 'true',
-    MORSE_CHAT_SAFE_MODE: 'true',
+    MORSE_CHAT_V2_ENABLED: 'not-a-boolean',
+    MORSE_CHAT_V2_CANARY_PERCENT: 'not-a-number',
+    MORSE_CHAT_V2_CANARY_INVITE_IDS: 'not-a-uuid',
+    MORSE_CHAT_HEDGED_FAILOVER_ENABLED: 'not-a-boolean',
+    MORSE_CHAT_SAFE_MODE: 'not-a-boolean',
   });
-  assert.equal(enabled.chatV2Enabled, true);
-  assert.equal(enabled.chatV2CanaryPercent, 25);
-  assert.deepEqual(enabled.chatV2CanaryInviteIds, new Set([inviteId]));
-  assert.equal(enabled.hedgedFailoverEnabled, true);
-  assert.equal(enabled.chatSafeMode, true);
+  for (const key of [
+    'chatV2Enabled',
+    'chatV2CanaryPercent',
+    'chatV2CanaryInviteIds',
+    'hedgedFailoverEnabled',
+    'chatSafeMode',
+  ]) assert.equal(key in config, false, key);
 });
 
-test('loadServerConfig rejects invalid chat v2 rollout controls', () => {
-  for (const value of ['-1', '101', '1.5', 'not-a-number']) {
-    assert.throws(
-      () => loadServerConfig({ ...completeEnv, MORSE_CHAT_V2_CANARY_PERCENT: value }),
-      /MORSE_CHAT_V2_CANARY_PERCENT.*0.*100/,
-    );
-  }
-
-  for (const value of [
-    '22222222222242228222222222222222',
-    '22222222-2222-0222-8222-222222222222',
-    '22222222-2222-4222-7222-222222222222',
-    'not-a-uuid',
-  ]) {
-    assert.throws(
-      () => loadServerConfig({ ...completeEnv, MORSE_CHAT_V2_CANARY_INVITE_IDS: value }),
-      /MORSE_CHAT_V2_CANARY_INVITE_IDS.*UUID/,
-    );
-  }
-
-  for (const name of [
-    'MORSE_CHAT_V2_ENABLED',
-    'MORSE_CHAT_HEDGED_FAILOVER_ENABLED',
-    'MORSE_CHAT_SAFE_MODE',
-  ]) {
-    assert.throws(
-      () => loadServerConfig({ ...completeEnv, [name]: 'yes' }),
-      new RegExp(`${name}.*true.*false`),
-    );
-  }
-});
-
-test('.env.example keeps every chat v2 control disabled by default', () => {
+test('.env.example omits retired chat rollout controls', () => {
   const example = readFileSync(new URL('../.env.example', import.meta.url), 'utf8');
-  assert.match(example, /^MORSE_CHAT_V2_ENABLED=false$/m);
-  assert.match(example, /^MORSE_CHAT_V2_CANARY_PERCENT=0$/m);
-  assert.match(example, /^MORSE_CHAT_V2_CANARY_INVITE_IDS=$/m);
-  assert.match(example, /^MORSE_CHAT_HEDGED_FAILOVER_ENABLED=false$/m);
-  assert.match(example, /^MORSE_CHAT_SAFE_MODE=false$/m);
+  assert.doesNotMatch(example, /^MORSE_CHAT_V2_|^MORSE_CHAT_HEDGED_FAILOVER_ENABLED=|^MORSE_CHAT_SAFE_MODE=/m);
 });
 
-test('loadServerConfig parses independent context packet rollout and digest configuration', () => {
+test('loadServerConfig requires the Context Packet digest without a rollout gate', () => {
   const digestKey = Buffer.alloc(32, 17).toString('base64');
-  const inviteId = '33333333-3333-4333-8333-333333333333';
-  const disabled = loadServerConfig(completeEnv);
-  assert.equal(disabled.contextPacketEnabled, false);
-  assert.equal(disabled.contextCanaryPercent, 0);
-  assert.deepEqual([...disabled.contextCanaryInviteIds], []);
-  assert.deepEqual([...disabled.contextCanaryInviteLabels], []);
-  assert.equal(disabled.contextPacketDigest, null);
-
   const enabled = loadServerConfig({
     ...completeEnv,
     NODE_ENV: 'test',
-    MORSE_CHAT_CONTEXT_PACKET_ENABLED: 'true',
-    MORSE_CHAT_CONTEXT_CANARY_PERCENT: '0',
-    MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS: inviteId,
-    MORSE_CHAT_CONTEXT_CANARY_INVITE_LABELS: 'HR interview,Internal QA,HR interview',
     MORSE_CONTEXT_PACKET_DIGEST_KEY: digestKey,
     MORSE_CONTEXT_PACKET_DIGEST_KEY_ID: 'context-key-v1',
   });
-  assert.equal(enabled.contextPacketEnabled, true);
-  assert.deepEqual([...enabled.contextCanaryInviteIds], [inviteId]);
-  assert.deepEqual([...enabled.contextCanaryInviteLabels], ['HR interview', 'Internal QA']);
   assert.equal(enabled.contextPacketDigest?.key.equals(Buffer.alloc(32, 17)), true);
   assert.equal(enabled.contextPacketDigest?.keyId, 'context-key-v1');
 });
 
-test('context packet config fails closed for invalid rollout or digest values', () => {
+test('context packet digest config fails closed for invalid values', () => {
   const validKey = Buffer.alloc(32, 18).toString('base64');
   const base = {
     ...completeEnv,
     NODE_ENV: 'test',
-    MORSE_CHAT_CONTEXT_PACKET_ENABLED: 'true',
     MORSE_CONTEXT_PACKET_DIGEST_KEY: validKey,
     MORSE_CONTEXT_PACKET_DIGEST_KEY_ID: 'context-key-v1',
   };
   for (const overrides of [
-    { MORSE_CHAT_CONTEXT_PACKET_ENABLED: 'maybe' },
-    { MORSE_CHAT_CONTEXT_CANARY_PERCENT: '101' },
-    { MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS: 'not-a-uuid' },
-    { MORSE_CHAT_CONTEXT_CANARY_INVITE_LABELS: 'HR interview\nInjected' },
-    { MORSE_CHAT_CONTEXT_CANARY_INVITE_LABELS: '\tHR interview' },
-    { MORSE_CHAT_CONTEXT_CANARY_INVITE_LABELS: 'HR interview\n' },
-    { MORSE_CHAT_CONTEXT_CANARY_INVITE_LABELS: 'HR interview\r' },
-    { MORSE_CHAT_CONTEXT_CANARY_INVITE_LABELS: 'HR interview,,Internal QA' },
-    {
-      MORSE_CHAT_CONTEXT_CANARY_INVITE_LABELS: Array.from(
-        { length: 101 },
-        (_, index) => `label-${index}`,
-      ).join(','),
-    },
     { MORSE_CONTEXT_PACKET_DIGEST_KEY: Buffer.alloc(31).toString('base64') },
     { MORSE_CONTEXT_PACKET_DIGEST_KEY_ID: 'INVALID KEY ID' },
   ]) {
-    assert.throws(() => loadServerConfig({ ...base, ...overrides }), /MORSE_CHAT_CONTEXT|CONTEXT_PACKET_DIGEST/u);
+    assert.throws(() => loadServerConfig({ ...base, ...overrides }), /CONTEXT_PACKET_DIGEST/u);
   }
   assert.throws(
     () => loadServerConfig({
       ...completeEnv,
-      MORSE_CHAT_CONTEXT_PACKET_ENABLED: 'true',
+      MORSE_CONTEXT_PACKET_DIGEST_KEY: '',
+      MORSE_CONTEXT_PACKET_DIGEST_KEY_ID: '',
     }),
     /CONTEXT_PACKET_DIGEST_CONFIG_INVALID/u,
   );
 });
 
-test('.env.example keeps context packet disabled and documents non-secret controls', () => {
+test('.env.example documents the mandatory non-secret Context Packet key identifier', () => {
   const example = readFileSync(new URL('../.env.example', import.meta.url), 'utf8');
-  for (const line of [
-    'MORSE_CHAT_CONTEXT_PACKET_ENABLED=false',
-    'MORSE_CHAT_CONTEXT_CANARY_PERCENT=0',
-    'MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS=',
-    'MORSE_CHAT_CONTEXT_CANARY_INVITE_LABELS=',
-    'MORSE_CONTEXT_PACKET_DIGEST_KEY_ID=',
-  ]) {
+  for (const line of ['MORSE_CONTEXT_PACKET_DIGEST_KEY_ID=']) {
     assert.match(example, new RegExp(`^${line}$`, 'm'));
   }
   assert.doesNotMatch(example, /^MORSE_(?:CHAT_CONTEXT_TOKEN_BUDGET|JD_CONTEXT_TOKEN_BUDGET|HISTORY_MESSAGE_LIMIT|RETRIEVAL_LIMIT)=/m);
+  assert.doesNotMatch(example, /^MORSE_CHAT_CONTEXT_(?:PACKET_ENABLED|CANARY_)/m);
   assert.doesNotMatch(example, /^MORSE_CONTEXT_PACKET_DIGEST_KEY=\S+/m);
 });
 

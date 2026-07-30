@@ -7,7 +7,6 @@ import { test } from 'node:test';
 
 import { buildSystemInstructions, normalizeChatRequest } from '../lib/server/chat-core.ts';
 import { validateAnswer } from '../lib/server/chat-answer-validator.ts';
-import { buildSafeChatAnswer } from '../lib/server/chat-safe-answer.ts';
 import { extractPublicKnowledge } from '../lib/server/public-knowledge.ts';
 
 const marker = 'SYNTHETIC_PRIVATE_RESUME_MARKER_7F42';
@@ -120,21 +119,6 @@ test('Docker build context excludes every local private resume artifact form', (
 });
 
 test('answer validation blocks private resume canaries without persisting their value', () => {
-  const publicSources = extractPublicKnowledge(JSON.parse(
-    fs.readFileSync(path.resolve('content/site-content.json'), 'utf8'),
-  ));
-  const safe = buildSafeChatAnswer({
-    intent: 'project',
-    sources: publicSources.slice(0, 2).map((document, index) => ({
-      chunkId: `${document.id}:${index}`,
-      documentId: document.id,
-      title: document.title,
-      sourcePath: document.sourcePath,
-      href: document.href,
-      content: document.content,
-      score: 1,
-    })),
-  });
   const validation = validateAnswer({
     plan: {
       schemaVersion: 'turn-plan-v1',
@@ -163,7 +147,7 @@ test('answer validation blocks private resume canaries without persisting their 
   assert.equal(validation.verdict, 'block');
   assert.deepEqual(validation.issues.map((issue) => issue.code), ['private_data_leak']);
   assert.doesNotMatch(
-    JSON.stringify({ validation, safe }),
+    JSON.stringify({ validation }),
     /SYNTHETIC_PRIVATE_RESUME_MARKER_7F42|morse_resume_access|resume_documents|private[\\/]resume|trustedPersonNote/i,
   );
 });

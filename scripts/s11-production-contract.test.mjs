@@ -173,16 +173,7 @@ test('production environment contract exposes controls but no committed credenti
     'MORSE_WORKER_BACKOFF_MAX_MS',
     'MORSE_CLEANUP_INTERVAL_MS',
     'MORSE_EMBEDDING_ALLOW_PRIVATE_HTTP',
-    'MORSE_CHAT_V2_ENABLED',
-    'MORSE_CHAT_V2_CANARY_PERCENT',
-    'MORSE_CHAT_V2_CANARY_INVITE_IDS',
-    'MORSE_CHAT_CONTEXT_PACKET_ENABLED',
-    'MORSE_CHAT_CONTEXT_CANARY_PERCENT',
-    'MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS',
-    'MORSE_CHAT_CONTEXT_CANARY_INVITE_LABELS',
     'MORSE_CONTEXT_PACKET_DIGEST_KEY_ID',
-    'MORSE_CHAT_HEDGED_FAILOVER_ENABLED',
-    'MORSE_CHAT_SAFE_MODE',
   ]) {
     assert.match(source, new RegExp(`^${name}=`, 'm'));
   }
@@ -192,7 +183,7 @@ test('production environment contract exposes controls but no committed credenti
   );
   assert.doesNotMatch(
     source,
-    /^NEXT_PUBLIC_(?:MORSE_CHAT_V2|MORSE_CHAT_HEDGED_FAILOVER|MORSE_CHAT_SAFE_MODE)/m,
+    /^MORSE_CHAT_(?:V2|SAFE_MODE|CONTEXT_(?:PACKET_ENABLED|CANARY_))=/m,
   );
   assert.doesNotMatch(source, /MORSE_EMBEDDING_ALLOW_PRIVATE_HTTP=true/);
   assert.doesNotMatch(source, /sk-[A-Za-z0-9_-]{16,}/);
@@ -225,22 +216,7 @@ test('production runbooks govern disabled-first Chat v2 rollout and schema-compa
     'docs/runbooks/tencent-lighthouse.md',
   ]) {
     const runbook = read(relativePath);
-    assert.match(runbook, /MORSE_CHAT_V2_ENABLED=true/);
-    assert.match(runbook, /MORSE_CHAT_V2_CANARY_PERCENT=0/);
-    assert.match(runbook, /MORSE_CHAT_V2_CANARY_INVITE_IDS.*(?:空|留空)/);
-    assert.match(runbook, /MORSE_CHAT_HEDGED_FAILOVER_ENABLED=false/);
-    assert.match(runbook, /MORSE_CHAT_SAFE_MODE=false/);
-    assert.match(runbook, /专用聊天邀请码/);
-    assert.match(runbook, /非敏感.*(?:灰度 UUID|UUID)/);
-    assert.match(runbook, /实际 UUID.*\.env\.production/);
-    assert.match(runbook, /不得使用.*(?:环境变量占位符|\$|尖括号)/);
-    assert.match(runbook, /20 轮真实输出评审/);
-    assert.match(runbook, /hedging 关闭/);
-    assert.match(runbook, /故障注入/);
-    assert.match(runbook, /MORSE_CHAT_V2_CANARY_PERCENT=25/);
-    assert.match(runbook, /MORSE_CHAT_V2_CANARY_PERCENT=100/);
-    assert.match(runbook, /人格或证据异常.*MORSE_CHAT_SAFE_MODE=true/);
-    assert.match(runbook, /成本异常.*MORSE_CHAT_HEDGED_FAILOVER_ENABLED=false/);
+    assert.match(runbook, /MORSE_CONTEXT_PACKET_DIGEST_KEY_ID/);
     assert.match(runbook, /隐私问题.*MORSE_CHAT_ENABLED=false/);
     assert.match(runbook, /005.*006.*additive migration/);
     assert.match(runbook, /registry.*007.*只能切换.*包含 007.*兼容镜像/);

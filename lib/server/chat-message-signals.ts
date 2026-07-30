@@ -64,6 +64,11 @@ export function detectRecruitmentSignals(message: string): RecruitmentSignalsV1 
   };
 }
 
+export function hasRecruitmentContext(message: string): boolean {
+  return detectRecruitmentSignals(message).hasRole
+    || /(?:公司|企业|岗位|职位|招聘|候选人)/iu.test(message);
+}
+
 export function looksLikeRecruitmentJobDescription(
   message: string,
   options: { hasActiveRecruitmentFrame?: boolean; workflow?: string } = {},

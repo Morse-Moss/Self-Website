@@ -44,6 +44,8 @@ const webEnv = {
   MORSE_INVITE_TRUSTED_PROXY_HOPS: '1',
   MORSE_PROVIDER_CONFIG_KEY_FILE: providerKeyFile,
   MORSE_PROVIDER_CONFIG_KEY_VERSION: '1',
+  MORSE_CONTEXT_PACKET_DIGEST_KEY_FILE: contextPacketKeyFile,
+  MORSE_CONTEXT_PACKET_DIGEST_KEY_ID: 'context-key-v1',
   OPENAI_API_KEY: 'test-production-chat-key',
   OPENAI_BASE_URL: 'https://gateway.example/v1',
   OPENAI_CHAT_MODEL: 'gpt-production',
@@ -58,8 +60,6 @@ const webEnv = {
   OPENAI_EMBEDDING_MODEL: 'bge-production',
   MORSE_ALLOW_TEST_EMBEDDINGS: 'false',
 };
-
-const chatV2CanaryInviteId = '1d4b7060-f9d1-4e2d-9b2d-503a3f96454d';
 
 test('web production config does not require a TOTP secret for password-only admin login', () => {
   assert.deepEqual(validateProductionRole('web', webEnv), {
@@ -305,21 +305,20 @@ test('production preflight permits only explicitly opted-in private HTTP embeddi
   );
 });
 
-test('production preflight accepts disabled-first and safe-mode-first Chat v2 rollout settings', () => {
+test('production preflight ignores retired Chat rollout settings', () => {
   for (const chatV2Env of [
     {
-      MORSE_CHAT_V2_ENABLED: 'true',
-      MORSE_CHAT_V2_CANARY_PERCENT: '0',
-      MORSE_CHAT_V2_CANARY_INVITE_IDS: '',
-      MORSE_CHAT_HEDGED_FAILOVER_ENABLED: 'false',
-      MORSE_CHAT_SAFE_MODE: 'false',
+      MORSE_CHAT_V2_ENABLED: 'not-a-boolean',
+      MORSE_CHAT_V2_CANARY_PERCENT: 'not-a-number',
+      MORSE_CHAT_V2_CANARY_INVITE_IDS: 'not-a-uuid',
+      MORSE_CHAT_HEDGED_FAILOVER_ENABLED: 'not-a-boolean',
+      MORSE_CHAT_SAFE_MODE: 'not-a-boolean',
     },
     {
-      MORSE_CHAT_V2_ENABLED: 'true',
-      MORSE_CHAT_V2_CANARY_PERCENT: '0',
-      MORSE_CHAT_V2_CANARY_INVITE_IDS: chatV2CanaryInviteId,
-      MORSE_CHAT_HEDGED_FAILOVER_ENABLED: 'true',
-      MORSE_CHAT_SAFE_MODE: 'true',
+      MORSE_CHAT_CONTEXT_PACKET_ENABLED: 'not-a-boolean',
+      MORSE_CHAT_CONTEXT_CANARY_PERCENT: 'not-a-number',
+      MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS: 'not-a-uuid',
+      MORSE_CHAT_CONTEXT_CANARY_INVITE_LABELS: 'unsafe\nlabel',
     },
   ]) {
     assert.deepEqual(validateProductionRole('web', {
@@ -332,16 +331,8 @@ test('production preflight accepts disabled-first and safe-mode-first Chat v2 ro
   }
 });
 
-test('web production accepts context packet only with a Web-owned key file', () => {
-  const enabled = {
-    ...webEnv,
-    MORSE_CHAT_CONTEXT_PACKET_ENABLED: 'true',
-    MORSE_CHAT_CONTEXT_CANARY_PERCENT: '0',
-    MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS: chatV2CanaryInviteId,
-    MORSE_CONTEXT_PACKET_DIGEST_KEY_FILE: contextPacketKeyFile,
-    MORSE_CONTEXT_PACKET_DIGEST_KEY_ID: 'context-key-v1',
-  };
-  assert.deepEqual(validateProductionRole('web', enabled), {
+test('web production requires a Web-owned Context Packet key file', () => {
+  assert.deepEqual(validateProductionRole('web', webEnv), {
     alertsEnabled: null,
     role: 'web',
   });
@@ -356,48 +347,13 @@ test('web production accepts context packet only with a Web-owned key file', () 
     },
   ]) {
     assert.throws(
-      () => validateProductionRole('web', { ...enabled, ...unsafe }),
+      () => validateProductionRole('web', { ...webEnv, ...unsafe }),
       (error: unknown) => error instanceof ProductionConfigError
         && error.code === 'PRODUCTION_RUNTIME_CONFIG_INVALID',
     );
   }
 });
 
-test('production preflight rejects unresolved or invalid Chat v2 rollout settings without echoing values', () => {
-  const invalidCases = [
-    { MORSE_CHAT_V2_CANARY_PERCENT: '-1' },
-    { MORSE_CHAT_V2_CANARY_PERCENT: '101' },
-    { MORSE_CHAT_V2_CANARY_PERCENT: '1.5' },
-    { MORSE_CHAT_V2_CANARY_PERCENT: '$CHAT_V2_CANARY_PERCENT' },
-    { MORSE_CHAT_V2_CANARY_INVITE_IDS: 'not-a-uuid' },
-    { MORSE_CHAT_V2_CANARY_INVITE_IDS: '$CHAT_V2_CANARY_INVITE_IDS' },
-    { MORSE_CHAT_V2_CANARY_INVITE_IDS: '<actual-invite-uuid>' },
-    { MORSE_CHAT_V2_ENABLED: '$CHAT_V2_ENABLED' },
-    { MORSE_CHAT_HEDGED_FAILOVER_ENABLED: '<true-or-false>' },
-    { MORSE_CHAT_SAFE_MODE: '${CHAT_SAFE_MODE}' },
-  ];
-
-  for (const chatV2Env of invalidCases) {
-    assert.throws(
-      () => validateProductionRole('web', {
-        ...webEnv,
-        MORSE_CHAT_V2_ENABLED: 'true',
-        MORSE_CHAT_V2_CANARY_PERCENT: '0',
-        MORSE_CHAT_V2_CANARY_INVITE_IDS: chatV2CanaryInviteId,
-        MORSE_CHAT_HEDGED_FAILOVER_ENABLED: 'false',
-        MORSE_CHAT_SAFE_MODE: 'false',
-        ...chatV2Env,
-      }),
-      (error: unknown) => {
-        assert.ok(error instanceof ProductionConfigError);
-        assert.equal(error.code, 'PRODUCTION_RUNTIME_CONFIG_INVALID');
-        assert.equal(error.message, 'PRODUCTION_RUNTIME_CONFIG_INVALID');
-        assert.doesNotMatch(String(error), /CHAT_V2|actual-invite|true-or-false/);
-        return true;
-      },
-    );
-  }
-});
 
 test('production preflight fails closed with stable codes and never echoes values', () => {
   const cases = [

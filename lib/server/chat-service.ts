@@ -65,9 +65,6 @@ import {
 } from './chat-answer-executor.ts';
 import { createChatExecutionBudget } from './chat-execution-budget.ts';
 import {
-  routeChatTurn as routeLegacyChatTurn,
-  selectChatBehavior,
-  stableChatCanaryBucket,
   type ChatBehavior,
   type TurnIntent,
   type TurnRoute,
@@ -138,7 +135,6 @@ import {
   buildOpenAIChatCompletionsBody,
   buildOpenAIResponsesBody,
 } from './openai-provider.ts';
-import { buildSafeChatAnswer } from './chat-safe-answer.ts';
 import {
   completeInteraction,
   insertRunningInteraction,
@@ -220,16 +216,7 @@ export interface ChatServiceConfig {
   maxSearchesPerSession?: number;
   providerName?: string;
   model?: string;
-  chatV2Enabled: boolean;
-  chatV2CanaryPercent: number;
-  chatV2CanaryInviteIds: ReadonlySet<string>;
-  contextPacketEnabled?: boolean;
-  contextCanaryPercent?: number;
-  contextCanaryInviteIds?: ReadonlySet<string>;
-  contextCanaryInviteLabels?: ReadonlySet<string>;
   contextPacketDigest?: ContextPacketDigestConfig | null;
-  hedgedFailoverEnabled: boolean;
-  chatSafeMode: boolean;
   providerTotalTimeoutMs: number;
   providerProtocolEventTimeoutMs: number;
   providerModelTextTimeoutMs: number;
@@ -398,47 +385,8 @@ class ContextPreparationError extends Error {
   }
 }
 
-function legacyExecutionPipeline(behavior: ChatBehavior): ContextExecutionPipeline {
-  if (behavior === 'safe') return 'safe';
-  return behavior === 'v2' ? 'legacy_v2' : 'legacy_v1';
-}
-
-function contextCanarySelected(input: {
-  accessSessionId: string;
-  inviteCodeId: string;
-  inviteLabel: string;
-  config: ChatServiceConfig;
-}): boolean {
-  const canaryPercent = input.config.contextCanaryPercent ?? 0;
-  if (!Number.isSafeInteger(canaryPercent)
-    || canaryPercent < 0
-    || canaryPercent > 100) {
-    throw new RangeError('contextCanaryPercent must be an integer between 0 and 100.');
-  }
-  if (input.config.contextCanaryInviteIds?.has(input.inviteCodeId.toLowerCase())) return true;
-  if (input.config.contextCanaryInviteLabels?.has(input.inviteLabel)) return true;
-  return stableChatCanaryBucket(input.accessSessionId) < canaryPercent;
-}
-
-function selectExecutionPipeline(input: {
-  accessSessionId: string;
-  assignment: ContextPipelineAssignment;
-  behavior: ChatBehavior;
-  inviteCodeId: string;
-  inviteLabel: string;
-  request: NormalizedChatRequest;
-  config: ChatServiceConfig;
-}): ContextExecutionPipeline {
-  const legacy = legacyExecutionPipeline(input.behavior);
-  if (input.assignment === 'legacy_locked_after_v22'
-    || input.behavior !== 'v2'
-    || requestWorkflow(input.request) === 'diagnosis'
-    || input.config.contextPacketEnabled !== true) return legacy;
-
-  const selected = input.assignment === 'context_packet_v22'
-    || contextCanarySelected(input);
-  if (!selected) return legacy;
-  if (!input.config.contextPacketDigest) {
+function selectExecutionPipeline(config: ChatServiceConfig): ContextExecutionPipeline {
+  if (!config.contextPacketDigest) {
     throw new Error('CONTEXT_PACKET_DIGEST_CONFIG_INVALID');
   }
   return 'context_packet_v22';
@@ -1361,25 +1309,7 @@ async function reserveTurnInTransaction(input: {
   const session = sessionResult.rows[0];
   if (!session) throw new ChatServiceError('SESSION_INVALID');
 
-  const selectedBehavior = session.chat_behavior_version ?? selectChatBehavior({
-    safeMode: false,
-    v2Enabled: input.config.chatV2Enabled,
-    canaryPercent: input.config.chatV2CanaryPercent,
-    accessSessionId: input.accessSessionId,
-    inviteCodeId: session.invite_code_id,
-    canaryInviteIds: input.config.chatV2CanaryInviteIds,
-  });
-  if (session.chat_behavior_version === null && !input.config.chatSafeMode) {
-    await input.client.query(
-      'UPDATE access_sessions SET chat_behavior_version = $2 WHERE id = $1',
-      [input.accessSessionId, selectedBehavior],
-    );
-  }
-  const behavior: ChatBehavior = input.config.chatSafeMode
-    ? 'safe'
-    : input.config.chatV2Enabled
-      ? selectedBehavior
-      : 'v1';
+  const behavior: ChatBehavior = 'v2';
 
   const interaction = await loadInteractionForUpdate(input.client, input.turnId);
   let degradedReplay = false;
@@ -1427,15 +1357,7 @@ async function reserveTurnInTransaction(input: {
   const selectedExecutionPipeline = interaction?.status === 'running'
     && interaction.executionPipeline
     ? interaction.executionPipeline
-    : selectExecutionPipeline({
-        accessSessionId: input.accessSessionId,
-        assignment: contextAssignment,
-        behavior,
-        inviteCodeId: session.invite_code_id,
-        inviteLabel: session.invite_label,
-        request: input.request,
-        config: input.config,
-      });
+    : selectExecutionPipeline(input.config);
 
   if (interaction?.status === 'completed') {
     if (!conversation || interaction.answer === null) {
@@ -2674,13 +2596,11 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
     yield { type: 'status', stage: 'routing' };
     const effectiveQuery = workflowEffectiveQuery(input.request, turn.diagnosis);
     const routingQuestion = workflowRoutingQuestion(input.request, turn.diagnosis);
-    const legacyRoute: TurnRoute = turn.behavior === 'safe'
-      ? routeLegacyChatTurn(input.request)
-      : {
-          intent: requestWorkflow(input.request) === 'jd_match' ? 'jd' : 'project',
-          profile: requestWorkflow(input.request) === 'jd_match' ? 'jd' : 'grounded',
-          evidence: 'rag',
-          release: requestWorkflow(input.request) === 'jd_match' ? 'complete' : 'segment',
+    const legacyRoute: TurnRoute = {
+      intent: requestWorkflow(input.request) === 'jd_match' ? 'jd' : 'project',
+      profile: requestWorkflow(input.request) === 'jd_match' ? 'jd' : 'grounded',
+      evidence: 'rag',
+      release: requestWorkflow(input.request) === 'jd_match' ? 'complete' : 'segment',
     };
     let v2Route: ChatRouteDecision | null = null;
     let v2TaskState: ConversationTaskState | null = null;
@@ -2759,7 +2679,7 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
         ...completedHistory,
         { role: 'user', content: input.request.message },
       ];
-    } else if (turn.behavior === 'v1') {
+    } else {
       canonicalHistory = await loadCanonicalAnswerHistory(lockClient, {
           conversationId: turn.conversationId,
           ownerPipeline: 'legacy_v1',
@@ -2963,24 +2883,17 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
     const instructions = preparedContext?.builtPacket
       ? preparedContext.builtPacket.normal.request.baseInstructions
       : [
-      turn.behavior === 'v1'
-        ? buildSystemInstructions(
-            input.request.mode,
-            input.request.audienceIntent,
-            knowledge,
-            search,
-          )
-        : buildV2SystemInstructions({
-            route: v2Route ?? undefined,
-            intent: v2Route ? undefined : route.intent,
-            question: routingQuestion,
-            sources: knowledge,
-            search,
-            capability: capability ?? undefined,
-            capabilities,
-          }),
-      workflowSystemBoundary(input.request, turn.diagnosis),
-    ].filter(Boolean).join('\n\n');
+        buildV2SystemInstructions({
+          route: v2Route ?? undefined,
+          intent: v2Route ? undefined : route.intent,
+          question: routingQuestion,
+          sources: knowledge,
+          search,
+          capability: capability ?? undefined,
+          capabilities,
+        }),
+        workflowSystemBoundary(input.request, turn.diagnosis),
+      ].filter(Boolean).join('\n\n');
 
     if (turn.behavior === 'v1' && input.config.dynamicProviderContextEnabled !== true) {
       legacyAnswerIterator = input.provider.streamAnswer({
@@ -3127,54 +3040,6 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
         };
         return;
       }
-    }
-
-    const safeFallback = buildSafeChatAnswer({
-      intent: route.intent,
-      sources: knowledge,
-      operatorSafeMode: turn.behavior === 'safe',
-    });
-
-    if (turn.behavior === 'safe') {
-      if (!safeFallback) throw new Error('SAFE_ANSWER_UNAVAILABLE');
-      answer = safeFallback.text;
-      sources = toLocalPublicSources(safeFallback.sources);
-      yield { type: 'delta', text: answer };
-      const completedAt = clock();
-      const actualUsage = await completeTurn({
-        pool: input.pool,
-        client: lockClient,
-        accessSessionId: input.accessSessionId,
-        request: input.request,
-        turn,
-        answer,
-        sources,
-        usage: null,
-        attempts: [],
-        winner: null,
-        usageComplete: false,
-        costComplete: false,
-        knownCostUsd: null,
-        config: input.config,
-        startedAt,
-        completedAt,
-        signal: input.signal,
-      });
-      completed = true;
-      const remainingMessages = await getRemainingMessages(
-        lockClient,
-        input.accessSessionId,
-        input.config.maxMessagesPerSession,
-      );
-      yield {
-        type: 'done',
-        usage: actualUsage,
-        budgetLevel: NORMAL_BUDGET_LEVEL,
-        consumed: true,
-        degraded: false,
-        remainingMessages,
-      };
-      return;
     }
 
     const messages = preparedContext?.builtPacket

@@ -504,11 +504,6 @@ const config = {
   maxMessagesPerSession: 2,
   interactionRetentionDays: 10,
   tokenRates: { inputUsdPerMillion: 1, outputUsdPerMillion: 2 },
-  chatV2Enabled: false,
-  chatV2CanaryPercent: 0,
-  chatV2CanaryInviteIds: new Set<string>(),
-  hedgedFailoverEnabled: false,
-  chatSafeMode: false,
   providerTotalTimeoutMs: 90_000,
   providerProtocolEventTimeoutMs: 25_000,
   providerModelTextTimeoutMs: 40_000,
@@ -3178,8 +3173,6 @@ test('v2 persists each failover attempt with its target rate instead of the glob
       config: {
         ...config,
         tokenRates: { inputUsdPerMillion: 99, outputUsdPerMillion: 99 },
-        chatV2Enabled: true,
-        chatV2CanaryPercent: 100,
       },
       now: testNow,
     });
@@ -4990,8 +4983,6 @@ test('v2 social skips embedding, RAG and search without overriding model reasoni
       }),
       config: {
         ...searchConfig,
-        chatV2Enabled: true,
-        chatV2CanaryPercent: 100,
       },
       now,
     });
@@ -5039,7 +5030,7 @@ test('v2 missing JD uses the Provider without a business reply shortcut', {
         audienceIntent: 'recruiter',
         turnId,
       }),
-      config: { ...searchConfig, chatV2Enabled: true, chatV2CanaryPercent: 100 },
+      config: { ...searchConfig },
       now,
     });
 
@@ -5081,7 +5072,7 @@ test('v2 JD inherits model reasoning and uses the concise evidence prompt', {
         audienceIntent: 'recruiter',
         turnId: randomUUID(),
       }),
-      config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
+      config: { ...config },
       now,
     });
 
@@ -5114,7 +5105,7 @@ test('v2 unresolved reference uses the Provider without a business reply shortcu
         message: '这个呢？',
         turnId,
       }),
-      config: { ...searchConfig, chatV2Enabled: true, chatV2CanaryPercent: 100 },
+      config: { ...searchConfig },
       now,
     });
 
@@ -5158,7 +5149,7 @@ test('v2 complete follow-up reaches Provider with the preceding conversation his
         message: '为什么优先使用单 Agent？',
         turnId: firstTurnId,
       }),
-      config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
+      config: { ...config },
       now: testNow,
     });
     const meta = first.find((event) => event.type === 'meta');
@@ -5174,7 +5165,7 @@ test('v2 complete follow-up reaches Provider with the preceding conversation his
         conversationId: meta.conversationId,
         turnId: secondTurnId,
       }),
-      config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
+      config: { ...config },
       now: new Date(testNow.getTime() + 1_000),
     });
 
@@ -5223,7 +5214,7 @@ test('recruitment answer is delivered and persisted even when offline quality ru
         audienceIntent: 'recruiter',
         turnId,
       }),
-      config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
+      config: { ...config },
       now: testNow,
     });
 
@@ -5270,7 +5261,7 @@ test('recruitment answer is delivered and persisted even when offline quality ru
         conversationId: interaction.conversation_id,
         turnId,
       }),
-      config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
+      config: { ...config },
       now: new Date(now.getTime() + 1_000),
     });
     const afterReplay = await pool!.query(
@@ -5312,8 +5303,6 @@ test('v2 identity skips embedding and search while using the approved identity c
       }),
       config: {
         ...searchConfig,
-        chatV2Enabled: true,
-        chatV2CanaryPercent: 100,
       },
       now,
     });
@@ -5358,7 +5347,7 @@ test('a later segment matching an offline quality rule remains visible without r
         message: 'Kubernetes 是什么？',
         turnId: randomUUID(),
       }),
-      config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
+      config: { ...config },
       now: testNow,
     });
     const answerEvents = events.filter((event) => (
@@ -5406,7 +5395,7 @@ test('a repeated long answer is delivered without strict regeneration', {
         message: 'Morse 当前有哪些项目？',
         turnId: randomUUID(),
       }),
-      config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
+      config: { ...config },
       now: testNow,
     });
     const meta = first.find((event) => event.type === 'meta');
@@ -5422,7 +5411,7 @@ test('a repeated long answer is delivered without strict regeneration', {
         conversationId: meta.conversationId,
         turnId: randomUUID(),
       }),
-      config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
+      config: { ...config },
       now: new Date(testNow.getTime() + 1_000),
     });
     assert.equal(second.at(-1)?.type, 'done');
@@ -5456,7 +5445,7 @@ test('provider exhaustion fails without a local project-summary answer', {
         message: 'Morse 当前有哪些项目？',
         turnId,
       }),
-      config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
+      config: { ...config },
       now: testNow,
     }), (error: unknown) => (
       error instanceof ChatServiceError && error.code === 'PROVIDER_UNAVAILABLE'
@@ -5495,7 +5484,7 @@ test('JD provider exhaustion has no invented fallback and can replay the same tu
     jobDescription: 'Public role requirements for an agent systems engineer.',
     turnId,
   });
-  const v2Config = { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 };
+  const v2Config = { ...config };
 
   try {
     await assert.rejects(consumeChat({
@@ -5580,7 +5569,7 @@ test('v1 same-turn retry books historical failed v2 attempts plus current legacy
       provider: coordinated,
       accessSessionId: fixture.accessSessionId,
       request,
-      config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
+      config: { ...config },
       now: testNow,
     }), (error: unknown) => (
       error instanceof ChatServiceError && error.code === 'PROVIDER_UNAVAILABLE'
@@ -5610,7 +5599,7 @@ test('v1 same-turn retry books historical failed v2 attempts plus current legacy
       provider: new FakeProvider(),
       accessSessionId: fixture.accessSessionId,
       request,
-      config: { ...config, chatV2Enabled: false, chatV2CanaryPercent: 0 },
+      config: { ...config },
       now: new Date(testNow.getTime() + 1_000),
     });
     const done = events.at(-1);
@@ -5679,7 +5668,7 @@ test('unknown provider defects are not regenerated or converted into a safe answ
       provider: coordinated,
       accessSessionId: fixture.accessSessionId,
       request: normalizeChatRequest({ message: 'Kubernetes 是什么？', turnId }),
-      config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
+      config: { ...config },
       now: testNow,
     }), (error: unknown) => (
       error instanceof ChatServiceError && error.code === 'PROVIDER_UNAVAILABLE'
@@ -5723,9 +5712,6 @@ test('safe mode skips embedding and search and uses only approved public knowled
       }),
       config: {
         ...searchConfig,
-        chatV2Enabled: true,
-        chatV2CanaryPercent: 100,
-        chatSafeMode: true,
       },
       now,
     });
@@ -5771,8 +5757,6 @@ test('v2 excludes low relevance vector results but keeps routed structured proje
       }),
       config: {
         ...config,
-        chatV2Enabled: true,
-        chatV2CanaryPercent: 100,
       },
       now,
     });
@@ -5813,8 +5797,6 @@ test('v2 records privacy-limited evidence degradation while structured project e
       }),
       config: {
         ...config,
-        chatV2Enabled: true,
-        chatV2CanaryPercent: 100,
       },
       now,
     });
@@ -5872,8 +5854,6 @@ test('one chat conversation can move from recruiter to social without mismatch',
   ]);
   const v2Config = {
     ...config,
-    chatV2Enabled: true,
-    chatV2CanaryPercent: 100,
   };
 
   try {
@@ -5925,7 +5905,7 @@ test('session behavior assignment survives runtime master disable without being 
       provider: new FakeProvider(),
       accessSessionId: fixture.accessSessionId,
       request: normalizeChatRequest({ message: '你好', turnId: randomUUID() }),
-      config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
+      config: { ...config },
       now,
     });
     const assigned = await pool!.query<{ chat_behavior_version: string | null }>(
@@ -5940,7 +5920,7 @@ test('session behavior assignment survives runtime master disable without being 
       provider: disabledProvider,
       accessSessionId: fixture.accessSessionId,
       request: normalizeChatRequest({ message: '谢谢', turnId: randomUUID() }),
-      config: { ...config, chatV2Enabled: false, chatV2CanaryPercent: 100 },
+      config: { ...config },
       now: new Date(now.getTime() + 1_000),
     });
     const preserved = await pool!.query<{ chat_behavior_version: string | null }>(
@@ -5980,7 +5960,7 @@ test('a session first assigned while v2 is disabled remains v1 after enablement'
       provider: enabledProvider,
       accessSessionId: fixture.accessSessionId,
       request: normalizeChatRequest({ message: '谢谢', turnId: randomUUID() }),
-      config: { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 },
+      config: { ...config },
       now: new Date(now.getTime() + 1_000),
     });
     assert.equal(enabledProvider.embedCalls, 1);
@@ -6032,7 +6012,7 @@ test('v2 topic switch commits conversation_task_state atomically with the comple
     '深度研究系统把证据链作为出厂闸门。[来源1]',
   ]);
   const turnId = randomUUID();
-  const v2Config = { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 };
+  const v2Config = { ...config };
 
   try {
     const events = await collectChat({
@@ -6074,7 +6054,7 @@ test('v2 failed turn after an earlier topic switch leaves conversation_task_stat
 }, async () => {
   const testNow = new Date();
   const fixture = await createFailureFixture('chat-v2-task-state-failed-turn', testNow);
-  const v2Config = { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 };
+  const v2Config = { ...config };
   const secondTurnConfig = v2Config;
   const firstTurnId = randomUUID();
   const secondTurnId = randomUUID();
@@ -6137,7 +6117,7 @@ test('v2 optimistic-lock conflict on conversation_task_state aborts the whole co
 }, async () => {
   const testNow = new Date();
   const fixture = await createFailureFixture('chat-v2-task-state-lock-conflict', testNow);
-  const v2Config = { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 };
+  const v2Config = { ...config };
   const turnId = randomUUID();
 
   // Establish the conversation with a prior, unrelated turn first so the
@@ -6258,7 +6238,7 @@ test('v2 replay of an already-completed turn does not bump conversation_task_sta
 }, async () => {
   const testNow = new Date();
   const fixture = await createFailureFixture('chat-v2-task-state-replay', testNow);
-  const v2Config = { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100 };
+  const v2Config = { ...config };
   const turnId = randomUUID();
   const request = normalizeChatRequest({
     message: '深度研究系统怎么保证证据?',
@@ -6309,7 +6289,7 @@ test('v2 topic survives an intervening chit-chat turn via the task-state fallbac
 }, async () => {
   const testNow = new Date();
   const fixture = await createFailureFixture('chat-v2-task-state-chitchat-fallback', testNow);
-  const v2Config = { ...config, chatV2Enabled: true, chatV2CanaryPercent: 100, maxMessagesPerSession: 10 };
+  const v2Config = { ...config, maxMessagesPerSession: 10 };
   const firstTurnId = randomUUID();
   const secondTurnId = randomUUID();
   const thirdTurnId = randomUUID();

@@ -22,6 +22,7 @@ import {
   type CapabilityLedger,
 } from './capability-evidence.ts';
 import {
+  hasRecruitmentContext,
   isGenericKnowledgeQuestion,
   isGenericJdDefinitionQuestion,
   looksLikeRecruitmentEvaluationQuestion,
@@ -433,7 +434,7 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
     wholeJd: input.request.workflow === 'jd_match',
   }).length > 0;
   const recruitmentContentQuestion = looksLikeRecruitmentEvaluationQuestion(message);
-  const recruitmentContextMentioned = /(?:公司|企业|岗位|职位|招聘|候选人)/iu.test(message);
+  const recruitmentContextMentioned = hasRecruitmentContext(message);
   const adjacentRecruiterTaskBoundary = Boolean(
     input.request.workflow === 'chat'
     && input.request.mode === 'interviewer'
@@ -490,7 +491,7 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
     intent = 'clarify';
     reasonCode = 'ambiguous_legacy_recruitment_context';
   } else if (isProjectFit(message)) {
-    if (!activeRecruitment && !/(?:公司|岗位|职位|招聘|候选人)/iu.test(message)) {
+    if (!activeRecruitment && !recruitmentContextMentioned) {
       intent = 'clarify';
       reasonCode = 'missing_relevance_referent';
     } else {

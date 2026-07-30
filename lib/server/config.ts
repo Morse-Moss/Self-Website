@@ -113,40 +113,6 @@ function booleanSetting(env: Env, name: string, fallback: boolean): boolean {
   throw new Error(`${name} must be true or false.`);
 }
 
-function uuidList(env: Env, name: string): ReadonlySet<string> {
-  const values = env[name]?.split(',').map((value) => value.trim()).filter(Boolean) ?? [];
-  const unique = new Set<string>();
-  for (const value of values) {
-    const normalized = value.toLowerCase();
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(normalized)) {
-      throw new Error(`${name} must contain comma-separated canonical UUID values.`);
-    }
-    unique.add(normalized);
-  }
-  return unique;
-}
-
-function exactLabelList(env: Env, name: string): ReadonlySet<string> {
-  const configured = env[name];
-  if (configured && /[\u0000-\u001f\u007f]/u.test(configured)) {
-    throw new Error(`${name} must contain comma-separated labels without control characters.`);
-  }
-  const raw = configured?.trim();
-  if (!raw) return new Set();
-  const values = raw.split(',').map((value) => value.trim());
-  if (values.length > 100 || values.some((value) => value.length === 0)) {
-    throw new Error(`${name} must contain between 1 and 100 non-empty comma-separated labels.`);
-  }
-  const unique = new Set<string>();
-  for (const value of values) {
-    if (value.length > 160 || /[\u0000-\u001f\u007f]/u.test(value)) {
-      throw new Error(`${name} must contain comma-separated labels without control characters.`);
-    }
-    unique.add(value);
-  }
-  return unique;
-}
-
 function contextPacketDigest(
   env: Env,
   enabled: boolean,
@@ -412,38 +378,12 @@ export function loadServerConfig(env: Env = process.env) {
   const openaiApiKey = required(env, 'OPENAI_API_KEY');
   const openaiBaseUrl = env.OPENAI_BASE_URL?.trim() || undefined;
   const search = searchSettings(env);
-  const chatV2CanaryPercent = boundedNonNegativeInteger(
-    env,
-    'MORSE_CHAT_V2_CANARY_PERCENT',
-    0,
-    100,
-  );
-  const chatV2CanaryInviteIds = uuidList(env, 'MORSE_CHAT_V2_CANARY_INVITE_IDS');
-  const contextPacketEnabled = booleanSetting(
-    env,
-    'MORSE_CHAT_CONTEXT_PACKET_ENABLED',
-    false,
-  );
-  const contextCanaryPercent = boundedNonNegativeInteger(
-    env,
-    'MORSE_CHAT_CONTEXT_CANARY_PERCENT',
-    0,
-    100,
-  );
-  const contextCanaryInviteIds = uuidList(env, 'MORSE_CHAT_CONTEXT_CANARY_INVITE_IDS');
-  const contextCanaryInviteLabels = exactLabelList(
-    env,
-    'MORSE_CHAT_CONTEXT_CANARY_INVITE_LABELS',
-  );
   const dynamicProviderContextEnabled = booleanSetting(
     env,
     'MORSE_DYNAMIC_PROVIDER_CONTEXT_ENABLED',
     false,
   );
-  const contextPacketDigestConfig = contextPacketDigest(
-    env,
-    contextPacketEnabled || dynamicProviderContextEnabled,
-  );
+  const contextPacketDigestConfig = contextPacketDigest(env, true);
   const providerFirstByteTimeoutMs = positiveNumber(
     env,
     'MORSE_PROVIDER_FIRST_BYTE_TIMEOUT_MS',
@@ -517,16 +457,7 @@ export function loadServerConfig(env: Env = process.env) {
     maxOutputTokens: optionalPositiveInteger(env, 'MORSE_MAX_OUTPUT_TOKENS'),
     dynamicProviderContextEnabled,
     chatEnabled: booleanSetting(env, 'MORSE_CHAT_ENABLED', true),
-    chatV2Enabled: booleanSetting(env, 'MORSE_CHAT_V2_ENABLED', false),
-    chatV2CanaryPercent,
-    chatV2CanaryInviteIds,
-    contextPacketEnabled,
-    contextCanaryPercent,
-    contextCanaryInviteIds,
-    contextCanaryInviteLabels,
     contextPacketDigest: contextPacketDigestConfig,
-    hedgedFailoverEnabled: booleanSetting(env, 'MORSE_CHAT_HEDGED_FAILOVER_ENABLED', false),
-    chatSafeMode: booleanSetting(env, 'MORSE_CHAT_SAFE_MODE', false),
     sseHeartbeatMs: positiveInteger(env, 'MORSE_SSE_HEARTBEAT_MS', 15_000),
     interactionRetentionDays: interactionRetentionDays(env),
     tokenRates: tokenRates(env),
