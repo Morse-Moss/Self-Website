@@ -366,6 +366,31 @@ test('an embedded project pronoun inherits the persisted project referent', () =
   assert.deepEqual(result.resolved.semantic.evidencePlan, ['named_approved_project']);
 });
 
+test('implicit project follow-ups retain the adjacent project until a new subject is explicit', () => {
+  const discourseContext = completedTurn({
+    projectRef: 'digital-morse',
+    user: { id: '41', role: 'user', text: '你刚才提到最近在做数字摩斯，它是一个什么项目？' },
+    assistant: { id: '42', role: 'assistant', text: '数字摩斯是一个可对话的作品集项目。' },
+  });
+
+  for (const message of [
+    '那技术上是怎么实现的？',
+    '如果细一点，知识怎么切分，检索效果怎么验证？',
+    '如果用户问了资料库里没有的事，或者系统找不到合适资料，会怎么办？',
+    '先不聊技术。从招聘方角度，为什么不做普通作品集，而要让人和它对话？',
+  ]) {
+    const result = resolve(message, {
+      audienceIntent: 'recruiter',
+      mode: 'interviewer',
+      discourseContext,
+    });
+
+    assert.equal(result.resolved.semantic.intent, 'named_project_fact', message);
+    assert.deepEqual(result.resolved.semantic.referent, { kind: 'project', ref: 'digital-morse' }, message);
+    assert.deepEqual(result.resolved.semantic.evidencePlan, ['named_approved_project'], message);
+  }
+});
+
 test('an ordinal follow-up to a non-project list stays isolated from project evidence', () => {
   const result = resolve(
     '你刚才列了三个项目。只展开第一个，说明其中最难的一次线上故障。',

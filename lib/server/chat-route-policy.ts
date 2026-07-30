@@ -152,7 +152,7 @@ function isProjectExperienceNarrativeQuestion(request: NormalizedChatRequest): b
 
 function isStableGeneralConversation(message: string): boolean {
   if (/^(?:你好|嗨|hello|hi|谢谢|多谢|再见)/iu.test(message)) return true;
-  if (/(?:吃饭|吃什么|近况|最近忙|怎么看|什么是|是什么|如何|怎么|怎样|为什么|建议|职场|同事|分歧|兴趣|感受)/iu.test(message)) {
+  if (/(?:吃饭|吃什么|近况|最近忙|怎么看|什么是|是什么|职场|同事|分歧|兴趣|感受)/iu.test(message)) {
     return !isUnresolvedReference(message);
   }
   return /^(?:请)?(?:解释|介绍|讨论).{1,80}$/iu.test(message);
@@ -608,6 +608,8 @@ export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
       inheritedFromTurnId: input.previous.turnId,
     });
   }
+  const inherited = usablePrevious ? inheritRoute(usablePrevious, input.ledger) : null;
+  if (inherited) return inherited;
   return decision({
     routeKind: 'conversation',
     reasonCode: 'general_conversation_default',
