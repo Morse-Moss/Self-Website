@@ -9,6 +9,8 @@ import type {
   DiagnosisStatus,
 } from './chat.ts';
 
+export type SafetyBoundaryReason = 'unsafe_or_unverifiable_request';
+
 export interface NormalizedChatRequest {
   message: string;
   workflow?: ChatWorkflow;
@@ -31,7 +33,7 @@ export interface ChatRouteDecision {
   release: 'segment' | 'complete';
   requiresEmbedding: boolean;
   requiresSearch: boolean;
-  deterministicReply: string | null;
+  safetyBoundary: SafetyBoundaryReason | null;
 }
 
 export interface KnowledgeSource {

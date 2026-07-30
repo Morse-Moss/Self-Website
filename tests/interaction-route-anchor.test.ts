@@ -7,10 +7,6 @@ import {
 } from '../lib/server/interaction-log.ts';
 
 type AnchorClient = Parameters<typeof loadPreviousRouteAnchor>[0];
-import {
-  CLARIFY_REPLY,
-  SAFETY_BOUNDARY_REPLY,
-} from '../lib/server/chat-route-policy.ts';
 
 test('loadPreviousRouteAnchor preserves a routed follow-up as the current anchor', async () => {
   const queries: string[] = [];
@@ -49,11 +45,12 @@ test('loadPreviousRouteAnchor preserves a routed follow-up as the current anchor
   assert.match(queries[0] ?? '', /route_reason_code/u);
   assert.match(queries[0] ?? '', /previous\.question/u);
   assert.match(queries[0] ?? '', /previous\.status = 'completed'/u);
-  assert.match(queries[0] ?? '', /previous\.answer = \$3/u);
+  assert.match(queries[0] ?? '', /previous\.route_kind = 'clarify'/u);
+  assert.match(queries[0] ?? '', /previous\.route_reason_code = 'personal_scope_ambiguous'/u);
   assert.match(queries[0] ?? '', /INTERVAL '10 minutes'/u);
 });
 
-test('loadPreviousRouteAnchor exposes only a bounded completed legacy clarification', async () => {
+test('loadPreviousRouteAnchor recognizes a bounded historical clarification by route metadata', async () => {
   const valuesSeen: unknown[][] = [];
   const client = {
     async query(_sql: string, values: unknown[]) {
@@ -80,10 +77,10 @@ test('loadPreviousRouteAnchor exposes only a bounded completed legacy clarificat
   );
 
   assert.equal(anchor?.legacyClarificationEligible, true);
-  assert.equal(valuesSeen[0]?.[2], CLARIFY_REPLY);
+  assert.equal(valuesSeen[0]?.length, 2);
 });
 
-test('loadRecordedInteractionRoute preserves a recorded safety boundary reply', async () => {
+test('loadRecordedInteractionRoute reconstructs a recorded safety boundary', async () => {
   const client = {
     async query() {
       return {
@@ -104,5 +101,5 @@ test('loadRecordedInteractionRoute preserves a recorded safety boundary reply', 
     '44444444-4444-4444-8444-444444444444',
   );
 
-  assert.equal(route?.deterministicReply, SAFETY_BOUNDARY_REPLY);
+  assert.equal(route?.safetyBoundary, 'unsafe_or_unverifiable_request');
 });

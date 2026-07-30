@@ -6,6 +6,7 @@ import {
   TURN_PLAN_VERSION,
   type ConversationSessionSnapshot,
   type EvidenceRequirement,
+  type TurnExecutor,
   type TurnPlanV1,
 } from '../contracts/chat-turn-plan.ts';
 import {
@@ -91,6 +92,14 @@ function deepFreeze<Value>(value: Value): Value {
   return Object.freeze(value);
 }
 
+function executorForSafetyBoundary(
+  safetyBoundary: PlannedChatTurn['resolution']['resolved']['legacyRoute']['safetyBoundary'],
+): TurnExecutor {
+  return safetyBoundary === null
+    ? { kind: 'direct' }
+    : { kind: 'safety_boundary', reason: safetyBoundary };
+}
+
 export function planChatTurn(
   snapshot: ConversationSessionSnapshot,
   catalog: CompiledChatEvidenceCatalog,
@@ -126,7 +135,7 @@ export function planChatTurnWithResolution(
     taskId,
     candidateFrame: resolution.candidateFrame,
     evidence,
-    executor: { kind: 'direct' },
+    executor: executorForSafetyBoundary(resolution.resolved.legacyRoute.safetyBoundary),
     reasonCodes: [...semantic.reasonCodes],
   });
   return { plan, resolution };

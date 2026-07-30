@@ -44,10 +44,6 @@ export interface RouteChatTurnInput {
   taskState?: RouteChatTurnTaskState | null;
 }
 
-export const JD_INTAKE_REPLY = '请提供完整 JD（岗位职责与任职要求）；收到后我会基于公开项目证据整理匹配内容，并把需要面谈核实的部分单独标明。';
-export const CLARIFY_REPLY = '你是想了解这个问题的一般做法，还是想核实我本人做过的具体经历？';
-export const REFERENT_CLARIFY_REPLY = '你指的是前面哪一点或哪段内容？补充一下指代对象，我就能接着回答。';
-export const SAFETY_BOUNDARY_REPLY = '这类请求超出公开信息边界，我无法据此确认，也不会提供或编造未公开信息。';
 
 function normalize(value: string): string {
   return value
@@ -65,7 +61,7 @@ function decision(input: Partial<ChatRouteDecision> & Pick<ChatRouteDecision, 'r
     release: 'segment',
     requiresEmbedding: false,
     requiresSearch: false,
-    deterministicReply: null,
+    safetyBoundary: null,
     ...input,
   };
 }
@@ -401,7 +397,7 @@ export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
     return decision({
       routeKind: 'clarify',
       reasonCode: 'unsafe_or_unverifiable_request',
-      deterministicReply: SAFETY_BOUNDARY_REPLY,
+      safetyBoundary: 'unsafe_or_unverifiable_request',
     });
   }
   if (input.request.workflow === 'diagnosis') {
@@ -427,7 +423,6 @@ export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
     return decision({
       routeKind: 'jd_intake',
       reasonCode: 'jd_required',
-      deterministicReply: JD_INTAKE_REPLY,
     });
   }
   if (isPendingPersonalScopeClarification(input.previous)) {
@@ -592,7 +587,6 @@ export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
     return decision({
       routeKind: 'clarify',
       reasonCode: 'anaphoric_topic_unavailable',
-      deterministicReply: REFERENT_CLARIFY_REPLY,
     });
   }
   if (isPendingPersonalScopeClarification(input.previous)) {

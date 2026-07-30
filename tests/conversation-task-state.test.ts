@@ -23,7 +23,7 @@ function route(input: Partial<ChatRouteDecision> & Pick<ChatRouteDecision, 'rout
     release: 'segment',
     requiresEmbedding: false,
     requiresSearch: false,
-    deterministicReply: null,
+    safetyBoundary: null,
     ...input,
   };
 }

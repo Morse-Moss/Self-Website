@@ -5017,7 +5017,7 @@ test('v2 social skips embedding, RAG and search without overriding model reasoni
   }
 });
 
-test('v2 missing JD completes deterministically without Provider calls or quota deduction', {
+test('v2 missing JD uses the Provider without a business reply shortcut', {
   skip: !pool,
 }, async () => {
   const fixture = await createFailureFixture('chat-v2-jd-intake');
@@ -5044,23 +5044,19 @@ test('v2 missing JD completes deterministically without Provider calls or quota 
     });
 
     assert.equal(aiProvider.embedCalls, 0);
-    assert.equal(aiProvider.requests.length, 0);
+    assert.equal(aiProvider.requests.length, 1);
     assert.equal(searchProvider.calls.length, 0);
-    assert.match(
-      events.filter((event) => event.type === 'delta').map((event) => event.text).join(''),
-      /完整 JD/,
-    );
     const done = events.at(-1);
     assert.equal(done?.type, 'done');
-    if (done?.type === 'done') assert.equal(done.consumed, false);
+    if (done?.type === 'done') assert.equal(done.consumed, true);
     assert.deepEqual(await readSessionSnapshot(fixture.accessSessionId), {
-      messageCount: 0,
+      messageCount: 1,
       messageRows: 2,
-      usageRows: 0,
+      usageRows: 1,
     });
     const interaction = await readInteraction(turnId);
     assert.equal(interaction.status, 'completed');
-    assert.match(interaction.answer ?? '', /完整 JD/);
+    assert.ok(interaction.answer);
   } finally {
     await cleanupFailureFixture(fixture);
   }
@@ -5097,7 +5093,7 @@ test('v2 JD inherits model reasoning and uses the concise evidence prompt', {
   }
 });
 
-test('v2 unresolved reference clarifies without Provider calls or quota deduction', {
+test('v2 unresolved reference uses the Provider without a business reply shortcut', {
   skip: !pool,
 }, async () => {
   const fixture = await createFailureFixture('chat-v2-clarify');
@@ -5123,23 +5119,19 @@ test('v2 unresolved reference clarifies without Provider calls or quota deductio
     });
 
     assert.equal(aiProvider.embedCalls, 0);
-    assert.equal(aiProvider.requests.length, 0);
+    assert.equal(aiProvider.requests.length, 1);
     assert.equal(searchProvider.calls.length, 0);
-    assert.match(
-      events.filter((event) => event.type === 'delta').map((event) => event.text).join(''),
-      /指的是/u,
-    );
     const done = events.at(-1);
     assert.equal(done?.type, 'done');
-    if (done?.type === 'done') assert.equal(done.consumed, false);
+    if (done?.type === 'done') assert.equal(done.consumed, true);
     assert.deepEqual(await readSessionSnapshot(fixture.accessSessionId), {
-      messageCount: 0,
+      messageCount: 1,
       messageRows: 2,
-      usageRows: 0,
+      usageRows: 1,
     });
     const interaction = await readInteraction(turnId);
     assert.equal(interaction.status, 'completed');
-    assert.match(interaction.answer ?? '', /指的是/u);
+    assert.ok(interaction.answer);
   } finally {
     await cleanupFailureFixture(fixture);
   }

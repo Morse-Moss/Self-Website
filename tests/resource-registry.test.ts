@@ -112,9 +112,10 @@ test('an explicit loader receives only the approved resource selected for execut
   });
 });
 
-test('the active turn contract remains direct-only', () => {
-  type DirectOnly = TurnPlanV1['executor'] extends { kind: 'direct' } ? true : false;
-  const directOnly: DirectOnly = true;
+test('the active turn contract permits only direct and explicit safety execution', () => {
+  type UnsupportedExecutor = Exclude<TurnPlanV1['executor']['kind'], 'direct' | 'safety_boundary'>;
+  type HasNoUnsupportedExecutor = UnsupportedExecutor extends never ? true : false;
+  const hasNoUnsupportedExecutor: HasNoUnsupportedExecutor = true;
 
-  assert.equal(directOnly, true);
+  assert.equal(hasNoUnsupportedExecutor, true);
 });

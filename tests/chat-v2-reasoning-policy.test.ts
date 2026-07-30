@@ -15,7 +15,7 @@ test('v2 route adaptation leaves reasoning effort to the active model preset', (
       release: routeKind === 'jd' ? 'complete' : 'segment',
       requiresEmbedding: routeKind === 'jd',
       requiresSearch: false,
-      deterministicReply: null,
+      safetyBoundary: null,
     });
 
     assert.equal(route.reasoningEffort, undefined, routeKind);

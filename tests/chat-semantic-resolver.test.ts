@@ -919,7 +919,7 @@ test('legacy bridge resolves equal-time rows chronologically instead of letting 
   );
 });
 
-test('legacy bridge asks for clarification when conflicting task slots have no correction boundary', () => {
+test('legacy bridge plans provider-backed clarification when conflicting task slots have no correction boundary', () => {
   const completedAt = new Date('2026-07-27T00:00:00.000Z');
   const result = resolveChatSemanticTurn({
     request: request('你有什么相关项目经验吗？'),
@@ -950,7 +950,7 @@ test('legacy bridge asks for clarification when conflicting task slots have no c
   });
 
   assert.equal(result.resolved.semantic.intent, 'clarify');
-  assert.ok(result.resolved.legacyRoute.deterministicReply);
+  assert.equal(result.resolved.legacyRoute.safetyBoundary, null);
   assert.equal(result.candidateFrame, null);
   assert.equal(result.legacyBridgeStatus, 'ambiguous');
 });

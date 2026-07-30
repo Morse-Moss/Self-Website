@@ -16,6 +16,7 @@ import type {
   SemanticTurnDecision,
 } from './chat-context.ts';
 import type { ProjectSlug } from './site-content.ts';
+import type { SafetyBoundaryReason } from './chat-runtime.ts';
 
 export type { AnswerValidationIssueCode } from './chat-context.ts';
 
@@ -45,6 +46,10 @@ export type EvidenceRequirement =
   | { kind: 'capabilities'; capabilityIds: readonly string[]; includePortfolio: boolean }
   | { kind: 'controlled_search' };
 
+export type TurnExecutor =
+  | { kind: 'direct' }
+  | { kind: 'safety_boundary'; reason: SafetyBoundaryReason };
+
 export interface TurnPlanV1 {
   schemaVersion: typeof TURN_PLAN_VERSION;
   plannerVersion: typeof TURN_PLANNER_VERSION;
@@ -55,7 +60,7 @@ export interface TurnPlanV1 {
   taskId: string | null;
   candidateFrame: CandidateConversationTaskFrameV22 | null;
   evidence: EvidenceRequirement;
-  executor: { kind: 'direct' };
+  executor: TurnExecutor;
   reasonCodes: readonly string[];
 }
 

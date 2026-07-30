@@ -33,6 +33,7 @@ import type {
   ConversationSessionSnapshot,
   TurnPlanV1,
 } from '../contracts/chat-turn-plan.ts';
+import type { SafetyBoundaryReason } from '../contracts/chat-runtime.ts';
 import { siteContent } from '../site-content.ts';
 import {
   ProviderRunError,
@@ -359,6 +360,26 @@ const CONTEXT_LAYERS = [
   'approved_evidence',
 ] as const;
 
+type SafetyBoundaryExecutor = Extract<TurnPlanV1['executor'], { kind: 'safety_boundary' }>;
+
+function safetyBoundaryExecutor(input: {
+  legacyRoute: ChatRouteDecision | null;
+  preparedContext: PreparedContextTurn | null;
+}): SafetyBoundaryExecutor | null {
+  const planned = input.preparedContext?.turnPlan.executor;
+  if (planned?.kind === 'safety_boundary') return planned;
+  const reason = input.legacyRoute?.safetyBoundary ?? null;
+  return reason === null ? null : { kind: 'safety_boundary', reason };
+}
+
+function executeSafetyBoundary(input: SafetyBoundaryExecutor): string {
+  const reason: SafetyBoundaryReason = input.reason;
+  if (reason === 'unsafe_or_unverifiable_request') {
+    return '这类请求超出公开信息边界，我无法据此确认，也不会提供或编造未公开信息。';
+  }
+  throw new Error('SAFETY_BOUNDARY_REASON_UNSUPPORTED');
+}
+
 interface ContextTerminalState {
   contextScopeId: string | null;
   manifest: ContextPacketManifest;
@@ -444,7 +465,7 @@ function contextManifest(input: {
     task_state_version: projection?.frame?.taskStateVersion ?? 0,
     context_builder_version: CONTEXT_BUILDER_VERSION,
     projection_policy_version: CONTEXT_PROJECTION_VERSION,
-    release_policy: resolved?.legacyRoute.deterministicReply
+    release_policy: resolved?.legacyRoute.safetyBoundary
       ? 'not_required'
       : resolved?.legacyRoute.release ?? 'not_required',
     context_build_status: input.buildStatus,
@@ -842,7 +863,7 @@ async function prepareContextTurn(input: {
       completedHistory: Object.freeze([...history]),
     });
     const turnPlan = planning.plan;
-    let evidenceBundle: EvidenceBundle = resolved.legacyRoute.deterministicReply
+    let evidenceBundle: EvidenceBundle = turnPlan.executor.kind === 'safety_boundary'
       ? {
           catalogVersion: 2,
           approved: [],
@@ -926,7 +947,7 @@ async function prepareContextTurn(input: {
           || resolved.semantic.discourseAction === 'new_task'
           ? 'invalidated'
           : null;
-    if (resolved.legacyRoute.deterministicReply) {
+    if (turnPlan.executor.kind === 'safety_boundary') {
       return {
         builtPacket: null,
         canonicalSource: null,
@@ -2002,7 +2023,7 @@ async function completeTurn(input: {
   }
 }
 
-async function completeDeterministicTurn(input: {
+async function completeSafetyBoundaryTurn(input: {
   pool: Pool;
   client: PoolClient;
   accessSessionId: string;
@@ -2901,16 +2922,20 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
       sources,
     };
 
-    if (v2Route?.deterministicReply) {
-      const deterministicAnswer = v2Route.deterministicReply;
-      answer = deterministicAnswer;
-      yield { type: 'delta', text: deterministicAnswer };
-      await completeDeterministicTurn({
+    const boundaryExecutor = safetyBoundaryExecutor({
+      legacyRoute: v2Route,
+      preparedContext,
+    });
+    if (boundaryExecutor) {
+      const safetyAnswer = executeSafetyBoundary(boundaryExecutor);
+      answer = safetyAnswer;
+      yield { type: 'delta', text: safetyAnswer };
+      await completeSafetyBoundaryTurn({
         pool: input.pool,
         client: lockClient,
         accessSessionId: input.accessSessionId,
         turn,
-        answer: deterministicAnswer,
+        answer: safetyAnswer,
         startedAt,
         completedAt: clock(),
         route: v2Route,

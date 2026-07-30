@@ -15,6 +15,7 @@ import type { ChatEvidenceClass } from '../contracts/chat.ts';
 import type {
   ChatRouteDecision,
   NormalizedChatRequest,
+  SafetyBoundaryReason,
 } from '../contracts/chat-runtime.ts';
 import {
   assessCapabilities,
@@ -36,9 +37,6 @@ import {
   hasActiveRecruitmentScope,
   normalizeChatTaskSlots,
 } from './chat-task-scope.ts';
-
-const RECRUITMENT_CLARIFY_REPLY = '请补充要匹配的公司或岗位；有其中一项，我就能先基于公开项目证据继续。';
-const RELEVANCE_CLARIFY_REPLY = '你想把相关项目与哪家公司或岗位比较？';
 
 export interface ResolveChatSemanticTurnInput {
   request: NormalizedChatRequest;
@@ -199,7 +197,7 @@ function legacyRouteForSemantic(input: {
   intent: SemanticIntent;
   reasonCode: string;
   inheritedFromTurnId?: string | null;
-  deterministicReply?: string | null;
+  safetyBoundary?: SafetyBoundaryReason | null;
   referent?: SemanticTurnDecision['referent'];
   capabilityEvidence?: ChatEvidenceClass;
 }): ChatRouteDecision {
@@ -209,7 +207,7 @@ function legacyRouteForSemantic(input: {
     release: releaseForIntent(input.intent),
     requiresEmbedding: false,
     requiresSearch: false,
-    deterministicReply: input.deterministicReply ?? null,
+    safetyBoundary: input.safetyBoundary ?? null,
   } as const;
   switch (input.intent) {
     case 'identity_fact':
@@ -435,6 +433,7 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
     wholeJd: input.request.workflow === 'jd_match',
   }).length > 0;
   const recruitmentContentQuestion = looksLikeRecruitmentEvaluationQuestion(message);
+  const recruitmentContextMentioned = /(?:公司|企业|岗位|职位|招聘|候选人)/iu.test(message);
   const adjacentRecruiterTaskBoundary = Boolean(
     input.request.workflow === 'chat'
     && input.request.mode === 'interviewer'
@@ -455,14 +454,14 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
 
   let intent: SemanticIntent;
   let reasonCode: string;
-  let deterministicReply: string | null = null;
+  let safetyBoundary: SafetyBoundaryReason | null = null;
   let referent: SemanticTurnDecision['referent'] = null;
   let capabilityEvidence: ChatEvidenceClass | undefined;
 
   if (baseRoute.reasonCode === 'unsafe_or_unverifiable_request') {
     intent = 'clarify';
     reasonCode = baseRoute.reasonCode;
-    deterministicReply = baseRoute.deterministicReply;
+    safetyBoundary = baseRoute.safetyBoundary;
   } else if (input.request.workflow === 'jd_match') {
     intent = 'jd_match';
     reasonCode = 'explicit_jd_workflow';
@@ -490,12 +489,10 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
   } else if (bridgeReconstruction.ambiguous && isProjectFit(message) && !hasCurrentRecruitmentSlot) {
     intent = 'clarify';
     reasonCode = 'ambiguous_legacy_recruitment_context';
-    deterministicReply = RECRUITMENT_CLARIFY_REPLY;
   } else if (isProjectFit(message)) {
     if (!activeRecruitment && !/(?:公司|岗位|职位|招聘|候选人)/iu.test(message)) {
       intent = 'clarify';
       reasonCode = 'missing_relevance_referent';
-      deterministicReply = RELEVANCE_CLARIFY_REPLY;
     } else {
       intent = 'project_fit';
       reasonCode = 'recruitment_project_fit';
@@ -525,7 +522,6 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
   } else if (clear.size > 0 && activeRecruitment) {
     intent = 'recruitment_intake';
     reasonCode = 'recruitment_context_cleared';
-    deterministicReply = RECRUITMENT_CLARIFY_REPLY;
   } else if (baseRoute.routeKind === 'external_current') {
     intent = 'external_current';
     reasonCode = 'external_current_query';
@@ -536,14 +532,16 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
   } else if (isPersonalHistoryQuestion(message)) {
     intent = 'unsupported_personal_history';
     reasonCode = 'personal_history_query';
-  } else if (/(?:公司|企业|岗位|职位|招聘|候选人)/iu.test(message)) {
+  } else if (recruitmentContentQuestion && recruitmentContextMentioned) {
+    intent = 'project_fit';
+    reasonCode = 'recruitment_evaluation_question';
+  } else if (recruitmentContextMentioned) {
     intent = 'recruitment_intake';
     reasonCode = 'missing_material_job_context';
-    deterministicReply = RECRUITMENT_CLARIFY_REPLY;
   } else if (baseRoute.routeKind === 'clarify') {
     intent = 'clarify';
     reasonCode = baseRoute.reasonCode;
-    deterministicReply = baseRoute.deterministicReply;
+    safetyBoundary = baseRoute.safetyBoundary;
   } else {
     intent = 'general_conversation';
     reasonCode = baseRoute.reasonCode;
@@ -631,7 +629,7 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
     intent,
     reasonCode,
     inheritedFromTurnId: baseRoute.inheritedFromTurnId,
-    deterministicReply,
+    safetyBoundary,
     referent,
     capabilityEvidence,
   });

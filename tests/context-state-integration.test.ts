@@ -51,7 +51,7 @@ function resolvedProjectFit(): ResolvedChatTurn {
       release: 'complete',
       requiresEmbedding: true,
       requiresSearch: false,
-      deterministicReply: null,
+      safetyBoundary: null,
     },
   };
 }

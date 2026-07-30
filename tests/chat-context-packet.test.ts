@@ -51,7 +51,7 @@ function resolved(intent: ResolvedChatTurn['semantic']['intent'] = 'project_fit'
       release: intent === 'project_fit' ? 'complete' : 'segment',
       requiresEmbedding: intent === 'project_fit',
       requiresSearch: false,
-      deterministicReply: null,
+      safetyBoundary: null,
     },
   };
 }

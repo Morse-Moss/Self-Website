@@ -202,10 +202,10 @@ test('all answer-quality cases execute the production v2 route and evidence chai
   )));
 });
 
-test('route evaluation derives provider execution from the route instead of expected call counts', () => {
+test('route evaluation derives provider execution from the safety boundary instead of expected call counts', () => {
   const source = fs.readFileSync(runnerPath, 'utf8');
   assert.doesNotMatch(source, /if \(item\.expectedDependencies\.chat > 0\)/u);
-  assert.match(source, /route\.deterministicReply === null/u);
+  assert.match(source, /route\.safetyBoundary === null/u);
 
   const dataset = readDataset();
   const comparison = dataset.cases.find((item) => item.id === 'cross-project-research-portfolio') as
@@ -332,7 +332,7 @@ test('zero-tolerance review cases cover wrong RAG, fabricated facts and missing 
   const dataset = JSON.parse(fs.readFileSync(reviewCasesPath, 'utf8')) as {
     cases: ReviewCase[];
   };
-  for (const id of ['conversation-no-rag', 'kubernetes-no-direct', 'jd-intake-no-provider']) {
+  for (const id of ['conversation-no-rag', 'kubernetes-no-direct', 'jd-intake-provider']) {
     assert.equal(dataset.cases.find((item) => item.id === id)?.zeroTolerance, true);
   }
   const jd = dataset.cases.find((item) => item.id === 'jd-complete');

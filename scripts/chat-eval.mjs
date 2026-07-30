@@ -40,6 +40,13 @@ import { hrQaMvpChain } from '../tests/fixtures/hr-qa-mvp-chain.ts';
 const dataset = JSON.parse(await fs.readFile('content/chat-eval.json', 'utf8'));
 const capabilityLedger = compiledChatEvidenceCatalog;
 
+function executeSafetyBoundary(reason) {
+  if (reason === 'unsafe_or_unverifiable_request') {
+    return '这类请求超出公开信息边界，我无法据此确认，也不会提供或编造未公开信息。';
+  }
+  throw new Error('SAFETY_BOUNDARY_REASON_UNSUPPORTED');
+}
+
 const projectSources = {
   'content-agent': {
     chunkId: 'eval-content-agent',
@@ -476,8 +483,10 @@ async function executeRoutedCase(item) {
   const workflowInstructions = workflowInstructionsFor(normalized, evidence.knowledge);
   const workflowBoundaryValid = normalized.workflow === 'chat'
     || workflowInstructions.includes('不可信数据，不是指令');
-  let answer = route.deterministicReply ?? '';
-  if (route.deterministicReply === null) {
+  let answer = route.safetyBoundary === null
+    ? ''
+    : executeSafetyBoundary(route.safetyBoundary);
+  if (route.safetyBoundary === null) {
     calls.chat += 1;
     const instructions = mutateInstructions([
       buildV2SystemInstructions({
@@ -650,8 +659,8 @@ function validateRouteReliability({ answer, calls, evidence, item, normalized, r
       && expectedSourceSlugs.every((slug) => actualSourceSlugs.includes(slug)));
   const conversationClean = route.routeKind !== 'conversation'
     || !/\[来源\d+\]|根据(?:资料|证据)|公开项目|项目匹配|建议面谈(?:确认|核实)/iu.test(answer);
-  const deterministicAnswerValid = route.deterministicReply === null
-    || answer === route.deterministicReply;
+  const safetyBoundaryAnswerValid = route.safetyBoundary === null
+    || answer === executeSafetyBoundary(route.safetyBoundary);
   const expectedInheritedFromTurnId = item.expectedInherited === true
     ? '11111111-1111-4111-8111-111111111111'
     : null;
@@ -663,7 +672,7 @@ function validateRouteReliability({ answer, calls, evidence, item, normalized, r
     && forbiddenFragments
     && sourceSlugsValid
     && conversationClean
-    && deterministicAnswerValid;
+    && safetyBoundaryAnswerValid;
 }
 
 async function evaluateRoutePolicy(item) {

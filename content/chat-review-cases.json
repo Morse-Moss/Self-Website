@@ -203,16 +203,16 @@
       "expectedSignals": ["不虚构规模经验", "说明公开证据无法确认"]
     },
     {
-      "id": "jd-intake-no-provider",
+      "id": "jd-intake-provider",
       "category": "recruitment_jd",
       "session": "jd-intake",
       "prompt": "给我一份岗位适配度。",
       "route": "jd_intake",
       "evidence": "none",
-      "expectedDependencies": { "chat": 0, "embedding": 0, "rag": 0, "search": 0 },
+      "expectedDependencies": { "chat": 1, "embedding": 0, "rag": 0, "search": 0 },
       "zeroTolerance": true,
       "feedbackRegression": "未提供JD仍生成匹配",
-      "expectedSignals": ["只要求提供完整 JD", "不生成匹配结论或消耗 Provider"]
+      "expectedSignals": ["说明还需要完整 JD", "不在缺少 JD 时生成匹配结论"]
     },
     {
       "id": "jd-complete",

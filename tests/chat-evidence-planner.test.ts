@@ -69,7 +69,7 @@ function resolved(intent: SemanticIntent, referent: ResolvedChatTurn['semantic']
       release: 'complete',
       requiresEmbedding: intent === 'project_fit' || intent === 'jd_match',
       requiresSearch: false,
-      deterministicReply: null,
+      safetyBoundary: null,
     },
   };
 }

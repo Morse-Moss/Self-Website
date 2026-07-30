@@ -43,7 +43,7 @@ function legacyRoute(intent: TurnIntent): ChatRouteDecision {
     release: routeKind === 'jd' ? 'complete' : 'segment',
     requiresEmbedding: routeKind === 'grounded' || routeKind === 'jd',
     requiresSearch: false,
-    deterministicReply: null,
+    safetyBoundary: null,
   };
 }
 

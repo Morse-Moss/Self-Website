@@ -56,7 +56,7 @@ test('admission requires a matching project topic after cosine relevance', () =>
     release: 'segment',
     requiresEmbedding: true,
     requiresSearch: false,
-    deterministicReply: null,
+    safetyBoundary: null,
   };
   const matching = { ...source('project-digital-morse', 0.9), projectSlug: 'digital-morse' };
   const adjacent = { ...source('project-deep-research', 0.95), projectSlug: 'deep-research' };
@@ -78,7 +78,7 @@ test('admission keeps every explicitly requested project and excludes adjacent p
     release: 'segment',
     requiresEmbedding: true,
     requiresSearch: false,
-    deterministicReply: null,
+    safetyBoundary: null,
   };
   const sources = [
     { ...source('project-content-agent', 0.9), projectSlug: 'content-agent' },
@@ -107,7 +107,7 @@ test('an anaphoric project follow-up falls back to the persisted topic ref', () 
     release: 'segment',
     requiresEmbedding: true,
     requiresSearch: false,
-    deterministicReply: null,
+    safetyBoundary: null,
   };
   const matching = { ...source('project-digital-morse', 0.9), projectSlug: 'digital-morse' };
   const adjacent = { ...source('project-deep-research', 0.95), projectSlug: 'deep-research' };

@@ -19,7 +19,7 @@ function conversationRoute(): ChatRouteDecision {
     release: 'segment',
     requiresEmbedding: false,
     requiresSearch: false,
-    deterministicReply: null,
+    safetyBoundary: null,
   };
 }
 
@@ -34,7 +34,7 @@ function unavailablePersonalFactRoute(): ChatRouteDecision {
     release: 'complete',
     requiresEmbedding: false,
     requiresSearch: false,
-    deterministicReply: null,
+    safetyBoundary: null,
   };
 }
 
@@ -49,7 +49,7 @@ function jdRoute(): ChatRouteDecision {
     release: 'complete',
     requiresEmbedding: true,
     requiresSearch: false,
-    deterministicReply: null,
+    safetyBoundary: null,
   };
 }
 

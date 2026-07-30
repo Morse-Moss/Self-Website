@@ -19,10 +19,6 @@ import type {
 import type { SanitizedProviderFailure } from './provider-failure.ts';
 import { sanitizeTurnSources } from './turn-codec.ts';
 import {
-  CLARIFY_REPLY,
-  JD_INTAKE_REPLY,
-  REFERENT_CLARIFY_REPLY,
-  SAFETY_BOUNDARY_REPLY,
   type ChatRouteDecision,
   type RouteAnchor,
 } from './chat-route-policy.ts';
@@ -74,14 +70,15 @@ export async function loadPreviousRouteAnchor(
             previous.topic_kind, previous.topic_ref, previous.inherited_from_turn_id::text,
             previous.question,
             (previous.status = 'completed'
-              AND previous.answer = $3
+              AND previous.route_kind = 'clarify'
+              AND previous.route_reason_code = 'personal_scope_ambiguous'
               AND previous.created_at >= current.created_at - INTERVAL '10 minutes'
               AND previous.created_at <= current.created_at) AS legacy_clarification_eligible,
             (previous.status = 'completed') AS previous_turn_completed
        FROM interaction_turns AS current
        JOIN LATERAL (
          SELECT id, route_kind, route_reason_code, topic_kind, topic_ref, inherited_from_turn_id,
-                question, status, answer, created_at
+                question, status, created_at
            FROM interaction_turns
           WHERE conversation_id = current.conversation_id
             AND id <> current.id
@@ -91,7 +88,7 @@ export async function loadPreviousRouteAnchor(
           LIMIT 1
        ) AS previous ON true
       WHERE current.id = $1 AND current.conversation_id = $2`,
-    [currentTurnId, conversationId, CLARIFY_REPLY],
+    [currentTurnId, conversationId],
   );
   const row = result.rows[0];
   if (
@@ -160,15 +157,9 @@ export async function loadRecordedInteractionRoute(
       : 'segment',
     requiresEmbedding: row.route_kind === 'grounded' || row.route_kind === 'jd',
     requiresSearch: row.route_kind === 'external_current',
-    deterministicReply: row.route_kind === 'jd_intake'
-      ? JD_INTAKE_REPLY
-      : row.route_kind === 'clarify'
-        ? row.route_reason_code === 'unsafe_or_unverifiable_request'
-          ? SAFETY_BOUNDARY_REPLY
-          : row.route_reason_code === 'anaphoric_topic_unavailable'
-            ? REFERENT_CLARIFY_REPLY
-            : CLARIFY_REPLY
-        : null,
+    safetyBoundary: row.route_reason_code === 'unsafe_or_unverifiable_request'
+      ? 'unsafe_or_unverifiable_request'
+      : null,
   };
 }
 

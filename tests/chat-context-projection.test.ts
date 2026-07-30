@@ -8,7 +8,7 @@ import type {
   ResolvedTaskSlotRef,
   SemanticIntent,
 } from '../lib/contracts/chat-context.ts';
-import type { KnowledgeSource } from '../lib/contracts/chat-runtime.ts';
+import type { KnowledgeSource, SafetyBoundaryReason } from '../lib/contracts/chat-runtime.ts';
 import { projectFinalContext } from '../lib/server/chat-context-projection.ts';
 
 const CURRENT_USER_ID = '21';
@@ -19,7 +19,7 @@ function resolved(input: {
   taskAction: ResolvedChatTurn['semantic']['taskAction'];
   discourseAction?: ResolvedChatTurn['semantic']['discourseAction'];
   reasonCodes?: string[];
-  deterministicReply?: string | null;
+  safetyBoundary?: SafetyBoundaryReason | null;
 }): ResolvedChatTurn {
   return {
     semantic: {
@@ -42,7 +42,7 @@ function resolved(input: {
       release: input.intent === 'project_fit' ? 'complete' : 'segment',
       requiresEmbedding: input.intent === 'project_fit',
       requiresSearch: false,
-      deterministicReply: input.deterministicReply ?? null,
+      safetyBoundary: input.safetyBoundary ?? null,
     },
   };
 }
@@ -215,12 +215,31 @@ test('explicit temporary follow-up projects only the adjacent discourse pair', (
   assert.deepEqual(projection.includedLayers, ['current_input', 'discourse_context']);
 });
 
-test('deterministic clarification projects no provider context', () => {
+test('ordinary clarification keeps its current task context for the provider', () => {
   const projection = projectFinalContext({
     resolved: resolved({
       intent: 'clarify',
       taskAction: 'wait',
-      deterministicReply: '请补充岗位。',
+    }),
+    currentUserMessageId: CURRENT_USER_ID,
+    discourse: turn('33333333-3333-4333-8333-333333333333'),
+    frame: frame([slot('company', '11', '甲方科技')]),
+    history: [turn('44444444-4444-4444-8444-444444444444')],
+    approvedEvidence: [evidence('digital-morse')],
+  });
+
+  assert.equal(projection.frame?.taskId, TASK_ID);
+  assert.equal(projection.discourse?.turnId, '33333333-3333-4333-8333-333333333333');
+  assert.equal(projection.evidence.length, 1);
+  assert.ok(projection.reasonCodes.includes('projection_follow_up_current_task'));
+});
+
+test('safety boundary projects no provider context', () => {
+  const projection = projectFinalContext({
+    resolved: resolved({
+      intent: 'clarify',
+      taskAction: 'wait',
+      safetyBoundary: 'unsafe_or_unverifiable_request',
     }),
     currentUserMessageId: CURRENT_USER_ID,
     discourse: turn('33333333-3333-4333-8333-333333333333'),
@@ -231,7 +250,7 @@ test('deterministic clarification projects no provider context', () => {
 
   assert.equal(projection.frame, null);
   assert.deepEqual(projection.includedLayers, ['current_input']);
-  assert.ok(projection.reasonCodes.includes('projection_deterministic_no_provider'));
+  assert.ok(projection.reasonCodes.includes('projection_safety_boundary_no_provider'));
 });
 
 test('provider-backed completion keeps adjacent discourse, current-task inputs, and evidence without older history', () => {

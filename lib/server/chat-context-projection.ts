@@ -92,14 +92,14 @@ function currentTaskHistory(
 
 export function projectFinalContext(input: FinalContextProjectionInput): ContextProjection {
   const { semantic, legacyRoute } = input.resolved;
-  if (legacyRoute.deterministicReply || semantic.taskAction === 'wait' || semantic.intent === 'clarify') {
+  if (legacyRoute.safetyBoundary) {
     return finish({
       discourse: null,
       frame: null,
       slots: [],
       history: [],
       evidence: [],
-      reasonCodes: ['projection_deterministic_no_provider'],
+      reasonCodes: ['projection_safety_boundary_no_provider'],
     });
   }
 

@@ -26,7 +26,7 @@ function route(
     release: 'segment',
     requiresEmbedding: false,
     requiresSearch: false,
-    deterministicReply: null,
+    safetyBoundary: null,
     ...overrides,
   };
 }
