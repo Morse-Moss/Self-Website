@@ -499,9 +499,6 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
   } else if (genericJdDefinitionQuestion) {
     intent = 'general_conversation';
     reasonCode = 'generic_jd_definition';
-  } else if (isProjectCatalog(message)) {
-    intent = 'project_catalog';
-    reasonCode = 'portfolio_project_collection_query';
   } else if (bridgeReconstruction.ambiguous && isProjectFit(message) && !hasCurrentRecruitmentSlot) {
     intent = 'clarify';
     reasonCode = 'ambiguous_legacy_recruitment_context';
@@ -520,6 +517,9 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
     intent = 'named_project_fact';
     reasonCode = baseRoute.reasonCode;
     referent = { kind: 'project', ref: projectSlugs[0] };
+  } else if (isProjectCatalog(message)) {
+    intent = 'project_catalog';
+    reasonCode = 'portfolio_project_collection_query';
   } else if (adjacentRecruitmentScope) {
     intent = 'jd_match';
     reasonCode = 'recruitment_evaluation_follow_up';

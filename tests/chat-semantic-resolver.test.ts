@@ -218,6 +218,14 @@ test('a unique catalog project name stays grounded without a legacy route keywor
   assert.deepEqual(result.resolved.semantic.evidencePlan, ['named_approved_project']);
 });
 
+test('a named project introduction does not lose its project referent to the catalog route', () => {
+  const result = resolve('你刚才提到最近在做数字摩斯，它是一个什么项目？');
+
+  assert.equal(result.resolved.semantic.intent, 'named_project_fact');
+  assert.deepEqual(result.resolved.semantic.referent, { kind: 'project', ref: 'digital-morse' });
+  assert.deepEqual(result.resolved.semantic.evidencePlan, ['named_approved_project']);
+});
+
 test('named project fit questions keep ranked project-fit semantics with or without an active frame', () => {
   for (const frame of [null, activeFrame()] as const) {
     const result = resolve('数字摩斯这个项目适合投 React 岗位吗？', { currentFrame: frame });
