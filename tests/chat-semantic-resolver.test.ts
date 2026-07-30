@@ -524,7 +524,7 @@ test('recruitment evaluation inheritance requires the exact recruiter task bound
   );
 });
 
-test('recruiter task does not capture unrelated, external, named-project, control, or unsafe turns', () => {
+test('recruiter task keeps unmarked conversation in scope but isolates clearly separate turns', () => {
   const frame = activeFrame({
     evidenceFocus: { topicKind: 'jd', topicRef: null },
     slots: [
@@ -539,25 +539,30 @@ test('recruiter task does not capture unrelated, external, named-project, contro
     discourseContext: completedTurn({ contextScopeId: TASK_ID }),
   };
 
-  for (const [message, expectedIntent] of [
-    ['今天吃什么？', 'general_conversation'],
-    ['为什么天空是蓝色的？', 'general_conversation'],
-    ['这个产品多少钱？', 'general_conversation'],
-    ['模型是什么？', 'general_conversation'],
-    ['什么是项目管理？', 'general_conversation'],
-    ['RAG 是什么？', 'general_conversation'],
-    ['JD 是什么意思？', 'general_conversation'],
-    ['职位描述是什么？', 'general_conversation'],
-    ['岗位职责是什么？', 'general_conversation'],
-    ['今天跨境电商行业有什么最新新闻？', 'external_current'],
-    ['数字摩斯如何实现 RAG？', 'named_project_fact'],
-    ['数字摩斯项目具体负责什么？', 'named_project_fact'],
-    ['数字摩斯项目具体负责什么', 'named_project_fact'],
+  for (const [message, expectedIntent, expectedAction] of [
+    ['今天吃什么？', 'general_conversation', 'continue'],
+    ['为什么天空是蓝色的？', 'general_conversation', 'temporary'],
+    ['这个产品多少钱？', 'general_conversation', 'continue'],
+    ['模型是什么？', 'general_conversation', 'temporary'],
+    ['什么是项目管理？', 'general_conversation', 'temporary'],
+    ['RAG 是什么？', 'general_conversation', 'temporary'],
+    ['JD 是什么意思？', 'general_conversation', 'temporary'],
+    ['职位描述是什么？', 'general_conversation', 'temporary'],
+    ['岗位职责是什么？', 'general_conversation', 'temporary'],
+    ['今天跨境电商行业有什么最新新闻？', 'external_current', 'temporary'],
+    ['数字摩斯如何实现 RAG？', 'named_project_fact', 'temporary'],
+    ['数字摩斯项目具体负责什么？', 'named_project_fact', 'temporary'],
+    ['数字摩斯项目具体负责什么', 'named_project_fact', 'temporary'],
   ] as const) {
     const result = resolve(message, boundary);
     assert.equal(result.resolved.semantic.intent, expectedIntent, message);
-    assert.equal(result.resolved.semantic.taskAction, 'temporary', message);
-    assert.equal(result.candidateFrame, null, message);
+    assert.equal(result.resolved.semantic.taskAction, expectedAction, message);
+    if (expectedAction === 'continue') {
+      assert.equal(result.candidateFrame?.taskId, TASK_ID, message);
+      assert.deepEqual(result.candidateFrame?.slots, frame.slots, message);
+    } else {
+      assert.equal(result.candidateFrame, null, message);
+    }
   }
 
   for (const message of ['JD 是什么意思？', '职位描述是什么？', '岗位职责是什么？']) {
@@ -622,8 +627,8 @@ test('JD data keeps priority over recruiter evaluation inheritance', () => {
 
   const capabilityQuestion = resolve('你熟悉 PostgreSQL 吗？', boundary);
   assert.equal(capabilityQuestion.resolved.semantic.intent, 'capability_fact');
-  assert.equal(capabilityQuestion.resolved.semantic.taskAction, 'temporary');
-  assert.equal(capabilityQuestion.candidateFrame, null);
+  assert.equal(capabilityQuestion.resolved.semantic.taskAction, 'continue');
+  assert.equal(capabilityQuestion.candidateFrame?.taskId, TASK_ID);
 
   const structuredFit = '任职要求：具备三年以上相关项目经验，负责 Agent 产品交付。';
   const structuredFitWithoutFrame = resolve(structuredFit);

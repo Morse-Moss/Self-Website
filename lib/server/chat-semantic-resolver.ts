@@ -3,8 +3,6 @@ import { createHash, randomUUID } from 'node:crypto';
 import type {
   CandidateConversationTaskFrameV22,
   CompletedContextTurn,
-  ContextTaskAction,
-  ContextWaitingFor,
   ConversationTaskFrameV22,
   DiscourseAction,
   EvidencePlanCode,
@@ -23,6 +21,7 @@ import {
   type CapabilityLedger,
 } from './capability-evidence.ts';
 import {
+  isGenericKnowledgeQuestion,
   isGenericJdDefinitionQuestion,
   looksLikeRecruitmentEvaluationQuestion,
   looksLikeRecruitmentJobDescription,
@@ -31,6 +30,12 @@ import {
   matchCatalogProjects,
 } from './chat-evidence-catalog.ts';
 import { routeChatTurn, type RouteAnchor } from './chat-route-policy.ts';
+import {
+  buildChatTaskScopeFrame,
+  decideChatTaskScope,
+  hasActiveRecruitmentScope,
+  normalizeChatTaskSlots,
+} from './chat-task-scope.ts';
 
 const RECRUITMENT_CLARIFY_REPLY = '请补充要匹配的公司或岗位；有其中一项，我就能先基于公开项目证据继续。';
 const RELEVANCE_CLARIFY_REPLY = '你想把相关项目与哪家公司或岗位比较？';
@@ -232,12 +237,6 @@ function legacyRouteForSemantic(input: {
   }
 }
 
-function isActiveRecruitmentFrame(frame: ConversationTaskFrameV22 | null): boolean {
-  return Boolean(frame
-    && frame.status !== 'completed'
-    && (frame.taskKind === 'recruitment_evaluation' || frame.taskKind === 'jd_match'));
-}
-
 function isProjectCatalog(message: string): boolean {
   return /(?:你|morse|摩斯).{0,8}(?:做过|有|完成过|负责过)?(?:的)?(?:哪些|哪一些|什么)(?:其他|别的)?(?:项目|作品)|(?:项目|作品).{0,6}(?:有哪些|有哪一些)/iu.test(message)
     && !/(?:相关|匹配|适合|证明|经验|最合适)/iu.test(message);
@@ -294,44 +293,6 @@ function clearKinds(message: string): Set<ResolvedTaskSlotRef['slot']> {
   return result;
 }
 
-function normalizeSlots(slots: ResolvedTaskSlotRef[]): ResolvedTaskSlotRef[] {
-  const seenJobHashes = new Set<string>();
-  const validated = slots.filter((candidate) => {
-    if (!/^[1-9]\d*$/u.test(candidate.sourceMessageId)) {
-      throw new Error('CONTEXT_SLOT_SOURCE_MESSAGE_ID_INVALID');
-    }
-    if (!Number.isSafeInteger(candidate.startUtf16)
-      || !Number.isSafeInteger(candidate.endUtf16)
-      || candidate.startUtf16 < 0
-      || candidate.endUtf16 <= candidate.startUtf16
-      || candidate.endUtf16 - candidate.startUtf16 !== candidate.text.length) {
-      throw new Error('CONTEXT_SLOT_SOURCE_SPAN_INVALID');
-    }
-    if (!/^[0-9a-f]{64}$/u.test(candidate.contentSha256)
-      || sha256(candidate.text) !== candidate.contentSha256) {
-      throw new Error('CONTEXT_SLOT_SOURCE_HASH_MISMATCH');
-    }
-    if (candidate.slot === 'job_description') {
-      if (seenJobHashes.has(candidate.contentSha256)) return false;
-      seenJobHashes.add(candidate.contentSha256);
-    }
-    return true;
-  });
-  const ordered = [...validated].sort((left, right) => (
-    BigInt(left.sourceMessageId) < BigInt(right.sourceMessageId) ? -1
-      : BigInt(left.sourceMessageId) > BigInt(right.sourceMessageId) ? 1
-        : left.startUtf16 - right.startUtf16
-          || left.endUtf16 - right.endUtf16
-          || left.contentSha256.localeCompare(right.contentSha256)
-  ));
-  const nextOrdinal = new Map<ResolvedTaskSlotRef['slot'], number>();
-  return ordered.map((candidate) => {
-    const ordinal = nextOrdinal.get(candidate.slot) ?? 0;
-    nextOrdinal.set(candidate.slot, ordinal + 1);
-    return { ...candidate, ordinal };
-  });
-}
-
 function reconstructLegacyRecruitmentFrame(input: {
   conversationId: string;
   turns: readonly CompletedContextTurn[];
@@ -380,7 +341,7 @@ function reconstructLegacyRecruitmentFrame(input: {
         slots.push(candidate);
       }
     }
-    slots = normalizeSlots(slots);
+    slots = normalizeChatTaskSlots(slots);
   }
   if (ambiguous) return { frame: null, ambiguous: true };
   if (!taskStartedMessageId || slots.length === 0) return { frame: null, ambiguous: false };
@@ -408,87 +369,6 @@ function reconstructLegacyRecruitmentFrame(input: {
   };
 }
 
-function buildCandidateFrame(input: {
-  conversationId: string;
-  currentUserMessageId: string;
-  currentFrame: ConversationTaskFrameV22 | null;
-  taskAction: ContextTaskAction;
-  intent: SemanticIntent;
-  message: string;
-  workflow: string | undefined;
-  taskIdFactory: () => string;
-  clear: Set<ResolvedTaskSlotRef['slot']>;
-  includeJd: boolean;
-  extractSlots: boolean;
-}): CandidateConversationTaskFrameV22 | null {
-  if (!['create', 'continue', 'switch', 'wait', 'complete'].includes(input.taskAction)) return null;
-  const reuse = input.currentFrame
-    && input.currentFrame.status !== 'completed'
-    && !['create', 'switch'].includes(input.taskAction);
-  const taskId = reuse ? input.currentFrame!.taskId : input.taskIdFactory();
-  let slots = reuse ? [...input.currentFrame!.slots] : [];
-  if (!reuse || input.taskAction === 'switch') slots = [];
-  slots = slots.filter((candidate) => !input.clear.has(candidate.slot));
-
-  const replaceWholeJd = input.workflow === 'jd_match'
-    || !reuse
-    || input.taskAction === 'switch'
-    || /(?:另一份|新的|完整)\s*(?:JD|职位描述)|(?:JD|职位描述)\s*(?:替换|改成)/iu.test(input.message);
-  const extracted = input.extractSlots
-    ? extractSlotCaptures(input.message, {
-        includeJobDescription: input.includeJd,
-        wholeJd: input.includeJd,
-      }).map((capture) => slotFromCapture(input.message, capture, input.currentUserMessageId))
-    : [];
-  for (const candidate of extracted) {
-    if (candidate.slot === 'job_description') {
-      if (replaceWholeJd) slots = slots.filter((existing) => existing.slot !== 'job_description');
-      slots.push(candidate);
-    } else {
-      slots = slots.filter((existing) => existing.slot !== candidate.slot);
-      slots.push(candidate);
-    }
-  }
-  slots = normalizeSlots(slots);
-
-  let waitingFor: ContextWaitingFor[] = [];
-  if (input.taskAction === 'wait') {
-    if (input.clear.has('company') && slots.some((candidate) => candidate.slot === 'role')) {
-      waitingFor = ['company'];
-    } else if (input.clear.has('role') && slots.some((candidate) => candidate.slot === 'company')) {
-      waitingFor = ['role'];
-    } else if (input.clear.has('job_description')) {
-      waitingFor = ['job_description'];
-    } else {
-      waitingFor = ['relevance_referent'];
-    }
-  }
-  const status = input.taskAction === 'complete'
-    ? 'completed'
-    : waitingFor.length > 0 ? 'waiting_input' : 'active';
-  return {
-    conversationId: input.conversationId,
-    taskId,
-    expectedVersion: reuse ? input.currentFrame!.version : 0,
-    taskKind: reuse
-      ? input.currentFrame!.taskKind
-      : input.workflow === 'jd_match' ? 'jd_match' : 'recruitment_evaluation',
-    subjectKind: 'morse',
-    subjectRef: 'recruitment',
-    evidenceFocus: {
-      topicKind: input.intent === 'jd_match' ? 'jd' : input.intent === 'project_fit' ? 'project' : 'none',
-      topicRef: null,
-    },
-    status,
-    closedReason: status === 'completed' ? 'task_complete' : null,
-    waitingFor,
-    taskStartedMessageId: reuse
-      ? input.currentFrame!.taskStartedMessageId
-      : input.currentUserMessageId,
-    slots,
-  };
-}
-
 export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): ChatSemanticResolution {
   const message = input.request.message.trim();
   const taskIdFactory = input.taskIdFactory ?? randomUUID;
@@ -502,7 +382,7 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
       });
   const reconstructedBridgeFrame = bridgeReconstruction.frame;
   const currentFrame = input.currentFrame ?? reconstructedBridgeFrame;
-  const activeRecruitment = isActiveRecruitmentFrame(currentFrame);
+  const activeRecruitment = hasActiveRecruitmentScope(currentFrame);
   const latestLegacyTurn = [...legacyBridge].sort((left, right) => (
     left.completedAt.getTime() - right.completedAt.getTime()
     || (BigInt(left.user.id) < BigInt(right.user.id) ? -1 : 1)
@@ -554,27 +434,23 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
     includeJobDescription: jdLike,
     wholeJd: input.request.workflow === 'jd_match',
   }).length > 0;
-  const recruitmentEvaluationQuestion = looksLikeRecruitmentEvaluationQuestion(message);
-  const adjacentRecruitmentEvaluation = Boolean(
+  const recruitmentContentQuestion = looksLikeRecruitmentEvaluationQuestion(message);
+  const adjacentRecruiterTaskBoundary = Boolean(
     input.request.workflow === 'chat'
     && input.request.mode === 'interviewer'
     && input.request.audienceIntent === 'recruiter'
     && activeRecruitment
     && adjacentActiveRecruitment
-    && currentFrame?.slots.some((candidate) => candidate.slot === 'job_description')
+    && currentFrame?.slots.some((candidate) => candidate.slot === 'job_description'),
+  );
+  const adjacentRecruitmentScope = Boolean(
+    adjacentRecruiterTaskBoundary
     && !jdLike
     && !switchTask
     && !correction
     && !completing
     && clear.size === 0
-    && (baseRoute.routeKind === 'conversation'
-      || (baseRoute.routeKind === 'jd_intake' && baseRoute.reasonCode === 'jd_required')
-      || (baseRoute.routeKind === 'personal_fact'
-        && baseRoute.reasonCode === 'personal_history_query')
-      || (baseRoute.routeKind === 'grounded'
-        && ['project_fact_query', 'portfolio_evidence_query'].includes(baseRoute.reasonCode)))
-    && projectSlugs.length !== 1
-    && recruitmentEvaluationQuestion,
+    && recruitmentContentQuestion,
   );
 
   let intent: SemanticIntent;
@@ -631,7 +507,7 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
     intent = 'named_project_fact';
     reasonCode = baseRoute.reasonCode;
     referent = { kind: 'project', ref: projectSlugs[0] };
-  } else if (adjacentRecruitmentEvaluation) {
+  } else if (adjacentRecruitmentScope) {
     intent = 'jd_match';
     reasonCode = 'recruitment_evaluation_follow_up';
     const jdSlot = currentFrame?.slots.find((candidate) => candidate.slot === 'job_description');
@@ -650,9 +526,6 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
     intent = 'recruitment_intake';
     reasonCode = 'recruitment_context_cleared';
     deterministicReply = RECRUITMENT_CLARIFY_REPLY;
-  } else if (isPersonalHistoryQuestion(message)) {
-    intent = 'unsupported_personal_history';
-    reasonCode = 'personal_history_query';
   } else if (baseRoute.routeKind === 'external_current') {
     intent = 'external_current';
     reasonCode = 'external_current_query';
@@ -660,6 +533,9 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
   } else if (baseRoute.routeKind === 'identity') {
     intent = 'identity_fact';
     reasonCode = 'identity_query';
+  } else if (isPersonalHistoryQuestion(message)) {
+    intent = 'unsupported_personal_history';
+    reasonCode = 'personal_history_query';
   } else if (/(?:公司|企业|岗位|职位|招聘|候选人)/iu.test(message)) {
     intent = 'recruitment_intake';
     reasonCode = 'missing_material_job_context';
@@ -673,22 +549,27 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
     reasonCode = baseRoute.reasonCode;
   }
 
-  let taskAction: ContextTaskAction;
-  if (completing) {
-    taskAction = 'complete';
-  } else if (switchTask || (input.request.workflow === 'jd_match' && currentFrame?.status === 'completed')) {
-    taskAction = 'switch';
-  } else if (intent === 'general_conversation' || intent === 'identity_fact' || intent === 'external_current'
-    || intent === 'project_catalog' || intent === 'named_project_fact'
-    || intent === 'capability_fact' || intent === 'unsupported_personal_history') {
-    taskAction = 'temporary';
-  } else if (intent === 'clarify' || intent === 'recruitment_intake' || clear.size > 0) {
-    taskAction = activeRecruitment ? 'wait' : 'temporary';
-  } else if (activeRecruitment) {
-    taskAction = 'continue';
-  } else {
-    taskAction = 'create';
-  }
+  const independentOneShot = genericJdDefinitionQuestion
+    || (isGenericKnowledgeQuestion(message) && !recruitmentContentQuestion)
+    || intent === 'external_current'
+    || intent === 'named_project_fact'
+    || /^(?:先|暂时).{0,12}(?:不谈|离开|切出).{0,24}(?:岗位|JD|招聘|话题)/iu.test(message);
+  const scope = decideChatTaskScope({
+    currentFrame,
+    adjacentCompletedTurn: input.discourseContext ?? null,
+    workflow: input.request.workflow ?? 'chat',
+    mode: input.request.mode,
+    audienceIntent: input.request.audienceIntent,
+    contentIntent: intent,
+    independentOneShot,
+    explicitCommand: completing ? 'complete'
+      : switchTask || (input.request.workflow === 'jd_match' && currentFrame?.status === 'completed')
+        ? 'switch'
+        : clear.size > 0 ? 'clear' : 'none',
+    hasAdjacentBoundary: adjacentRecruiterTaskBoundary,
+    unsafe: baseRoute.reasonCode === 'unsafe_or_unverifiable_request',
+  });
+  const taskAction = scope.taskAction;
 
   let discourseAction: DiscourseAction;
   if (taskAction === 'switch' || taskAction === 'create') {
@@ -703,19 +584,24 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
     discourseAction = 'one_shot';
   }
 
-  const candidateFrame = buildCandidateFrame({
+  const shouldExtractSlots = jdLike || correction || switchTask
+    || (hasCurrentRecruitmentSlot && adjacentRecruitmentScope);
+  const candidateFrame = buildChatTaskScopeFrame({
     conversationId: input.conversationId,
     currentUserMessageId: input.currentUserMessageId,
     currentFrame,
     taskAction,
     intent,
     message,
-    workflow: input.request.workflow,
+    workflow: input.request.workflow ?? 'chat',
     taskIdFactory,
     clear,
-    includeJd: jdLike,
-    extractSlots: jdLike || correction || switchTask
-      || (hasCurrentRecruitmentSlot && !recruitmentEvaluationQuestion),
+    extractedSlots: shouldExtractSlots
+      ? extractSlotCaptures(message, {
+          includeJobDescription: jdLike,
+          wholeJd: jdLike,
+        }).map((capture) => slotFromCapture(message, capture, input.currentUserMessageId))
+      : [],
   });
   if (!referent && candidateFrame) {
     const source = candidateFrame.slots.find((candidate) => candidate.slot === 'role')
