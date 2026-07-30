@@ -349,6 +349,23 @@ test('a persisted project reference survives a deictic follow-up chain', () => {
   assert.equal(result.resolved.semantic.discourseAction, 'follow_up');
 });
 
+test('an embedded project pronoun inherits the persisted project referent', () => {
+  const result = resolve('那你怎么保证它不会把你的项目经历答错？', {
+    audienceIntent: 'recruiter',
+    mode: 'interviewer',
+    discourseContext: completedTurn({
+      projectRef: 'digital-morse',
+      user: { id: '41', role: 'user', text: '你刚才提到最近在做数字摩斯，它是一个什么项目？' },
+      assistant: { id: '42', role: 'assistant', text: '数字摩斯是一个可对话的作品集项目。' },
+    }),
+  });
+
+  assert.equal(result.resolved.legacyRoute.reasonCode, 'anaphoric_project_followup');
+  assert.equal(result.resolved.semantic.intent, 'named_project_fact');
+  assert.deepEqual(result.resolved.semantic.referent, { kind: 'project', ref: 'digital-morse' });
+  assert.deepEqual(result.resolved.semantic.evidencePlan, ['named_approved_project']);
+});
+
 test('an ordinal follow-up to a non-project list stays isolated from project evidence', () => {
   const result = resolve(
     '你刚才列了三个项目。只展开第一个，说明其中最难的一次线上故障。',

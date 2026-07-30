@@ -113,7 +113,7 @@ function isProjectFact(message: string): boolean {
 
 function hasDeicticProjectReference(message: string): boolean {
   if (/(?:第[一二三四五六七八九十\d]+(?:个|项|个项目)?|首个|最后一个|前者|后者)/iu.test(message)) return false;
-  return /(?:这个|那个|它)(?:项目|系统|产品|作品|方案)(?:里|中|上)?/iu.test(message);
+  return /(?:这个|那个|它)(?:项目|系统|产品|作品|方案)(?:里|中|上)?|它(?:们)?/iu.test(message);
 }
 
 function isProjectCollectionQuestion(message: string): boolean {
