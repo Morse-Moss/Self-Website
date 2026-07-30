@@ -15,6 +15,7 @@ export function approvedProjectSource(
     `项目概述：${project.summary}`,
     `原始业务问题：${project.caseStudy.problem}`,
     `本人职责：${project.caseStudy.role}`,
+    project.ownership ? `项目归属：${project.ownership}` : '',
     `关键决策：${renderList(project.caseStudy.decisions)}`,
     `系统结构：${renderList(project.caseStudy.structure)}`,
     `验证结果：${renderList(project.caseStudy.evidence)}`,
