@@ -703,6 +703,34 @@ test('project experience packet requires one complete audited delivery narrative
   assert.doesNotMatch(instructions, /完整列出本轮证据中的全部公开项目/);
 });
 
+test('named project ownership questions require the business, responsibility, and delivery boundary in the context packet', () => {
+  const ownershipResolved = resolved('named_project_fact');
+  ownershipResolved.legacyRoute = {
+    ...ownershipResolved.legacyRoute,
+    routeKind: 'grounded',
+    reasonCode: 'anaphoric_project_followup',
+    topicKind: 'project',
+    topicRef: 'content-agent',
+    evidenceClass: 'direct',
+    release: 'complete',
+    requiresEmbedding: true,
+  };
+  const built = buildContextPacket({
+    resolved: ownershipResolved,
+    currentInput: '你在这个项目里具体负责什么？是团队协作，还是你主导完成的？',
+    currentUserMessageId: '21',
+    projection: projection({ discourse: null, history: [], evidence: [evidence('content-agent')] }),
+    digestKey: KEY,
+    digestKeyId: KEY_ID,
+    reasoningEffort: null,
+  });
+
+  const instructions = built.normal.request.baseInstructions;
+  assert.match(instructions, /业务方|业务需求/);
+  assert.match(instructions, /本人职责|技术交付/);
+  assert.match(instructions, /协作边界|人类协作团队/);
+});
+
 test('canonical packet preserves all whole history turns and evidence without eviction', () => {
   const history = [
     turn('55555555-5555-4555-8555-555555555555', 'A'.repeat(900)),

@@ -324,11 +324,17 @@ export function historySummaryRequestHmac(input: {
   return hmac(input.digestKey, SUMMARY_REQUEST_V1_DOMAIN, stableSerialize(input.value));
 }
 
-function responseContract(resolved: ResolvedChatTurn): string {
+function isProjectOwnershipQuestion(currentInput: string): boolean {
+  return /(?:你|本人).{0,16}(?:负责|职责|贡献|做了什么)|(?:独立|主导|团队协作|团队).{0,16}(?:完成|协作)/u.test(currentInput);
+}
+
+function responseContract(resolved: ResolvedChatTurn, currentInput: string): string {
   const projectExperience = resolved.legacyRoute.reasonCode === 'project_experience_query'
     || resolved.semantic.reasonCodes.includes('project_experience_query');
   const evidenceLevels = projectExperience
     ? '只选择一个最能直接回答问题的审核项目，按原始业务问题、本人职责、关键决策、系统结构、验证结果和事实边界讲清楚；重点回答本人具体做了什么及最终产生了什么结果，不得把团队或未来计划冒充个人已完成结果，也不要完整列出全部公开项目。'
+    : resolved.semantic.intent === 'named_project_fact' && isProjectOwnershipQuestion(currentInput)
+    ? '对于本人职责或协作边界的问题，必须依次依据准入证据说明：业务需求或业务方如何分工；本人负责哪些具体技术交付；业务或产品协作与人类工程协作的边界。AI 工具不作为人类团队成员，不得越过证据。'
     : resolved.semantic.intent === 'external_current'
     ? '只使用本轮受控搜索结果；必须显示外部来源并说明检索时间边界；不得用搜索结果补造 Morse 的个人事实。'
     : resolved.semantic.intent === 'project_fit'
@@ -430,7 +436,7 @@ function buildInstructions(
 ): string {
   const blocks = [
     basePolicy(),
-    responseContract(resolved),
+    responseContract(resolved, packet.currentInput),
     capabilityEvidenceBoundaryInstructions(capabilityEvidenceBoundaries),
     packet.taskFrame ? `<task_frame>${renderData(packet.taskFrame)}</task_frame>` : '',
     packet.taskInputs.length > 0 ? `<task_inputs>${renderData(packet.taskInputs)}</task_inputs>` : '',

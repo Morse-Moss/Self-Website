@@ -113,19 +113,12 @@ function renderCapabilityAssessments(assessments: readonly CapabilityAssessment[
   ].join('\n');
 }
 
-function isProjectOwnershipQuestion(question: string): boolean {
-  return /(?:你|本人).{0,16}(?:负责|职责|做了什么)|(?:独立|主导|团队协作|团队).{0,16}(?:完成|协作)/u.test(question);
-}
-
-function answerObjective(route: ChatRouteDecision, question: string): string {
+function answerObjective(route: ChatRouteDecision): string {
   if (route.reasonCode === 'portfolio_project_collection_query') {
     return '完整列出本轮证据中的全部公开项目（包括经审核脱敏展示的企业案例），并用一句话说明每个项目解决的问题；不得补充未在本轮证据中的项目。';
   }
   if (route.reasonCode === 'project_experience_query') {
     return '只选择一个最能直接回答问题的审核项目，按原始业务问题、本人职责、关键决策、系统结构、验证结果和事实边界讲清楚；重点回答本人具体做了什么及最终产生了什么结果，不得把团队或未来计划冒充个人已完成结果，也不要完整列出全部项目。';
-  }
-  if (route.routeKind === 'grounded' && isProjectOwnershipQuestion(question)) {
-    return '对于本人职责或协作边界的问题，先依据本轮证据说明业务需求或业务方如何分工，再明确本人负责的具体技术交付；区分业务或产品协作与人类工程协作，AI 工具不作为人类团队成员，不得越过证据。';
   }
   switch (route.routeKind) {
     case 'conversation': return '第一段自然、直接地回答问题，不谈项目或资料。';
@@ -192,6 +185,6 @@ export function buildV2SystemInstructions(input: {
       : '',
     ...turnEvidence,
     input.question ? `<current_question>${escapeEvidence(input.question)}</current_question>` : '',
-    `<answer_objective>${escapeEvidence(input.answerObjective ?? answerObjective(route, input.question ?? ''))}</answer_objective>`,
+    `<answer_objective>${escapeEvidence(input.answerObjective ?? answerObjective(route))}</answer_objective>`,
   ].filter(Boolean).join('\n\n');
 }

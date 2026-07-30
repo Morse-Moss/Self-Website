@@ -272,29 +272,6 @@ test('project experience instructions select one audited project and answer the 
   assert.doesNotMatch(instructions, /完整列出本轮证据中的全部公开项目/);
 });
 
-test('named project ownership questions require the business, responsibility, and delivery boundary', () => {
-  const instructions = buildV2SystemInstructions({
-    route: {
-      routeKind: 'grounded',
-      reasonCode: 'anaphoric_project_followup',
-      topicKind: 'project',
-      topicRef: 'content-agent',
-      evidenceClass: 'direct',
-      inheritedFromTurnId: '42',
-      release: 'complete',
-      requiresEmbedding: true,
-      requiresSearch: false,
-      safetyBoundary: null,
-    },
-    question: '你在这个项目里具体负责什么？是团队协作，还是你主导完成的？',
-    sources: [source],
-  });
-
-  assert.match(instructions, /业务方|业务需求/);
-  assert.match(instructions, /本人职责|技术交付/);
-  assert.match(instructions, /协作边界|人类协作团队/);
-});
-
 test('v2 instructions lead with stable persona and policy blocks before per-turn blocks', () => {
   const groundedRoute = {
     routeKind: 'grounded' as const,
