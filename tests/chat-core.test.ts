@@ -135,15 +135,16 @@ test('normalizeChatRequest rejects cross-workflow, unknown, and file-shaped payl
   assert.throws(() => normalizeChatRequest({ workflow: 'other', message: '你好' }), /workflow/i);
 });
 
-test('audience intents add bounded guidance without changing the evidence-only contract', () => {
+test('peer and collaboration intents share one neutral exchange posture without changing the evidence-only contract', () => {
   const recruiter = buildSystemInstructions('interviewer', 'recruiter', [source]);
   const collaboration = buildSystemInstructions('general', 'collaboration', [source]);
   const peer = buildSystemInstructions('general', 'peer', [source]);
   const general = buildSystemInstructions('general', 'general', [source]);
 
   assert.match(recruiter, /招聘方/);
-  assert.match(collaboration, /合作需求/);
-  assert.match(peer, /技术判断/);
+  assert.equal(collaboration, peer);
+  assert.match(peer, /同行或潜在合作方/);
+  assert.match(peer, /不假定合作意愿/);
   assert.match(general, /来访目的/);
   for (const instructions of [recruiter, collaboration, peer, general]) {
     assert.match(instructions, /先直接回答/);

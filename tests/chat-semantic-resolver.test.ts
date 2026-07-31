@@ -247,6 +247,20 @@ test('recruitment context makes related project experience a Morse project-fit q
   assert.deepEqual(result.resolved.semantic.evidencePlan, ['ranked_project_fit']);
 });
 
+test('an active recruiter task keeps a catalog-shaped match question in the task frame', () => {
+  const result = resolve('你有什么项目是跟我们公司相匹配的吗？', {
+    audienceIntent: 'recruiter',
+    currentFrame: activeFrame(),
+    mode: 'interviewer',
+  });
+
+  assert.equal(result.resolved.semantic.intent, 'project_fit');
+  assert.equal(result.resolved.legacyRoute.reasonCode, 'recruitment_project_fit');
+  assert.equal(result.resolved.semantic.taskAction, 'continue');
+  assert.equal(result.candidateFrame?.taskId, TASK_ID);
+  assert.deepEqual(result.resolved.semantic.evidencePlan, ['ranked_project_fit']);
+});
+
 test('a recruiter role description routes related project experience to project fit', () => {
   const result = resolve('我在招一名能独立把 AI 产品从原型做到上线的工程师。Morse 最相关的项目经历是什么？');
 

@@ -1322,6 +1322,85 @@ test('V2.2 project ordinal follow-up requires an adjacent successful project cat
   }
 });
 
+test('V2.2 keeps an immediate general topic ahead of an earlier project when resolving a short follow-up', async () => {
+  const fixture = await createFixture('peer-collaboration-topic-switch');
+  const provider = new ControlledAnswerProvider();
+  const firstTurnId = randomUUID();
+  const secondTurnId = randomUUID();
+  const thirdTurnId = randomUUID();
+  let conversationId: string | null = null;
+
+  try {
+    for (const [index, [message, turnId]] of [
+      ['深度研究系统怎么保证证据？', firstTurnId],
+      ['换个问题：RAG 是什么？', secondTurnId],
+      ['那它为什么这样设计？', thirdTurnId],
+    ].entries()) {
+      const events = await collectChat({
+        pool,
+        provider: coordinatedProvider(provider),
+        accessSessionId: fixture.accessSessionId,
+        request: normalizeChatRequest({
+          message,
+          mode: 'general',
+          audienceIntent: 'peer',
+          conversationId,
+          turnId,
+        }),
+        config: contextConfig(fixture),
+        now: new Date(fixtureNow.getTime() + index * 1_000),
+      });
+      const meta = events.find((event) => event.type === 'meta');
+      assert.equal(meta?.type, 'meta');
+      if (meta?.type !== 'meta') return;
+      conversationId ??= meta.conversationId;
+      assert.equal(meta.conversationId, conversationId);
+    }
+
+    const third = await pool.query<{
+      context_manifest: { evidence_ids: string[]; included_layers: string[] };
+      context_scope_id: string;
+      discourse_action: string;
+      inherited_from_turn_id: string | null;
+      semantic_intent: string;
+      task_action: string;
+    }>(
+      `SELECT semantic_intent, discourse_action, task_action,
+              inherited_from_turn_id::text, context_scope_id::text, context_manifest
+         FROM interaction_turns WHERE id = $1`,
+      [thirdTurnId],
+    );
+    assert.deepEqual(
+      {
+        semanticIntent: third.rows[0].semantic_intent,
+        discourseAction: third.rows[0].discourse_action,
+        taskAction: third.rows[0].task_action,
+        inheritedFromTurnId: third.rows[0].inherited_from_turn_id,
+        contextScopeId: third.rows[0].context_scope_id,
+      },
+      {
+        semanticIntent: 'general_conversation',
+        discourseAction: 'follow_up',
+        taskAction: 'temporary',
+        inheritedFromTurnId: secondTurnId,
+        contextScopeId: thirdTurnId,
+      },
+    );
+    assert.ok(third.rows[0].context_manifest.included_layers.includes('discourse_context'));
+    assert.equal(third.rows[0].context_manifest.included_layers.includes('task_frame'), false);
+    assert.deepEqual(third.rows[0].context_manifest.evidence_ids, []);
+    assert.doesNotMatch(
+      [
+        provider.requests[2].instructions,
+        ...provider.requests[2].messages.map((entry) => entry.content),
+      ].join('\n'),
+      /深度研究 Agent 系统/u,
+    );
+  } finally {
+    await cleanupFixture(fixture);
+  }
+});
+
 test('recruiter-chat JD projects audited Claude Code evidence into V2.2', async () => {
   const fixture = await createFixture('HR interview');
   const provider = new ControlledAnswerProvider();

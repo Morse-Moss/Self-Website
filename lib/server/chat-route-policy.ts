@@ -158,6 +158,13 @@ function isStableGeneralConversation(message: string): boolean {
   return /^(?:请)?(?:解释|介绍|讨论).{1,80}$/iu.test(message);
 }
 
+function isAcknowledgement(message: string | undefined): boolean {
+  if (!message) return false;
+  return /^(?:谢谢|多谢|感谢|好的|好|行|收到|明白|了解|嗯+|哦+|噢+|再见)$/u.test(
+    normalize(message),
+  );
+}
+
 function isUnresolvedReference(message: string): boolean {
   const trimmed = message.trim().replace(/[。！!？?]+$/gu, '');
   if (trimmed.length > 40) return false;
@@ -583,6 +590,15 @@ export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
       ? inheritRoute(usablePrevious, input.ledger)
       : null;
     if (inherited) return inherited;
+    if (usablePrevious?.routeKind === 'conversation'
+      && !isAcknowledgement(usablePrevious.question)
+      && input.hasUsableHistory) {
+      return decision({
+        routeKind: 'conversation',
+        reasonCode: 'anaphoric_conversation_followup',
+        inheritedFromTurnId: usablePrevious.turnId,
+      });
+    }
     const taskStateInherited = inheritFromTaskState(
       input.taskState,
       input.previous,

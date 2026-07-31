@@ -479,6 +479,19 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
   } else if (completing) {
     intent = currentFrame?.evidenceFocus.topicKind === 'jd' ? 'jd_match' : 'project_fit';
     reasonCode = 'recruitment_task_complete';
+  } else if (jdLike) {
+    intent = 'jd_match';
+    reasonCode = activeRecruitment ? 'contextual_jd_match' : 'short_jd_detected';
+    referent = { kind: 'jd', ref: input.currentUserMessageId };
+  } else if (genericJdDefinitionQuestion) {
+    intent = 'general_conversation';
+    reasonCode = 'generic_jd_definition';
+  } else if (bridgeReconstruction.ambiguous && isProjectFit(message) && !hasCurrentRecruitmentSlot) {
+    intent = 'clarify';
+    reasonCode = 'ambiguous_legacy_recruitment_context';
+  } else if (activeRecruitment && isProjectFit(message)) {
+    intent = 'project_fit';
+    reasonCode = 'recruitment_project_fit';
   } else if (
     baseRoute.reasonCode === 'project_experience_query'
     || baseRoute.reasonCode === 'portfolio_project_collection_query'
@@ -492,16 +505,6 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
     intent = baseRoute.topicRef ? 'named_project_fact' : 'project_catalog';
     reasonCode = baseRoute.reasonCode;
     referent = baseRoute.topicRef ? { kind: 'project', ref: baseRoute.topicRef } : null;
-  } else if (jdLike) {
-    intent = 'jd_match';
-    reasonCode = activeRecruitment ? 'contextual_jd_match' : 'short_jd_detected';
-    referent = { kind: 'jd', ref: input.currentUserMessageId };
-  } else if (genericJdDefinitionQuestion) {
-    intent = 'general_conversation';
-    reasonCode = 'generic_jd_definition';
-  } else if (bridgeReconstruction.ambiguous && isProjectFit(message) && !hasCurrentRecruitmentSlot) {
-    intent = 'clarify';
-    reasonCode = 'ambiguous_legacy_recruitment_context';
   } else if (isProjectFit(message)) {
     if (!activeRecruitment && !recruitmentContextMentioned) {
       intent = 'clarify';

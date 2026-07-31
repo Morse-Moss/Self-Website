@@ -17,16 +17,10 @@ const starterIntents = [
     prompt: '请介绍与岗位最相关的项目和能力证据。',
   },
   {
-    label: '合作',
-    mode: 'general' as const,
-    audienceIntent: 'collaboration' as const,
-    prompt: '我想了解摩斯会如何分析并推进一个 AI 系统需求。',
-  },
-  {
-    label: '同行交流',
+    label: '同行交流与合作',
     mode: 'general' as const,
     audienceIntent: 'peer' as const,
-    prompt: '请介绍摩斯在 Agent、RAG 和多 Agent 系统上的关键工程判断。',
+    prompt: '我想聊聊 Agent、RAG 和内容生成系统的工程取舍，也想了解是否有适合一起推进的方向。',
   },
 ];
 

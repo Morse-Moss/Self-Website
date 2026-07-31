@@ -23,11 +23,13 @@ import { normalizeJobDescription } from './workflows/jd-match.ts';
 export type { ChatAudienceIntent, ChatMode, ChatWorkflow } from '../contracts/chat.ts';
 export type { NormalizedChatRequest } from '../contracts/chat-runtime.ts';
 
+const peerCollaborationInstruction = '来访者是 Agent/RAG 同行或潜在合作方:先回答当前技术或业务问题;只有对方明确提出要推进的具体事项时，才说明需要对齐的目标、范围、约束和可验证下一步;不假定合作意愿，不承诺未知排期或效果，不把规划能力写成已实现。';
+
 const audienceInstructions: Record<ChatAudienceIntent, string> = {
   general: '来访目的未特别指定:先回答当前问题,不要擅自推断对方身份。',
   recruiter: '来访者是招聘方:优先给出匹配项目、可核验能力证据和仍缺少的信息,不要代替招聘方做录用判断。',
-  collaboration: '来访者在评估合作需求:优先解释如何澄清目标、拆分交付、控制风险和给出可验证下一步,不要承诺未知排期或效果。',
-  peer: '来访者是 Agent/RAG 同行:优先解释技术判断、架构取舍、失败恢复和当前边界,不要把规划能力写成已实现。',
+  collaboration: peerCollaborationInstruction,
+  peer: peerCollaborationInstruction,
 };
 
 const requestFields = new Set([

@@ -174,7 +174,7 @@ test('source evidence never replaces the active chat document', () => {
   assert.doesNotMatch(messageContent, /href=\{`#\$\{sourceAnchorId/);
 });
 
-test('starter questions send immediately and pending assistants replace the empty suggestions', () => {
+test('starter questions expose one unified peer and collaboration entry and pending assistants replace the empty suggestions', () => {
   const hook = readChatSource('useMorseChat.ts');
   const workspace = readChatSource('ChatWorkspace.tsx');
   const transcript = readChatSource('ChatTranscript.tsx');
@@ -182,8 +182,9 @@ test('starter questions send immediately and pending assistants replace the empt
   assert.match(hook, /function sendStarter/);
   assert.match(hook, /sendSnapshot\(\{[\s\S]*message:\s*input\.prompt/);
   assert.match(workspace, /label:\s*['"]招聘['"][\s\S]*?mode:\s*['"]interviewer['"][\s\S]*?audienceIntent:\s*['"]recruiter['"]/);
-  assert.match(workspace, /label:\s*['"]合作['"][\s\S]*?mode:\s*['"]general['"][\s\S]*?audienceIntent:\s*['"]collaboration['"]/);
-  assert.match(workspace, /label:\s*['"]同行交流['"][\s\S]*?mode:\s*['"]general['"][\s\S]*?audienceIntent:\s*['"]peer['"]/);
+  assert.match(workspace, /label:\s*['"]同行交流与合作['"][\s\S]*?mode:\s*['"]general['"][\s\S]*?audienceIntent:\s*['"]peer['"]/);
+  assert.doesNotMatch(workspace, /label:\s*['"]合作['"]/);
+  assert.doesNotMatch(workspace, /audienceIntent:\s*['"]collaboration['"]/);
   assert.doesNotMatch(workspace, /招人的|找人做事的/);
   assert.match(workspace, /onClick=\{\(\) => chat\.sendStarter\(intent\)\}/);
   assert.match(workspace, /type="button"/);
