@@ -210,6 +210,15 @@ test('named project implementation question keeps named approved project evidenc
   assert.equal(result.resolved.legacyRoute.reasonCode, 'project_fact_query');
 });
 
+test('an explicit contrast keeps the affirmed project instead of treating its negated predecessor as a second focus', () => {
+  const result = resolve('我说的是数字摩斯，不是刚才的内容生成 Agent：RAG 在数字摩斯里最核心解决哪件事？');
+
+  assert.equal(result.resolved.semantic.intent, 'named_project_fact');
+  assert.equal(result.resolved.semantic.referent?.ref, 'digital-morse');
+  assert.deepEqual(result.resolved.semantic.evidencePlan, ['named_approved_project']);
+  assert.equal(result.resolved.legacyRoute.reasonCode, 'project_fact_query');
+});
+
 test('a unique catalog project name stays grounded without a legacy route keyword', () => {
   const result = resolve('请介绍数字摩斯在真实运行里的保护措施。');
 

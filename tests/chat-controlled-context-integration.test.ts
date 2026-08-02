@@ -851,6 +851,50 @@ test('V2.2 named project implementation question includes the approved project e
   }
 });
 
+test('V2.2 explicit project correction keeps only the affirmed project evidence', async () => {
+  const fixture = await createFixture('context-v22-explicit-project-correction');
+  const provider = new ControlledAnswerProvider();
+  const turnId = randomUUID();
+  try {
+    const events = await collectChat({
+      pool,
+      provider: coordinatedProvider(provider),
+      accessSessionId: fixture.accessSessionId,
+      request: normalizeChatRequest({
+        workflow: 'chat',
+        message: '我说的是数字摩斯，不是刚才的内容生成 Agent：RAG 在数字摩斯里最核心解决哪件事？',
+        conversationId: null,
+        turnId,
+      }),
+      config: contextConfig(fixture),
+      now: fixtureNow,
+    });
+    assert.equal(events.at(-1)?.type, 'done');
+    const evidenceBlock = provider.requests[0].instructions.match(
+      /<approved_evidence>([\s\S]*?)<\/approved_evidence>/u,
+    )?.[1];
+    assert.ok(evidenceBlock);
+    const providerEvidence = JSON.parse(evidenceBlock) as Array<{ evidenceId: string }>;
+    assert.deepEqual(providerEvidence.map((item) => item.evidenceId), ['project:digital-morse']);
+    const stored = await pool.query<{
+      evidence_ids: string[];
+      semantic_intent: string;
+      topic_ref: string | null;
+    }>(
+      `SELECT context_manifest->'evidence_ids' AS evidence_ids,
+              semantic_intent, topic_ref
+         FROM interaction_turns
+        WHERE id = $1`,
+      [turnId],
+    );
+    assert.equal(stored.rows[0].semantic_intent, 'named_project_fact');
+    assert.equal(stored.rows[0].topic_ref, 'digital-morse');
+    assert.deepEqual(stored.rows[0].evidence_ids, ['project:digital-morse']);
+  } finally {
+    await cleanupFixture(fixture);
+  }
+});
+
 test('V2.2 project catalog sends all audited projects without embedding', async () => {
   const fixture = await createFixture('context-v22-project-catalog');
   const requests: AnswerRequest[] = [];

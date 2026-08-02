@@ -229,6 +229,25 @@ export function matchCatalogProjects(
     .map((project) => project.slug);
 }
 
+export function selectExplicitCatalogProjectFocus(
+  value: string,
+  catalog: CompiledChatEvidenceCatalog,
+): ProjectSlug | null {
+  const normalized = value.normalize('NFKC').toLocaleLowerCase('en-US');
+  const focusCue = /(?:我说的是|而是|只聊|改聊|换成|转到|回到|重点是)\s*/giu;
+
+  for (const match of normalized.matchAll(focusCue)) {
+    if (match.index === undefined) continue;
+    const clause = normalized
+      .slice(match.index + match[0].length)
+      .split(/[，,。；;：:\n]/u, 1)[0] ?? '';
+    const projects = matchCatalogProjects(clause, catalog);
+    if (projects.length === 1) return projects[0];
+  }
+
+  return null;
+}
+
 export function matchOrderedCatalogProjects(
   value: string,
   catalog: CompiledChatEvidenceCatalog,

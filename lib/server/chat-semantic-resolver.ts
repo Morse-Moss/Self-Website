@@ -30,6 +30,7 @@ import {
 } from './chat-message-signals.ts';
 import {
   matchCatalogProjects,
+  selectExplicitCatalogProjectFocus,
 } from './chat-evidence-catalog.ts';
 import { routeChatTurn, type RouteAnchor } from './chat-route-policy.ts';
 import {
@@ -423,6 +424,7 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
     ]
       .includes(baseRoute.reasonCode));
   const projectSlugs = matchCatalogProjects(message, input.ledger);
+  const explicitProjectFocus = selectExplicitCatalogProjectFocus(message, input.ledger);
   const capabilities = assessCapabilities(message, input.ledger);
   const capability = capabilities.find((candidate) => candidate.evidenceClass !== 'none')
     ?? capabilities[0]
@@ -513,6 +515,12 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
       intent = 'project_fit';
       reasonCode = 'recruitment_project_fit';
     }
+  } else if (explicitProjectFocus
+    && baseRoute.routeKind === 'grounded'
+    && baseRoute.topicKind === 'project') {
+    intent = 'named_project_fact';
+    reasonCode = baseRoute.reasonCode;
+    referent = { kind: 'project', ref: explicitProjectFocus };
   } else if (projectSlugs.length === 1
     && baseRoute.routeKind === 'grounded'
     && baseRoute.topicKind === 'project'
