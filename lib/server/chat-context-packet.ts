@@ -331,8 +331,12 @@ function isProjectOwnershipQuestion(currentInput: string): boolean {
 function responseContract(resolved: ResolvedChatTurn, currentInput: string): string {
   const projectExperience = resolved.legacyRoute.reasonCode === 'project_experience_query'
     || resolved.semantic.reasonCodes.includes('project_experience_query');
+  const multiProjectScope = resolved.semantic.intent === 'named_project_fact'
+    && (resolved.semantic.projectRefs?.length ?? 0) > 1;
   const evidenceLevels = projectExperience
     ? '只选择一个最能直接回答问题的审核项目，按原始业务问题、本人职责、关键决策、系统结构、验证结果和事实边界讲清楚；重点回答本人具体做了什么及最终产生了什么结果，不得把团队或未来计划冒充个人已完成结果，也不要完整列出全部公开项目。'
+    : multiProjectScope
+    ? '本轮同时涉及多个项目：分别陈述每个项目，并且只有在证据明确说明时才描述它们的关系；不得把一个项目描述成另一个项目的子系统、模块、前置或产出。'
     : resolved.semantic.intent === 'named_project_fact' && isProjectOwnershipQuestion(currentInput)
     ? '对于本人职责或协作边界的问题，必须依次依据准入证据说明：业务需求或业务方如何分工；本人负责哪些具体技术交付；业务或产品协作与人类工程协作的边界。AI 工具不作为人类团队成员，不得越过证据。'
     : resolved.semantic.intent === 'external_current'

@@ -11,7 +11,6 @@ import {
 } from '../contracts/chat-turn-plan.ts';
 import {
   matchCatalogCapabilities,
-  matchCatalogProjects,
 } from './chat-evidence-catalog.ts';
 import {
   resolveChatSemanticTurn,
@@ -45,7 +44,7 @@ function evidenceForIntent(
   intent: SemanticIntent,
   snapshot: ConversationSessionSnapshot,
   catalog: CompiledChatEvidenceCatalog,
-  referent: ReturnType<typeof resolveChatSemanticTurn>['resolved']['semantic']['referent'],
+  semantic: ReturnType<typeof resolveChatSemanticTurn>['resolved']['semantic'],
 ): EvidenceRequirement {
   switch (intent) {
     case 'identity_fact':
@@ -56,16 +55,19 @@ function evidenceForIntent(
     case 'jd_match':
       return { kind: 'portfolio_full', rankForQuestion: true };
     case 'named_project_fact': {
-      const projectSlugs = referent?.kind === 'project'
-        ? catalog.projects
-            .filter((entry) => entry.slug === referent.ref)
-            .map((entry) => entry.slug)
-        : matchCatalogProjects(snapshot.currentInput, catalog);
+      const projectRefs = semantic.projectRefs?.length
+        ? [...semantic.projectRefs]
+        : semantic.referent?.kind === 'project'
+          ? [semantic.referent.ref]
+          : [];
+      const projectSlugs = catalog.projects
+        .filter((entry) => projectRefs.includes(entry.slug))
+        .map((entry) => entry.slug);
       return { kind: 'named_projects', projectSlugs };
     }
     case 'capability_fact': {
       const capabilityIds = [
-        ...(referent?.kind === 'capability' ? [referent.ref] : []),
+        ...(semantic.referent?.kind === 'capability' ? [semantic.referent.ref] : []),
         ...matchCatalogCapabilities(snapshot.currentInput, catalog).map((entry) => entry.id),
       ].filter((id, index, ids) => ids.indexOf(id) === index);
       const includePortfolio = snapshot.workflow === 'jd_match'
@@ -122,7 +124,7 @@ export function planChatTurnWithResolution(
     taskIdFactory: () => snapshot.interactionTurnId,
   });
   const semantic = resolution.resolved.semantic;
-  const evidence = evidenceForIntent(semantic.intent, snapshot, catalog, semantic.referent);
+  const evidence = evidenceForIntent(semantic.intent, snapshot, catalog, semantic);
   const taskId = resolution.candidateFrame?.taskId ?? null;
 
   const plan: TurnPlanV1 = deepFreeze({

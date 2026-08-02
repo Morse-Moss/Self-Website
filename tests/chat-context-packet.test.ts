@@ -731,6 +731,30 @@ test('named project ownership questions require the business, responsibility, an
   assert.match(instructions, /协作边界|人类协作团队/);
 });
 
+test('a multi-project packet forbids inventing a containment relationship', () => {
+  const comparisonResolved = resolved('named_project_fact');
+  Object.assign(comparisonResolved.semantic, {
+    projectRefs: ['content-agent', 'digital-morse'],
+  });
+  const built = buildContextPacket({
+    resolved: comparisonResolved,
+    currentInput: '内容生成 Agent 和数字摩斯是两个独立项目吗？它们分别解决什么问题？',
+    currentUserMessageId: '21',
+    projection: projection({
+      discourse: null,
+      history: [],
+      evidence: [evidence('content-agent'), evidence('digital-morse')],
+    }),
+    digestKey: KEY,
+    digestKeyId: KEY_ID,
+    reasoningEffort: null,
+  });
+
+  const instructions = built.normal.request.baseInstructions;
+  assert.match(instructions, /分别陈述|分别提供的证据/u);
+  assert.match(instructions, /不得把一个项目描述成另一个项目的子系统|不得虚构.*关系/u);
+});
+
 test('canonical packet preserves all whole history turns and evidence without eviction', () => {
   const history = [
     turn('55555555-5555-4555-8555-555555555555', 'A'.repeat(900)),

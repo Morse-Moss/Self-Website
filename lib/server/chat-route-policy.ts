@@ -11,8 +11,10 @@ import {
 import { looksLikeFullJobDescription } from './chat-message-signals.ts';
 import {
   compiledChatEvidenceCatalog,
+  resolveCatalogProjectScope,
   matchCatalogProjects,
   matchOrderedCatalogProjects,
+  type CatalogProjectScope,
 } from './chat-evidence-catalog.ts';
 
 export type { ChatRouteDecision } from '../contracts/chat-runtime.ts';
@@ -42,6 +44,7 @@ export interface RouteChatTurnInput {
   previous?: RouteAnchor | null;
   hasUsableHistory?: boolean;
   taskState?: RouteChatTurnTaskState | null;
+  projectScope?: CatalogProjectScope;
 }
 
 
@@ -97,27 +100,26 @@ function isIdentityQuestion(message: string): boolean {
   return /你是谁|介绍(?:一下)?(?:你|自己)|你(?:主要)?是(?:干|做)什么的|你(?:主要)?(?:能|可以)(?:帮我)?(?:干|做)什么|你擅长什么|你能做什么|数字\s*(?:morse|摩斯)\s*是(?:什么|谁)/iu.test(message);
 }
 
-function projectTopics(message: string): string[] {
-  return matchCatalogProjects(message, compiledChatEvidenceCatalog);
+function projectTopic(scope: CatalogProjectScope): string | null {
+  return scope.projectRefs.length === 1 ? scope.projectRefs[0] : null;
 }
 
-function projectTopic(message: string): string | null {
-  const matches = projectTopics(message);
-  return matches.length === 1 ? matches[0] : null;
-}
-
-function isProjectFact(message: string): boolean {
-  if (projectTopics(message).length > 0) return true;
+function isProjectFact(message: string, scope: CatalogProjectScope): boolean {
+  if (scope.projectRefs.length > 0) return true;
   return /(?:morse|摩斯|你|你的).{0,24}(?:项目|作品|实现|架构|做法|成果|职责)|(?:有哪些|介绍).{0,12}(?:项目|作品)/iu.test(message);
 }
 
 function hasDeicticProjectReference(message: string): boolean {
   if (/(?:第[一二三四五六七八九十\d]+(?:个|项|个项目)?|首个|最后一个|前者|后者)/iu.test(message)) return false;
-  return /(?:这个|那个|它)(?:项目|系统|产品|作品|方案)(?:里|中|上)?|它(?:们)?/iu.test(message);
+  return /(?:这个|那个|它)(?:项目|系统|产品|作品|方案)(?:里|中|上)?|它(?!们)/iu.test(message);
 }
 
-function isProjectCollectionQuestion(message: string): boolean {
-  if (projectTopics(message).length > 0) return false;
+function hasPluralProjectReference(message: string): boolean {
+  return /(?:它们|这些(?:项目|系统|产品|作品|方案)|那(?:些|几个)(?:项目|系统|产品|作品|方案)|两者|二者)/u.test(message);
+}
+
+function isProjectCollectionQuestion(message: string, scope: CatalogProjectScope): boolean {
+  if (scope.projectRefs.length > 0) return false;
   if (isPortfolioEvidenceQuestion(message)) return false;
   const hasPublicSubject = /(?:你|你的|morse|摩斯)/iu.test(message);
   if (!hasPublicSubject) return false;
@@ -409,6 +411,8 @@ export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
   const usablePrevious = input.previous?.previousTurnCompleted === false
     ? null
     : input.previous ?? null;
+  const projectScope = input.projectScope
+    ?? resolveCatalogProjectScope(message, compiledChatEvidenceCatalog);
   if (isUnsafeOrUnverifiableRequest(message)) {
     return decision({
       routeKind: 'clarify',
@@ -470,12 +474,12 @@ export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
       });
     }
   }
-  if (isExplicitPersonalFact(message) && projectTopics(message).length > 0) {
+  if (isExplicitPersonalFact(message) && projectScope.projectRefs.length > 0) {
     return decision({
       routeKind: 'grounded',
       reasonCode: 'personal_named_project_query',
       topicKind: 'project',
-      topicRef: projectTopic(message),
+      topicRef: projectTopic(projectScope),
       evidenceClass: 'direct',
       requiresEmbedding: true,
     });
@@ -491,7 +495,7 @@ export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
       requiresEmbedding: false,
     });
   }
-  if (isProjectCollectionQuestion(message)) {
+  if (isProjectCollectionQuestion(message, projectScope)) {
     return decision({
       routeKind: 'grounded',
       reasonCode: 'portfolio_project_collection_query',
@@ -516,7 +520,7 @@ export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
       release: 'complete',
     });
   }
-  if (isExternalCurrent(message) && !isProjectFact(message)) {
+  if (isExternalCurrent(message) && !isProjectFact(message, projectScope)) {
     return decision({
       routeKind: 'external_current',
       reasonCode: 'external_current_query',
@@ -555,15 +559,17 @@ export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
       requiresEmbedding: true,
     });
   }
-  if (isProjectFact(message)) {
-    if (!projectTopic(message) && usablePrevious?.topicKind === 'project' && hasDeicticProjectReference(message)) {
+  if (isProjectFact(message, projectScope)) {
+    if (projectScope.projectRefs.length === 0
+      && usablePrevious?.topicKind === 'project'
+      && hasDeicticProjectReference(message)) {
       return inheritRoute(usablePrevious, input.ledger)!;
     }
     return decision({
       routeKind: 'grounded',
       reasonCode: 'project_fact_query',
       topicKind: 'project',
-      topicRef: projectTopic(message),
+      topicRef: projectTopic(projectScope),
       evidenceClass: 'direct',
       requiresEmbedding: true,
     });
@@ -586,6 +592,12 @@ export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
     });
   }
   if (isUnresolvedReference(message)) {
+    if (hasPluralProjectReference(message)) {
+      return decision({
+        routeKind: 'clarify',
+        reasonCode: 'anaphoric_topic_unavailable',
+      });
+    }
     const inherited = usablePrevious
       ? inheritRoute(usablePrevious, input.ledger)
       : null;

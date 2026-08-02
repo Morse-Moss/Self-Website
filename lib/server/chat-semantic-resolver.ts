@@ -30,7 +30,7 @@ import {
 } from './chat-message-signals.ts';
 import {
   matchCatalogProjects,
-  selectExplicitCatalogProjectFocus,
+  resolveCatalogProjectScope,
 } from './chat-evidence-catalog.ts';
 import { routeChatTurn, type RouteAnchor } from './chat-route-policy.ts';
 import {
@@ -409,11 +409,13 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
     && (input.discourseContext?.contextScopeId === currentFrame.taskId
       || adjacentReconstructedRecruitment),
   );
+  const projectScope = resolveCatalogProjectScope(message, input.ledger);
   const baseRoute = routeChatTurn({
     request: input.request,
     ledger: input.ledger,
     previous: previousAnchor(input.discourseContext, input.ledger),
     hasUsableHistory: Boolean(input.discourseContext),
+    projectScope,
   });
   const explicitDiscourseReference = Boolean(input.discourseContext
     && baseRoute.inheritedFromTurnId === input.discourseContext.turnId
@@ -423,8 +425,6 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
       'anaphoric_project_followup',
     ]
       .includes(baseRoute.reasonCode));
-  const projectSlugs = matchCatalogProjects(message, input.ledger);
-  const explicitProjectFocus = selectExplicitCatalogProjectFocus(message, input.ledger);
   const capabilities = assessCapabilities(message, input.ledger);
   const capability = capabilities.find((candidate) => candidate.evidenceClass !== 'none')
     ?? capabilities[0]
@@ -468,6 +468,7 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
   let reasonCode: string;
   let safetyBoundary: SafetyBoundaryReason | null = null;
   let referent: SemanticTurnDecision['referent'] = null;
+  let projectRefs: string[] = [...projectScope.projectRefs];
   let capabilityEvidence: ChatEvidenceClass | undefined;
 
   if (baseRoute.reasonCode === 'unsafe_or_unverifiable_request') {
@@ -507,6 +508,7 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
     intent = baseRoute.topicRef ? 'named_project_fact' : 'project_catalog';
     reasonCode = baseRoute.reasonCode;
     referent = baseRoute.topicRef ? { kind: 'project', ref: baseRoute.topicRef } : null;
+    projectRefs = baseRoute.topicRef ? [baseRoute.topicRef] : [];
   } else if (isProjectFit(message)) {
     if (!activeRecruitment && !recruitmentContextMentioned) {
       intent = 'clarify';
@@ -515,19 +517,15 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
       intent = 'project_fit';
       reasonCode = 'recruitment_project_fit';
     }
-  } else if (explicitProjectFocus
+  } else if ((!adjacentRecruitmentScope || projectScope.projectRefs.length === 1)
+    && projectScope.projectRefs.length > 0
     && baseRoute.routeKind === 'grounded'
     && baseRoute.topicKind === 'project') {
     intent = 'named_project_fact';
     reasonCode = baseRoute.reasonCode;
-    referent = { kind: 'project', ref: explicitProjectFocus };
-  } else if (projectSlugs.length === 1
-    && baseRoute.routeKind === 'grounded'
-    && baseRoute.topicKind === 'project'
-    && baseRoute.topicRef === projectSlugs[0]) {
-    intent = 'named_project_fact';
-    reasonCode = baseRoute.reasonCode;
-    referent = { kind: 'project', ref: projectSlugs[0] };
+    referent = projectScope.projectRefs.length === 1
+      ? { kind: 'project', ref: projectScope.projectRefs[0] }
+      : null;
   } else if (isProjectCatalog(message)) {
     intent = 'project_catalog';
     reasonCode = 'portfolio_project_collection_query';
@@ -645,6 +643,7 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
     intent,
     taskAction,
     referent,
+    projectRefs: intent === 'named_project_fact' ? projectRefs : [],
     evidencePlan: evidencePlanForIntent(intent),
     confidence: intent === 'clarify' ? 0.45 : 0.9,
     reasonCodes: [

@@ -335,6 +335,46 @@ test('only an anaphoric short follow-up inherits one persisted topic', () => {
   assert.equal(switched.inheritedFromTurnId, null);
 });
 
+test('an explicit project switch excludes the dismissed project without inheriting the adjacent one', () => {
+  const previous = projectAnchor('content-agent');
+  const decision = routeChatTurn({
+    request: request('先不聊内容生成 Agent 了，你现在做的数字摩斯主要给谁用？'),
+    previous,
+    ledger,
+  });
+
+  assert.equal(decision.reasonCode, 'project_fact_query');
+  assert.equal(decision.topicRef, 'digital-morse');
+  assert.equal(decision.inheritedFromTurnId, null);
+});
+
+test('multiple current project mentions never inherit an adjacent single project', () => {
+  const previous = projectAnchor('ai-leadgen');
+  const decision = routeChatTurn({
+    request: request('内容生成 Agent 和数字摩斯是两个独立项目吗？它们分别解决什么问题？'),
+    previous,
+    ledger,
+  });
+
+  assert.equal(decision.reasonCode, 'project_fact_query');
+  assert.equal(decision.topicRef, null);
+  assert.equal(decision.inheritedFromTurnId, null);
+});
+
+test('a plural project pronoun does not inherit an adjacent single project', () => {
+  const previous = projectAnchor('digital-morse');
+  const decision = routeChatTurn({
+    request: request('它们分别解决什么问题？'),
+    previous,
+    hasUsableHistory: true,
+    ledger,
+  });
+
+  assert.equal(decision.routeKind, 'clarify');
+  assert.equal(decision.reasonCode, 'anaphoric_topic_unavailable');
+  assert.equal(decision.inheritedFromTurnId, null);
+});
+
 test('natural Chinese portfolio follow-ups inherit the active project topic', () => {
   const previous = projectAnchor('digital-morse');
 

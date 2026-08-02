@@ -139,6 +139,20 @@ test('planner maps the semantic matrix to one direct execution contract', () => 
   assert.equal(fakeProvider.calls, 0);
 });
 
+test('planner preserves every explicitly named project for a comparison', () => {
+  const plan = planChatTurn(snapshot({
+    message: '内容生成 Agent 和数字摩斯是两个独立项目吗？它们分别解决什么问题？',
+  }), compiledChatEvidenceCatalog);
+
+  assert.equal(plan.semantic.intent, 'named_project_fact');
+  assert.equal(plan.semantic.referent, null);
+  assert.deepEqual(plan.semantic.projectRefs, ['content-agent', 'digital-morse']);
+  assert.deepEqual(plan.evidence, {
+    kind: 'named_projects',
+    projectSlugs: ['content-agent', 'digital-morse'],
+  });
+});
+
 test('all ten HR questions continue one task with full approved evidence requirements', () => {
   const frame = recruitmentFrame();
 

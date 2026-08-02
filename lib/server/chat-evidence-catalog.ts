@@ -229,20 +229,28 @@ export function matchCatalogProjects(
     .map((project) => project.slug);
 }
 
-export function selectExplicitCatalogProjectFocus(
+export interface CatalogProjectScope {
+  projectRefs: ProjectSlug[];
+}
+
+function selectedProjectFromCorrection(
   value: string,
   catalog: CompiledChatEvidenceCatalog,
-): ProjectSlug | null {
-  const normalized = value.normalize('NFKC').toLocaleLowerCase('en-US');
-  const focusCue = /(?:我说的是|而是|只聊|改聊|换成|转到|回到|重点是)\s*/giu;
+): ProjectSlug[] | null {
+  const normalized = value.normalize('NFKC');
+  const correctionPatterns = [
+    /(?:我说的是|我指的是)\s*([^，,。；;：:\n]+?)(?:\s*[，,]\s*|\s*而\s*)不是\s*([^，,。；;：:\n]+)/iu,
+    /不是\s*([^，,。；;：:\n]+?)(?:\s*[，,]\s*|\s*而\s*)(?:是|改成|换成)\s*([^，,。；;：:\n]+)/iu,
+  ];
 
-  for (const match of normalized.matchAll(focusCue)) {
-    if (match.index === undefined) continue;
-    const clause = normalized
-      .slice(match.index + match[0].length)
-      .split(/[，,。；;：:\n]/u, 1)[0] ?? '';
-    const projects = matchCatalogProjects(clause, catalog);
-    if (projects.length === 1) return projects[0];
+  for (const pattern of correctionPatterns) {
+    const match = pattern.exec(normalized);
+    if (!match) continue;
+    const affirmed = matchOrderedCatalogProjects(match[1], catalog);
+    const dismissed = matchOrderedCatalogProjects(match[2], catalog);
+    if (affirmed.length === 1 && dismissed.length === 1 && affirmed[0] !== dismissed[0]) {
+      return affirmed;
+    }
   }
 
   return null;
@@ -265,6 +273,32 @@ export function matchOrderedCatalogProjects(
     })
     .sort((left, right) => left.firstIndex - right.firstIndex || left.projectIndex - right.projectIndex)
     .map((project) => project.slug);
+}
+
+function selectedProjectAfterDismissal(
+  value: string,
+  catalog: CompiledChatEvidenceCatalog,
+  projectRefs: readonly ProjectSlug[],
+): ProjectSlug[] | null {
+  const dismissal = /(?:^|[，,。；;：:\n]\s*)(?:先|暂时)?\s*不(?:聊|谈|讲|说)\s*([^，,。；;：:\n]+?)(?:了)?(?:[，,]|$)/iu.exec(
+    value.normalize('NFKC'),
+  );
+  if (!dismissal) return null;
+  const dismissed = matchOrderedCatalogProjects(dismissal[1], catalog);
+  const remaining = projectRefs.filter((projectRef) => !dismissed.includes(projectRef));
+  return dismissed.length > 0 && remaining.length === 1 ? remaining : null;
+}
+
+export function resolveCatalogProjectScope(
+  value: string,
+  catalog: CompiledChatEvidenceCatalog,
+): CatalogProjectScope {
+  const projectRefs = matchOrderedCatalogProjects(value, catalog);
+  const correction = selectedProjectFromCorrection(value, catalog);
+  const dismissal = correction
+    ? null
+    : selectedProjectAfterDismissal(value, catalog, projectRefs);
+  return { projectRefs: correction ?? dismissal ?? projectRefs };
 }
 
 export function mentionsCatalogProject(

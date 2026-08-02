@@ -95,6 +95,7 @@ export interface SemanticTurnDecision {
     kind: 'company' | 'role' | 'project' | 'capability' | 'jd' | 'external';
     ref: string;
   } | null;
+  projectRefs?: readonly string[];
   evidencePlan: EvidencePlanCode[];
   confidence: number;
   reasonCodes: string[];

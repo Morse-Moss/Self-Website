@@ -215,6 +215,7 @@ test('an explicit contrast keeps the affirmed project instead of treating its ne
 
   assert.equal(result.resolved.semantic.intent, 'named_project_fact');
   assert.equal(result.resolved.semantic.referent?.ref, 'digital-morse');
+  assert.deepEqual(result.resolved.semantic.projectRefs, ['digital-morse']);
   assert.deepEqual(result.resolved.semantic.evidencePlan, ['named_approved_project']);
   assert.equal(result.resolved.legacyRoute.reasonCode, 'project_fact_query');
 });
@@ -412,6 +413,56 @@ test('implicit project follow-ups retain the adjacent project until a new subjec
     assert.deepEqual(result.resolved.semantic.referent, { kind: 'project', ref: 'digital-morse' }, message);
     assert.deepEqual(result.resolved.semantic.evidencePlan, ['named_approved_project'], message);
   }
+});
+
+test('a direct project switch excludes the dismissed project and ignores the adjacent project', () => {
+  const result = resolve('先不聊内容生成 Agent 了，你现在做的数字摩斯主要给谁用？', {
+    discourseContext: completedTurn({
+      projectRef: 'content-agent',
+      user: { id: '41', role: 'user', text: '内容创作 Agent 具体解决什么问题？' },
+      assistant: { id: '42', role: 'assistant', text: '它把素材和提示词组织成内容生成流程。' },
+    }),
+  });
+
+  assert.equal(result.resolved.legacyRoute.reasonCode, 'project_fact_query');
+  assert.equal(result.resolved.legacyRoute.inheritedFromTurnId, null);
+  assert.equal(result.resolved.semantic.intent, 'named_project_fact');
+  assert.deepEqual(result.resolved.semantic.referent, { kind: 'project', ref: 'digital-morse' });
+  assert.deepEqual(result.resolved.semantic.projectRefs, ['digital-morse']);
+  assert.deepEqual(result.resolved.semantic.evidencePlan, ['named_approved_project']);
+});
+
+test('multiple explicit projects remain a joint scope instead of inheriting a previous project', () => {
+  const result = resolve('内容生成 Agent 和数字摩斯是两个独立项目吗？它们分别解决什么问题？', {
+    discourseContext: completedTurn({
+      projectRef: 'ai-leadgen',
+      user: { id: '41', role: 'user', text: 'AI 外贸获客系统主要解决什么问题？' },
+      assistant: { id: '42', role: 'assistant', text: '它面向外贸获客流程。' },
+    }),
+  });
+
+  assert.equal(result.resolved.legacyRoute.reasonCode, 'project_fact_query');
+  assert.equal(result.resolved.legacyRoute.inheritedFromTurnId, null);
+  assert.equal(result.resolved.semantic.intent, 'named_project_fact');
+  assert.equal(result.resolved.semantic.referent, null);
+  assert.deepEqual(result.resolved.semantic.projectRefs, ['content-agent', 'digital-morse']);
+  assert.deepEqual(result.resolved.semantic.evidencePlan, ['named_approved_project']);
+});
+
+test('a plural project pronoun requests clarification instead of inheriting one previous project', () => {
+  const result = resolve('它们分别解决什么问题？', {
+    discourseContext: completedTurn({
+      projectRef: 'digital-morse',
+      user: { id: '41', role: 'user', text: '数字摩斯主要给谁用？' },
+      assistant: { id: '42', role: 'assistant', text: '它面向想了解 Morse 项目的人。' },
+    }),
+  });
+
+  assert.equal(result.resolved.legacyRoute.reasonCode, 'anaphoric_topic_unavailable');
+  assert.equal(result.resolved.legacyRoute.inheritedFromTurnId, null);
+  assert.equal(result.resolved.semantic.intent, 'clarify');
+  assert.equal(result.resolved.semantic.referent, null);
+  assert.deepEqual(result.resolved.semantic.projectRefs, []);
 });
 
 test('an ordinal follow-up to a non-project list stays isolated from project evidence', () => {
