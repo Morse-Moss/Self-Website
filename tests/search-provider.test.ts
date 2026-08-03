@@ -12,6 +12,9 @@ const baseEnv = {
   OPENAI_CHAT_MODEL: 'test-chat',
   OPENAI_CHAT_PROTOCOL: 'chat_completions',
   OPENAI_EMBEDDING_MODEL: 'test-embedding',
+  NODE_ENV: 'test',
+  MORSE_CONTEXT_PACKET_DIGEST_KEY: Buffer.alloc(32, 1).toString('base64'),
+  MORSE_CONTEXT_PACKET_DIGEST_KEY_ID: 'test-context-key',
 };
 
 test('public search citations expose only server-owned citation fields', () => {

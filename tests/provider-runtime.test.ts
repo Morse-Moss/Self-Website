@@ -93,7 +93,7 @@ const chatServiceConfig: ChatServiceConfig = {
   maxMessagesPerSession: 2,
   interactionRetentionDays: 10,
   tokenRates: null,
-  contextPacketDigest: null,
+  contextPacketDigest: { key: Buffer.alloc(32, 0x31), keyId: 'provider-runtime-test-v1' },
   providerTotalTimeoutMs: 90_000,
   providerProtocolEventTimeoutMs: 25_000,
   providerModelTextTimeoutMs: 40_000,
@@ -218,6 +218,7 @@ class HookedTelemetryProvider extends TelemetryProvider {
       attemptNo: 1,
       launchKind: 'primary' as const,
       position: 0,
+      integrity: execution.integrity,
     };
     await execution.onAttempt({
       type: 'started',
@@ -253,6 +254,8 @@ class HookedTelemetryProvider extends TelemetryProvider {
 }
 
 class StoppedTelemetryProvider extends TelemetryProvider {
+  readonly partialOutputStarted: Promise<void>;
+  private readonly markPartialOutputStarted: () => void;
   readonly stoppedAttempt = providerAttempt({
     attemptIndex: 0,
     position: 0,
@@ -263,16 +266,51 @@ class StoppedTelemetryProvider extends TelemetryProvider {
     outputRate: '2',
   });
 
+  constructor() {
+    super();
+    let markPartialOutputStarted!: () => void;
+    this.partialOutputStarted = new Promise((resolve) => { markPartialOutputStarted = resolve; });
+    this.markPartialOutputStarted = markPartialOutputStarted;
+  }
+
   override async *streamAnswer(
-    _request: AnswerRequest,
+    request: AnswerRequest,
     signal?: AbortSignal,
   ): AsyncIterable<AnswerEvent> {
+    const execution = request.execution;
+    if (!execution) throw new Error('v2 execution hooks are required');
+    const attempt = {
+      ...this.stoppedAttempt,
+      executionId: execution.executionId,
+      attemptNo: 1,
+      integrity: execution.integrity,
+    };
+    await execution.onAttempt({
+      type: 'started',
+      attemptNo: 1,
+      providerAlias: 'primary',
+      launchKind: 'primary',
+      generationMode: 'normal',
+      startedAt: attempt.startedAt,
+      startDelayMs: 0,
+    });
+    this.markPartialOutputStarted();
     yield { type: 'delta', text: 'Partial routed answer' };
     await new Promise<void>((resolve) => {
       if (signal?.aborted) resolve();
       else signal?.addEventListener('abort', () => resolve(), { once: true });
     });
-    yield { type: 'attempt', attempt: this.stoppedAttempt };
+    await execution.onAttempt({
+      type: 'aborted',
+      attemptNo: 1,
+      providerAlias: 'primary',
+      durationMs: attempt.totalLatencyMs,
+      winner: false,
+      errorCode: 'CHAT_STOPPED',
+      usage: attempt.usage,
+      estimatedCostUsd: attempt.knownCostUsd,
+    });
+    yield { type: 'attempt', attempt };
     throw signal?.reason;
   }
 }
@@ -1106,9 +1144,10 @@ test('runChat persists failed and stopped provider attempts before terminal comp
     });
 
     const controller = new AbortController();
+    const stoppedProvider = new StoppedTelemetryProvider();
     const stoppedIterator = runChat({
       pool,
-      provider: new StoppedTelemetryProvider(),
+      provider: stoppedProvider,
       accessSessionId: stoppedSessionId,
       request: {
         message: 'Stop after partial provider output.',
@@ -1121,17 +1160,17 @@ test('runChat persists failed and stopped provider attempts before terminal comp
       now: runtimeNow,
       signal: controller.signal,
     })[Symbol.asyncIterator]();
-    while (true) {
-      const next = await stoppedIterator.next();
-      if (next.done) throw new Error('expected partial output');
-      if (next.value.type === 'delta') break;
-    }
-    controller.abort(new DOMException('Stopped', 'AbortError'));
-    await assert.rejects(async () => {
+    const stoppedRun = (async () => {
       while (!(await stoppedIterator.next()).done) {
-        // Drain through terminal compensation.
+        // Drain output; partial answer text remains buffered until a successful completion.
       }
-    }, (error: unknown) => (error as { name?: string }).name === 'AbortError');
+    })();
+    await stoppedProvider.partialOutputStarted;
+    controller.abort(new DOMException('Stopped', 'AbortError'));
+    await assert.rejects(
+      stoppedRun,
+      (error: unknown) => (error as { name?: string }).name === 'AbortError',
+    );
 
     const terminal = await pool.query<{
       error_code: string;

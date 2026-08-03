@@ -156,9 +156,12 @@ test('badcase editing persists a bounded note through PATCH', () => {
 
 test('badcase saved feedback survives the parent detail reflection', () => {
   const source = read(detailPath);
+  const consoleSource = adminSource();
 
   assert.match(source, /setSaved\(true\);\s*onSaved\(updated\.badcase, updated\.adminNote\)/s);
-  assert.match(source, /useEffect\(\(\) => \{\s*setSaved\(false\);\s*\}, \[detail\?\.id\]\);/s);
+  assert.match(consoleSource, /key=\{detail\?\.id \?\? ['"]empty['"]\}/);
+  assert.match(source, /useState\(detail\?\.badcase \?\? false\)/);
+  assert.match(source, /useState\(detail\?\.adminNote \?\? ['"]['"]\)/);
   assert.doesNotMatch(
     source,
     /setSaved\(false\);\s*\}, \[detail\?\.id, detail\?\.badcase, detail\?\.adminNote\]\);/s,

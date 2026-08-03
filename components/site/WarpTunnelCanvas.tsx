@@ -141,8 +141,8 @@ export default function WarpTunnelCanvas() {
       geometry.dispose();
       material.dispose();
       glowMaterial.dispose();
-      setFailed(true);
-      return undefined;
+      const failureFrame = window.requestAnimationFrame(() => setFailed(true));
+      return () => window.cancelAnimationFrame(failureFrame);
     }
 
     renderer.setClearColor(background, 1);

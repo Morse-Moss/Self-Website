@@ -332,6 +332,9 @@ class ExternalCurrentProvider implements AiProvider {
 
   async *streamAnswer(request: AnswerRequest): AsyncIterable<AnswerEvent> {
     this.requests.push(request);
+    assert.match(request.instructions, /外部来源类型：official/u);
+    assert.match(request.instructions, /外部来源域名：platform\.openai\.com/u);
+    assert.match(request.instructions, /检索时间边界：2026-07-27T05:00:00\.000Z/u);
     assert.match(request.instructions, /Responses API 当前文档支持结构化响应/u);
     yield {
       type: 'delta',

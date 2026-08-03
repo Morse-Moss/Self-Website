@@ -33,8 +33,6 @@ export default function AdminReauthDialog({
 
   useEffect(() => {
     if (!open) return;
-    setPassword('');
-    setConfirmation('');
     window.requestAnimationFrame(() => passwordRef.current?.focus());
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !busy) onCancel();

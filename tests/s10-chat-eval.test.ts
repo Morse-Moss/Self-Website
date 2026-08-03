@@ -45,7 +45,7 @@ const dataPath = path.join(process.cwd(), 'content', 'chat-eval.json');
 const reviewCasesPath = path.join(process.cwd(), 'content', 'chat-review-cases.json');
 const runnerPath = path.join(process.cwd(), 'scripts', 'chat-eval.mjs');
 const EXPECTED_DATASET_VERSION = 9;
-const EXPECTED_CASE_COUNT = 111;
+const EXPECTED_CASE_COUNT = 112;
 
 function hasValidEvalInput(item: EvalCase): boolean {
   if (item.expectedBehavior === 'multi-turn-route') {

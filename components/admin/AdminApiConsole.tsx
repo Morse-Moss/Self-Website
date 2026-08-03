@@ -91,13 +91,15 @@ export default function AdminApiConsole() {
   const [notice, setNotice] = useState('');
   const [conflict, setConflict] = useState(false);
 
-  const refresh = useCallback(() => setReloadRevision((revision) => revision + 1), []);
-
-  useEffect(() => {
-    const controller = new AbortController();
+  const refresh = useCallback(() => {
     setLoading(true);
     setError('');
     setPermission('authorized');
+    setReloadRevision((revision) => revision + 1);
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
     Promise.all([
       getProviderRuntime(controller.signal),
       getProviderCatalog(includeDeleted, controller.signal),
@@ -502,7 +504,12 @@ export default function AdminApiConsole() {
         onEditModel={(connection, model) => setForm({ connection, environmentTarget: null, mode: 'edit_model', model, requestId: null })}
         onSelect={(connection) => { setSelectedId(connection.seriesId); setMobileDetails(true); }}
         onTest={testDatabaseModel}
-        onToggleDeleted={setIncludeDeleted}
+        onToggleDeleted={(next) => {
+          setLoading(true);
+          setError('');
+          setPermission('authorized');
+          setIncludeDeleted(next);
+        }}
       />
 
       <AdminEnvironmentProviders
@@ -521,28 +528,34 @@ export default function AdminApiConsole() {
         onTest={(target) => testEnvironment(target.environmentTargetKey, target.connectionDisplayName)}
       />
 
-      <AdminRouteEditor candidates={candidates} currentKeys={currentKeys} initialKeys={routeInitialKeys} open={routeOpen} onActivate={activate} onClose={() => { setRouteOpen(false); setRouteInitialKeys(null); }} />
-      <AdminProviderForm
-        connection={form?.connection}
-        discoveredModels={discoveredModels}
-        environmentTarget={form?.environmentTarget}
-        mode={form?.mode ?? 'create_connection'}
-        model={form?.model}
-        open={Boolean(form)}
-        requestId={form?.requestId}
-        onCancel={() => setForm(null)}
-        onSubmit={submitForm}
-      />
-      <AdminReauthDialog
-        busy={actionBusy}
-        confirmationName={pending?.confirmationName}
-        error={actionError}
-        kind={pending?.kind ?? 'save'}
-        open={Boolean(pending)}
-        title={pending?.title ?? ''}
-        onCancel={() => { if (!actionBusy) { setPending(null); setActionError(''); } }}
-        onConfirm={(password, confirmation) => void confirmAction(password, confirmation)}
-      />
+      {routeOpen ? (
+        <AdminRouteEditor candidates={candidates} currentKeys={currentKeys} initialKeys={routeInitialKeys} open onActivate={activate} onClose={() => { setRouteOpen(false); setRouteInitialKeys(null); }} />
+      ) : null}
+      {form ? (
+        <AdminProviderForm
+          connection={form.connection}
+          discoveredModels={discoveredModels}
+          environmentTarget={form.environmentTarget}
+          mode={form.mode}
+          model={form.model}
+          open
+          requestId={form.requestId}
+          onCancel={() => setForm(null)}
+          onSubmit={submitForm}
+        />
+      ) : null}
+      {pending ? (
+        <AdminReauthDialog
+          busy={actionBusy}
+          confirmationName={pending.confirmationName}
+          error={actionError}
+          kind={pending.kind}
+          open
+          title={pending.title}
+          onCancel={() => { if (!actionBusy) { setPending(null); setActionError(''); } }}
+          onConfirm={(password, confirmation) => void confirmAction(password, confirmation)}
+        />
+      ) : null}
     </main>
   );
 }

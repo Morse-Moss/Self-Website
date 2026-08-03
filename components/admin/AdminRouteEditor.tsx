@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import type { RouteTargetInput } from './admin-api-client';
 import { preserveLockedRouteIndices } from './provider-ui-state';
@@ -37,12 +37,8 @@ function move<T>(items: T[], from: number, to: number): T[] {
 }
 
 export default function AdminRouteEditor({ candidates, currentKeys, initialKeys, open, onActivate, onClose }: Props) {
-  const [keys, setKeys] = useState<string[]>(currentKeys);
+  const [keys, setKeys] = useState<string[]>(initialKeys ?? currentKeys);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (open) setKeys(initialKeys ?? currentKeys);
-  }, [currentKeys, initialKeys, open]);
 
   const byKey = useMemo(() => new Map(candidates.map((candidate) => [candidate.key, candidate])), [candidates]);
   const selected = keys.map((key) => byKey.get(key)).filter((item): item is RouteCandidate => Boolean(item));

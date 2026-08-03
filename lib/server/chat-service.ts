@@ -14,17 +14,9 @@ import type {
 } from '../contracts/chat.ts';
 import {
   CONTEXT_BUILDER_VERSION,
-  CONTEXT_PIPELINE_VERSION,
-  CONTEXT_PROJECTION_VERSION,
-  LEGACY_BRIDGE_VERSION,
   type CanonicalAnswerSourceV2,
   type CompletedContextTurn,
-  type CandidateConversationTaskFrameV22,
-  type ContextExecutionPipeline,
   type ContextPacketManifest,
-  type ContextPipelineAssignment,
-  type ContextProjection,
-  type ConversationTaskFrameV22,
   type ResolvedChatTurn,
 } from '../contracts/chat-context.ts';
 import type { EvidenceBundle } from '../contracts/chat-evidence-catalog.ts';
@@ -63,31 +55,33 @@ import {
   DirectAnswerExecutor,
   type DirectAnswerExecutionInput,
 } from './chat-answer-executor.ts';
-import { createChatExecutionBudget } from './chat-execution-budget.ts';
 import {
-  type ChatBehavior,
-  type TurnIntent,
-  type TurnRoute,
-} from './chat-behavior.ts';
+  coordinateProviderCompletion,
+} from './chat-provider-completion.ts';
+import {
+  failIncompleteProviderExecution,
+  failProviderExecution,
+} from './chat-provider-failure.ts';
+import { createChatExecutionBudget } from './chat-execution-budget.ts';
+import { type TurnIntent, type TurnRoute } from './chat-behavior.ts';
 import {
   buildCanonicalAnswerSourceV2,
-  buildContextPacket,
   buildTargetGenerationRequestV2,
-  ContextPacketBuildError,
   projectAnswerValidationManifest,
   stableSerialize,
-  type BuiltContextPacket,
   type ContextPacketDigestConfig,
 } from './chat-context-packet.ts';
 import {
-  buildQaEvidence,
-  planQaTurnWithResolution,
+  ContextTurnPreparationError,
+  prepareContextTurn,
+  type ContextTerminalState,
+  type PreparedContextTurn,
+} from './chat-context-turn-preparation.ts';
+import {
   prepareQaTargetContext,
   qaCapabilityLedger,
   QaAnswerBlockedError,
   runQaTurn,
-  type PlannedChatEvidence,
-  type PlannedChatTurn,
   type PreparedTargetContext,
 } from './chat-qa-runtime.ts';
 import {
@@ -100,11 +94,25 @@ import {
   type StartHistorySummaryAttemptInput,
   type TerminateHistorySummaryAttemptInput,
 } from './chat-history-compaction.ts';
-import { projectFinalContext } from './chat-context-projection.ts';
 import {
   routeChatTurn as routeV2ChatTurn,
   type ChatRouteDecision,
 } from './chat-route-policy.ts';
+import { adaptV2Route } from './chat-route-adapter.ts';
+import { RuntimePhaseError } from './chat-runtime-phase-error.ts';
+import {
+  completeSafetyBoundaryTurn,
+  completeTurn,
+  contextSuccessManifest,
+} from './chat-turn-completion.ts';
+import {
+  reserveTurn,
+  type TurnContext,
+  type TurnDiagnosis,
+} from './chat-turn-reservation.ts';
+import {
+  compensateTurn,
+} from './chat-turn-compensation.ts';
 import {
   applyTaskState,
   deriveTaskStateTransition,
@@ -114,15 +122,9 @@ import {
   type ConversationTaskState,
 } from './conversation-task-state.ts';
 import {
-  captureLegacyContextBridge,
-  LegacyBridgeValidationError,
-  loadAdjacentCompletedContextTurn,
   loadCanonicalAnswerHistory,
-  loadCapturedLegacyContextBridge,
-  loadContextTaskFrame,
   lockContextPipelineAfterLegacySuccess,
   persistContextSuccessState,
-  persistContextTerminalManifest,
   type UpsertContextTaskFrameInput,
 } from './conversation-context-state.ts';
 import {
@@ -137,18 +139,12 @@ import {
 } from './openai-provider.ts';
 import {
   completeInteraction,
-  insertRunningInteraction,
   loadCompletedInteraction,
-  loadInteraction,
-  loadInteractionForUpdate,
   loadPreviousRouteAnchor,
   loadRecordedInteractionRoute,
   providerAttemptsMatch,
   recordInteractionRoute,
-  restartInteraction,
   replaceProviderAttempts,
-  terminateInteraction,
-  type InteractionTurn,
 } from './interaction-log.ts';
 import {
   claimSearch,
@@ -175,6 +171,7 @@ import {
 import { routeSearch } from './search-router.ts';
 import { parseStoredSearchResults } from './search-safety.ts';
 import { createTimeoutSignal, OperationTimeoutError } from './timeout.ts';
+import { runPoolTransaction } from './transaction-runner.ts';
 import {
   decodeTurnMessage,
   encodeTurnMessage,
@@ -183,17 +180,15 @@ import {
   DIAGNOSIS_FIELD_NAMES,
   buildDiagnosisPrompt,
   buildDiagnosisSummary,
-  getDiagnosisCollectionStatus,
-  normalizeDiagnosisFields,
   transitionDiagnosisStatus,
   type DiagnosisFields,
-  type DiagnosisStatus,
 } from './workflows/diagnosis.ts';
 import { buildJdMatchPrompt } from './workflows/jd-match.ts';
 
 const capabilityLedger = qaCapabilityLedger;
 
 export type { ChatServiceErrorCode, ChatServiceEvent } from '../contracts/chat.ts';
+export { adaptV2Route } from './chat-route-adapter.ts';
 
 export class ChatServiceError extends Error {
   readonly code: ChatServiceErrorCode;
@@ -216,7 +211,7 @@ export interface ChatServiceConfig {
   maxSearchesPerSession?: number;
   providerName?: string;
   model?: string;
-  contextPacketDigest?: ContextPacketDigestConfig | null;
+  contextPacketDigest: ContextPacketDigestConfig;
   providerTotalTimeoutMs: number;
   providerProtocolEventTimeoutMs: number;
   providerModelTextTimeoutMs: number;
@@ -238,73 +233,10 @@ export interface RunChatInput {
   signal?: AbortSignal;
 }
 
-interface TurnContext {
-  conversationId: string;
-  userMessageId: string | null;
-  turnId: string;
-  messages: AiMessage[];
-  replay: InteractionTurn | null;
-  createdConversation: boolean;
-  searchCount: number;
-  searchAlreadyClaimed: boolean;
-  diagnosis: TurnDiagnosis | null;
-  behavior: ChatBehavior;
-  contextAssignment: ContextPipelineAssignment;
-  executionPipeline: ContextExecutionPipeline;
-  contextTaskId: string | null;
-  legacyBridgeCaptureStatus?: 'not_eligible' | 'invalid';
-}
-
-interface TurnDiagnosis {
-  id: string;
-  fields: DiagnosisFields;
-  status: DiagnosisStatus;
-  existing: boolean;
-}
-
-interface SessionLockRow {
-  expires_at: Date;
-  message_count: number;
-  search_count: number;
-  invite_code_id: string;
-  invite_label: string;
-  chat_behavior_version: 'v1' | 'v2' | null;
-}
-
-interface ConversationRow {
-  mode: ChatMode;
-  workflow: ChatWorkflow;
-  audience_intent: ChatAudienceIntent;
-  context_pipeline_assignment: ContextPipelineAssignment;
-}
-
-interface PreparedContextTurn {
-  builtPacket: BuiltContextPacket | null;
-  canonicalSource: CanonicalAnswerSourceV2 | null;
-  candidateFrame: CandidateConversationTaskFrameV22 | null;
-  contextScopeId: string;
-  currentFrame: ConversationTaskFrameV22 | null;
-  legacyBridgeResolution: 'consumed' | 'invalidated' | null;
-  manifest: ContextPacketManifest;
-  evidenceBundle: EvidenceBundle;
-  plannedEvidence: PlannedChatEvidence;
-  projection: ContextProjection;
-  resolution: PlannedChatTurn['resolution'];
-  sessionSnapshot: ConversationSessionSnapshot;
-  turnPlan: TurnPlanV1;
-  search: SearchResponse | undefined;
-}
-
 interface ConversationMessageRow {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-}
-
-interface DiagnosisRow {
-  id: string;
-  fields: unknown;
-  status: DiagnosisStatus;
 }
 
 type TerminalStatus = 'stopped' | 'failed';
@@ -315,37 +247,8 @@ interface TerminalFailure {
   throwable: unknown;
 }
 
-class RuntimePhaseError extends Error {
-  readonly publicCode: ChatServiceErrorCode;
-  readonly logCode: string;
-  readonly original: unknown;
-  readonly preserveOriginal: boolean;
-
-  constructor(
-    publicCode: ChatServiceErrorCode,
-    logCode: string,
-    original?: unknown,
-    preserveOriginal = false,
-  ) {
-    super(logCode);
-    this.name = 'RuntimePhaseError';
-    this.publicCode = publicCode;
-    this.logCode = logCode;
-    this.original = original;
-    this.preserveOriginal = preserveOriginal;
-  }
-}
-
 const NORMAL_BUDGET_LEVEL: BudgetLevel = 'normal';
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
-const CONTEXT_LAYERS = [
-  'current_input',
-  'discourse_context',
-  'task_frame',
-  'task_inputs',
-  'task_history',
-  'approved_evidence',
-] as const;
 
 type SafetyBoundaryExecutor = Extract<TurnPlanV1['executor'], { kind: 'safety_boundary' }>;
 
@@ -367,96 +270,6 @@ function executeSafetyBoundary(input: SafetyBoundaryExecutor): string {
   throw new Error('SAFETY_BOUNDARY_REASON_UNSUPPORTED');
 }
 
-interface ContextTerminalState {
-  contextScopeId: string | null;
-  manifest: ContextPacketManifest;
-  resolved: ResolvedChatTurn | null;
-}
-
-class ContextPreparationError extends Error {
-  readonly terminal: ContextTerminalState;
-  readonly original: unknown;
-
-  constructor(original: unknown, terminal: ContextTerminalState) {
-    super('CONTEXT_PREPARATION_FAILED');
-    this.name = 'ContextPreparationError';
-    this.original = original;
-    this.terminal = terminal;
-  }
-}
-
-function selectExecutionPipeline(config: ChatServiceConfig): ContextExecutionPipeline {
-  if (!config.contextPacketDigest) {
-    throw new Error('CONTEXT_PACKET_DIGEST_CONFIG_INVALID');
-  }
-  return 'context_packet_v22';
-}
-
-function contextManifest(input: {
-  resolved: ResolvedChatTurn | null;
-  contextScopeId: string;
-  projection?: ContextProjection | null;
-  bridgeStatus?: ContextPacketManifest['legacy_bridge_status'];
-  bridgeTurnIds?: readonly string[];
-  buildStatus: ContextPacketManifest['context_build_status'];
-  errorCode?: string | null;
-}): ContextPacketManifest {
-  const projection = input.projection ?? null;
-  const resolved = input.resolved;
-  const bridgeTurnIds = [...(input.bridgeTurnIds ?? [])];
-  return {
-    pipeline_version: CONTEXT_PIPELINE_VERSION,
-    semantic_intent: resolved?.semantic.intent ?? 'clarify',
-    discourse_action: resolved?.semantic.discourseAction ?? 'one_shot',
-    task_action: resolved?.semantic.taskAction ?? 'temporary',
-    task_id: input.contextScopeId,
-    task_state_version: projection?.frame?.taskStateVersion ?? 0,
-    context_builder_version: CONTEXT_BUILDER_VERSION,
-    projection_policy_version: CONTEXT_PROJECTION_VERSION,
-    release_policy: resolved?.legacyRoute.safetyBoundary
-      ? 'not_required'
-      : resolved?.legacyRoute.release ?? 'not_required',
-    context_build_status: input.buildStatus,
-    context_build_error_code: input.errorCode ?? null,
-    discourse_source_turn_ids: projection?.discourse ? [projection.discourse.turnId] : [],
-    legacy_bridge_policy_version: bridgeTurnIds.length > 0 ? LEGACY_BRIDGE_VERSION : null,
-    legacy_bridge_source_turn_ids: [...bridgeTurnIds],
-    legacy_bridge_status: input.bridgeStatus ?? 'not_eligible',
-    included_layers: projection?.includedLayers ?? [],
-    excluded_layers: projection?.excludedLayers ?? [...CONTEXT_LAYERS],
-    projected_slot_kinds: [...new Set(projection?.slots.map((slot) => slot.slot) ?? [])],
-    evicted_layers: [],
-    projection_reason_codes: projection?.reasonCodes ?? ['context_build_failed_before_projection'],
-    eviction_reason_codes: [],
-    token_estimate_by_layer: {},
-    evidence_ids: [],
-    retrieval_scores: [],
-    degraded_reason: null,
-    packet_hmac_key_id: null,
-    packet_hmac_sha256: null,
-  };
-}
-
-function stableContextBuildError(error: unknown): {
-  code: string;
-  status: ContextPacketManifest['context_build_status'];
-} {
-  if (error instanceof ContextPacketBuildError) {
-    return {
-      code: error.code,
-      status: error.code === 'CONTEXT_PACKET_OVER_BUDGET' ? 'over_budget' : 'failed',
-    };
-  }
-  if (error instanceof RuntimePhaseError) {
-    return { code: error.logCode, status: 'failed' };
-  }
-  const code = dependencyErrorCode(error);
-  return {
-    code: code && /^[A-Z0-9_]{1,80}$/u.test(code) ? code : 'CONTEXT_BUILD_FAILED',
-    status: 'failed',
-  };
-}
-
 function requestWorkflow(request: NormalizedChatRequest): ChatWorkflow {
   return request.workflow ?? 'chat';
 }
@@ -467,38 +280,6 @@ function abortReason(signal: AbortSignal): unknown {
 
 function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) throw abortReason(signal);
-}
-
-function elapsedMilliseconds(startedAt: Date, completedAt: Date): number {
-  return Math.max(0, Math.trunc(completedAt.getTime() - startedAt.getTime()));
-}
-
-function addTokenUsage(left: TokenUsage | null, right: TokenUsage | null): TokenUsage | null {
-  if (!left) return right;
-  if (!right) return left;
-  return {
-    inputTokens: left.inputTokens + right.inputTokens,
-    outputTokens: left.outputTokens + right.outputTokens,
-  };
-}
-
-function usageCost(
-  usage: TokenUsage | null,
-  rates: TokenRates | null,
-): number | null {
-  return usage && rates ? estimateCostUsd(usage, rates) : null;
-}
-
-function addUsageCosts(
-  leftUsage: TokenUsage | null,
-  leftCost: number | null,
-  rightUsage: TokenUsage | null,
-  rightCost: number | null,
-): number | null {
-  if (leftUsage && leftCost === null) return null;
-  if (rightUsage && rightCost === null) return null;
-  if (!leftUsage && !rightUsage) return null;
-  return (leftCost ?? 0) + (rightCost ?? 0);
 }
 
 function dependencyErrorCode(error: unknown): string | null {
@@ -550,31 +331,6 @@ async function tryAdvisoryLock(client: PoolClient, key: string): Promise<boolean
   return result.rows[0]?.acquired === true;
 }
 
-function validateInteraction(
-  interaction: InteractionTurn,
-  accessSessionId: string,
-  request: NormalizedChatRequest,
-): void {
-  if (
-    interaction.accessSessionId !== accessSessionId
-    || interaction.workflow !== requestWorkflow(request)
-    || interaction.question !== request.message
-    || (request.conversationId !== null
-      && request.conversationId !== interaction.conversationId)
-  ) {
-    throw new ChatServiceError('CONVERSATION_INVALID');
-  }
-}
-
-function validateConversation(
-  conversation: ConversationRow,
-  request: NormalizedChatRequest,
-): void {
-  if (conversation.workflow !== requestWorkflow(request)) {
-    throw new ChatServiceError('CONVERSATION_INVALID');
-  }
-}
-
 function identityKnowledgeSource(): KnowledgeSource {
   return {
     chunkId: 'about:identity',
@@ -604,35 +360,6 @@ function approvedSafeKnowledge(intent: TurnIntent): KnowledgeSource[] {
   }));
 }
 
-export function adaptV2Route(route: ChatRouteDecision): TurnRoute {
-  const intent: TurnIntent = route.routeKind === 'conversation' || route.routeKind === 'clarify'
-    ? 'social'
-    : route.routeKind === 'identity'
-      ? 'identity'
-      : route.routeKind === 'jd'
-        ? 'jd'
-        : route.routeKind === 'personal_fact' || route.routeKind === 'jd_intake'
-          ? 'recruitment'
-          : route.routeKind === 'external_current'
-            ? 'technical'
-            : 'project';
-  return {
-    intent,
-    profile: route.routeKind === 'conversation' || route.routeKind === 'clarify'
-      ? 'social'
-      : route.routeKind === 'jd'
-        ? 'jd'
-        : 'grounded',
-    evidence: route.routeKind === 'identity'
-      ? 'identity'
-      : route.requiresEmbedding
-        ? 'rag'
-        : 'none',
-    release: route.release,
-    reasoningEffort: undefined,
-  };
-}
-
 function toHistoryMessages(messages: ConversationMessageRow[]): AiMessage[] {
   return messages.map((message) => ({
     role: message.role,
@@ -644,12 +371,6 @@ function approvedEvidenceContext(knowledge: KnowledgeSource[]): string {
   return knowledge.map((source, index) => (
     `[来源${index + 1}] ${source.title}\n${source.content}`
   )).join('\n\n');
-}
-
-function unavailableCapabilityIds(plannedEvidence: PlannedChatEvidence): string[] {
-  return [...new Set(plannedEvidence.admissions.flatMap((item) => (
-    item.level === 'unavailable' && item.capabilityId ? [item.capabilityId] : []
-  )))].sort();
 }
 
 function workflowSystemBoundary(
@@ -710,301 +431,6 @@ function workflowRoutingQuestion(
         .filter(Boolean)
         .join('\n')
     : request.message;
-}
-
-function controlledSearchEvidence(
-  response: SearchResponse | undefined,
-  observedAt: Date,
-): KnowledgeSource[] {
-  if (response?.status !== 'completed') return [];
-  return response.results.map((result, index) => ({
-    chunkId: result.id,
-    documentId: result.id,
-    title: result.title,
-    sourcePath: `controlled-search/${result.id}`,
-    href: result.href,
-    content: [
-      `外部来源类型：${result.kind}`,
-      `外部来源域名：${result.domain}`,
-      `检索时间边界：${observedAt.toISOString()}`,
-      result.snippet,
-    ].join('\n'),
-    score: Math.max(0, 1 - index / 100),
-    projectSlug: null,
-    topicIds: ['external-current'],
-    evidenceLevel: 'direct',
-  }));
-}
-
-async function prepareContextTurn(input: {
-  pool: Pool;
-  client: PoolClient;
-  provider: AiProvider;
-  searchProvider?: SearchProvider | null;
-  accessSessionId: string;
-  request: NormalizedChatRequest;
-  turn: TurnContext;
-  config: ChatServiceConfig;
-  now: Date;
-  signal?: AbortSignal;
-}): Promise<PreparedContextTurn> {
-  if (input.turn.userMessageId === null) {
-    throw new Error('CONTEXT_USER_MESSAGE_MISSING');
-  }
-  let resolved: ResolvedChatTurn | null = null;
-  let contextScopeId = input.turn.turnId;
-  let projection: ContextProjection | null = null;
-  let bridgeStatus: ContextPacketManifest['legacy_bridge_status'] = input.turn.legacyBridgeCaptureStatus
-    ?? 'not_eligible';
-  let bridgeTurnIds: string[] = [];
-
-  try {
-    if (input.turn.legacyBridgeCaptureStatus === 'invalid') {
-      throw new RuntimePhaseError('CONVERSATION_INVALID', 'LEGACY_BRIDGE_INVALID');
-    }
-    const currentFrame = await loadContextTaskFrame(input.client, input.turn.conversationId);
-    const discourse = await loadAdjacentCompletedContextTurn(
-      input.client,
-      input.turn.conversationId,
-      input.turn.userMessageId,
-    );
-    const legacyBridge = await loadCapturedLegacyContextBridge(
-      input.client,
-      input.turn.conversationId,
-    );
-    bridgeTurnIds = legacyBridge.map((turn) => turn.turnId);
-    const planningSessionSnapshot: ConversationSessionSnapshot = Object.freeze({
-      conversationId: input.turn.conversationId,
-      interactionTurnId: input.turn.turnId,
-      currentUserMessageId: input.turn.userMessageId,
-      currentInput: input.request.message,
-      workflow: input.request.workflow ?? 'chat',
-      mode: input.request.mode,
-      audienceIntent: input.request.audienceIntent,
-      pageContext: null,
-      currentFrame,
-      adjacentCompletedTurn: discourse,
-      completedHistory: Object.freeze([]),
-      legacyBridge: Object.freeze([...legacyBridge]),
-    });
-    const planning = planQaTurnWithResolution(planningSessionSnapshot);
-    const { resolution } = planning;
-    resolved = resolution.resolved;
-    bridgeStatus = resolution.legacyBridgeStatus;
-    const isolatedTurn = resolved.semantic.taskAction === 'temporary'
-      || resolved.semantic.discourseAction === 'one_shot';
-    contextScopeId = isolatedTurn
-      ? input.turn.turnId
-      : resolution.candidateFrame?.taskId
-        ?? currentFrame?.taskId
-        ?? input.turn.turnId;
-    const history = resolution.candidateFrame || currentFrame
-      ? await loadCanonicalAnswerHistory(input.client, {
-          conversationId: input.turn.conversationId,
-          ownerPipeline: 'context_packet_v22',
-          contextScopeId,
-          includeConversation: false,
-        })
-      : [];
-    const sessionSnapshot: ConversationSessionSnapshot = Object.freeze({
-      ...planningSessionSnapshot,
-      completedHistory: Object.freeze([...history]),
-    });
-    const turnPlan = planning.plan;
-    let evidenceBundle: EvidenceBundle = turnPlan.executor.kind === 'safety_boundary'
-      ? {
-          catalogVersion: 2,
-          approved: [],
-          admissions: [],
-          relevance: [],
-          unavailableCapabilityIds: [],
-          degradedReason: null,
-        }
-      : await buildQaEvidence({
-          plan: turnPlan,
-          session: sessionSnapshot,
-          retrieval: {
-            async embedAll(queries) {
-              const embeddings = await input.provider.embed([...queries], input.signal);
-              if (embeddings.length !== queries.length) throw new Error('EMBEDDING_UNAVAILABLE');
-              return embeddings;
-            },
-            retrieveAll: (embeddings) => retrieveFullRelevantKnowledge(input.client, embeddings),
-          },
-        });
-    const search = resolved.semantic.intent === 'external_current'
-      ? await resolveSearch({
-          pool: input.pool,
-          client: input.client,
-          provider: input.searchProvider,
-          accessSessionId: input.accessSessionId,
-          turn: input.turn,
-          routingQuestion: input.request.message,
-          searchQuery: input.request.message,
-          localEvidenceSufficient: false,
-          config: input.config,
-          now: input.now,
-          signal: input.signal,
-        })
-      : undefined;
-    const searchEvidence = controlledSearchEvidence(search, input.now);
-    if (searchEvidence.length > 0) {
-      evidenceBundle = {
-        ...evidenceBundle,
-        approved: [...evidenceBundle.approved, ...searchEvidence],
-        admissions: [
-          ...evidenceBundle.admissions,
-          ...searchEvidence.map((source) => ({
-            evidenceId: source.chunkId,
-            level: 'direct' as const,
-            projectSlug: null,
-            capabilityId: null,
-          })),
-        ],
-        relevance: [
-          ...evidenceBundle.relevance,
-          ...searchEvidence.map((source) => ({
-            evidenceId: source.chunkId,
-            score: source.score,
-          })),
-        ],
-      };
-    }
-    const plannedEvidence: PlannedChatEvidence = {
-      knowledge: [...evidenceBundle.approved],
-      admissions: [...evidenceBundle.admissions],
-      retrievalScores: evidenceBundle.relevance.flatMap((item) => (
-        item.score === null ? [] : [{ evidenceId: item.evidenceId, score: item.score }]
-      )),
-      degradedReason: evidenceBundle.degradedReason,
-    };
-    const projectedEvidence = [...evidenceBundle.approved];
-    projection = projectFinalContext({
-      resolved,
-      currentUserMessageId: input.turn.userMessageId,
-      discourse,
-      frame: resolution.candidateFrame ?? currentFrame,
-      history,
-      approvedEvidence: projectedEvidence,
-    });
-    const legacyBridgeResolution = bridgeTurnIds.length === 0
-      ? null
-      : resolution.legacyBridgeStatus === 'used'
-        ? 'consumed'
-        : resolved.semantic.taskAction === 'switch'
-          || resolved.semantic.discourseAction === 'new_task'
-          ? 'invalidated'
-          : null;
-    if (turnPlan.executor.kind === 'safety_boundary') {
-      return {
-        builtPacket: null,
-        canonicalSource: null,
-        candidateFrame: resolution.candidateFrame,
-        contextScopeId,
-        currentFrame,
-        legacyBridgeResolution,
-        manifest: contextManifest({
-          resolved,
-          contextScopeId,
-          projection,
-          bridgeStatus,
-          bridgeTurnIds,
-          buildStatus: 'not_required',
-        }),
-        evidenceBundle,
-         plannedEvidence,
-         projection,
-         resolution,
-         sessionSnapshot,
-         search,
-         turnPlan,
-       };
-    }
-
-    const digest = input.config.contextPacketDigest;
-    if (!digest) throw new Error('CONTEXT_PACKET_DIGEST_CONFIG_INVALID');
-    const builtPacket = buildContextPacket({
-      resolved,
-      currentInput: input.request.message,
-      currentUserMessageId: input.turn.userMessageId,
-      projection,
-      evidenceBundle,
-      turnPlan,
-      answerValidation: null,
-      digestKey: digest.key,
-      digestKeyId: digest.keyId,
-      reasoningEffort: adaptV2Route(resolved.legacyRoute).reasoningEffort ?? null,
-      contextScopeId,
-      legacyBridge: bridgeTurnIds.length > 0 ? {
-        policyVersion: LEGACY_BRIDGE_VERSION,
-        sourceTurnIds: bridgeTurnIds,
-        status: bridgeStatus,
-      } : null,
-      degradedReason: plannedEvidence.degradedReason,
-      capabilityEvidenceBoundaries: unavailableCapabilityIds(plannedEvidence),
-    });
-    const canonicalSource = buildCanonicalAnswerSourceV2({
-      ownerPipeline: 'context_packet_v22',
-      conversationId: input.turn.conversationId,
-      interactionTurnId: input.turn.turnId,
-      contextScopeId,
-      currentUserMessageId: input.turn.userMessageId,
-      currentInput: input.request.message,
-      trustedInstructions: builtPacket.normal.request.baseInstructions,
-      turnPlanManifest: builtPacket.manifest.turn_plan,
-      taskFrame: builtPacket.packet.taskFrame,
-      taskInputs: builtPacket.packet.taskInputs,
-      approvedEvidence: builtPacket.packet.approvedEvidence,
-      completeHistory: history,
-      reasoningEffort: adaptV2Route(resolved.legacyRoute).reasoningEffort ?? null,
-      releasePolicy: resolved.legacyRoute.release,
-    });
-    return {
-      builtPacket,
-      canonicalSource,
-      candidateFrame: resolution.candidateFrame,
-      contextScopeId,
-      currentFrame,
-      legacyBridgeResolution,
-      manifest: builtPacket.manifest,
-       evidenceBundle,
-       plannedEvidence,
-       projection,
-       resolution,
-       sessionSnapshot,
-       search,
-       turnPlan,
-     };
-  } catch (error) {
-    const failure = stableContextBuildError(error);
-    throw new ContextPreparationError(error, {
-      contextScopeId,
-      resolved,
-      manifest: contextManifest({
-        resolved,
-        contextScopeId,
-        projection,
-        bridgeStatus,
-        bridgeTurnIds,
-        buildStatus: failure.status,
-        errorCode: failure.code,
-      }),
-    });
-  }
-}
-
-function contextSuccessManifest(
-  prepared: PreparedContextTurn,
-  validation: AnswerValidationResult | null = null,
-): ContextPacketManifest {
-  return {
-    ...prepared.manifest,
-    ...(prepared.manifest.answer_validation ? {
-      answer_validation: projectAnswerValidationManifest(validation),
-    } : {}),
-    legacy_bridge_status: prepared.legacyBridgeResolution
-      ?? prepared.manifest.legacy_bridge_status,
-  };
 }
 
 function canonicalHistoryMessages(turns: readonly CompletedContextTurn[]): AiMessage[] {
@@ -1148,459 +574,6 @@ async function summarizeTargetHistory(
   };
 }
 
-async function loadTurnDiagnosis(input: {
-  client: PoolClient;
-  accessSessionId: string;
-  conversationId: string;
-  turnId: string;
-  request: NormalizedChatRequest;
-}): Promise<TurnDiagnosis | null> {
-  if (requestWorkflow(input.request) !== 'diagnosis') return null;
-  if (!input.request.diagnosis) throw new ChatServiceError('CONVERSATION_INVALID');
-
-  const result = await input.client.query<DiagnosisRow>(
-    `SELECT id::text AS id, fields, status
-       FROM diagnoses
-      WHERE access_session_id = $1
-        AND conversation_id = $2
-      ORDER BY created_at, id
-      LIMIT 2
-      FOR UPDATE`,
-    [input.accessSessionId, input.conversationId],
-  );
-  if (result.rows.length > 1) throw new ChatServiceError('CONVERSATION_INVALID');
-
-  const existing = result.rows[0];
-  const existingFields = existing
-    ? normalizeDiagnosisFields(existing.fields)
-    : null;
-  const fields = existingFields
-    ? DIAGNOSIS_FIELD_NAMES.reduce<DiagnosisFields>((merged, field) => {
-        merged[field] = input.request.diagnosis![field] || existingFields[field];
-        return merged;
-      }, { ...existingFields })
-    : input.request.diagnosis;
-  const status = existing
-    ? transitionDiagnosisStatus(existing.status, {
-        fields,
-        outboxEnqueued: false,
-      })
-    : getDiagnosisCollectionStatus(fields);
-
-  return {
-    id: existing?.id ?? input.turnId,
-    fields,
-    status,
-    existing: Boolean(existing),
-  };
-}
-
-async function recoverRunningTurn(input: {
-  client: PoolClient;
-  conversationId: string;
-  turnId: string;
-  request: NormalizedChatRequest;
-  searchCount: number;
-  searchAlreadyClaimed: boolean;
-  diagnosis: TurnDiagnosis | null;
-  behavior: ChatBehavior;
-  contextAssignment: ContextPipelineAssignment;
-  executionPipeline: ContextExecutionPipeline;
-  reservedUserMessageId: string | null;
-  contextTaskId: string | null;
-  now: Date;
-}): Promise<TurnContext> {
-  const result = await input.client.query<ConversationMessageRow>(
-    `SELECT id::text AS id, role, content
-       FROM conversation_messages
-      WHERE conversation_id = $1
-      ORDER BY id`,
-    [input.conversationId],
-  );
-  const messages = result.rows.map((message) => ({
-    ...message,
-    decoded: decodeTurnMessage(message.content),
-  }));
-  const matchingTurn = messages.filter((message) => message.decoded.turnId === input.turnId);
-  const reservedUsers = matchingTurn.filter((message) => (
-    message.role === 'user' && message.decoded.content === input.request.message
-  ));
-  const matchingAssistants = matchingTurn.filter((message) => message.role === 'assistant');
-  if (
-    matchingTurn.length !== 1
-    || reservedUsers.length !== 1
-    || matchingAssistants.length !== 0
-    || (input.reservedUserMessageId !== null
-      && reservedUsers[0].id !== input.reservedUserMessageId)
-  ) {
-    throw new ChatServiceError('CONVERSATION_INVALID');
-  }
-
-  const legacyBridgeCaptureStatus = await captureLegacyBridgeForTurn({
-    client: input.client,
-    conversationId: input.conversationId,
-    userMessageId: reservedUsers[0].id,
-    capturedAt: input.now,
-    contextAssignment: input.contextAssignment,
-    executionPipeline: input.executionPipeline,
-  });
-
-  return {
-    conversationId: input.conversationId,
-    userMessageId: reservedUsers[0].id,
-    turnId: input.turnId,
-    messages: [{ role: 'user', content: input.request.message }],
-    replay: null,
-    createdConversation: result.rows.length === 1,
-    searchCount: input.searchCount,
-    searchAlreadyClaimed: input.searchAlreadyClaimed,
-    diagnosis: input.diagnosis,
-    behavior: input.behavior,
-    contextAssignment: input.contextAssignment,
-    executionPipeline: input.executionPipeline,
-    contextTaskId: input.contextTaskId
-      ?? (input.executionPipeline === 'context_packet_v22' ? input.turnId : null),
-    legacyBridgeCaptureStatus,
-  };
-}
-
-async function captureLegacyBridgeForTurn(input: {
-  client: PoolClient;
-  conversationId: string;
-  userMessageId: string;
-  capturedAt: Date;
-  contextAssignment: ContextPipelineAssignment;
-  executionPipeline: ContextExecutionPipeline;
-}): Promise<NonNullable<TurnContext['legacyBridgeCaptureStatus']>> {
-  if (input.executionPipeline !== 'context_packet_v22'
-    || input.contextAssignment !== 'legacy') return 'not_eligible';
-  try {
-    await captureLegacyContextBridge(input.client, {
-      conversationId: input.conversationId,
-      beforeMessageId: input.userMessageId,
-      capturedAt: input.capturedAt,
-    });
-    return 'not_eligible';
-  } catch (error) {
-    if (!(error instanceof LegacyBridgeValidationError)) throw error;
-    return 'invalid';
-  }
-}
-
-async function reserveTurnInTransaction(input: {
-  client: PoolClient;
-  accessSessionId: string;
-  request: NormalizedChatRequest;
-  turnId: string;
-  config: ChatServiceConfig;
-  now: Date;
-}): Promise<TurnContext> {
-  const sessionResult = await input.client.query<SessionLockRow>(
-    `SELECT session.expires_at, session.message_count, session.search_count,
-            session.invite_code_id::text, invite.label AS invite_label,
-            session.chat_behavior_version
-       FROM access_sessions AS session
-       JOIN invite_codes AS invite ON invite.id = session.invite_code_id
-      WHERE session.id = $1
-        AND session.expires_at > $2
-      FOR UPDATE OF session`,
-    [input.accessSessionId, input.now],
-  );
-  const session = sessionResult.rows[0];
-  if (!session) throw new ChatServiceError('SESSION_INVALID');
-
-  const behavior: ChatBehavior = 'v2';
-
-  const interaction = await loadInteractionForUpdate(input.client, input.turnId);
-  let degradedReplay = false;
-  if (interaction) {
-    validateInteraction(interaction, input.accessSessionId, input.request);
-    if (
-      interaction.status !== 'running'
-      && interaction.status !== 'completed'
-      && interaction.status !== 'stopped'
-      && interaction.status !== 'failed'
-    ) {
-      throw new ChatServiceError('CONVERSATION_INVALID');
-    }
-    degradedReplay = interaction.status === 'failed'
-      && interaction.errorCode === 'SAFE_DEGRADED'
-      && interaction.answer !== null;
-  }
-
-  if (interaction?.status !== 'completed' && !degradedReplay) {
-    const running = await input.client.query<{ id: string }>(
-      `SELECT id::text AS id
-         FROM interaction_turns
-        WHERE access_session_id = $1 AND status = 'running'
-        FOR UPDATE`,
-      [input.accessSessionId],
-    );
-    if (running.rows.some((row) => row.id !== input.turnId)) {
-      throw new ChatServiceError('CONVERSATION_BUSY');
-    }
-  }
-
-  const conversationId = interaction?.conversationId
-    ?? input.request.conversationId
-    ?? randomUUID();
-  if (!conversationId) throw new ChatServiceError('CONVERSATION_INVALID');
-
-  const conversationResult = await input.client.query<ConversationRow>(
-    `SELECT mode, workflow, audience_intent, context_pipeline_assignment
-       FROM conversations
-      WHERE id = $1 AND access_session_id = $2 AND expires_at > $3`,
-    [conversationId, input.accessSessionId, input.now],
-  );
-  const conversation = conversationResult.rows[0];
-  const contextAssignment = conversation?.context_pipeline_assignment ?? 'legacy';
-  const selectedExecutionPipeline = interaction?.status === 'running'
-    && interaction.executionPipeline
-    ? interaction.executionPipeline
-    : selectExecutionPipeline(input.config);
-
-  if (interaction?.status === 'completed') {
-    if (!conversation || interaction.answer === null) {
-      throw new ChatServiceError('CONVERSATION_INVALID');
-    }
-    validateConversation(conversation, input.request);
-    return {
-      conversationId,
-      userMessageId: null,
-      turnId: input.turnId,
-      messages: [],
-      replay: interaction,
-      createdConversation: false,
-      searchCount: session.search_count,
-      searchAlreadyClaimed: interaction.usedSearch,
-      diagnosis: null,
-      behavior,
-      contextAssignment,
-      executionPipeline: interaction.executionPipeline ?? selectedExecutionPipeline,
-      contextTaskId: interaction.taskId,
-    };
-  }
-
-  if (interaction && degradedReplay) {
-    if (!conversation) throw new ChatServiceError('CONVERSATION_INVALID');
-    validateConversation(conversation, input.request);
-    return {
-      conversationId,
-      userMessageId: null,
-      turnId: input.turnId,
-      messages: [],
-      replay: interaction,
-      createdConversation: false,
-      searchCount: session.search_count,
-      searchAlreadyClaimed: interaction.usedSearch,
-      diagnosis: null,
-      behavior,
-      contextAssignment,
-      executionPipeline: interaction.executionPipeline ?? selectedExecutionPipeline,
-      contextTaskId: interaction.taskId,
-    };
-  }
-
-  if (interaction?.status === 'running') {
-    if (!conversation) throw new ChatServiceError('CONVERSATION_INVALID');
-    validateConversation(conversation, input.request);
-    const diagnosis = await loadTurnDiagnosis({
-      client: input.client,
-      accessSessionId: input.accessSessionId,
-      conversationId,
-      turnId: input.turnId,
-      request: input.request,
-    });
-    return recoverRunningTurn({
-      client: input.client,
-      conversationId,
-      turnId: input.turnId,
-      request: input.request,
-      searchCount: session.search_count,
-      searchAlreadyClaimed: interaction.usedSearch,
-      diagnosis,
-      behavior,
-      contextAssignment,
-      executionPipeline: selectedExecutionPipeline,
-      reservedUserMessageId: interaction.reservedUserMessageId,
-      contextTaskId: interaction.taskId,
-      now: input.now,
-    });
-  }
-
-  if (session.message_count >= input.config.maxMessagesPerSession) {
-    throw new ChatServiceError('MESSAGE_LIMIT');
-  }
-
-  const windowSeconds = input.config.chatWindowSeconds ?? 60;
-  const windowMaxMessages = input.config.chatWindowMaxMessages ?? 10;
-  const windowUsage = await input.client.query<{ window_messages: number }>(
-    `SELECT count(*)::int AS window_messages
-       FROM conversation_messages AS message
-       JOIN conversations AS conversation ON conversation.id = message.conversation_id
-      WHERE conversation.access_session_id = $1
-        AND message.role = 'user'
-        AND message.created_at > $2`,
-    [input.accessSessionId, new Date(input.now.getTime() - windowSeconds * 1_000)],
-  );
-  if ((windowUsage.rows[0]?.window_messages ?? 0) >= windowMaxMessages) {
-    throw new ChatServiceError('CHAT_RATE_LIMITED');
-  }
-
-  let createdConversation = false;
-  if (conversation) {
-    validateConversation(conversation, input.request);
-  } else {
-    if (input.request.conversationId !== null && !interaction) {
-      throw new ChatServiceError('CONVERSATION_INVALID');
-    }
-    await input.client.query(
-      `INSERT INTO conversations
-        (id, access_session_id, mode, workflow, audience_intent,
-         expires_at, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $7)`,
-      [
-        conversationId,
-        input.accessSessionId,
-        input.request.mode,
-        requestWorkflow(input.request),
-        input.request.audienceIntent,
-        session.expires_at,
-        input.now,
-      ],
-    );
-    createdConversation = true;
-  }
-
-  const diagnosis = await loadTurnDiagnosis({
-    client: input.client,
-    accessSessionId: input.accessSessionId,
-    conversationId,
-    turnId: input.turnId,
-    request: input.request,
-  });
-
-  const insertedMessage = interaction?.reservedUserMessageId
-    ? await input.client.query<{ id: string }>(
-        `INSERT INTO conversation_messages (id, conversation_id, role, content, created_at)
-         VALUES ($1, $2, 'user', $3, $4)
-         RETURNING id::text AS id`,
-        [
-          interaction.reservedUserMessageId,
-          conversationId,
-          encodeTurnMessage(input.turnId, input.request.message),
-          input.now,
-        ],
-      )
-    : await input.client.query<{ id: string }>(
-        `INSERT INTO conversation_messages (conversation_id, role, content, created_at)
-         VALUES ($1, 'user', $2, $3)
-         RETURNING id::text AS id`,
-        [conversationId, encodeTurnMessage(input.turnId, input.request.message), input.now],
-      );
-  const userMessageId = insertedMessage.rows[0].id;
-  const contextTaskId = selectedExecutionPipeline === 'context_packet_v22'
-    ? interaction?.taskId ?? input.turnId
-    : interaction?.taskId ?? null;
-
-  await input.client.query(
-    `UPDATE access_sessions
-        SET message_count = message_count + 1, last_seen_at = $2
-      WHERE id = $1`,
-    [input.accessSessionId, input.now],
-  );
-  await input.client.query(
-    'UPDATE conversations SET updated_at = $2 WHERE id = $1',
-    [conversationId, input.now],
-  );
-
-  if (interaction) {
-    await restartInteraction({
-      client: input.client,
-      turnId: input.turnId,
-      executionPipeline: selectedExecutionPipeline,
-      taskId: contextTaskId,
-      reservedUserMessageId: userMessageId,
-    });
-  } else {
-    const deleteAfter = new Date(
-      input.now.getTime() + input.config.interactionRetentionDays * MILLISECONDS_PER_DAY,
-    );
-    await insertRunningInteraction({
-      client: input.client,
-      turnId: input.turnId,
-      accessSessionId: input.accessSessionId,
-      inviteLabel: session.invite_label,
-      conversationId,
-      workflow: requestWorkflow(input.request),
-      audienceIntent: input.request.audienceIntent,
-      question: input.request.message,
-      executionPipeline: selectedExecutionPipeline,
-      taskId: contextTaskId,
-      reservedUserMessageId: userMessageId,
-      now: input.now,
-      deleteAfter,
-    });
-  }
-
-  const legacyBridgeCaptureStatus = await captureLegacyBridgeForTurn({
-    client: input.client,
-    conversationId,
-    userMessageId,
-    capturedAt: input.now,
-    contextAssignment,
-    executionPipeline: selectedExecutionPipeline,
-  });
-
-  return {
-    conversationId,
-    userMessageId,
-    turnId: input.turnId,
-    messages: [{ role: 'user', content: input.request.message }],
-    replay: null,
-    createdConversation,
-    searchCount: session.search_count,
-    searchAlreadyClaimed: interaction?.usedSearch ?? false,
-    diagnosis,
-    behavior,
-    contextAssignment,
-    executionPipeline: selectedExecutionPipeline,
-    contextTaskId,
-    legacyBridgeCaptureStatus,
-  };
-}
-
-async function reserveTurn(input: {
-  pool: Pool;
-  client: PoolClient;
-  accessSessionId: string;
-  request: NormalizedChatRequest;
-  turnId: string;
-  config: ChatServiceConfig;
-  now: Date;
-}): Promise<TurnContext> {
-  let turn: TurnContext | null = null;
-  let commitAttempted = false;
-  try {
-    await input.client.query('BEGIN');
-    turn = await reserveTurnInTransaction(input);
-    commitAttempted = true;
-    await input.client.query('COMMIT');
-    return turn;
-  } catch (error) {
-    if (commitAttempted && turn) {
-      const durable = await loadInteraction(input.pool, input.turnId).catch(() => null);
-      const expectedStatus = turn.replay?.status ?? 'running';
-      if (durable?.status === expectedStatus) {
-        validateInteraction(durable, input.accessSessionId, input.request);
-        return turn;
-      }
-    }
-    await input.client.query('ROLLBACK').catch(() => undefined);
-    throw error;
-  }
-}
-
 async function getRemainingMessages(
   client: Pool | PoolClient,
   accessSessionId: string,
@@ -1611,671 +584,6 @@ async function getRemainingMessages(
     [accessSessionId],
   );
   return Math.max(0, maxMessagesPerSession - (result.rows[0]?.message_count ?? 0));
-}
-
-async function persistDiagnosis(input: {
-  client: PoolClient;
-  accessSessionId: string;
-  request: NormalizedChatRequest;
-  turn: TurnContext;
-  completedAt: Date;
-}): Promise<void> {
-  if (requestWorkflow(input.request) !== 'diagnosis') return;
-  const diagnosis = input.turn.diagnosis;
-  if (!diagnosis) throw new ChatServiceError('CONVERSATION_INVALID');
-
-  const fields = diagnosis.fields;
-  const summary = buildDiagnosisSummary(fields);
-  let status = diagnosis.status;
-
-  const retention = await input.client.query<{ delete_after: Date }>(
-    'SELECT delete_after FROM interaction_turns WHERE id = $1',
-    [input.turn.turnId],
-  );
-  const deleteAfter = retention.rows[0]?.delete_after;
-  if (!deleteAfter) throw new ChatServiceError('CONVERSATION_INVALID');
-  if (diagnosis.existing) {
-    const updated = await input.client.query(
-      `UPDATE diagnoses
-          SET interaction_turn_id = $2,
-              fields = $3::jsonb,
-              summary = $4,
-              status = $5,
-              notification_status = CASE
-                WHEN $5 = 'complete' THEN 'pending'
-                ELSE notification_status
-              END,
-              completed_at = CASE
-                WHEN $5 = 'collecting' THEN completed_at
-                ELSE COALESCE(completed_at, $6)
-              END,
-              delete_after = $7
-        WHERE id = $1`,
-      [
-        diagnosis.id,
-        input.turn.turnId,
-        JSON.stringify(fields),
-        summary,
-        status,
-        input.completedAt,
-        deleteAfter,
-      ],
-    );
-    if (updated.rowCount !== 1) throw new ChatServiceError('CONVERSATION_INVALID');
-  } else {
-    await input.client.query(
-      `INSERT INTO diagnoses
-        (id, interaction_turn_id, access_session_id, conversation_id,
-         fields, summary, status, notification_status,
-         created_at, completed_at, delete_after)
-       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11)`,
-      [
-        diagnosis.id,
-        input.turn.turnId,
-        input.accessSessionId,
-        input.turn.conversationId,
-        JSON.stringify(fields),
-        summary,
-        status,
-        status === 'collecting' ? 'not_required' : 'pending',
-        input.completedAt,
-        status === 'collecting' ? null : input.completedAt,
-        deleteAfter,
-      ],
-    );
-  }
-
-  if (status !== 'complete') return;
-  await enqueueAlert(input.client, {
-    dedupeKey: `diagnosis-complete:${diagnosis.id}`,
-    category: 'diagnosis_complete',
-    payload: {
-      diagnosisId: diagnosis.id,
-      occurredAt: input.completedAt.toISOString(),
-    },
-    now: input.completedAt,
-    expiresAt: deleteAfter,
-  });
-  status = transitionDiagnosisStatus(status, {
-    fields,
-    outboxEnqueued: true,
-  });
-  await input.client.query(
-    `UPDATE diagnoses
-        SET status = $2,
-            notification_status = 'pending'
-      WHERE id = $1`,
-    [diagnosis.id, status],
-  );
-}
-
-async function completeTurn(input: {
-  pool: Pool;
-  client: PoolClient;
-  accessSessionId: string;
-  request: NormalizedChatRequest;
-  turn: TurnContext;
-  answer: string;
-  sources: PublicChatSource[];
-  usage: TokenUsage | null;
-  attempts: ProviderAttempt[];
-  winner: ProviderWinner | null;
-  usageComplete: boolean;
-  costComplete: boolean;
-  knownCostUsd: number | null;
-  config: ChatServiceConfig;
-  startedAt: Date;
-  completedAt: Date;
-  route?: ChatRouteDecision | null;
-  context?: PreparedContextTurn | null;
-  validation?: AnswerValidationResult | null;
-  signal?: AbortSignal;
-}): Promise<TokenUsage | null> {
-  const provider = input.config.providerName ?? 'openai';
-  const model = input.config.model ?? 'configured-model';
-  const routed = input.attempts.length > 0;
-  let commitAttempted = false;
-  let taskStateWriteRequired = false;
-  let contextStateWriteRequired = false;
-  let usage = input.usage;
-
-  try {
-    throwIfAborted(input.signal);
-    await input.client.query('BEGIN');
-    const attemptSummary = await summarizeProviderAttempts(input.client, input.turn.turnId);
-    let estimatedCostUsd: number | null;
-    let knownCostUsd = input.knownCostUsd;
-    let usageComplete = input.usageComplete;
-    let costComplete = input.costComplete;
-    const summarizedV2 = input.turn.behavior === 'v2'
-      && attemptSummary.attemptCount > 0;
-    if (summarizedV2) {
-      usage = attemptSummary.usage;
-      usageComplete = attemptSummary.usageComplete;
-      costComplete = attemptSummary.costComplete;
-      knownCostUsd = attemptSummary.estimatedCostUsd
-        ?? usageCost(usage, input.config.tokenRates);
-      estimatedCostUsd = costComplete ? knownCostUsd : null;
-    } else if (routed) {
-      const aggregate = aggregateProviderAttempts(input.attempts);
-      usage = aggregate.usage;
-      estimatedCostUsd = input.costComplete ? input.knownCostUsd : null;
-    } else {
-      const historicalUsage = attemptSummary.usage;
-      const historicalCost = attemptSummary.estimatedCostUsd
-        ?? usageCost(historicalUsage, input.config.tokenRates);
-      const currentCost = usageCost(input.usage, input.config.tokenRates);
-      usage = addTokenUsage(historicalUsage, input.usage);
-      estimatedCostUsd = addUsageCosts(
-        historicalUsage,
-        historicalCost,
-        input.usage,
-        currentCost,
-      );
-    }
-    const assistantMessage = await input.client.query<{ id: string }>(
-      `INSERT INTO conversation_messages (conversation_id, role, content, created_at)
-       VALUES ($1, 'assistant', $2, $3)
-       RETURNING id::text AS id`,
-      [
-        input.turn.conversationId,
-        encodeTurnMessage(input.turn.turnId, input.answer, input.sources),
-        input.completedAt,
-      ],
-    );
-    const assistantMessageId = assistantMessage.rows[0].id;
-    if (routed) {
-      await replaceProviderAttempts(input.client, input.turn.turnId, input.attempts, {
-        dynamicProviderContextEnabled: input.config.dynamicProviderContextEnabled === true,
-      });
-    }
-    if (routed && !summarizedV2) {
-      for (const attempt of input.attempts) {
-        if (!attempt.usage) continue;
-        await input.client.query(
-          `INSERT INTO usage_events
-            (access_session_id, conversation_id, provider, model,
-             input_tokens, output_tokens, estimated_cost_usd, created_at,
-             interaction_turn_id, provider_attempt_index, cost_complete)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-          [
-            input.accessSessionId,
-            input.turn.conversationId,
-            attempt.connectionDisplayName,
-            attempt.modelId,
-            attempt.usage.inputTokens,
-            attempt.usage.outputTokens,
-            attempt.knownCostUsd,
-            attempt.completedAt,
-            input.turn.turnId,
-            attempt.attemptIndex,
-            attempt.costComplete,
-          ],
-        );
-      }
-    } else if (usage && estimatedCostUsd !== null) {
-      await input.client.query(
-        `INSERT INTO usage_events
-          (access_session_id, conversation_id, provider, model,
-           input_tokens, output_tokens, estimated_cost_usd, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [
-          input.accessSessionId,
-          input.turn.conversationId,
-          provider,
-          model,
-          usage.inputTokens,
-          usage.outputTokens,
-          estimatedCostUsd,
-          input.completedAt,
-        ],
-      );
-    }
-    await completeInteraction({
-      client: input.client,
-      turnId: input.turn.turnId,
-      answer: input.answer,
-      sources: input.sources,
-      usage,
-      estimatedCostUsd,
-      knownCostUsd: routed || summarizedV2 ? knownCostUsd : estimatedCostUsd,
-      usageComplete: routed || summarizedV2 ? usageComplete : input.usage !== null,
-      costComplete: routed || summarizedV2 ? costComplete : estimatedCostUsd !== null,
-      winner: input.winner,
-      provider,
-      model,
-      latencyMs: elapsedMilliseconds(input.startedAt, input.completedAt),
-      completedAt: input.completedAt,
-    });
-    await persistDiagnosis({
-      client: input.client,
-      accessSessionId: input.accessSessionId,
-      request: input.request,
-      turn: input.turn,
-      completedAt: input.completedAt,
-    });
-    if (input.context) {
-      if (input.turn.userMessageId === null) throw new Error('CONTEXT_USER_MESSAGE_MISSING');
-      contextStateWriteRequired = true;
-      const candidate = input.context.candidateFrame;
-      const frame: UpsertContextTaskFrameInput | null = candidate ? {
-        ...candidate,
-        lastSuccessfulMessageId: assistantMessageId,
-        updatedByMessageId: input.turn.userMessageId,
-        now: input.completedAt,
-      } : null;
-      await persistContextSuccessState(input.client, {
-        interactionTurnId: input.turn.turnId,
-        conversationId: input.turn.conversationId,
-        contextScopeId: input.context.contextScopeId,
-        userMessageId: input.turn.userMessageId,
-        assistantMessageId,
-        resolved: input.context.resolution.resolved,
-        frame,
-        manifest: contextSuccessManifest(input.context, input.validation ?? null),
-        completedAt: input.completedAt,
-        bridgeResolution: input.context.legacyBridgeResolution,
-      });
-    } else if (input.turn.behavior === 'v2' && input.route) {
-      const currentTaskState = await loadTaskState(input.client, input.turn.conversationId, {
-        forUpdate: true,
-      });
-      const transition = deriveTaskStateTransition(input.route, currentTaskState);
-      if (taskStateRequiresWrite(currentTaskState, transition)) {
-        taskStateWriteRequired = true;
-        const rowCount = await applyTaskState(
-          input.client,
-          input.turn.conversationId,
-          input.turn.turnId,
-          transition,
-          currentTaskState?.version ?? 0,
-          input.completedAt,
-        );
-        if (rowCount !== 1) {
-          throw new ChatServiceError('CONVERSATION_INVALID');
-        }
-      }
-    }
-    if (!input.context
-      && input.turn.contextAssignment === 'context_packet_v22'
-      && input.turn.userMessageId !== null) {
-      await lockContextPipelineAfterLegacySuccess(input.client, {
-        conversationId: input.turn.conversationId,
-        userMessageId: input.turn.userMessageId,
-        interactionTurnId: input.turn.turnId,
-        completedAt: input.completedAt,
-      });
-    }
-    await input.client.query(
-      'UPDATE conversations SET updated_at = $2 WHERE id = $1',
-      [input.turn.conversationId, input.completedAt],
-    );
-    throwIfAborted(input.signal);
-    commitAttempted = true;
-    await input.client.query('COMMIT');
-    return usage;
-  } catch (error) {
-    if (commitAttempted) {
-      const completed = await loadCompletedInteraction(input.pool, input.turn.turnId)
-        .catch(() => null);
-      const attemptsMatch = completed?.answer === input.answer
-        ? await providerAttemptsMatch(input.pool, input.turn.turnId, input.attempts, {
-            dynamicProviderContextEnabled: input.config.dynamicProviderContextEnabled === true,
-          })
-            .catch(() => false)
-        : false;
-      const taskStateOk = !taskStateWriteRequired
-        || await taskStateAppliedByTurn(input.pool, input.turn.conversationId, input.turn.turnId)
-          .catch(() => false);
-      const contextStateOk = !contextStateWriteRequired
-        || (await input.pool.query<{ applied: boolean }>(
-          `SELECT EXISTS (
-             SELECT 1 FROM conversation_context_completed_turns
-              WHERE conversation_id = $1 AND turn_id = $2
-           ) AND EXISTS (
-             SELECT 1 FROM interaction_turns
-              WHERE id = $2 AND context_manifest IS NOT NULL
-           ) AS applied`,
-          [input.turn.conversationId, input.turn.turnId],
-        ).catch(() => ({ rows: [{ applied: false }] }))).rows[0]?.applied === true;
-      if (attemptsMatch && taskStateOk && contextStateOk) return usage;
-    }
-    await input.client.query('ROLLBACK').catch(() => undefined);
-    throw error;
-  }
-}
-
-async function completeSafetyBoundaryTurn(input: {
-  pool: Pool;
-  client: PoolClient;
-  accessSessionId: string;
-  turn: TurnContext;
-  answer: string;
-  startedAt: Date;
-  completedAt: Date;
-  route?: ChatRouteDecision | null;
-  context?: PreparedContextTurn | null;
-  signal?: AbortSignal;
-}): Promise<void> {
-  let commitAttempted = false;
-  let taskStateWriteRequired = false;
-  let contextStateWriteRequired = false;
-  try {
-    throwIfAborted(input.signal);
-    await input.client.query('BEGIN');
-    const assistantMessage = await input.client.query<{ id: string }>(
-      `INSERT INTO conversation_messages (conversation_id, role, content, created_at)
-       VALUES ($1, 'assistant', $2, $3)
-       RETURNING id::text AS id`,
-      [
-        input.turn.conversationId,
-        encodeTurnMessage(input.turn.turnId, input.answer, []),
-        input.completedAt,
-      ],
-    );
-    const assistantMessageId = assistantMessage.rows[0].id;
-    await completeInteraction({
-      client: input.client,
-      turnId: input.turn.turnId,
-      answer: input.answer,
-      sources: [],
-      usage: null,
-      estimatedCostUsd: null,
-      knownCostUsd: null,
-      usageComplete: false,
-      costComplete: false,
-      winner: null,
-      provider: 'deterministic',
-      model: 'policy',
-      latencyMs: elapsedMilliseconds(input.startedAt, input.completedAt),
-      completedAt: input.completedAt,
-    });
-    await input.client.query(
-      `UPDATE access_sessions
-          SET message_count = GREATEST(message_count - 1, 0)
-        WHERE id = $1`,
-      [input.accessSessionId],
-    );
-    if (input.context) {
-      if (input.turn.userMessageId === null) throw new Error('CONTEXT_USER_MESSAGE_MISSING');
-      contextStateWriteRequired = true;
-      const candidate = input.context.candidateFrame;
-      const frame: UpsertContextTaskFrameInput | null = candidate ? {
-        ...candidate,
-        lastSuccessfulMessageId: assistantMessageId,
-        updatedByMessageId: input.turn.userMessageId,
-        now: input.completedAt,
-      } : null;
-      await persistContextSuccessState(input.client, {
-        interactionTurnId: input.turn.turnId,
-        conversationId: input.turn.conversationId,
-        contextScopeId: input.context.contextScopeId,
-        userMessageId: input.turn.userMessageId,
-        assistantMessageId,
-        resolved: input.context.resolution.resolved,
-        frame,
-        manifest: contextSuccessManifest(input.context),
-        completedAt: input.completedAt,
-        bridgeResolution: input.context.legacyBridgeResolution,
-      });
-    } else if (input.turn.behavior === 'v2' && input.route) {
-      const currentTaskState = await loadTaskState(input.client, input.turn.conversationId, {
-        forUpdate: true,
-      });
-      const transition = deriveTaskStateTransition(input.route, currentTaskState);
-      if (taskStateRequiresWrite(currentTaskState, transition)) {
-        taskStateWriteRequired = true;
-        const rowCount = await applyTaskState(
-          input.client,
-          input.turn.conversationId,
-          input.turn.turnId,
-          transition,
-          currentTaskState?.version ?? 0,
-          input.completedAt,
-        );
-        if (rowCount !== 1) {
-          throw new ChatServiceError('CONVERSATION_INVALID');
-        }
-      }
-    }
-    if (!input.context
-      && input.turn.contextAssignment === 'context_packet_v22'
-      && input.turn.userMessageId !== null) {
-      await lockContextPipelineAfterLegacySuccess(input.client, {
-        conversationId: input.turn.conversationId,
-        userMessageId: input.turn.userMessageId,
-        interactionTurnId: input.turn.turnId,
-        completedAt: input.completedAt,
-      });
-    }
-    await input.client.query(
-      'UPDATE conversations SET updated_at = $2 WHERE id = $1',
-      [input.turn.conversationId, input.completedAt],
-    );
-    throwIfAborted(input.signal);
-    commitAttempted = true;
-    await input.client.query('COMMIT');
-  } catch (error) {
-    if (commitAttempted) {
-      const completed = await loadCompletedInteraction(input.pool, input.turn.turnId)
-        .catch(() => null);
-      const taskStateOk = !taskStateWriteRequired
-        || await taskStateAppliedByTurn(input.pool, input.turn.conversationId, input.turn.turnId)
-          .catch(() => false);
-      const contextStateOk = !contextStateWriteRequired
-        || (await input.pool.query<{ applied: boolean }>(
-          `SELECT EXISTS (
-             SELECT 1 FROM conversation_context_completed_turns
-              WHERE conversation_id = $1 AND turn_id = $2
-           ) AS applied`,
-          [input.turn.conversationId, input.turn.turnId],
-        ).catch(() => ({ rows: [{ applied: false }] }))).rows[0]?.applied === true;
-      if (completed?.answer === input.answer && taskStateOk && contextStateOk) return;
-    }
-    await input.client.query('ROLLBACK').catch(() => undefined);
-    throw error;
-  }
-}
-
-interface CompensationInput {
-  client: PoolClient;
-  pool: Pool;
-  accessSessionId: string;
-  turn: TurnContext;
-  status: TerminalStatus;
-  errorCode: string;
-  answer: string | null;
-  sources: PublicChatSource[];
-  attempts: ProviderAttempt[];
-  winner: ProviderWinner | null;
-  config: ChatServiceConfig;
-  startedAt: Date;
-  completedAt: Date;
-  contextTerminal?: ContextTerminalState | null;
-}
-
-type CompensationResult = 'completed' | 'expected_terminal' | 'other_terminal';
-
-function isExpectedTerminal(
-  interaction: InteractionTurn,
-  input: CompensationInput,
-): boolean {
-  return interaction.status === input.status
-    && interaction.errorCode === input.errorCode
-    && interaction.answer === input.answer;
-}
-
-async function compensateTurnOnce(input: CompensationInput): Promise<CompensationResult> {
-  try {
-    await input.client.query('BEGIN');
-    const interaction = await loadInteractionForUpdate(input.client, input.turn.turnId);
-    if (interaction?.status === 'completed') {
-      await input.client.query('COMMIT');
-      return 'completed';
-    }
-    if (interaction?.status === 'stopped' || interaction?.status === 'failed') {
-      const result = isExpectedTerminal(interaction, input)
-        ? 'expected_terminal'
-        : 'other_terminal';
-      await input.client.query('COMMIT');
-      return result;
-    }
-    if (!interaction) throw new Error('Reserved interaction turn is missing.');
-
-    if (input.turn.userMessageId !== null) {
-      const deleted = await input.client.query(
-        `DELETE FROM conversation_messages
-          WHERE id = $1
-            AND conversation_id = $2
-            AND role = 'user'`,
-        [input.turn.userMessageId, input.turn.conversationId],
-      );
-      if (deleted.rowCount === 1) {
-        await input.client.query(
-          `UPDATE access_sessions
-              SET message_count = GREATEST(message_count - 1, 0)
-            WHERE id = $1`,
-          [input.accessSessionId],
-        );
-      }
-    }
-
-    const aggregate = aggregateProviderAttempts(input.attempts);
-    if (input.attempts.length > 0) {
-      await replaceProviderAttempts(input.client, input.turn.turnId, input.attempts, {
-        dynamicProviderContextEnabled: input.config.dynamicProviderContextEnabled === true,
-      });
-    }
-    if (input.attempts.length > 0 && input.turn.behavior !== 'v2') {
-      for (const attempt of input.attempts) {
-        if (!attempt.usage) continue;
-        await input.client.query(
-          `INSERT INTO usage_events
-            (access_session_id, conversation_id, provider, model,
-             input_tokens, output_tokens, estimated_cost_usd, created_at,
-             interaction_turn_id, provider_attempt_index, cost_complete)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-          [
-            input.accessSessionId,
-            input.turn.conversationId,
-            attempt.connectionDisplayName,
-            attempt.modelId,
-            attempt.usage.inputTokens,
-            attempt.usage.outputTokens,
-            attempt.knownCostUsd,
-            attempt.completedAt,
-            input.turn.turnId,
-            attempt.attemptIndex,
-            attempt.costComplete,
-          ],
-        );
-      }
-    }
-    const attemptSummary = input.turn.behavior === 'v2'
-      ? await summarizeProviderAttempts(input.client, input.turn.turnId)
-      : null;
-    const summarizedV2 = attemptSummary !== null && attemptSummary.attemptCount > 0;
-    const usage = summarizedV2 ? attemptSummary.usage : aggregate.usage;
-    const knownCostUsd = summarizedV2
-      ? attemptSummary.estimatedCostUsd ?? usageCost(usage, input.config.tokenRates)
-      : aggregate.knownCostUsd;
-    const usageComplete = summarizedV2
-      ? attemptSummary.usageComplete
-      : aggregate.usageComplete;
-    const costComplete = summarizedV2
-      ? attemptSummary.costComplete
-      : aggregate.costComplete;
-    await terminateInteraction({
-      client: input.client,
-      turnId: input.turn.turnId,
-      status: input.status,
-      answer: input.answer,
-      errorCode: input.errorCode,
-      sources: input.sources,
-      usage,
-      estimatedCostUsd: costComplete ? knownCostUsd : null,
-      knownCostUsd,
-      usageComplete,
-      costComplete,
-      winner: input.winner,
-      latencyMs: elapsedMilliseconds(input.startedAt, input.completedAt),
-      completedAt: input.completedAt,
-    });
-    if (input.contextTerminal) {
-      await persistContextTerminalManifest(input.client, {
-        interactionTurnId: input.turn.turnId,
-        conversationId: input.turn.conversationId,
-        contextScopeId: input.contextTerminal.contextScopeId,
-        resolved: input.contextTerminal.resolved,
-        manifest: input.contextTerminal.manifest,
-      });
-    }
-
-    if (input.turn.createdConversation && !input.contextTerminal) {
-      await input.client.query(
-        `DELETE FROM conversations AS conversation
-          WHERE conversation.id = $1
-            AND NOT EXISTS (
-              SELECT 1 FROM conversation_messages AS message
-               WHERE message.conversation_id = conversation.id
-            )`,
-        [input.turn.conversationId],
-      );
-    }
-    await input.client.query('COMMIT');
-    return 'expected_terminal';
-  } catch (error) {
-    await input.client.query('ROLLBACK').catch(() => undefined);
-    throw error;
-  }
-}
-
-function aggregateProviderAttempts(attempts: ProviderAttempt[]): {
-  usage: TokenUsage | null;
-  knownCostUsd: number | null;
-  usageComplete: boolean;
-  costComplete: boolean;
-} {
-  let hasUsage = false;
-  let inputTokens = 0;
-  let outputTokens = 0;
-  let knownCostUsd: number | null = null;
-  for (const attempt of attempts) {
-    if (attempt.usage) {
-      hasUsage = true;
-      inputTokens += attempt.usage.inputTokens;
-      outputTokens += attempt.usage.outputTokens;
-    }
-    if (attempt.knownCostUsd !== null) {
-      knownCostUsd = (knownCostUsd ?? 0) + attempt.knownCostUsd;
-    }
-  }
-  return {
-    usage: hasUsage ? { inputTokens, outputTokens } : null,
-    knownCostUsd,
-    usageComplete: attempts.length > 0 && attempts.every((attempt) => attempt.usageComplete),
-    costComplete: attempts.length > 0 && attempts.every((attempt) => attempt.costComplete),
-  };
-}
-
-async function compensateTurn(input: CompensationInput): Promise<boolean> {
-  try {
-    const result = await compensateTurnOnce(input);
-    return result !== 'other_terminal';
-  } catch {
-    const recoveryClient = await input.pool.connect().catch(() => null);
-    if (!recoveryClient) return false;
-    let destroyRecoveryClient = false;
-    try {
-      const result = await compensateTurnOnce({ ...input, client: recoveryClient });
-      return result !== 'other_terminal';
-    } catch {
-      destroyRecoveryClient = true;
-      return false;
-    } finally {
-      recoveryClient.release(destroyRecoveryClient);
-    }
-  }
 }
 
 function dynamicContextTerminalCode(error: unknown): ChatServiceErrorCode | null {
@@ -2564,6 +872,7 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
       turnId,
       config: input.config,
       now: startedAt,
+      createError: (code) => new ChatServiceError(code),
     });
 
     if (turn.replay) {
@@ -2605,21 +914,42 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
     let v2Route: ChatRouteDecision | null = null;
     let v2TaskState: ConversationTaskState | null = null;
     if (turn.executionPipeline === 'context_packet_v22') {
+      const contextTurn = turn;
+      const preparationNow = clock();
       try {
         preparedContext = await prepareContextTurn({
-          pool: input.pool,
           client: lockClient,
-          provider: input.provider,
-          searchProvider: input.searchProvider,
-          accessSessionId: input.accessSessionId,
           request: input.request,
-          turn,
-          config: input.config,
-          now: clock(),
+          turn: contextTurn,
+          contextPacketDigest: input.config.contextPacketDigest,
+          additionalTrustedInstructions: workflowSystemBoundary(input.request, turn.diagnosis),
+          effectiveCurrentInput: requestWorkflow(input.request) === 'diagnosis'
+            ? effectiveQuery
+            : undefined,
+          now: preparationNow,
           signal: input.signal,
+          async embedAll(queries, signal) {
+            const embeddings = await input.provider.embed([...queries], signal);
+            if (embeddings.length !== queries.length) throw new Error('EMBEDDING_UNAVAILABLE');
+            return embeddings;
+          },
+          retrieveAll: (embeddings) => retrieveFullRelevantKnowledge(lockClient, embeddings),
+          search: () => resolveSearch({
+            pool: input.pool,
+            client: lockClient,
+            provider: input.searchProvider,
+            accessSessionId: input.accessSessionId,
+            turn: contextTurn,
+            routingQuestion,
+            searchQuery: effectiveQuery,
+            localEvidenceSufficient: false,
+            config: input.config,
+            now: preparationNow,
+            signal: input.signal,
+          }),
         });
       } catch (error) {
-        if (error instanceof ContextPreparationError) {
+        if (error instanceof ContextTurnPreparationError) {
           contextTerminal = error.terminal;
           throw error.original;
         }
@@ -2861,6 +1191,7 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
         route: v2Route,
         context: preparedContext,
         signal: input.signal,
+        createError: (code) => new ChatServiceError(code),
       });
       completed = true;
       const remainingMessages = await getRemainingMessages(
@@ -2912,30 +1243,28 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
         try {
           next = await legacyAnswerIterator.next();
         } catch (error) {
-          if (error instanceof ProviderRunError) {
-            providerAttempts = [...error.attempts];
-          }
-          if (input.signal?.aborted) throw error;
-          await recordDependencyFailure({
+          throw await failProviderExecution({
             client: lockClient,
-            dependency: 'provider',
-            errorCode: error instanceof OperationTimeoutError
-              ? error.code
+            error,
+            signal: input.signal,
+            now: clock,
+            errorCode: (cause) => cause instanceof OperationTimeoutError
+              ? cause.code
               : 'PROVIDER_UNAVAILABLE',
-            now: clock(),
+            mapError: providerPhaseError,
+            onAttempts: (attempts) => {
+              providerAttempts = attempts;
+            },
+            recordFailure: recordDependencyFailure,
           });
-          if (error instanceof OperationTimeoutError) throw error;
-          throw providerPhaseError(error);
         }
         if (next.done) {
           throwIfAborted(input.signal);
-          await recordDependencyFailure({
+          throw await failIncompleteProviderExecution({
             client: lockClient,
-            dependency: 'provider',
-            errorCode: 'PROVIDER_INCOMPLETE',
-            now: clock(),
+            now: clock,
+            recordFailure: recordDependencyFailure,
           });
-          throw new RuntimePhaseError('PROVIDER_INCOMPLETE', 'PROVIDER_INCOMPLETE');
         }
 
         const event = next.value;
@@ -2957,61 +1286,50 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
         }
         if (event.type === 'activity' || event.type === 'switching') continue;
         if (!answer.trim()) {
-          await recordDependencyFailure({
+          throw await failIncompleteProviderExecution({
             client: lockClient,
-            dependency: 'provider',
-            errorCode: 'PROVIDER_INCOMPLETE',
-            now: clock(),
+            now: clock,
+            recordFailure: recordDependencyFailure,
           });
-          throw new RuntimePhaseError('PROVIDER_INCOMPLETE', 'PROVIDER_INCOMPLETE');
         }
         providerAttempts = event.attempts ? [...event.attempts] : providerAttempts;
         providerWinner = event.winner ?? null;
-        const providerAggregate = providerAttempts.length > 0
-          ? aggregateProviderAttempts(providerAttempts)
-          : {
-              usage: event.usage,
-              knownCostUsd: event.knownCostUsd ?? null,
-              usageComplete: event.usageComplete ?? event.usage !== null,
-              costComplete: event.costComplete ?? false,
-            };
-
-        const completedAt = clock();
-        await recordDependencySuccess({
+        const actualUsage = await coordinateProviderCompletion({
           client: lockClient,
-          dependency: 'provider',
-          now: completedAt,
-        });
-        let actualUsage: TokenUsage | null;
-        try {
-          actualUsage = await completeTurn({
+          candidate: {
+            answer,
+            usage: event.usage,
+            attempts: providerAttempts,
+            winner: providerWinner,
+            knownCostUsd: event.knownCostUsd,
+            usageComplete: event.usageComplete,
+            costComplete: event.costComplete,
+          },
+          signal: input.signal,
+          now: clock,
+          recordDependencySuccess,
+          complete: (completion) => completeTurn({
             pool: input.pool,
             client: lockClient,
             accessSessionId: input.accessSessionId,
             request: input.request,
-            turn,
-            answer,
+            turn: turn!,
+            answer: completion.answer,
             sources,
-            usage: event.usage,
-            attempts: providerAttempts,
-            winner: providerWinner,
-            usageComplete: providerAggregate.usageComplete,
-            costComplete: providerAggregate.costComplete,
-            knownCostUsd: providerAggregate.knownCostUsd,
+            usage: completion.usage,
+            attempts: completion.attempts,
+            winner: completion.winner,
+            usageComplete: completion.usageComplete,
+            costComplete: completion.costComplete,
+            knownCostUsd: completion.knownCostUsd,
             config: input.config,
             startedAt,
-            completedAt,
+            completedAt: clock(),
             route: v2Route,
             signal: input.signal,
-          });
-        } catch (error) {
-          throw new RuntimePhaseError(
-            'PROVIDER_UNAVAILABLE',
-            'PERSISTENCE_FAILED',
-            error,
-            true,
-          );
-        }
+            createError: (code) => new ChatServiceError(code),
+          }),
+        });
         completed = true;
         if (
           requestWorkflow(input.request) === 'diagnosis'
@@ -3302,44 +1620,48 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
               });
               return candidate;
             } catch (error) {
-              if (error instanceof ProviderRunError) providerAttempts = [...error.attempts];
-              if (input.signal?.aborted) throw error;
-              await recordDependencyFailure({
+              return await failProviderExecution({
                 client: lockClient,
-                dependency: 'provider',
-                errorCode: error instanceof OperationTimeoutError
-                  ? error.code
-                  : dependencyErrorCode(error) ?? 'PROVIDER_UNAVAILABLE',
-                now: clock(),
+                error,
+                signal: input.signal,
+                now: clock,
+                errorCode: (cause) => cause instanceof OperationTimeoutError
+                  ? cause.code
+                  : dependencyErrorCode(cause) ?? 'PROVIDER_UNAVAILABLE',
+                mapError: providerPhaseError,
+                onAttempts: (attempts) => {
+                  providerAttempts = attempts;
+                },
+                recordFailure: recordDependencyFailure,
               });
-              if (error instanceof OperationTimeoutError) throw error;
-              throw providerPhaseError(error);
             }
           },
           async commitSuccess({ candidate, validation }) {
-            const providerAggregate = candidate.attempts.length > 0
-              ? aggregateProviderAttempts([...candidate.attempts])
-              : {
-                  usage: candidate.usage,
-                  knownCostUsd: null,
-                  usageComplete: candidate.usage !== null,
-                  costComplete: false,
-                };
-            try {
-              actualUsage = await completeTurn({
+            actualUsage = await coordinateProviderCompletion({
+              client: lockClient,
+              candidate: {
+                answer: candidate.text,
+                usage: candidate.usage,
+                attempts: [...candidate.attempts],
+                winner: candidate.winner,
+              },
+              signal: input.signal,
+              now: clock,
+              recordDependencySuccess,
+              complete: (completion) => completeTurn({
                 pool: input.pool,
                 client: lockClient,
                 accessSessionId: input.accessSessionId,
                 request: input.request,
                 turn: currentTurn,
-                answer: candidate.text,
+                answer: completion.answer,
                 sources: [...candidate.sources],
-                usage: candidate.usage,
-                attempts: [...candidate.attempts],
-                winner: candidate.winner,
-                usageComplete: providerAggregate.usageComplete,
-                costComplete: providerAggregate.costComplete,
-                knownCostUsd: providerAggregate.knownCostUsd,
+                usage: completion.usage,
+                attempts: completion.attempts,
+                winner: completion.winner,
+                usageComplete: completion.usageComplete,
+                costComplete: completion.costComplete,
+                knownCostUsd: completion.knownCostUsd,
                 config: input.config,
                 startedAt,
                 completedAt: clock(),
@@ -3347,15 +1669,9 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
                 context: qaContext,
                 validation,
                 signal: input.signal,
-              });
-            } catch (error) {
-              throw new RuntimePhaseError(
-                'PROVIDER_UNAVAILABLE',
-                'PERSISTENCE_FAILED',
-                error,
-                true,
-              );
-            }
+                createError: (code) => new ChatServiceError(code),
+              }),
+            });
           },
           async compensateBlock({ validation }) {
             contextTerminal = {
@@ -3401,6 +1717,12 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
           yield { type: 'status', stage: 'switching' };
         }
         yield { type: 'delta', text: committedTurn.publicAnswer };
+        if (
+          requestWorkflow(input.request) === 'diagnosis'
+          && turn.diagnosis?.status !== 'collecting'
+        ) {
+          yield { type: 'status', stage: 'handoff' };
+        }
         const remainingMessages = await getRemainingMessages(
           lockClient,
           input.accessSessionId,
@@ -3433,30 +1755,28 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
       try {
         next = await answerIterator.next();
       } catch (error) {
-        if (error instanceof ProviderRunError) {
-          providerAttempts = [...error.attempts];
-        }
-        if (input.signal?.aborted) throw error;
-        await recordDependencyFailure({
+        throw await failProviderExecution({
           client: lockClient,
-          dependency: 'provider',
-          errorCode: error instanceof OperationTimeoutError
-            ? error.code
-            : dependencyErrorCode(error) ?? 'PROVIDER_UNAVAILABLE',
-          now: clock(),
+          error,
+          signal: input.signal,
+          now: clock,
+          errorCode: (cause) => cause instanceof OperationTimeoutError
+            ? cause.code
+            : dependencyErrorCode(cause) ?? 'PROVIDER_UNAVAILABLE',
+          mapError: providerPhaseError,
+          onAttempts: (attempts) => {
+            providerAttempts = attempts;
+          },
+          recordFailure: recordDependencyFailure,
         });
-        if (error instanceof OperationTimeoutError) throw error;
-        throw providerPhaseError(error);
       }
       if (next.done) {
         throwIfAborted(input.signal);
-        await recordDependencyFailure({
+        throw await failIncompleteProviderExecution({
           client: lockClient,
-          dependency: 'provider',
-          errorCode: 'PROVIDER_INCOMPLETE',
-          now: clock(),
+          now: clock,
+          recordFailure: recordDependencyFailure,
         });
-        throw new RuntimePhaseError('PROVIDER_INCOMPLETE', 'PROVIDER_INCOMPLETE');
       }
 
       const event = next.value;
@@ -3476,63 +1796,53 @@ export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEv
       }
       throwIfAborted(input.signal);
       if (!event.answer.trim()) {
-        await recordDependencyFailure({
+        throw await failIncompleteProviderExecution({
           client: lockClient,
-          dependency: 'provider',
-          errorCode: 'PROVIDER_INCOMPLETE',
-          now: clock(),
+          now: clock,
+          recordFailure: recordDependencyFailure,
         });
-        throw new RuntimePhaseError('PROVIDER_INCOMPLETE', 'PROVIDER_INCOMPLETE');
       }
       answer = event.answer;
       if (answerSources.length === 0) answerSources = sources;
       providerAttempts = [...event.attempts];
       providerWinner = event.winner;
-      const providerAggregate = providerAttempts.length > 0
-        ? aggregateProviderAttempts(providerAttempts)
-        : {
-            usage: event.usage,
-            knownCostUsd: event.knownCostUsd,
-            usageComplete: event.usageComplete,
-            costComplete: event.costComplete,
-          };
-      const completedAt = clock();
-      await recordDependencySuccess({
+      const actualUsage = await coordinateProviderCompletion({
         client: lockClient,
-        dependency: 'provider',
-        now: completedAt,
-      });
-      let actualUsage = event.usage;
-      try {
-        actualUsage = await completeTurn({
+        candidate: {
+          answer: event.answer,
+          usage: event.usage,
+          attempts: providerAttempts,
+          winner: providerWinner,
+          knownCostUsd: event.knownCostUsd,
+          usageComplete: event.usageComplete,
+          costComplete: event.costComplete,
+        },
+        signal: input.signal,
+        now: clock,
+        recordDependencySuccess,
+        complete: (completion) => completeTurn({
           pool: input.pool,
           client: lockClient,
           accessSessionId: input.accessSessionId,
           request: input.request,
-          turn,
-          answer: event.answer,
+          turn: turn!,
+          answer: completion.answer,
           sources: answerSources,
-          usage: event.usage,
-          attempts: providerAttempts,
-          winner: providerWinner,
-          usageComplete: providerAggregate.usageComplete,
-          costComplete: providerAggregate.costComplete,
-          knownCostUsd: providerAggregate.knownCostUsd,
+          usage: completion.usage,
+          attempts: completion.attempts,
+          winner: completion.winner,
+          usageComplete: completion.usageComplete,
+          costComplete: completion.costComplete,
+          knownCostUsd: completion.knownCostUsd,
           config: input.config,
           startedAt,
-          completedAt,
+          completedAt: clock(),
           route: v2Route,
           context: preparedContext,
           signal: input.signal,
-        });
-      } catch (error) {
-        throw new RuntimePhaseError(
-          'PROVIDER_UNAVAILABLE',
-          'PERSISTENCE_FAILED',
-          error,
-          true,
-        );
-      }
+          createError: (code) => new ChatServiceError(code),
+        }),
+      });
       completed = true;
 
       yield { type: 'delta', text: event.answer };

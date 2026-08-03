@@ -196,6 +196,7 @@ export function useMorseChat() {
         setAccessState(authorized ? 'authorized' : 'locked');
         setExpiresAt(data.expiresAt ?? null);
         setRemainingMessages(data.remainingMessages ?? 0);
+        if (authorized) void restoreHistory();
       })
       .catch(() => {
         if (!active) return;
@@ -206,20 +207,18 @@ export function useMorseChat() {
       active = false;
       abortControllerRef.current?.abort();
     };
-  }, []);
+  }, [restoreHistory]);
 
-  useEffect(() => {
-    if (accessState !== 'authorized') return;
-    void restoreHistory();
-  }, [accessState, restoreHistory]);
-
-  function updateAssistant(id: string, update: (message: ChatMessage) => ChatMessage) {
+  const updateAssistant = useCallback((
+    id: string,
+    update: (message: ChatMessage) => ChatMessage,
+  ) => {
     setMessages((current) => current.map((message) => (
       message.id === id ? update(message) : message
     )));
-  }
+  }, []);
 
-  function setWorkflow(nextWorkflow: ChatWorkflow) {
+  const setWorkflow = useCallback((nextWorkflow: ChatWorkflow) => {
     if (streaming || workflow === nextWorkflow) return;
     const nextContext = modeForWorkflow(nextWorkflow);
     setWorkflowState(nextWorkflow);
@@ -229,7 +228,7 @@ export function useMorseChat() {
     setJobDescription('');
     setDiagnosis(emptyDiagnosis);
     clearConversation();
-  }
+  }, [clearConversation, streaming, workflow]);
 
   function currentSnapshot(): ChatRequestSnapshot | null {
     const turnId = crypto.randomUUID();
@@ -263,10 +262,10 @@ export function useMorseChat() {
     };
   }
 
-  async function sendSnapshot(
+  const sendSnapshot = useCallback(async (
     requestSnapshot: ChatRequestSnapshot,
     retryAssistantId?: string,
-  ) {
+  ) => {
     if (streaming || abortControllerRef.current) return;
     const assistantId = retryAssistantId ?? crypto.randomUUID();
     const startedAtMs = Date.now();
@@ -403,7 +402,7 @@ export function useMorseChat() {
       setStreaming(false);
       setPhase((current) => current === 'handoff' ? current : null);
     }
-  }
+  }, [clearConversation, conversationId, streaming, updateAssistant]);
 
   function sendCurrent() {
     const snapshot = currentSnapshot();
@@ -428,12 +427,9 @@ export function useMorseChat() {
     });
   }
 
-  const sendSnapshotRef = useRef(sendSnapshot);
-  sendSnapshotRef.current = sendSnapshot;
-
   const retry = useCallback((retryAssistantId: string, requestSnapshot: ChatRequestSnapshot) => {
-    void sendSnapshotRef.current(requestSnapshot, retryAssistantId);
-  }, []);
+    void sendSnapshot(requestSnapshot, retryAssistantId);
+  }, [sendSnapshot]);
 
   const stop = useCallback(() => {
     abortControllerRef.current?.abort();
@@ -461,6 +457,7 @@ export function useMorseChat() {
       setInviteCode('');
       setHistoryLoading(true);
       setAccessState('authorized');
+      void restoreHistory();
     } catch {
       setAccessError('暂时无法验证邀请码，请稍后重试。');
     }

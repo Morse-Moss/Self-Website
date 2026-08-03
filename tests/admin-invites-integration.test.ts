@@ -329,14 +329,14 @@ test('deactivation blocks new redemption but preserves an already authenticated 
   );
   assert.equal((await authenticateSession(pool, redeemed.token))?.id, redeemed.sessionId);
 
-  let embedCalls = 0;
+  let answerCalls = 0;
   const provider = {
     async embed(): Promise<number[][]> {
-      embedCalls += 1;
-      throw new Error('probe stops after session reservation');
+      throw new Error('general v2 chat must not enter legacy retrieval');
     },
     async *streamAnswer(): AsyncIterable<never> {
-      throw new Error('answer must not run');
+      answerCalls += 1;
+      throw new Error('probe stops after provider routing');
     },
   };
   await assert.rejects(async () => {
@@ -355,6 +355,7 @@ test('deactivation blocks new redemption but preserves an already authenticated 
         maxMessagesPerSession: 30,
         interactionRetentionDays: 10,
         tokenRates: null,
+        contextPacketDigest: { key: Buffer.alloc(32, 0x31), keyId: 'admin-invites-test-v1' },
         providerTotalTimeoutMs: 90_000,
         providerProtocolEventTimeoutMs: 25_000,
         providerModelTextTimeoutMs: 40_000,
@@ -364,8 +365,8 @@ test('deactivation blocks new redemption but preserves an already authenticated 
     })) {
       // The probe provider fails after reservation; reaching it proves the session stayed usable.
     }
-  }, (error: unknown) => error instanceof ChatServiceError && error.code === 'RETRIEVAL_UNAVAILABLE');
-  assert.equal(embedCalls, 1);
+  }, (error: unknown) => error instanceof ChatServiceError && error.code === 'PROVIDER_UNAVAILABLE');
+  assert.equal(answerCalls, 1);
 });
 
 test('invite deactivation rejects unsupported updates and unknown records', async () => {

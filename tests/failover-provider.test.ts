@@ -797,7 +797,11 @@ test('coordinated v2 execution stays serial and switches only after failure', as
   ], 1_000);
 
   const events: AnswerEvent[] = [];
-  for await (const event of provider.streamAnswer(v2Request())) events.push(event);
+  for await (const event of provider.streamAnswer(v2Request({
+    totalTimeoutMs: 1_000,
+    protocolEventTimeoutMs: 250,
+    modelTextTimeoutMs: 400,
+  }))) events.push(event);
 
   assert.deepEqual(started, ['primary', 'fallback-1']);
   assert.equal(fallbackTwoStarted, false);

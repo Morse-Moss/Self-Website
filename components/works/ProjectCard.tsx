@@ -46,29 +46,33 @@ export default function ProjectCard({
 
     if (expanded) {
       detailsMountedRef.current = true;
-      setDetailsMounted(true);
       openFrame.current = requestAnimationFrame(() => {
-        openFrame.current = null;
-        if (presenceRun.current === run) {
-          setDetailsOpen(true);
-        }
+        if (presenceRun.current !== run) return;
+        setDetailsMounted(true);
+        openFrame.current = requestAnimationFrame(() => {
+          openFrame.current = null;
+          if (presenceRun.current === run) setDetailsOpen(true);
+        });
       });
     } else {
-      setDetailsOpen(false);
-      if (detailsMountedRef.current) {
+      openFrame.current = requestAnimationFrame(() => {
+        openFrame.current = null;
+        if (presenceRun.current !== run) return;
+        setDetailsOpen(false);
+        if (!detailsMountedRef.current) return;
         if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
           detailsMountedRef.current = false;
           setDetailsMounted(false);
-        } else {
-          closeFallback.current = window.setTimeout(() => {
-            closeFallback.current = null;
-            if (presenceRun.current === run) {
-              detailsMountedRef.current = false;
-              setDetailsMounted(false);
-            }
-          }, DETAIL_TRANSITION_FALLBACK_MS);
+          return;
         }
-      }
+        closeFallback.current = window.setTimeout(() => {
+          closeFallback.current = null;
+          if (presenceRun.current === run) {
+            detailsMountedRef.current = false;
+            setDetailsMounted(false);
+          }
+        }, DETAIL_TRANSITION_FALLBACK_MS);
+      });
     }
 
     return () => {

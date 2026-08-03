@@ -437,11 +437,13 @@ function buildInstructions(
   packet: CanonicalContextPacket,
   resolved: ResolvedChatTurn,
   capabilityEvidenceBoundaries: readonly string[],
+  additionalTrustedInstructions: string,
 ): string {
   const blocks = [
     basePolicy(),
     responseContract(resolved, packet.currentInput),
     capabilityEvidenceBoundaryInstructions(capabilityEvidenceBoundaries),
+    additionalTrustedInstructions,
     packet.taskFrame ? `<task_frame>${renderData(packet.taskFrame)}</task_frame>` : '',
     packet.taskInputs.length > 0 ? `<task_inputs>${renderData(packet.taskInputs)}</task_inputs>` : '',
     packet.approvedEvidence.length > 0
@@ -509,6 +511,7 @@ export interface BuildContextPacketInput {
   } | null;
   degradedReason?: string | null;
   capabilityEvidenceBoundaries?: readonly string[];
+  additionalTrustedInstructions?: string;
 }
 
 export type BuildCanonicalAnswerSourceV2Input = Omit<CanonicalAnswerSourceV2, 'schemaVersion'> & {
@@ -693,6 +696,7 @@ export function buildContextPacket(input: BuildContextPacketInput): BuiltContext
       input.evidenceBundle?.unavailableCapabilityIds
         ?? input.capabilityEvidenceBoundaries
         ?? [],
+      input.additionalTrustedInstructions ?? '',
     ),
     messages: buildMessages(packet),
     reasoningEffort: input.reasoningEffort,

@@ -52,7 +52,7 @@ export default function AdminInviteDialog({
   onComplete,
 }: AdminInviteDialogProps) {
   const [items, setItems] = useState<AdminInvite[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [loadRevision, setLoadRevision] = useState(0);
   const [label, setLabel] = useState('HR interview');
@@ -76,14 +76,7 @@ export default function AdminInviteDialog({
   }, [onUnauthorized]);
 
   useEffect(() => {
-    if (!open) {
-      setCreatedCode(null);
-      setCopyState('idle');
-      setIdCopyState(null);
-      setFormError('');
-      setConfirmingId(null);
-      return;
-    }
+    if (!open) return;
     previousFocusRef.current = document.activeElement instanceof HTMLElement
       ? document.activeElement
       : null;
@@ -94,8 +87,6 @@ export default function AdminInviteDialog({
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();
-    setLoading(true);
-    setLoadError('');
     fetch('/api/admin/invites', {
       cache: 'no-store',
       credentials: 'same-origin',
@@ -392,7 +383,11 @@ export default function AdminInviteDialog({
                 <button
                   className={styles.secondaryButton}
                   type="button"
-                  onClick={() => setLoadRevision((revision) => revision + 1)}
+                  onClick={() => {
+                    setLoading(true);
+                    setLoadError('');
+                    setLoadRevision((revision) => revision + 1);
+                  }}
                 >
                   重新加载
                 </button>

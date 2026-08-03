@@ -495,14 +495,14 @@ function approvedForPlan(input: PlanEvidenceBundleInput): {
 function bundleAdmissions(
   approved: readonly KnowledgeSource[],
   unavailableCapabilityIds: readonly string[],
+  catalog: CompiledChatEvidenceCatalog,
 ): EvidenceBundle['admissions'] {
   return [
     ...approved.map((source) => ({
       evidenceId: source.chunkId,
       level: source.evidenceLevel ?? 'direct' as const,
       projectSlug: source.projectSlug ?? null,
-      capabilityId: source.topicIds?.find((topic) => topic !== 'resume'
-        && !projectOrder.has(topic as ProjectSlug)) ?? null,
+      capabilityId: source.topicIds?.find((topic) => catalog.capabilities.has(topic)) ?? null,
     })),
     ...unavailableCapabilityIds.map((capabilityId) => ({
       evidenceId: null,
@@ -524,8 +524,9 @@ async function rankApprovedEvidence(
   relevance: EvidenceBundle['relevance'];
   degradedReason: EvidenceBundle['degradedReason'];
 }> {
-  if (approved.length === 0 || (input.plan.evidence.kind === 'portfolio_full'
-    && !input.plan.evidence.rankForQuestion)) {
+  if (approved.length === 0
+    || input.plan.evidence.kind === 'identity'
+    || (input.plan.evidence.kind === 'portfolio_full' && !input.plan.evidence.rankForQuestion)) {
     return { relevance: emptyRelevance(approved), degradedReason: null };
   }
   const queries = partitionCompleteRetrievalQuery(
@@ -587,7 +588,7 @@ async function planEvidenceBundle(input: PlanEvidenceBundleInput): Promise<Evide
   return {
     catalogVersion: 2,
     approved,
-    admissions: bundleAdmissions(approved, unavailableCapabilityIds),
+    admissions: bundleAdmissions(approved, unavailableCapabilityIds, input.catalog),
     relevance,
     unavailableCapabilityIds,
     degradedReason,

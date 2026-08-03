@@ -48,7 +48,6 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
 
   useEffect(() => {
     let active = true;
-    setBootError('');
     fetch('/api/admin/session', { cache: 'no-store', credentials: 'same-origin' })
       .then(async (response) => {
         if (!active) return;
@@ -125,6 +124,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
           className={consoleStyles.secondaryButton}
           type="button"
           onClick={() => {
+            setBootError('');
             setAuthState('checking');
             setSessionRevision((revision) => revision + 1);
           }}

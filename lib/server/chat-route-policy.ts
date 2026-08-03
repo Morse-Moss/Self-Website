@@ -77,8 +77,20 @@ function isPrivateContactRequest(message: string): boolean {
   return /(?:提供|告诉(?:我)?|给出|列出|泄露|输出).{0,24}(?:手机号|邮箱|联系方式|客户名称)|(?:个人|私人|私下|非公开|内部).{0,16}(?:手机号|邮箱|联系方式|客户名称)|(?:手机号|邮箱|联系方式|客户名称).{0,16}(?:是什么|是多少|地址|账号|联系人)/iu.test(message);
 }
 
+function requestsCredentialDisclosure(message: string): boolean {
+  const disclosure = /(?:输出|泄露).{0,12}(?:密钥|密码|token)/giu;
+  for (const match of message.matchAll(disclosure)) {
+    const prefix = message.slice(Math.max(0, match.index - 8), match.index);
+    if (!/(?:不(?:得|要|能|应|可)?|勿|别|禁止|严禁|避免)(?:向外|对外)?$/u.test(prefix)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function isUnsafeOrUnverifiableRequest(message: string): boolean {
-  return /(?:忽略|覆盖).{0,20}(?:公开来源限制|系统指令|既有规则)|(?:输出|泄露).{0,12}(?:密钥|密码|token)|(?:服务器地址|登录凭据)|(?:准确|精确).{0,12}(?:百分比|提升率)|明天会涨/iu.test(message)
+  return /(?:忽略|覆盖).{0,20}(?:公开来源限制|系统指令|既有规则)|(?:服务器地址|登录凭据)|(?:准确|精确).{0,12}(?:百分比|提升率)|明天会涨/iu.test(message)
+    || requestsCredentialDisclosure(message)
     || isPrivateContactRequest(message);
 }
 
@@ -92,8 +104,9 @@ function isExplicitPersonalFact(message: string): boolean {
   return personalSubject && experiencePredicate;
 }
 
-function isExternalCurrent(message: string): boolean {
-  return /(?:当前|现在|截至目前).{0,16}(?:最新|版本|价格|天气|新闻)|(?:最新|实时)(?:版本|消息|新闻|价格|天气)|今天.{0,16}天气|天气.{0,16}(?:怎么样|如何)|帮我(?:查|核实)|外部(?:资料|信息)|联网(?:查|核实)/iu.test(message);
+export function isExternalCurrentRequest(message: string): boolean {
+  return /(?:当前|现在|截至目前).{0,16}(?:最新|版本|价格|天气|新闻)|(?:最新|实时)(?:版本|消息|新闻|价格|天气)|(?:查|核实|核验).{0,12}(?:最新|当前|现在)|今天.{0,16}天气|天气.{0,16}(?:怎么样|如何)|帮我(?:查|核实)|外部(?:资料|信息)|联网(?:查|核实)/iu.test(message)
+    || /(?:verify|check|confirm).{0,24}(?:latest|current)|(?:latest|current).{0,24}(?:version|documentation|docs|hours|weather|news|price)|what (?:changed|is new).{0,24}(?:latest|current)|what are.{0,24}(?:opening )?hours/iu.test(message);
 }
 
 function isIdentityQuestion(message: string): boolean {
@@ -520,7 +533,7 @@ export function routeChatTurn(input: RouteChatTurnInput): ChatRouteDecision {
       release: 'complete',
     });
   }
-  if (isExternalCurrent(message) && !isProjectFact(message, projectScope)) {
+  if (isExternalCurrentRequest(message) && !isProjectFact(message, projectScope)) {
     return decision({
       routeKind: 'external_current',
       reasonCode: 'external_current_query',

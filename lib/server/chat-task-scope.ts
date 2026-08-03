@@ -127,7 +127,7 @@ export function buildChatTaskScopeFrame(input: {
   return {
     conversationId: input.conversationId,
     taskId,
-    expectedVersion: reuse ? input.currentFrame!.version : 0,
+    expectedVersion: input.currentFrame?.version ?? 0,
     taskKind: reuse
       ? input.currentFrame!.taskKind
       : input.workflow === 'jd_match' ? 'jd_match' : 'recruitment_evaluation',

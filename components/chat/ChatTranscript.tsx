@@ -35,9 +35,10 @@ const TranscriptMessage = memo(function TranscriptMessage({
       {message.role === 'assistant'
         && !message.text
         && !message.error
-        && !message.stopped ? (
+        && !message.stopped
+        && typeof message.startedAtMs === 'number' ? (
           <ChatPendingState
-            startedAtMs={message.startedAtMs ?? Date.now()}
+            startedAtMs={message.startedAtMs}
             phase={message.phase}
             onStop={onStop}
           />

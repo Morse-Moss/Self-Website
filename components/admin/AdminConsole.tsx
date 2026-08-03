@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 
 import AdminExportDialog from './AdminExportDialog';
 import AdminFilters from './AdminFilters';
@@ -27,11 +27,25 @@ const emptyList: AdminTurnListPayload = {
   limit: defaultAdminFilters.limit,
 };
 
+const mobileQuery = '(max-width: 640px)';
+
+function subscribeMobile(callback: () => void): () => void {
+  const query = window.matchMedia(mobileQuery);
+  query.addEventListener('change', callback);
+  return () => query.removeEventListener('change', callback);
+}
+
+function mobileSnapshot(): boolean {
+  return window.matchMedia(mobileQuery).matches;
+}
+
 export default function AdminConsole() {
   const { requireLogin } = useAdminSession();
   const [draftFilters, setDraftFilters] = useState<AdminFilterValues>(defaultAdminFilters);
   const [filters, setFilters] = useState<AdminFilterValues>(defaultAdminFilters);
-  const [filtersOpen, setFiltersOpen] = useState(true);
+  const mobile = useSyncExternalStore(subscribeMobile, mobileSnapshot, () => false);
+  const [filtersOpenOverride, setFiltersOpenOverride] = useState<boolean | null>(null);
+  const filtersOpen = filtersOpenOverride ?? !mobile;
   const [list, setList] = useState<AdminTurnListPayload | null>(null);
   const [listLoading, setListLoading] = useState(false);
   const [listError, setListError] = useState('');
@@ -46,13 +60,7 @@ export default function AdminConsole() {
   const [notice, setNotice] = useState('');
 
   useEffect(() => {
-    if (window.matchMedia('(max-width: 640px)').matches) setFiltersOpen(false);
-  }, []);
-
-  useEffect(() => {
     const controller = new AbortController();
-    setListLoading(true);
-    setListError('');
 
     fetch(`/api/admin/turns?${buildAdminQuery(filters)}`, {
       cache: 'no-store',
@@ -87,15 +95,8 @@ export default function AdminConsole() {
   }, [filters, requireLogin]);
 
   useEffect(() => {
-    if (!selectedId) {
-      setDetail(null);
-      setDetailLoading(false);
-      return;
-    }
+    if (!selectedId) return;
     const controller = new AbortController();
-    setDetail(null);
-    setDetailLoading(true);
-    setDetailError('');
 
     fetch(`/api/admin/turns/${selectedId}`, {
       cache: 'no-store',
@@ -121,6 +122,7 @@ export default function AdminConsole() {
 
   function applyFilters(next: AdminFilterValues) {
     setListLoading(true);
+    setListError('');
     setFilters(next);
     setSelectedId(null);
     setDetail(null);
@@ -129,6 +131,9 @@ export default function AdminConsole() {
   }
 
   function selectTurn(turn: AdminTurnSummary) {
+    setDetail(null);
+    setDetailError('');
+    setDetailLoading(true);
     setSelectedId(turn.id);
     setMobileDetailOpen(true);
     setNotice('');
@@ -195,7 +200,7 @@ export default function AdminConsole() {
         disabled={listLoading}
         onDraftChange={setDraftFilters}
         onApply={applyFilters}
-        onToggle={() => setFiltersOpen((open) => !open)}
+        onToggle={() => setFiltersOpenOverride((open) => !(open ?? !mobile))}
       />
 
       <div className={styles.workspace}>
@@ -206,7 +211,11 @@ export default function AdminConsole() {
               <button
                 className={styles.secondaryButton}
                 type="button"
-                onClick={() => setFilters((current) => ({ ...current }))}
+                onClick={() => {
+                  setListLoading(true);
+                  setListError('');
+                  setFilters((current) => ({ ...current }));
+                }}
               >
                 重新加载
               </button>
@@ -223,6 +232,7 @@ export default function AdminConsole() {
         )}
 
         <AdminTurnDetailPanel
+          key={detail?.id ?? 'empty'}
           detail={detail}
           loading={detailLoading || Boolean(selectedId && !detail && !detailError)}
           error={detailError}
@@ -234,27 +244,33 @@ export default function AdminConsole() {
         />
       </div>
 
-      <AdminInviteDialog
-        open={inviteOpen}
-        onClose={() => setInviteOpen(false)}
-        onUnauthorized={requireLogin}
-        onComplete={setNotice}
-      />
+      {inviteOpen ? (
+        <AdminInviteDialog
+          open
+          onClose={() => setInviteOpen(false)}
+          onUnauthorized={requireLogin}
+          onComplete={setNotice}
+        />
+      ) : null}
 
-      <AdminResumePanel
-        open={resumeOpen}
-        onClose={() => setResumeOpen(false)}
-        onUnauthorized={requireLogin}
-        onComplete={setNotice}
-      />
+      {resumeOpen ? (
+        <AdminResumePanel
+          open
+          onClose={() => setResumeOpen(false)}
+          onUnauthorized={requireLogin}
+          onComplete={setNotice}
+        />
+      ) : null}
 
-      <AdminExportDialog
-        open={exportOpen}
-        filters={filters}
-        onClose={() => setExportOpen(false)}
-        onUnauthorized={requireLogin}
-        onComplete={setNotice}
-      />
+      {exportOpen ? (
+        <AdminExportDialog
+          open
+          filters={filters}
+          onClose={() => setExportOpen(false)}
+          onUnauthorized={requireLogin}
+          onComplete={setNotice}
+        />
+      ) : null}
     </main>
   );
 }

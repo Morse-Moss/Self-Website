@@ -1,6 +1,6 @@
 'use client';
 
-import { type FormEvent, useEffect, useState } from 'react';
+import { type FormEvent, useState } from 'react';
 
 import {
   responseError,
@@ -54,21 +54,11 @@ export default function AdminTurnDetailPanel({
   onUnauthorized,
   onSaved,
 }: AdminTurnDetailProps) {
-  const [badcase, setBadcase] = useState(false);
-  const [adminNote, setAdminNote] = useState('');
+  const [badcase, setBadcase] = useState(detail?.badcase ?? false);
+  const [adminNote, setAdminNote] = useState(detail?.adminNote ?? '');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [saved, setSaved] = useState(false);
-
-  useEffect(() => {
-    setBadcase(detail?.badcase ?? false);
-    setAdminNote(detail?.adminNote ?? '');
-    setSaveError('');
-  }, [detail?.id, detail?.badcase, detail?.adminNote]);
-
-  useEffect(() => {
-    setSaved(false);
-  }, [detail?.id]);
 
   async function saveBadcase(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

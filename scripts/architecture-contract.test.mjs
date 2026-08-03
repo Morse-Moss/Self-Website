@@ -269,6 +269,235 @@ test('production TypeScript modules respect layer boundaries', async () => {
   );
 });
 
+test('chat service delegates context-turn preparation to one orchestration boundary', async () => {
+  const { imports } = await buildGraph();
+  const serviceImports = imports.get('lib/server/chat-service.ts') ?? [];
+  assert.ok(
+    serviceImports.some((imported) => imported.target === 'lib/server/chat-context-turn-preparation.ts'),
+    'chat-service must import the context-turn preparation boundary',
+  );
+
+  const serviceSource = await fs.readFile(
+    path.join(repositoryRoot, 'lib', 'server', 'chat-service.ts'),
+    'utf8',
+  );
+  assert.match(serviceSource, /prepareContextTurn\s*\(/u);
+  assert.doesNotMatch(
+    serviceSource,
+    /async function prepareContextTurn\s*\(/u,
+    'chat-service must not own the context-turn preparation implementation',
+  );
+  for (const forbiddenLoader of [
+    'loadConversationSessionSnapshot',
+    'loadAdjacentCompletedContextTurn',
+    'loadCapturedLegacyContextBridge',
+    'loadContextTaskFrame',
+  ]) {
+    assert.doesNotMatch(
+      serviceSource,
+      new RegExp(`\\b${forbiddenLoader}\\b`, 'u'),
+      `chat-service must not bypass context-turn preparation via ${forbiddenLoader}`,
+    );
+  }
+  assert.doesNotMatch(
+    serviceSource,
+    /\b(?:planQaTurnWithResolution|projectFinalContext)\b/u,
+    'chat-service must not retain context planning or projection internals',
+  );
+
+  const preparationImports = imports.get('lib/server/chat-context-turn-preparation.ts') ?? [];
+  for (const target of [
+    'lib/server/chat-conversation-session.ts',
+    'lib/server/chat-context-projection.ts',
+    'lib/server/chat-qa-runtime.ts',
+  ]) {
+    assert.ok(
+      preparationImports.some((imported) => imported.target === target),
+      `context-turn preparation must own ${target}`,
+    );
+  }
+  assert.equal(
+    preparationImports.some((imported) => imported.target === 'lib/server/chat-service.ts'),
+    false,
+    'context-turn preparation must not depend back on chat-service',
+  );
+});
+
+test('chat service delegates terminal compensation to one persistence boundary', async () => {
+  const { imports } = await buildGraph();
+  const serviceImports = imports.get('lib/server/chat-service.ts') ?? [];
+  assert.ok(
+    serviceImports.some((imported) => imported.target === 'lib/server/chat-turn-compensation.ts'),
+    'chat-service must import the terminal compensation boundary',
+  );
+
+  const serviceSource = await fs.readFile(
+    path.join(repositoryRoot, 'lib', 'server', 'chat-service.ts'),
+    'utf8',
+  );
+  assert.match(serviceSource, /compensateTurn\s*\(/u);
+  assert.doesNotMatch(
+    serviceSource,
+    /(?:async function compensateTurn|function aggregateProviderAttempts)\s*\(/u,
+    'chat-service must not own terminal compensation or attempt aggregation',
+  );
+
+  const compensationImports = imports.get('lib/server/chat-turn-compensation.ts') ?? [];
+  for (const target of [
+    'lib/server/interaction-log.ts',
+    'lib/server/provider-attempt-log.ts',
+    'lib/server/conversation-context-state.ts',
+  ]) {
+    assert.ok(
+      compensationImports.some((imported) => imported.target === target),
+      `turn compensation must own ${target}`,
+    );
+  }
+  assert.equal(
+    compensationImports.some((imported) => imported.target === 'lib/server/chat-service.ts'),
+    false,
+    'turn compensation must not depend back on chat-service',
+  );
+});
+
+test('chat service delegates transaction lifecycle control to one infrastructure boundary', async () => {
+  const { imports } = await buildGraph();
+  const serviceImports = imports.get('lib/server/chat-service.ts') ?? [];
+  assert.ok(
+    serviceImports.some((imported) => imported.target === 'lib/server/transaction-runner.ts'),
+    'chat-service must import the transaction lifecycle boundary',
+  );
+
+  const serviceSource = await fs.readFile(
+    path.join(repositoryRoot, 'lib', 'server', 'chat-service.ts'),
+    'utf8',
+  );
+  assert.doesNotMatch(
+    serviceSource,
+    /['"](?:BEGIN|COMMIT|ROLLBACK)['"]/u,
+    'chat-service must not own transaction lifecycle commands',
+  );
+
+  const transactionImports = imports.get('lib/server/transaction-runner.ts') ?? [];
+  assert.equal(
+    transactionImports.some((imported) => imported.target === 'lib/server/chat-service.ts'),
+    false,
+    'transaction lifecycle must not depend back on chat-service',
+  );
+});
+
+test('chat service delegates turn reservation to one persistence boundary', async () => {
+  const { imports } = await buildGraph();
+  const serviceImports = imports.get('lib/server/chat-service.ts') ?? [];
+  assert.ok(
+    serviceImports.some((imported) => imported.target === 'lib/server/chat-turn-reservation.ts'),
+    'chat-service must import the turn reservation boundary',
+  );
+
+  const serviceSource = await fs.readFile(
+    path.join(repositoryRoot, 'lib', 'server', 'chat-service.ts'),
+    'utf8',
+  );
+  assert.doesNotMatch(
+    serviceSource,
+    /async function (?:reserveTurn|reserveTurnInTransaction|recoverRunningTurn|loadTurnDiagnosis)\s*\(/u,
+    'chat-service must not own turn reservation persistence',
+  );
+
+  const reservationImports = imports.get('lib/server/chat-turn-reservation.ts') ?? [];
+  for (const target of [
+    'lib/server/interaction-log.ts',
+    'lib/server/conversation-context-state.ts',
+    'lib/server/transaction-runner.ts',
+  ]) {
+    assert.ok(
+      reservationImports.some((imported) => imported.target === target),
+      `turn reservation must own ${target}`,
+    );
+  }
+  assert.equal(
+    reservationImports.some((imported) => imported.target === 'lib/server/chat-service.ts'),
+    false,
+    'turn reservation must not depend back on chat-service',
+  );
+});
+
+test('chat service delegates turn completion to one persistence boundary', async () => {
+  const { imports } = await buildGraph();
+  const serviceImports = imports.get('lib/server/chat-service.ts') ?? [];
+  assert.ok(
+    serviceImports.some((imported) => imported.target === 'lib/server/chat-turn-completion.ts'),
+    'chat-service must import the turn completion boundary',
+  );
+
+  const serviceSource = await fs.readFile(
+    path.join(repositoryRoot, 'lib', 'server', 'chat-service.ts'),
+    'utf8',
+  );
+  assert.doesNotMatch(
+    serviceSource,
+    /async function (?:completeTurn|completeSafetyBoundaryTurn|persistDiagnosis)\s*\(/u,
+    'chat-service must not own turn completion persistence',
+  );
+
+  const completionImports = imports.get('lib/server/chat-turn-completion.ts') ?? [];
+  for (const target of [
+    'lib/server/interaction-log.ts',
+    'lib/server/conversation-context-state.ts',
+    'lib/server/conversation-task-state.ts',
+    'lib/server/transaction-runner.ts',
+  ]) {
+    assert.ok(
+      completionImports.some((imported) => imported.target === target),
+      `turn completion must own ${target}`,
+    );
+  }
+  assert.equal(
+    completionImports.some((imported) => imported.target === 'lib/server/chat-service.ts'),
+    false,
+    'turn completion must not depend back on chat-service',
+  );
+});
+
+test('chat service delegates provider completion coordination to one boundary', async () => {
+  const { imports } = await buildGraph();
+  const serviceImports = imports.get('lib/server/chat-service.ts') ?? [];
+  assert.ok(
+    serviceImports.some((imported) => imported.target === 'lib/server/chat-provider-completion.ts'),
+    'chat-service must import the provider completion coordination boundary',
+  );
+  const serviceSource = await fs.readFile(
+    path.join(repositoryRoot, 'lib', 'server', 'chat-service.ts'),
+    'utf8',
+  );
+  assert.doesNotMatch(
+    serviceSource,
+    /const providerAggregate =/u,
+    'chat-service must not inline provider completion accounting',
+  );
+  const completionImports = imports.get('lib/server/chat-provider-completion.ts') ?? [];
+  assert.equal(
+    completionImports.some((imported) => imported.target === 'lib/server/chat-service.ts'),
+    false,
+    'provider completion must not depend back on chat-service',
+  );
+});
+
+test('chat service delegates provider failure coordination to one boundary', async () => {
+  const { imports } = await buildGraph();
+  const serviceImports = imports.get('lib/server/chat-service.ts') ?? [];
+  assert.ok(
+    serviceImports.some((imported) => imported.target === 'lib/server/chat-provider-failure.ts'),
+    'chat-service must import the provider failure coordination boundary',
+  );
+  const failureImports = imports.get('lib/server/chat-provider-failure.ts') ?? [];
+  assert.equal(
+    failureImports.some((imported) => imported.target === 'lib/server/chat-service.ts'),
+    false,
+    'provider failure coordination must not depend back on chat-service',
+  );
+});
+
 test('private resume modules have an explicit server-only importer allowlist', async () => {
   const { importers } = await buildGuardedImportIndex();
   const targets = [

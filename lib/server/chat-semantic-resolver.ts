@@ -32,7 +32,11 @@ import {
   matchCatalogProjects,
   resolveCatalogProjectScope,
 } from './chat-evidence-catalog.ts';
-import { routeChatTurn, type RouteAnchor } from './chat-route-policy.ts';
+import {
+  isExternalCurrentRequest,
+  routeChatTurn,
+  type RouteAnchor,
+} from './chat-route-policy.ts';
 import {
   buildChatTaskScopeFrame,
   decideChatTaskScope,
@@ -475,6 +479,13 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
     intent = 'clarify';
     reasonCode = baseRoute.reasonCode;
     safetyBoundary = baseRoute.safetyBoundary;
+  } else if (input.request.workflow === 'diagnosis' && isExternalCurrentRequest(message)) {
+    intent = 'external_current';
+    reasonCode = 'external_current_query';
+    referent = { kind: 'external', ref: 'controlled-search' };
+  } else if (input.request.workflow === 'diagnosis') {
+    intent = 'general_conversation';
+    reasonCode = 'explicit_diagnosis_workflow';
   } else if (input.request.workflow === 'jd_match') {
     intent = 'jd_match';
     reasonCode = 'explicit_jd_workflow';
@@ -586,7 +597,7 @@ export function resolveChatSemanticTurn(input: ResolveChatSemanticTurnInput): Ch
     contentIntent: intent,
     independentOneShot,
     explicitCommand: completing ? 'complete'
-      : switchTask || (input.request.workflow === 'jd_match' && currentFrame?.status === 'completed')
+      : switchTask || (input.request.workflow === 'jd_match' && currentFrame !== null)
         ? 'switch'
         : clear.size > 0 ? 'clear' : 'none',
     hasAdjacentBoundary: adjacentRecruiterTaskBoundary,

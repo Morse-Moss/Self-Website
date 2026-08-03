@@ -37,6 +37,8 @@ const runtimeEnv = {
   MORSE_INVITE_TRUSTED_PROXY_HOPS: '1',
   MORSE_PROVIDER_CONFIG_KEY_FILE: providerKeyFile,
   MORSE_PROVIDER_CONFIG_KEY_VERSION: '1',
+  MORSE_CONTEXT_PACKET_DIGEST_KEY_FILE: contextDigestKeyFile,
+  MORSE_CONTEXT_PACKET_DIGEST_KEY_ID: 'test-context-key',
   OPENAI_API_KEY: 'test-production-chat-key',
   OPENAI_BASE_URL: 'https://gateway.example/v1',
   OPENAI_CHAT_MODEL: 'gpt-production',

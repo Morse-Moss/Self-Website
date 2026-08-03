@@ -55,13 +55,6 @@ export default function AdminExportDialog({
     };
   }, [onClose, open]);
 
-  useEffect(() => {
-    if (open) return;
-    setPassword('');
-    setError('');
-    setExporting(false);
-  }, [open]);
-
   function closeFromBackdrop(event: MouseEvent<HTMLDivElement>) {
     if (event.target === event.currentTarget && !exporting) onClose();
   }

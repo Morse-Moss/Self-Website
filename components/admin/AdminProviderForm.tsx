@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import type {
   ConnectionInput,
@@ -69,38 +69,33 @@ export default function AdminProviderForm({
   onCancel,
   onSubmit,
 }: Props) {
+  const initialTakeover = mode === 'takeover_environment' ? environmentTarget : null;
   const [step, setStep] = useState(1);
-  const [name, setName] = useState('');
-  const [baseUrl, setBaseUrl] = useState('');
+  const [name, setName] = useState(
+    initialTakeover?.connectionDisplayName ?? connection?.displayName ?? '',
+  );
+  const [baseUrl, setBaseUrl] = useState(
+    initialTakeover?.baseUrlMode === 'public_default'
+      ? initialTakeover.baseUrlPrefill ?? ''
+      : connection?.baseUrl ?? '',
+  );
   const [baseUrlChanged, setBaseUrlChanged] = useState(false);
-  const [userAgent, setUserAgent] = useState('');
+  const [userAgent, setUserAgent] = useState(
+    initialTakeover?.userAgent ?? connection?.userAgent ?? '',
+  );
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [reuseKeyAcrossOrigin, setReuseKeyAcrossOrigin] = useState(false);
-  const [modelValue, setModelValue] = useState<ModelInput>(emptyModel);
-
-  useEffect(() => {
-    if (!open) return;
-    setStep(1);
-    const takeover = mode === 'takeover_environment' ? environmentTarget : null;
-    setName(takeover?.connectionDisplayName ?? connection?.displayName ?? '');
-    setBaseUrl(takeover?.baseUrlMode === 'public_default' ? takeover.baseUrlPrefill ?? '' : connection?.baseUrl ?? '');
-    setBaseUrlChanged(false);
-    setUserAgent(takeover?.userAgent ?? connection?.userAgent ?? '');
-    setApiKey('');
-    setShowKey(false);
-    setReuseKeyAcrossOrigin(false);
-    setModelValue(takeover ? {
-      contextWindowTokens: takeover.contextWindowTokens,
-      displayName: takeover.modelDisplayName,
-      inputUsdPerMillion: takeover.inputUsdPerMillion,
-      maxOutputTokens: takeover.maxOutputTokens,
-      modelId: takeover.modelId,
-      outputUsdPerMillion: takeover.outputUsdPerMillion,
-      protocol: takeover.protocol,
-      reasoningEffort: takeover.reasoningEffort,
-    } : modelFrom(model));
-  }, [connection, environmentTarget, mode, model, open]);
+  const [modelValue, setModelValue] = useState<ModelInput>(() => initialTakeover ? {
+    contextWindowTokens: initialTakeover.contextWindowTokens,
+    displayName: initialTakeover.modelDisplayName,
+    inputUsdPerMillion: initialTakeover.inputUsdPerMillion,
+    maxOutputTokens: initialTakeover.maxOutputTokens,
+    modelId: initialTakeover.modelId,
+    outputUsdPerMillion: initialTakeover.outputUsdPerMillion,
+    protocol: initialTakeover.protocol,
+    reasoningEffort: initialTakeover.reasoningEffort,
+  } : modelFrom(model));
 
   if (!open) return null;
   const takeover = mode === 'takeover_environment' ? environmentTarget ?? null : null;

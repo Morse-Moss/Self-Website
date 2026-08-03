@@ -7,7 +7,10 @@ import { createProvider } from '../lib/server/provider.ts';
 
 function config(fallbacks = false) {
   return loadServerConfig({
+    NODE_ENV: 'test',
     DATABASE_URL: 'postgresql://revolution@127.0.0.1:55432/revolution',
+    MORSE_CONTEXT_PACKET_DIGEST_KEY: Buffer.alloc(32, 1).toString('base64'),
+    MORSE_CONTEXT_PACKET_DIGEST_KEY_ID: 'test-context-key',
     OPENAI_API_KEY: 'synthetic-primary-key',
     OPENAI_CHAT_MODEL: 'synthetic-chat',
     OPENAI_CHAT_PROTOCOL: 'responses',

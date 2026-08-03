@@ -43,10 +43,10 @@ export class DirectAnswerExecutor implements AnswerExecutor<DirectAnswerExecutio
       releasePolicy: input.releasePolicy,
       generate: input.generate,
     })) {
-      throwIfAborted(signal);
       if (event.type === 'attempt' || event.type === 'switching') {
         await input.onOperationalEvent?.(event);
       }
+      throwIfAborted(signal);
       yield event;
     }
   }

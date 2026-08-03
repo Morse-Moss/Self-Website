@@ -399,7 +399,7 @@ const completedTurnSelection = `
          user_message.content AS user_content,
          assistant_message.content AS assistant_content
     FROM conversation_context_completed_turns AS completed
-    JOIN interaction_turns AS turn_record ON turn_record.id = completed.turn_id
+    LEFT JOIN interaction_turns AS turn_record ON turn_record.id = completed.turn_id
     JOIN conversation_messages AS user_message
       ON user_message.conversation_id = completed.conversation_id
      AND user_message.id = completed.user_message_id
@@ -484,7 +484,7 @@ export async function loadCanonicalAnswerHistory(
               assistant_message.role AS assistant_role,
               assistant_message.content AS assistant_content
          FROM conversation_context_completed_turns AS completed
-         JOIN interaction_turns AS turn_record ON turn_record.id = completed.turn_id
+         LEFT JOIN interaction_turns AS turn_record ON turn_record.id = completed.turn_id
          LEFT JOIN conversation_messages AS user_message
            ON user_message.conversation_id = completed.conversation_id
           AND user_message.id = completed.user_message_id

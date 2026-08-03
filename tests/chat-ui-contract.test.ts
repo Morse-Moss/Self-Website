@@ -221,8 +221,8 @@ test('project CTA opens Digital Morse with the approved content-agent question p
   );
   assert.match(component, /event\s+instanceof\s+CustomEvent/);
   assert.match(component, /event\.detail\?\.prompt/);
-  assert.match(component, /chat\.setWorkflow\(['"]chat['"]\)/);
-  assert.match(component, /chat\.setDraft\(prompt\)/);
+  assert.match(component, /setWorkflow\(['"]chat['"]\)/);
+  assert.match(component, /setDraft\(prompt\)/);
 });
 
 test('structured intake exposes uncapped JD and five-field diagnosis inputs', () => {
@@ -282,7 +282,16 @@ test('pending assistant contains progress, phase, elapsed time and stop affordan
   assert.match(pending, /onStop/);
   assert.match(pending, /data-testid="morse-chat-pending"/);
   assert.match(transcript, /startedAtMs/);
+  assert.match(transcript, /typeof message\.startedAtMs === ['"]number['"]/);
+  assert.doesNotMatch(transcript, /Date\.now\(\)/);
   assert.match(transcript, /onStop/);
+});
+
+test('recoverable retry uses the current send closure without mutating refs during render', () => {
+  const hook = readChatSource('useMorseChat.ts');
+
+  assert.match(hook, /void sendSnapshot\(requestSnapshot, retryAssistantId\)/);
+  assert.doesNotMatch(hook, /sendSnapshotRef/);
 });
 
 test('MorseChat retains the S9 embedded and overlay shell behavior', () => {
@@ -316,7 +325,7 @@ test('MorseChat returns focus to the active intake after a stream settles', () =
   const component = fs.readFileSync(componentPath, 'utf8');
 
   assert.match(component, /const wasStreamingRef = useRef\(false\)/);
-  assert.match(component, /wasStreamingRef\.current && !chat\.streaming/);
+  assert.match(component, /wasStreamingRef\.current && !streaming/);
   assert.match(component, /messageInputRef\.current\?\.focus\(\{ preventScroll: true \}\)/);
   assert.match(component, /window\.requestAnimationFrame/);
 });
@@ -329,7 +338,7 @@ test('chat scrolling keeps auto-follow inside the transcript viewport', () => {
   assert.match(source, /const messagesRef = useRef<HTMLDivElement>\(null\)/);
   assert.match(source, /const autoFollowRef = useRef\(true\)/);
   assert.match(source, /isNearChatBottom\(event\.currentTarget\)/);
-  assert.match(source, /!chat\.streaming && !forceAutoFollowRef\.current/);
+  assert.match(source, /!streaming && !forceAutoFollowRef\.current/);
   assert.match(source, /scrollTo\(\{\s*top:\s*container\.scrollHeight,\s*behavior:\s*['"]auto['"],?\s*\}\)/s);
   assert.equal((source.match(/scrollIntoView/g) ?? []).length, 1);
 });

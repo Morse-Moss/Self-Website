@@ -113,11 +113,7 @@ function booleanSetting(env: Env, name: string, fallback: boolean): boolean {
   throw new Error(`${name} must be true or false.`);
 }
 
-function contextPacketDigest(
-  env: Env,
-  enabled: boolean,
-): ContextPacketDigestConfig | null {
-  if (!enabled) return null;
+function contextPacketDigest(env: Env): ContextPacketDigestConfig {
   const direct = env.MORSE_CONTEXT_PACKET_DIGEST_KEY;
   const filePath = env.MORSE_CONTEXT_PACKET_DIGEST_KEY_FILE?.trim();
   const directPresent = Boolean(direct?.length);
@@ -135,11 +131,13 @@ function contextPacketDigest(
   } else if (directPresent) {
     encoded = direct;
   }
-  return parseContextPacketDigestConfig({
-    enabled,
+  const config = parseContextPacketDigestConfig({
+    enabled: true,
     digestKey: encoded,
     digestKeyId: env.MORSE_CONTEXT_PACKET_DIGEST_KEY_ID,
   });
+  if (!config) throw new Error('CONTEXT_PACKET_DIGEST_CONFIG_INVALID');
+  return config;
 }
 
 function tokenRates(env: Env): TokenRates | null {
@@ -383,7 +381,7 @@ export function loadServerConfig(env: Env = process.env) {
     'MORSE_DYNAMIC_PROVIDER_CONTEXT_ENABLED',
     false,
   );
-  const contextPacketDigestConfig = contextPacketDigest(env, true);
+  const contextPacketDigestConfig = contextPacketDigest(env);
   const providerFirstByteTimeoutMs = positiveNumber(
     env,
     'MORSE_PROVIDER_FIRST_BYTE_TIMEOUT_MS',

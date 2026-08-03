@@ -33,8 +33,6 @@ ConversationSession
 - 继续在 `chat-service.ts` 内增加问法特判、路由补丁和证据补丁。
 - 让 route、RAG 分数或 output guard 决定一个已审核事实是否能到达模型。
 - 用格式、语气、模板、项目数量或引用样式规则丢弃 Provider 已完成的非空回答。
-- 为了规划意图再增加一次 Provider/LLM 调用。
-- 在当前输入、审核证据、历史、输出或 Provider attempt 上重新增加成本驱动的固定上限。
 
 以下现有合同继续有效，并作为本设计的前置基础：
 
@@ -45,6 +43,8 @@ ConversationSession
 - Provider 路由快照、调用前 attempt 记录、取消、超时、真实模型能力和事务一致性。
 
 ## 3. 当前流程和根因
+- 为了规划意图再增加一次 Provider/LLM 调用。
+- 在当前输入、审核证据、历史、输出或 Provider attempt 上重新增加成本驱动的固定上限。
 
 ### 3.1 当前流程
 

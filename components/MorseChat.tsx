@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useRef, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 
 import { isNearChatBottom } from '@/lib/client/chat-scroll';
 
@@ -23,6 +23,15 @@ export default function MorseChat({ variant = 'overlay' }: MorseChatProps) {
   const embedded = variant === 'embedded';
   const [open, setOpen] = useState(embedded);
   const chat = useMorseChat();
+  const {
+    accessState,
+    historyLoading,
+    messages,
+    setDraft,
+    setWorkflow,
+    streaming,
+    workflow,
+  } = chat;
   const rootRef = useRef<HTMLDivElement>(null);
   const inviteInputRef = useRef<HTMLInputElement>(null);
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
@@ -39,15 +48,15 @@ export default function MorseChat({ variant = 'overlay' }: MorseChatProps) {
     forceAutoFollowRef.current = false;
   }
 
-  function focusPendingInput() {
-    if (!pendingFocusRef.current || chat.accessState === 'checking' || chat.historyLoading) return;
-    const focusTarget = chat.accessState === 'authorized'
+  const focusPendingInput = useCallback(() => {
+    if (!pendingFocusRef.current || accessState === 'checking' || historyLoading) return;
+    const focusTarget = accessState === 'authorized'
       ? messageInputRef.current
       : inviteInputRef.current;
     if (!focusTarget) return;
     focusTarget.focus({ preventScroll: true });
     pendingFocusRef.current = false;
-  }
+  }, [accessState, historyLoading]);
 
   useEffect(() => {
     let focusFrame = 0;
@@ -59,12 +68,12 @@ export default function MorseChat({ variant = 'overlay' }: MorseChatProps) {
       if (prompt) {
         pendingPromptRef.current = prompt;
         if (
-          chat.accessState === 'authorized'
-          && !chat.historyLoading
-          && !chat.streaming
+          accessState === 'authorized'
+          && !historyLoading
+          && !streaming
         ) {
-          chat.setWorkflow('chat');
-          chat.setDraft(prompt);
+          setWorkflow('chat');
+          setDraft(prompt);
           pendingPromptRef.current = null;
         }
       }
@@ -91,55 +100,60 @@ export default function MorseChat({ variant = 'overlay' }: MorseChatProps) {
       window.cancelAnimationFrame(focusFrame);
     };
   }, [
-    chat.accessState,
-    chat.historyLoading,
-    chat.streaming,
-    chat.workflow,
+    accessState,
     embedded,
+    focusPendingInput,
+    historyLoading,
+    setDraft,
+    setWorkflow,
+    streaming,
+    workflow,
   ]);
 
   useEffect(() => {
     const prompt = pendingPromptRef.current;
     if (
       !prompt
-      || chat.accessState !== 'authorized'
-      || chat.historyLoading
-      || chat.streaming
+      || accessState !== 'authorized'
+      || historyLoading
+      || streaming
     ) return;
 
-    chat.setWorkflow('chat');
-    chat.setDraft(prompt);
+    setWorkflow('chat');
+    setDraft(prompt);
     pendingPromptRef.current = null;
   }, [
-    chat.accessState,
-    chat.historyLoading,
-    chat.streaming,
-    chat.workflow,
+    accessState,
+    historyLoading,
+    setDraft,
+    setWorkflow,
+    streaming,
+    workflow,
   ]);
 
   useEffect(() => {
-    if (!open || !pendingFocusRef.current || chat.accessState === 'checking' || chat.historyLoading) return;
+    if (!open || !pendingFocusRef.current || accessState === 'checking' || historyLoading) return;
     const focusFrame = window.requestAnimationFrame(focusPendingInput);
     return () => window.cancelAnimationFrame(focusFrame);
-  }, [chat.accessState, chat.historyLoading, open]);
+  }, [accessState, focusPendingInput, historyLoading, open]);
 
   useEffect(() => {
     if (
       !open
-      || (!chat.streaming && !forceAutoFollowRef.current && !autoFollowRef.current)
+      || (!streaming && !forceAutoFollowRef.current && !autoFollowRef.current)
     ) return;
     followMessages();
-  }, [chat.accessState, chat.messages, chat.streaming, open]);
+  }, [accessState, messages, streaming, open]);
 
   useEffect(() => {
-    const streamSettled = wasStreamingRef.current && !chat.streaming;
-    wasStreamingRef.current = chat.streaming;
-    if (!streamSettled || !open || chat.accessState !== 'authorized') return;
+    const streamSettled = wasStreamingRef.current && !streaming;
+    wasStreamingRef.current = streaming;
+    if (!streamSettled || !open || accessState !== 'authorized') return;
     const focusFrame = window.requestAnimationFrame(() => {
       messageInputRef.current?.focus({ preventScroll: true });
     });
     return () => window.cancelAnimationFrame(focusFrame);
-  }, [chat.accessState, chat.streaming, open]);
+  }, [accessState, streaming, open]);
 
   useEffect(() => {
     if (!open || embedded) return;

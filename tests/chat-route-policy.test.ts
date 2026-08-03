@@ -937,3 +937,22 @@ test('unsafe or unverifiable requests plan an explicit safety boundary', () => {
     assert.equal(decision.safetyBoundary, 'unsafe_or_unverifiable_request');
   }
 });
+
+test('diagnosis safety constraints do not trigger the credential safety boundary', () => {
+  const diagnosisRequest = normalizeChatRequest({
+    workflow: 'diagnosis',
+    diagnosis: {
+      problem: '知识库回答不稳定',
+      goal: '形成可验收的智能客服',
+      currentState: '已有本地 RAG 与文字对话',
+      constraints: '不伪造资料，不泄露密钥',
+      expectedTimeline: '本轮先完成文字闭环',
+    },
+  });
+
+  const decision = routeChatTurn({ request: diagnosisRequest, ledger });
+
+  assert.equal(decision.routeKind, 'grounded');
+  assert.equal(decision.reasonCode, 'explicit_diagnosis_workflow');
+  assert.equal(decision.safetyBoundary, null);
+});

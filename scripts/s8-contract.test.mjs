@@ -65,8 +65,7 @@ test('S8 contract contains automation governance and product boundaries', () => 
   );
   assert.match(blueprint, /## 12\. S8 智能客服对话可用性闭环\(2026-07-13\)/);
   assert.match(blueprint, /\| \*\*M4 试驾\*\* \|/);
-  assert.match(blueprint, /三个按钮:招聘 \/ 合作 \/ 同行交流/);
-  assert.match(blueprint, /按“招聘 \/ 合作 \/ 同行交流”选择来访目的/);
+  assert.match(blueprint, /两个按钮:招聘 \/ 同行交流与合作/);
   assert.doesNotMatch(blueprint, /招人的|找人做事的/);
 });
 

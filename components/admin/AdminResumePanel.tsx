@@ -34,7 +34,7 @@ function formatBytes(value: number): string {
 export default function AdminResumePanel({ open, onClose, onUnauthorized, onComplete }: Props) {
   const [section, setSection] = useState<Section>('document');
   const [dashboard, setDashboard] = useState<AdminResumeDashboard | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
   const [busy, setBusy] = useState('');
@@ -57,20 +57,7 @@ export default function AdminResumePanel({ open, onClose, onUnauthorized, onComp
   }, [onClose, onUnauthorized]);
 
   useEffect(() => {
-    if (!open) {
-      setDashboard(null);
-      setCreatedCode(null);
-      setUploadPassword('');
-      setInvitePassword('');
-      setRevokePassword('');
-      setRevokeId(null);
-      setNote('');
-      setBusy('');
-      setError('');
-      setSection('document');
-      if (fileRef.current) fileRef.current.value = '';
-      return;
-    }
+    if (!open) return;
     previousFocusRef.current = document.activeElement instanceof HTMLElement
       ? document.activeElement
       : null;
@@ -84,8 +71,6 @@ export default function AdminResumePanel({ open, onClose, onUnauthorized, onComp
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();
-    setLoading(true);
-    setError('');
     fetch('/api/admin/resume', { cache: 'no-store', credentials: 'same-origin', signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) {
@@ -154,6 +139,7 @@ export default function AdminResumePanel({ open, onClose, onUnauthorized, onComp
       }
       setUploadPassword('');
       if (fileRef.current) fileRef.current.value = '';
+      setLoading(true);
       setRevision((value) => value + 1);
       onComplete('简历 PDF 已更新。');
     } catch { setError('上传结果未确认，请重新加载当前 PDF 状态。'); }
@@ -176,7 +162,7 @@ export default function AdminResumePanel({ open, onClose, onUnauthorized, onComp
       }
       const payload = await response.json() as { invite: { code: string } };
       setCreatedCode(payload.invite.code);
-      setInvitePassword(''); setNote(''); setRevision((value) => value + 1);
+      setInvitePassword(''); setNote(''); setLoading(true); setRevision((value) => value + 1);
     } catch { setError('生成结果未确认，请重新加载访问码列表。'); }
     finally { setBusy(''); }
   }
@@ -194,7 +180,7 @@ export default function AdminResumePanel({ open, onClose, onUnauthorized, onComp
         if (response.status === 401) onUnauthorized(message); else setError(message);
         return;
       }
-      setRevokeId(null); setRevokePassword(''); setRevision((value) => value + 1);
+      setRevokeId(null); setRevokePassword(''); setLoading(true); setRevision((value) => value + 1);
       onComplete('访问码已停用，关联简历会话已失效。');
     } catch { setError('停用失败，请检查连接后重试。'); }
     finally { setBusy(''); }
@@ -220,7 +206,7 @@ export default function AdminResumePanel({ open, onClose, onUnauthorized, onComp
         <nav className={styles.tabs} aria-label="简历管理分区">
           {tabs.map(([value, label]) => <button key={value} type="button" aria-current={section === value} onClick={() => setSection(value)}>{label}</button>)}
         </nav>
-        {error ? <div className={styles.error}><p role="alert">{error}</p><button type="button" onClick={() => setRevision((value) => value + 1)}>重新加载</button></div> : null}
+        {error ? <div className={styles.error}><p role="alert">{error}</p><button type="button" onClick={() => { setLoading(true); setError(''); setRevision((value) => value + 1); }}>重新加载</button></div> : null}
         <div className={styles.content}>
           {loading ? <p className={styles.state} role="status">正在加载简历管理数据...</p> : null}
           {!loading && dashboard && section === 'document' ? (
