@@ -12,6 +12,7 @@
 - 占位与真实分明:占位内容必须带「示例数据 / 筹备中」标注;真实数字必须可溯源(数据管线产出)
 - `prefers-reduced-motion` 下无持续动画;移动端动画轻量化
 - 数字人区域组件化:视频源为配置项,素材就绪仅替换资源文件
+- 受信本地工具的纯检索入口固定为 `POST /api/internal/rag/search`,合同见 `docs/internal-rag-search.md`;鉴权 token 只放本地 `.env.local`,不得进入访客 Chat、代码或提交
 
 ## 验证标准
 - `npm run build` 必过;`npm run dev` 冒烟

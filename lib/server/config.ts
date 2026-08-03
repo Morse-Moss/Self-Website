@@ -295,6 +295,23 @@ export function loadAccessConfig(env: Env = process.env) {
   };
 }
 
+export function loadEmbeddingConfig(env: Env = process.env) {
+  const embeddingApiKey = env.OPENAI_EMBEDDING_API_KEY?.trim()
+    || env.OPENAI_API_KEY?.trim();
+  if (!embeddingApiKey) {
+    throw new Error('OPENAI_EMBEDDING_API_KEY or OPENAI_API_KEY is required.');
+  }
+  return {
+    embeddingApiKey,
+    embeddingBaseUrl: env.OPENAI_EMBEDDING_BASE_URL?.trim()
+      || env.OPENAI_BASE_URL?.trim()
+      || undefined,
+    embeddingModel: required(env, 'OPENAI_EMBEDDING_MODEL'),
+    embeddingDimensions: EMBEDDING_DIMENSIONS,
+    embeddingTimeoutMs: positiveNumber(env, 'MORSE_EMBEDDING_TIMEOUT_MS', 8_000),
+  };
+}
+
 export function loadAdminConfig(env: Env = process.env) {
   return {
     databaseUrl: required(env, 'DATABASE_URL'),
@@ -375,6 +392,7 @@ export function loadServerConfig(env: Env = process.env) {
   const access = loadAccessConfig(env);
   const openaiApiKey = required(env, 'OPENAI_API_KEY');
   const openaiBaseUrl = env.OPENAI_BASE_URL?.trim() || undefined;
+  const embedding = loadEmbeddingConfig(env);
   const search = searchSettings(env);
   const dynamicProviderContextEnabled = booleanSetting(
     env,
@@ -437,11 +455,7 @@ export function loadServerConfig(env: Env = process.env) {
     chatProtocol: chatProtocol(env),
     reasoningEffort: reasoningEffort(env),
     openaiFallbacks: openAiFallbacks(env),
-    embeddingApiKey: env.OPENAI_EMBEDDING_API_KEY?.trim() || openaiApiKey,
-    embeddingBaseUrl: env.OPENAI_EMBEDDING_BASE_URL?.trim() || openaiBaseUrl,
-    embeddingModel: required(env, 'OPENAI_EMBEDDING_MODEL'),
-    embeddingDimensions: EMBEDDING_DIMENSIONS,
-    embeddingTimeoutMs: positiveNumber(env, 'MORSE_EMBEDDING_TIMEOUT_MS', 8_000),
+    ...embedding,
     providerFirstByteTimeoutMs,
     providerTotalTimeoutMs: positiveNumber(env, 'MORSE_PROVIDER_TOTAL_TIMEOUT_MS', 300_000),
     providerProtocolEventTimeoutMs,

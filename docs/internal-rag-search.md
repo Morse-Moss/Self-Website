@@ -34,8 +34,9 @@ Content-Type: application/json
 401 未授权 / 未启用｜400 参数错误｜502 检索失败｜503 未配置数据库
 ```
 
-`top_k` 默认 6，上限 15（与 `retrieveKnowledge` 一致）。结果已按 `LOCAL_EVIDENCE_MIN_SCORE`
-过滤并按文档去重，可能少于 `top_k` 条。
+`top_k` 默认 6，只接受 1 到 15 的整数；其他值返回 `400 top_k_invalid`。
+查询上限 4000 字符。结果已按 `LOCAL_EVIDENCE_MIN_SCORE` 过滤并按文档去重，
+可能少于 `top_k` 条。所有响应均带 `Cache-Control: no-store`。
 
 ## 安全边界
 
@@ -52,6 +53,16 @@ curl -s -X POST http://127.0.0.1:3010/api/internal/rag/search \
   -H "Authorization: Bearer $MORSE_INTERNAL_RAG_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"query": "Python 后端 RAG 项目经验", "top_k": 6}' | jq
+```
+
+Windows PowerShell 应通过 stdin 传递 UTF-8 JSON，避免原生命令行转义破坏请求体：
+
+```powershell
+$OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+$body = @{ query = 'Python 后端 RAG 项目经验'; top_k = 6 } | ConvertTo-Json -Compress
+$body | curl.exe -sS -X POST http://127.0.0.1:3010/api/internal/rag/search `
+  -H "Authorization: Bearer $env:MORSE_INTERNAL_RAG_TOKEN" `
+  -H "Content-Type: application/json" --data-binary '@-'
 ```
 
 对应 auto-job-agent 的配置（`config.yaml`）：

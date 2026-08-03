@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 
 import {
+  OpenAIEmbeddingProvider,
   OpenAIProvider,
   type OpenAIChatClientLike,
   type OpenAIEmbeddingClientLike,
@@ -22,6 +23,13 @@ import {
 } from './provider-outbound.ts';
 
 type ServerConfig = ReturnType<typeof loadServerConfig>;
+export type EmbeddingProviderFactoryConfig = Pick<ServerConfig,
+  | 'embeddingApiKey'
+  | 'embeddingBaseUrl'
+  | 'embeddingDimensions'
+  | 'embeddingModel'
+  | 'embeddingTimeoutMs'
+>;
 type ProviderFactoryConfig = Pick<ServerConfig,
   | 'embeddingApiKey'
   | 'embeddingBaseUrl'
@@ -55,12 +63,20 @@ function createChatClient(
   }) as unknown as OpenAIChatClientLike;
 }
 
-function createEmbeddingClient(config: ProviderFactoryConfig): OpenAIEmbeddingClientLike {
+function createEmbeddingClient(
+  config: EmbeddingProviderFactoryConfig,
+): OpenAIEmbeddingClientLike {
   return new OpenAI({
     apiKey: config.embeddingApiKey,
     baseURL: config.embeddingBaseUrl,
     maxRetries: 0,
   }) as unknown as OpenAIEmbeddingClientLike;
+}
+
+export function createEmbeddingProvider(
+  config: EmbeddingProviderFactoryConfig,
+): OpenAIEmbeddingProvider {
+  return new OpenAIEmbeddingProvider(createEmbeddingClient(config), config);
 }
 
 export function createProviderFromTargets(

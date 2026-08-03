@@ -146,6 +146,51 @@ export interface OpenAIProviderConfig {
   outputlessMaxAttempts?: number;
 }
 
+export type OpenAIEmbeddingConfig = Pick<
+  OpenAIProviderConfig,
+  'embeddingModel' | 'embeddingDimensions' | 'embeddingTimeoutMs'
+>;
+
+export class OpenAIEmbeddingProvider {
+  private readonly client: OpenAIEmbeddingClientLike;
+  private readonly config: OpenAIEmbeddingConfig;
+
+  constructor(
+    client: OpenAIEmbeddingClientLike,
+    config: OpenAIEmbeddingConfig,
+  ) {
+    this.client = client;
+    this.config = config;
+  }
+
+  async embed(inputs: string[], signal?: AbortSignal): Promise<number[][]> {
+    const timeout = createTimeoutSignal({
+      timeoutMs: this.config.embeddingTimeoutMs,
+      code: 'EMBEDDING_TIMEOUT',
+      signal,
+    });
+
+    try {
+      const response = await raceWithSignal(
+        this.client.embeddings.create({
+          model: this.config.embeddingModel,
+          input: inputs,
+          dimensions: this.config.embeddingDimensions,
+          encoding_format: 'float',
+        }, { signal: timeout.signal }),
+        timeout.signal,
+      );
+      return response.data.map((item) => item.embedding);
+    } catch (error) {
+      if (timeout.signal.aborted) throw timeout.signal.reason;
+      if (error instanceof OperationTimeoutError) throw error;
+      throw new OpenAIProviderError('EMBEDDING_UNAVAILABLE');
+    } finally {
+      timeout.dispose();
+    }
+  }
+}
+
 export type OpenAIAnswerBodyConfig = Pick<
   OpenAIProviderConfig,
   'chatModel' | 'maxOutputTokens' | 'reasoningEffort'
@@ -406,7 +451,7 @@ async function* streamWithTimeout<T>(input: {
 
 export class OpenAIProvider implements AiProvider {
   private readonly chatClient: OpenAIChatClientLike;
-  private readonly embeddingClient: OpenAIEmbeddingClientLike;
+  private readonly embeddingProvider: OpenAIEmbeddingProvider;
   private readonly config: OpenAIProviderConfig;
   private readonly generationSemaphore: Semaphore;
 
@@ -416,36 +461,13 @@ export class OpenAIProvider implements AiProvider {
     config: OpenAIProviderConfig,
   ) {
     this.chatClient = chatClient;
-    this.embeddingClient = embeddingClient;
+    this.embeddingProvider = new OpenAIEmbeddingProvider(embeddingClient, config);
     this.config = config;
     this.generationSemaphore = getGenerationSemaphore(config.providerConcurrency);
   }
 
   async embed(inputs: string[], signal?: AbortSignal): Promise<number[][]> {
-    const timeout = createTimeoutSignal({
-      timeoutMs: this.config.embeddingTimeoutMs,
-      code: 'EMBEDDING_TIMEOUT',
-      signal,
-    });
-
-    try {
-      const response = await raceWithSignal(
-        this.embeddingClient.embeddings.create({
-          model: this.config.embeddingModel,
-          input: inputs,
-          dimensions: this.config.embeddingDimensions,
-          encoding_format: 'float',
-        }, { signal: timeout.signal }),
-        timeout.signal,
-      );
-      return response.data.map((item) => item.embedding);
-    } catch (error) {
-      if (timeout.signal.aborted) throw timeout.signal.reason;
-      if (error instanceof OperationTimeoutError) throw error;
-      throw new OpenAIProviderError('EMBEDDING_UNAVAILABLE');
-    } finally {
-      timeout.dispose();
-    }
+    return this.embeddingProvider.embed(inputs, signal);
   }
 
   async *streamAnswer(
