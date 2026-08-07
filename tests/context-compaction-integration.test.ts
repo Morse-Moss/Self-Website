@@ -289,11 +289,12 @@ test('migration 013 upgrades active v1 configuration byte-for-byte and is repeat
     const upgraded = await runMigrations(database.connectionString);
     assert.equal(upgraded.code, 0, upgraded.stderr);
     assert.match(upgraded.stdout, /Migration 013 applied/u);
+    assert.match(upgraded.stdout, /Migration 014 applied/u);
     await withPostgresClient(database.connectionString, async (client) => {
       const registry = await client.query<{ version: string }>(
         'SELECT version FROM schema_migrations ORDER BY version',
       );
-      assert.equal(registry.rows.at(-1)?.version, '013');
+      assert.equal(registry.rows.at(-1)?.version, '014');
       const preserved = await client.query<{
         model_digest: string;
         model_digest_version: number;
@@ -350,7 +351,8 @@ test('migration 013 upgrades active v1 configuration byte-for-byte and is repeat
     const repeated = await runMigrations(database.connectionString);
     assert.equal(repeated.code, 0, repeated.stderr);
     assert.doesNotMatch(repeated.stdout, /Migration 013 applied/u);
-    assert.match(repeated.stdout, /current through 013/u);
+    assert.doesNotMatch(repeated.stdout, /Migration 014 applied/u);
+    assert.match(repeated.stdout, /current through 014/u);
   } finally {
     await fs.rm(through012, { recursive: true, force: true });
     await database.dispose();
@@ -607,6 +609,7 @@ test('history compaction store commits artifacts independently and reuses only e
     assert.equal(migrated.code, 0, migrated.stderr);
     const fixture = await withPostgresClient(database.connectionString, insertCoreFixture);
     const sourceTurnIds = [randomUUID(), randomUUID()];
+    const fixtureStartedAt = new Date(Date.now() - 5 * 60_000);
     const target = {
       configDigestVersion: 2 as const,
       configDigest: 'a'.repeat(64),
@@ -632,7 +635,7 @@ test('history compaction store commits artifacts independently and reuses only e
       target,
       summaryRequestHmacKeyId: 'context-key-v2',
       summaryRequestHmacSha256: '2'.repeat(64),
-      startedAt: new Date('2026-07-28T01:00:00.000Z'),
+      startedAt: fixtureStartedAt,
     };
 
     const attemptId = await startHistorySummaryAttempt(pool, baseAttempt);
@@ -641,7 +644,7 @@ test('history compaction store commits artifacts independently and reuses only e
       summaryText: 'private durable summary',
       inputTokens: 120,
       outputTokens: 18,
-      completedAt: new Date('2026-07-28T01:01:00.000Z'),
+      completedAt: new Date(fixtureStartedAt.getTime() + 60_000),
     });
     assert.equal(artifact.summaryAttemptId, attemptId);
     assert.equal(artifact.summaryText, 'private durable summary');
@@ -693,7 +696,7 @@ test('history compaction store commits artifacts independently and reuses only e
         generationVariantId: randomUUID(),
         sourceTurnIds: [randomUUID()],
         sourceTurnSha256: String(index + 5).repeat(64),
-        startedAt: new Date(`2026-07-28T01:0${index + 2}:00.000Z`),
+        startedAt: new Date(fixtureStartedAt.getTime() + (index + 2) * 60_000),
       });
       await terminateHistorySummaryAttempt(pool, {
         summaryAttemptId: terminalAttemptId,
@@ -701,7 +704,7 @@ test('history compaction store commits artifacts independently and reuses only e
         errorCode: status === 'failed' ? 'UPSTREAM_FAILED' : 'CANCELLED',
         inputTokens: null,
         outputTokens: null,
-        completedAt: new Date(`2026-07-28T01:1${index}:00.000Z`),
+        completedAt: new Date(fixtureStartedAt.getTime() + (index + 4) * 60_000),
       });
     }
 

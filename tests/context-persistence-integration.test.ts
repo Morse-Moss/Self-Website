@@ -249,7 +249,7 @@ test('bounded plan metadata round-trips through existing context_manifest JSONB 
     const migrationVersions = await pool.query<{ version: string }>(
       `SELECT version FROM schema_migrations ORDER BY version`,
     );
-    assert.equal(migrationVersions.rows.at(-1)?.version, '013');
+    assert.equal(migrationVersions.rows.at(-1)?.version, '014');
   } finally {
     await pool.end();
     await database.dispose();

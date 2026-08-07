@@ -43,7 +43,7 @@ import {
 const { Pool } = pg;
 const repoRoot = path.resolve('.');
 const migrationRunner = path.join(repoRoot, 'scripts', 'migrate-db.mjs');
-const fixtureNow = new Date('2026-07-27T05:00:00.000Z');
+const fixtureNow = new Date();
 const digest = {
   key: Buffer.alloc(32, 0x31),
   keyId: 'context-test-v1',
@@ -334,7 +334,7 @@ class ExternalCurrentProvider implements AiProvider {
     this.requests.push(request);
     assert.match(request.instructions, /外部来源类型：official/u);
     assert.match(request.instructions, /外部来源域名：platform\.openai\.com/u);
-    assert.match(request.instructions, /检索时间边界：2026-07-27T05:00:00\.000Z/u);
+    assert.ok(request.instructions.includes(`检索时间边界：${fixtureNow.toISOString()}`));
     assert.match(request.instructions, /Responses API 当前文档支持结构化响应/u);
     yield {
       type: 'delta',

@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const postgresImage = 'pgvector/pgvector:pg16';
-const allowedSchemas = new Set(['012', '013']);
+const allowedSchemas = new Set(['012', '013', '014']);
 const allowedFeatures = new Set(['off', 'on']);
 const allowedProtocols = new Set(['responses', 'chat_completions']);
 const optionNames = new Set([

@@ -16,7 +16,7 @@ test('schema compatibility smoke is exact-image, isolated, mock-only and cleanup
     '--web-image',
     '--worker-image',
   ]) assert.match(source, new RegExp(option, 'u'));
-  for (const value of ['012', '013', 'off', 'on', 'responses', 'chat_completions']) {
+  for (const value of ['012', '013', '014', 'off', 'on', 'responses', 'chat_completions']) {
     assert.match(source, new RegExp(`['\"]${value}['\"]`, 'u'));
   }
   assert.match(source, /crypto\.randomUUID|randomUUID/u);

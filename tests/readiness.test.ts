@@ -129,8 +129,8 @@ test('readiness accepts valid runtime config, exact migrations and non-empty kno
   }));
 });
 
-test('feature-off readiness accepts schema 012 or 013 without referencing 013 objects', async () => {
-  const expected = Array.from({ length: 13 }, (_, index) => ({
+test('feature-off readiness accepts schema 012 or current without referencing 013 objects', async () => {
+  const expected = Array.from({ length: 14 }, (_, index) => ({
     version: String(index + 1).padStart(3, '0'),
     checksum: String(index + 1).repeat(64).slice(0, 64),
   }));
@@ -146,10 +146,22 @@ test('feature-off readiness accepts schema 012 or 013 without referencing 013 ob
       /conversation_history_compactions|chat_history_summary_attempts|context_window_tokens|config_digest_version/u,
     );
   }
+  await assert.rejects(
+    assertApplicationReady({
+      env: { ...runtimeEnv, MORSE_DYNAMIC_PROVIDER_CONTEXT_ENABLED: 'false' },
+      expectedMigrations: expected,
+      pool: poolWith({ migrations: expected.slice(0, 13) }),
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof ReadinessError);
+      assert.equal(error.code, 'READINESS_MIGRATIONS_INCOMPLETE');
+      return true;
+    },
+  );
 });
 
-test('feature-on readiness fails closed when migration 013 or dynamic-context grants are unavailable', async () => {
-  const expected = Array.from({ length: 13 }, (_, index) => ({
+test('feature-on readiness fails closed when required migrations or dynamic-context grants are unavailable', async () => {
+  const expected = Array.from({ length: 14 }, (_, index) => ({
     version: String(index + 1).padStart(3, '0'),
     checksum: String(index + 1).repeat(64).slice(0, 64),
   }));
@@ -172,6 +184,18 @@ test('feature-on readiness fails closed when migration 013 or dynamic-context gr
       },
     );
   }
+  await assert.rejects(
+    assertApplicationReady({
+      env: enabledEnv,
+      expectedMigrations: expected,
+      pool: poolWith({ migrations: expected.slice(0, 13) }),
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof ReadinessError);
+      assert.equal(error.code, 'READINESS_MIGRATIONS_INCOMPLETE');
+      return true;
+    },
+  );
   const queries: string[] = [];
   await assert.doesNotReject(assertApplicationReady({
     env: enabledEnv,
@@ -189,7 +213,7 @@ test('feature-on readiness fails closed when migration 013 or dynamic-context gr
 });
 
 test('readiness fails closed when an active v1 environment route needs the removed output limit', async () => {
-  const expected = Array.from({ length: 13 }, (_, index) => ({
+  const expected = Array.from({ length: 14 }, (_, index) => ({
     version: String(index + 1).padStart(3, '0'),
     checksum: String(index + 1).repeat(64).slice(0, 64),
   }));

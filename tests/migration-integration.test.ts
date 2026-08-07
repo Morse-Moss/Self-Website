@@ -816,6 +816,65 @@ test('migration 004 protects audit retention and provider attempt attribution', 
   }
 });
 
+test('deleting an interaction turn clears complete usage attempt attribution', async () => {
+  const database = await createDisposablePostgresDatabase();
+  try {
+    const result = await runMigrations(database.connectionString);
+    assert.equal(result.code, 0, result.stderr);
+    await withPostgresClient(database.connectionString, async (client) => {
+      const turnId = randomUUID();
+      await client.query(
+        `INSERT INTO interaction_turns
+          (id, access_session_id, workflow, audience_intent, question, status, delete_after)
+         VALUES ($1, $2, 'chat', 'general', 'retention cleanup', 'completed', now() + interval '10 days')`,
+        [turnId, randomUUID()],
+      );
+      await client.query(
+        `INSERT INTO interaction_provider_attempts
+          (interaction_turn_id, attempt_index, source_type,
+           connection_display_name, model_display_name, model_id, protocol,
+           config_digest, status, usage_complete, input_tokens, output_tokens,
+           cost_complete, completed_at)
+         VALUES ($1, 0, 'environment', 'Environment', 'Environment model',
+                 'gpt-environment', 'responses', $2, 'completed', true, 10, 5,
+                 false, now())`,
+        [turnId, 'd'.repeat(64)],
+      );
+      const usage = await client.query<{ id: string }>(
+        `INSERT INTO usage_events
+          (provider, model, input_tokens, output_tokens, estimated_cost_usd,
+           interaction_turn_id, provider_attempt_index, cost_complete)
+         VALUES ('openai-compatible', 'gpt-environment', 10, 5, NULL, $1, 0, false)
+         RETURNING id::text`,
+        [turnId],
+      );
+
+      await client.query('DELETE FROM interaction_turns WHERE id = $1', [turnId]);
+
+      const attempts = await client.query(
+        'SELECT 1 FROM interaction_provider_attempts WHERE interaction_turn_id = $1',
+        [turnId],
+      );
+      assert.equal(attempts.rowCount, 0);
+      const attribution = await client.query<{
+        interaction_turn_id: string | null;
+        provider_attempt_index: number | null;
+      }>(
+        `SELECT interaction_turn_id::text, provider_attempt_index
+           FROM usage_events
+          WHERE id = $1`,
+        [usage.rows[0].id],
+      );
+      assert.deepEqual(attribution.rows, [{
+        interaction_turn_id: null,
+        provider_attempt_index: null,
+      }]);
+    });
+  } finally {
+    await database.dispose();
+  }
+});
+
 test('chat v2 migration adds stable assignment and metadata-only provider attempts', async () => {
   const database = await createDisposablePostgresDatabase();
   try {

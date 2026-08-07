@@ -130,7 +130,14 @@ migration `012` 应用后，回滚只先设置 `MORSE_CHAT_CONTEXT_PACKET_ENABLE
 4. 只重建 Web/Worker，执行 Responses 与 Chat Completions 的 schema-013 无外呼回放，再进行已授权的真实 Provider HR 对话。观测只保存计数、状态、时延和脱敏类别，不保存原始问题、JD、回答、摘要、Provider payload、凭证或会话值。
 5. migration `013` 后的回滚只能关闭动态上下文并使用已验证的 013-aware feature-off 镜像；禁止切回 pre-013 镜像、删除新表或修改 migration registry。schema 问题必须前向修复。
 
-### 4.5 私密简历运维
+### 4.5 Usage retention cleanup migration 014
+
+1. migration `014` 只删除 `usage_events_interaction_turn_id_fkey`。`usage_events_provider_attempt_fk` 和 `usage_events_attempt_pair_check` 必须保留，由复合外键在 Provider attempt 或 interaction turn 删除时同时清空 `interaction_turn_id` 与 `provider_attempt_index`。
+2. registry 为 `001-013` 时，冻结 014-aware release，创建非空且已记录 SHA-256 的 custom-format PostgreSQL 备份，停止 Web/Worker 并确认无长事务。使用 `docker compose run --rm --no-deps migration` 连续执行两次；第二次必须为 no-op，registry 必须精确为 `001-014`。
+3. 迁移后查询 `pg_constraint`：`usage_events_interaction_turn_id_fkey` 必须不存在，`usage_events_provider_attempt_fk` 与 `usage_events_attempt_pair_check` 必须存在。然后以 Worker 角色连续执行两次 `node scripts/cleanup-expired.mjs`，两次均不得出现 `usage_events_attempt_pair_check` 或 `CLEANUP_FAILED`。
+4. 启动 Web/Worker 后验证 live、ready、release smoke、受保护端点、容器 identity/restart count 和 Worker heartbeat，并确认新日志中没有 retention cleanup 约束错误。禁止删除 usage 数据、修改 migration registry 或执行 down migration；应用回退只能使用识别 `001-014` 的镜像，schema 问题继续前向修复。
+
+### 4.6 私密简历运维
 
 - 公开入口只显示授权状态；真实 PDF 只通过 `GET /api/resume/file` 在有效简历 Session 下解密返回。响应必须保持 `Content-Type: application/pdf`、`Cache-Control: private, no-store`、`X-Content-Type-Options: nosniff` 和内联 disposition。
 - 管理员在 `/admin` 上传最终 PDF、创建一人一码的简历邀请或停用邀请。明文邀请码只在创建响应中出现一次；停用后关联简历 Session 下一次请求立即失效。聊天邀请码与简历邀请码互不升级权限。
