@@ -2,6 +2,12 @@ node_modules/
 .next/
 out/
 .worktrees/
+/auto-job-agent/
+/boss-helper-main/
+/boss-helper-main.zip
+/get_jobs/
+/get_jobs-git-incomplete/
+/get_jobs-main.zip
 .env*
 !.env.example
 *.log

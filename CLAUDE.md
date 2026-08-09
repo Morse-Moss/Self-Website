@@ -1,5 +1,7 @@
 # Revolution — 数字生命摩斯 · 作品集项目根
 
+> 工程规则唯一真源为 `docs/engineering-standards.md`。非平凡开发先读取并遵守；`CLAUDE.md` 只保留项目入口、运行事实与红线，不复制第二套规则。
+
 ## 目录约定
 - `docs/` — 需求与决策文档。`docs/portfolio-blueprint.md` 是唯一需求源,所有开发以它为准;`docs/verify/` 为验收证据
 - `prototype/` — 静态 UI 原型 v0.1(**已冻结,只读参照,不再迭代**)
@@ -33,6 +35,7 @@
 - git:本地 init/commit 已授权(2026-07-08);push 仅跨设备同步且等摩斯指令;不自动部署
 - 依赖安装仅限阶段契约列明的包
 - `E:\Wiki`、`E:\demo2`、`E:\小红书`、`E:\多agent` 为外部资产,只读,禁止写入
+- `auto-job-agent`、`boss-helper-main`、`get_jobs*` 与 `.worktrees` 不属于 Revolution；禁止新增或修改其提交内容，禁止进入构建、镜像和发布归档
 - 密钥、token、密码不进代码
 
 # Latest Runtime Override (2026-08-09)
@@ -40,4 +43,4 @@
 - The deployed application release is `5e438cf`; `/opt/revolution/current` points to `/opt/revolution/releases/5e438cf/revolution`.
 - This release only extracts chat search and dependency monitoring coordination. No Compose, dependency, migration, secret, embedding, edge, public-knowledge, ingest, or provider configuration changed.
 - Deployment evidence is recorded in `docs/verify/release/chat-search-coordination-production-closeout-2026-08-09.md`. Runtime health and release smoke were observed; real Provider-backed chat behavior was not called.
-- The untracked job-system assets in the primary checkout remain outside Revolution scope and are never part of a release archive.
+- The primary checkout contains both legacy tracked and untracked job-system assets. They remain outside Revolution scope and are excluded from compilation, lint, Docker context, and release archives; removing their legacy tracked copies is a separate scoped cleanup.

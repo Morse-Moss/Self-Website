@@ -6,6 +6,20 @@
 
 本准则把 S11 的工程边界固化为未来人工与 Agent 开发的共同约束。产品需求仍以 `docs/portfolio-blueprint.md` 为唯一来源；本文件负责说明代码如何演进、如何验证以及哪些上线安全条件不得省略。
 
+## 0. 规则治理与范围
+
+本文件是工程规则唯一真源。`AGENTS.md` 与 `CLAUDE.md` 只提供入口和项目红线，不复制另一套规则。规则分为三类：
+
+- **铁律**：所有权、依赖、合同、数据、安全或外部副作用边界；机器检查失败即阻断，不得豁免。
+- **绊线**：文件规模、扇出或历史热点增长等职责风险信号；先判断变化原因，不以数字代替架构判断。
+- **例外**：只适用于绊线，必须在 `docs/architecture-waivers.json` 记录精确规则、路径、原因、责任人和到期日；环境变量绕过无效。
+
+规则存在的第一性目标是变化局部性：一个产品变化应主要落在一个拥有该变化原因的模块及其边界测试中。不能指出具体失败模式和机器证据的规则不进入门禁。
+
+- Revolution 的正式所有权范围是 `app/**`、`components/**`、`lib/**`、`public/**`、`content/**`、`db/**`、`deploy/**`、`scripts/**`、`tests/**`、正式配置和本项目文档。
+- `auto-job-agent/**`、`boss-helper-main/**`、`get_jobs*/**` 与 `.worktrees/**` 属于外部或历史资产。禁止在 Revolution 变更中新增、修改或发布；既有 tracked 文件的删除另立范围，不在普通功能提交中顺带处理。
+- scope 防火墙同时作用于 staged diff、CI commit diff、TypeScript、ESLint、Docker context 与 Git archive。任何一层缺失都不能声称资产已隔离。
+
 ## 1. 架构与模块边界
 
 Revolution 采用模块化单体：Next.js 主服务、PostgreSQL/pgvector、同仓库独立后台 Worker，以及独立运行的 Embedding 进程或受控远端适配器。没有经过新的设计评审，不拆微服务，不引入第二套持久状态真相源。
@@ -32,7 +46,8 @@ app routes / React components
 执行门禁：
 
 ```powershell
-node --test scripts/architecture-contract.test.mjs
+npm run check:architecture
+npm run check:tripwire
 ```
 
 门禁失败时必须修正依赖方向；不得把真实循环或越界加入 allowlist 来取得假通过。
@@ -42,6 +57,7 @@ node --test scripts/architecture-contract.test.mjs
 - 每个模块必须能用一句话说明职责，并能指出实际消费者。
 - 生产 TS/TSX 文件超过 400 行，或内部扇出超过 10，触发职责审查。
 - 超过 600 行不是机械失败线，但必须在当前设计或评审记录中说明为什么它承载的是不可拆分的稳定边界。
+- 采用增量棘轮：既有超限文件可告警保留，但超限后继续增加行数会阻断；新增文件越线直接阻断。测试、CSS、生成文件和单一状态机使用独立判断，不套生产模块的统一阈值。
 - CSS、测试、生成文件、图形算法和单一事务状态机可以例外；例外仍须说明真实边界，不能仅以“历史代码”为理由。
 - 只有稳定重复、独立变化原因或外部系统边界才形成抽象。单一调用点不创建通用层。
 - 禁止通用 Repository 基类、依赖注入容器、service locator、全局 event bus、透传 wrapper 和万能 helper。
@@ -114,6 +130,7 @@ node --test scripts/architecture-contract.test.mjs
 - `FAST` 使用控制器或一次合并审查；`STANDARD` 每阶段一次独立综合审查；`CRITICAL` 在关注点真实不同的情况下拆合规与质量/安全审查。
 - 每个 S11 阶段独立提交，禁止把行为修复、架构迁移与部署配置混成不可单独回滚的提交。
 - 完成技术目标后必须通过 `closeout` 执行 `KNOWLEDGE_RECONCILED`，核对代码、蓝图、工程准则、任务状态和后续入口。
+- pre-commit 只执行基于 Git index 的快速 scope/规模检查；依赖契约由 `npm run check:architecture` 在本地和 CI 的精确提交快照上复验。hook 可被跳过，因此发布证据不得只引用本地 hook。
 
 ## 10. 变更前检查表
 

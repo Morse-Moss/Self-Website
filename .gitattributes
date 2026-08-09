@@ -1,1 +1,7 @@
 *.sh text eol=lf
+/auto-job-agent/** export-ignore
+/boss-helper-main/** export-ignore
+/boss-helper-main.zip export-ignore
+/get_jobs/** export-ignore
+/get_jobs-git-incomplete/** export-ignore
+/get_jobs-main.zip export-ignore

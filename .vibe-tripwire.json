@@ -1,0 +1,40 @@
+{
+  "_comment": "Revolution-specific architecture tripwires. First matching line rule wins.",
+  "line_limits": [
+    { "glob": "app/api/**/*.ts", "max": 250 },
+    { "glob": "app/**/*.tsx", "max": 500 },
+    { "glob": "components/**/*.tsx", "max": 500 },
+    { "glob": "lib/contracts/**/*.ts", "max": 400 },
+    { "glob": "lib/client/**/*.ts", "max": 500 },
+    { "glob": "lib/server/**/*.ts", "max": 600 },
+    { "glob": "scripts/**/*.mjs", "max": 800 },
+    { "glob": "tests/**/*.ts", "max": 1500, "severity": "warn" }
+  ],
+  "legacy": {
+    "existing_over_limit": "warn",
+    "block_growth": true
+  },
+  "root_guard": {
+    "enabled": true,
+    "block_ext": [".ts", ".tsx", ".js", ".jsx", ".mjs", ".py"],
+    "allow": ["next.config.mjs", "eslint.config.mjs"]
+  },
+  "scope_guard": {
+    "enabled": true,
+    "deny_prefixes": [
+      "auto-job-agent",
+      "boss-helper-main",
+      "boss-helper-main.zip",
+      "get_jobs",
+      "get_jobs-git-incomplete",
+      "get_jobs-main.zip",
+      ".worktrees"
+    ],
+    "check_all": false
+  },
+  "exclude_dirs": [
+    ".git", "node_modules", ".next", "out", "output", "tmp", "coverage",
+    "prototype", "docs", "content", "migrations"
+  ],
+  "waiver_file": "docs/architecture-waivers.json"
+}

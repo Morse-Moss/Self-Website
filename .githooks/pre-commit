@@ -1,0 +1,27 @@
+#!/bin/sh
+# Fast index-accurate checks. Commit-snapshot dependency checks run in CI.
+
+ROOT="$(git rev-parse --show-toplevel)"
+NODE=""
+for c in node nodejs; do
+  if command -v "$c" >/dev/null 2>&1; then NODE="$c"; break; fi
+done
+if [ -z "$NODE" ]; then
+  echo "[vibe] 未在 PATH 找到 node，无法执行架构绊线；提交已阻断。"
+  exit 1
+fi
+
+if ! git cat-file -e ":.vibe-tripwire.json" 2>/dev/null; then
+  echo "[vibe] .vibe-tripwire.json 尚未进入 Git index；请与 hook 一起提交。"
+  exit 1
+fi
+if ! git cat-file -e ":tools/check_tripwire.mjs" 2>/dev/null; then
+  echo "[vibe] tools/check_tripwire.mjs 尚未进入 Git index；请与 hook 一起提交。"
+  exit 1
+fi
+if ! git cat-file -e ":docs/architecture-waivers.json" 2>/dev/null; then
+  echo "[vibe] docs/architecture-waivers.json 尚未进入 Git index；请与 hook 一起提交。"
+  exit 1
+fi
+
+"$NODE" "$ROOT/tools/check_tripwire.mjs" --staged

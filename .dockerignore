@@ -2,6 +2,12 @@
 .git
 .gitignore
 .worktrees
+auto-job-agent
+boss-helper-main
+boss-helper-main.zip
+get_jobs
+get_jobs-git-incomplete
+get_jobs-main.zip
 AGENTS.md
 node_modules
 .next
