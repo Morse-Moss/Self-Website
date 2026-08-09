@@ -1098,10 +1098,13 @@ test('coordinator skips an open node', async () => {
       yield { type: 'done', usage: null };
     },
   };
-  const fallback = delayedProvider({
-    delayMs: 1,
-    events: [{ type: 'delta', text: 'Fallback.' }, { type: 'done', usage: null }],
-  });
+  const fallback: AiProvider = {
+    async embed() { return [[0.1, 0.2]]; },
+    async *streamAnswer() {
+      yield { type: 'delta', text: 'Fallback.' };
+      yield { type: 'done', usage: null };
+    },
+  };
   const provider = new FailoverAiProvider(primary, [
     { alias: 'primary', provider: primary },
     { alias: 'fallback-1', provider: fallback },
