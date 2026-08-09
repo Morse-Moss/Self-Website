@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 
 import type { Pool, PoolClient } from 'pg';
 
@@ -56,12 +56,17 @@ import {
   type DirectAnswerExecutionInput,
 } from './chat-answer-executor.ts';
 import {
+  recordDependencyFailure,
+  recordDependencySuccess,
+} from './chat-dependency-monitor.ts';
+import {
   coordinateProviderCompletion,
 } from './chat-provider-completion.ts';
 import {
   failIncompleteProviderExecution,
   failProviderExecution,
 } from './chat-provider-failure.ts';
+import { resolveSearch } from './chat-search-coordinator.ts';
 import { createChatExecutionBudget } from './chat-execution-budget.ts';
 import { type TurnIntent, type TurnRoute } from './chat-behavior.ts';
 import {
@@ -147,11 +152,6 @@ import {
   replaceProviderAttempts,
 } from './interaction-log.ts';
 import {
-  claimSearch,
-  finalizeSearchCompleted,
-  finalizeSearchFailed,
-} from './interaction-search.ts';
-import {
   hasSufficientLocalEvidence,
   retrieveFullRelevantKnowledge,
   type KnowledgeSource,
@@ -162,14 +162,11 @@ import {
   reserveHedgedProviderAttempt,
   summarizeProviderAttempts,
 } from './provider-attempt-log.ts';
-import { recordServiceFailure, recordServiceRecovery } from './service-incidents.ts';
 import {
   toPublicSearchSource,
   type SearchProvider,
   type SearchResponse,
 } from './search-provider.ts';
-import { routeSearch } from './search-router.ts';
-import { parseStoredSearchResults } from './search-safety.ts';
 import { createTimeoutSignal, OperationTimeoutError } from './timeout.ts';
 import { runPoolTransaction } from './transaction-runner.ts';
 import {
@@ -628,55 +625,6 @@ function providerPhaseError(error: unknown): RuntimePhaseError {
   return new RuntimePhaseError('PROVIDER_UNAVAILABLE', 'PROVIDER_UNAVAILABLE', error);
 }
 
-type MonitoredDependency = 'provider' | 'search';
-
-function serviceFingerprint(dependency: MonitoredDependency, errorCode: string): string {
-  return createHash('sha256')
-    .update(`morse-service-incident:v1:${dependency}:${errorCode}`, 'utf8')
-    .digest('hex');
-}
-
-async function recordDependencyFailure(input: {
-  client: PoolClient;
-  dependency: MonitoredDependency;
-  errorCode: string;
-  now: Date;
-}): Promise<void> {
-  try {
-    await recordServiceFailure(input.client, {
-      dependency: input.dependency,
-      fingerprint: serviceFingerprint(input.dependency, input.errorCode),
-      errorCode: input.errorCode,
-      now: input.now,
-    });
-  } catch {
-    console.error(JSON.stringify({
-      event: 'morse_service_incident_record_failed',
-      code: 'SERVICE_INCIDENT_RECORD_FAILED',
-      dependency: input.dependency,
-    }));
-  }
-}
-
-async function recordDependencySuccess(input: {
-  client: PoolClient;
-  dependency: MonitoredDependency;
-  now: Date;
-}): Promise<void> {
-  try {
-    await recordServiceRecovery(input.client, {
-      dependency: input.dependency,
-      now: input.now,
-    });
-  } catch {
-    console.error(JSON.stringify({
-      event: 'morse_service_incident_record_failed',
-      code: 'SERVICE_INCIDENT_RECORD_FAILED',
-      dependency: input.dependency,
-    }));
-  }
-}
-
 function toLocalPublicSources(knowledge: KnowledgeSource[]): PublicChatSource[] {
   return knowledge.map((source, index) => ({
     id: `local-${index + 1}`,
@@ -686,145 +634,6 @@ function toLocalPublicSources(knowledge: KnowledgeSource[]): PublicChatSource[] 
     domain: null,
     score: source.score,
   }));
-}
-
-function storedSearchResponse(input: {
-  status: string;
-  results: unknown;
-  errorCode: string | null;
-}): SearchResponse {
-  if (input.status === 'completed') {
-    return {
-      status: 'completed',
-      results: parseStoredSearchResults(input.results),
-      errorCode: null,
-    };
-  }
-  return {
-    status: 'failed',
-    results: [],
-    errorCode: input.errorCode === 'SEARCH_TIMEOUT' ? 'SEARCH_TIMEOUT' : 'SEARCH_FAILED',
-  };
-}
-
-async function resolveSearch(input: {
-  pool: Pool;
-  client: PoolClient;
-  provider?: SearchProvider | null;
-  accessSessionId: string;
-  turn: TurnContext;
-  routingQuestion: string;
-  searchQuery: string;
-  localEvidenceSufficient: boolean;
-  config: ChatServiceConfig;
-  now: Date;
-  signal?: AbortSignal;
-}): Promise<SearchResponse | undefined> {
-  const maxSearches = input.config.maxSearchesPerSession ?? 5;
-  let query = input.searchQuery;
-  let routeReason = 'existing_claim';
-
-  if (!input.turn.searchAlreadyClaimed) {
-    const route = routeSearch({
-      question: input.routingQuestion,
-      searchEnabled: input.config.searchEnabled === true && input.provider !== null
-        && input.provider !== undefined,
-      searchCount: input.turn.searchCount,
-      localEvidenceSufficient: input.localEvidenceSufficient,
-    });
-    if (!route.shouldSearch || !route.query || !input.provider) {
-      if (route.reason !== 'disabled' && route.reason !== 'quota_exhausted') return undefined;
-      const availableRoute = routeSearch({
-        question: input.routingQuestion,
-        searchEnabled: true,
-        searchCount: 0,
-        localEvidenceSufficient: input.localEvidenceSufficient,
-      });
-      return availableRoute.shouldSearch
-        ? { status: 'failed', results: [], errorCode: 'SEARCH_FAILED' }
-        : undefined;
-    }
-    query = input.searchQuery;
-    routeReason = route.reason;
-  }
-
-  let claim;
-  try {
-    claim = await claimSearch({
-      pool: input.pool,
-      client: input.client,
-      accessSessionId: input.accessSessionId,
-      turnId: input.turn.turnId,
-      query,
-      routeReason,
-      maxSearches,
-      now: input.now,
-    });
-  } catch {
-    console.error(JSON.stringify({
-      event: 'morse_search_claim_failed',
-      code: 'SEARCH_CLAIM_FAILED',
-    }));
-    return { status: 'failed', results: [], errorCode: 'SEARCH_FAILED' };
-  }
-
-  if (claim.kind === 'quota_exhausted') {
-    return { status: 'failed', results: [], errorCode: 'SEARCH_FAILED' };
-  }
-  if (claim.kind === 'existing') return storedSearchResponse(claim.search);
-  if (!input.provider) {
-    return { status: 'failed', results: [], errorCode: 'SEARCH_FAILED' };
-  }
-
-  let response: SearchResponse;
-  try {
-    response = await input.provider.search(claim.search.query, input.signal);
-  } catch (error) {
-    if (input.signal?.aborted) throw error;
-    response = { status: 'failed', results: [], errorCode: 'SEARCH_FAILED' };
-  }
-  throwIfAborted(input.signal);
-
-  if (response.status === 'completed') {
-    await recordDependencySuccess({
-      client: input.client,
-      dependency: 'search',
-      now: input.now,
-    });
-  } else {
-    await recordDependencyFailure({
-      client: input.client,
-      dependency: 'search',
-      errorCode: response.errorCode,
-      now: input.now,
-    });
-  }
-
-  try {
-    if (response.status === 'completed') {
-      await finalizeSearchCompleted({
-        pool: input.pool,
-        client: input.client,
-        turnId: input.turn.turnId,
-        results: response.results,
-      });
-    } else {
-      await finalizeSearchFailed({
-        pool: input.pool,
-        client: input.client,
-        turnId: input.turn.turnId,
-        results: [],
-        errorCode: response.errorCode,
-      });
-    }
-    return response;
-  } catch {
-    console.error(JSON.stringify({
-      event: 'morse_search_persistence_failed',
-      code: 'SEARCH_PERSISTENCE_FAILED',
-    }));
-    return { status: 'failed', results: [], errorCode: 'SEARCH_FAILED' };
-  }
 }
 
 export async function* runChat(input: RunChatInput): AsyncIterable<ChatServiceEvent> {

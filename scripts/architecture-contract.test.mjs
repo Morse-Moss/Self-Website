@@ -234,6 +234,7 @@ function isAllowedResumeImporter(target, importer) {
 function isIsolationDomain(file) {
   return [
     'lib/server/chat-service.ts',
+    'lib/server/chat-search-coordinator.ts',
     'lib/server/rag.ts',
     'lib/server/knowledge.ts',
     'lib/server/public-knowledge.ts',
@@ -495,6 +496,73 @@ test('chat service delegates provider failure coordination to one boundary', asy
     failureImports.some((imported) => imported.target === 'lib/server/chat-service.ts'),
     false,
     'provider failure coordination must not depend back on chat-service',
+  );
+});
+
+test('chat service delegates search coordination and dependency monitoring to owned boundaries', async () => {
+  const { imports } = await buildGraph();
+  const serviceImports = imports.get('lib/server/chat-service.ts') ?? [];
+  for (const target of [
+    'lib/server/chat-search-coordinator.ts',
+    'lib/server/chat-dependency-monitor.ts',
+  ]) {
+    assert.ok(
+      serviceImports.some((imported) => imported.target === target),
+      `chat-service must import ${target}`,
+    );
+  }
+  for (const target of [
+    'lib/server/interaction-search.ts',
+    'lib/server/search-router.ts',
+    'lib/server/search-safety.ts',
+    'lib/server/service-incidents.ts',
+  ]) {
+    assert.equal(
+      serviceImports.some((imported) => imported.target === target),
+      false,
+      `chat-service must not bypass the owned boundary via ${target}`,
+    );
+  }
+
+  const serviceSource = await fs.readFile(
+    path.join(repositoryRoot, 'lib', 'server', 'chat-service.ts'),
+    'utf8',
+  );
+  assert.match(serviceSource, /\bresolveSearch\s*\(/u);
+  assert.doesNotMatch(
+    serviceSource,
+    /(?:async function resolveSearch|function storedSearchResponse|function serviceFingerprint|async function recordDependency(?:Failure|Success))\s*\(/u,
+    'chat-service must not retain search coordination or dependency monitoring internals',
+  );
+
+  const coordinatorImports = imports.get('lib/server/chat-search-coordinator.ts') ?? [];
+  for (const target of [
+    'lib/server/chat-dependency-monitor.ts',
+    'lib/server/interaction-search.ts',
+    'lib/server/search-provider.ts',
+    'lib/server/search-router.ts',
+    'lib/server/search-safety.ts',
+  ]) {
+    assert.ok(
+      coordinatorImports.some((imported) => imported.target === target),
+      `search coordinator must own ${target}`,
+    );
+  }
+  assert.equal(
+    coordinatorImports.some((imported) => imported.target === 'lib/server/chat-service.ts'),
+    false,
+    'search coordinator must not depend back on chat-service',
+  );
+
+  const monitorImports = imports.get('lib/server/chat-dependency-monitor.ts') ?? [];
+  assert.ok(
+    monitorImports.some((imported) => imported.target === 'lib/server/service-incidents.ts'),
+    'dependency monitor must own service incident persistence',
+  );
+  assert.equal(
+    monitorImports.some((imported) => imported.target === 'lib/server/chat-service.ts'),
+    false,
+    'dependency monitor must not depend back on chat-service',
   );
 });
 
