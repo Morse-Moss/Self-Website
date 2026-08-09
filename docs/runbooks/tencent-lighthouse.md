@@ -289,3 +289,10 @@ docker compose --env-file .env.production -f compose.production.yaml ps
 - Current runtime commit: `d223afe`; `/opt/revolution/current` points to `/opt/revolution/releases/d223afe/revolution`.
 - Status: `OBSERVED / HR_QA_MVP_ACCEPTED / LIMITED_LAUNCH / PERCENT_0`. The fresh HR entry, complete JD and ten-question chain passed, followed by a 15.53-minute healthy window and cleanup.
 - Authoritative evidence: `docs/verify/release/agent-ready-qa-mvp-production-closeout-2026-07-29.md`.
+
+# Latest release override (2026-08-09)
+
+- Current runtime release: `5e438cf`; `/opt/revolution/current` points to `/opt/revolution/releases/5e438cf/revolution`.
+- Only Web and Worker were rebuilt. DB, Embedding, and Edge identities stayed unchanged; migration registry remains `001-014`.
+- Public health, release smoke, root security headers, and unauthenticated internal RAG fail-closed behavior passed. No real Provider-backed chat or admin workflow was executed.
+- Evidence: `docs/verify/release/chat-search-coordination-production-closeout-2026-08-09.md`.

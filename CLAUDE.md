@@ -34,3 +34,10 @@
 - 依赖安装仅限阶段契约列明的包
 - `E:\Wiki`、`E:\demo2`、`E:\小红书`、`E:\多agent` 为外部资产,只读,禁止写入
 - 密钥、token、密码不进代码
+
+# Latest Runtime Override (2026-08-09)
+
+- The deployed application release is `5e438cf`; `/opt/revolution/current` points to `/opt/revolution/releases/5e438cf/revolution`.
+- This release only extracts chat search and dependency monitoring coordination. No Compose, dependency, migration, secret, embedding, edge, public-knowledge, ingest, or provider configuration changed.
+- Deployment evidence is recorded in `docs/verify/release/chat-search-coordination-production-closeout-2026-08-09.md`. Runtime health and release smoke were observed; real Provider-backed chat behavior was not called.
+- The untracked job-system assets in the primary checkout remain outside Revolution scope and are never part of a release archive.
