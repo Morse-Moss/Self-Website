@@ -1,0 +1,77 @@
+# 使用方法：cp config.example.yaml config.yaml 然后填写
+# config.yaml 已被 .gitignore 忽略，不会被提交
+
+ai:
+  api_key: "sk-your-api-key"
+  base_url: "https://api.openai.com/v1"  # 也可填写其他 OpenAI-compatible 服务
+  model: "gpt-4o-mini"
+  max_output_tokens: 1200          # 仅评分时可收紧到 256
+
+match:
+  min_score: 65                    # 匹配分低于此值自动跳过（0-100）
+  send_tailored_summary: false     # 打招呼后是否追发一条定制简历要点消息
+
+# ===== 求职要求（AI 打分的硬依据）=====
+# 命中【坚决排除】的岗位会被直接打低分；不满足【硬性要求】最高只给 40 分
+preferences: |
+  【期望方向】Python 后端 / AI 应用开发，可接受全栈
+  【硬性要求】base 上海；薪资 25K 以上；产品自研公司
+  【优先加分】AI/LLM 相关业务；技术氛围好；双休不加班
+  【坚决排除】外包驻场；单休；频繁出差；博彩灰产
+
+resume:
+  master_file: "resume/master_resume.md"
+  output_dir: "output/tailored"
+
+# ===== 个人知识库（可选）=====
+# 打招呼语与定制简历的生成依据。没有知识库也能正常运行
+knowledge:
+  provider: "none"                 # none=不使用 | local=本地目录 | rag=外部RAG检索接口
+  # --- local 模式：把项目复盘、技术亮点、量化成果等 .md/.txt 放进目录即可 ---
+  dir: "knowledge"
+  max_chars: 12000                 # 注入提示词的知识内容上限
+  # --- rag 模式：按岗位 JD 实时检索最相关的知识片段（接口契约见 docs/rag-api.md）---
+  # 适合已有个人知识库系统（如 Morse 数字分身、自建向量库）的用户
+  rag:
+    endpoint: "http://127.0.0.1:3000/api/internal/rag/search"
+    api_key: ""                    # 可选，配置后以 Bearer Token 携带
+    top_k: 6
+    timeout_seconds: 10
+
+# ===== 只读岗位采集（不调用 AI、不投递、不沟通） =====
+collection:
+  db_path: "../output/jobagent.db"
+  target: 300
+  keywords:
+    - "FDE"
+    - "前线部署工程师"
+    - "AI Agent 开发"
+    - "AI 应用工程师"
+    - "RAG 工程师"
+    - "AI 解决方案工程师"
+    - "AI 交付工程师"
+    - "大模型应用开发"
+  cities: ["上海", "深圳", "广州", "杭州"]
+  max_jobs_per_source: 45
+  navigation_delay_range_seconds: [12, 18]
+  detail_settle_range_seconds: [8, 15]
+  detail_delay_range_seconds: [35, 65]
+  max_consecutive_failures: 3
+
+boss:
+  keywords:
+    - "AI Agent 开发"
+  city: "上海"                     # 支持城市见 jobagent/platforms/boss.py 的 CITY_CODES
+  max_jobs_per_keyword: 3
+  max_apply_per_run: 3             # 单次运行最多打招呼次数
+  cdp_endpoint: "http://127.0.0.1:17332" # 连接已有 CDP 浏览器，不新建登录上下文
+  page_settle_range_seconds: [12, 18]
+  detail_settle_range_seconds: [8, 15]
+  chat_settle_range_seconds: [3, 6]
+  delay_range_seconds: [45, 90]
+  headless: false                  # 仅无 cdp_endpoint 的兼容启动路径使用
+  blacklist_companies: []
+  blacklist_keywords:
+    - "外包"
+    - "驻场"
+    - "劳务派遣"
