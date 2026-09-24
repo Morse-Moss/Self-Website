@@ -34,7 +34,6 @@ import {
 import { encodeTurnMessage } from '../lib/server/turn-codec.ts';
 import { controlledContextFailureChain } from './fixtures/controlled-context-failure-chain.ts';
 import { hrQaMvpChain } from './fixtures/hr-qa-mvp-chain.ts';
-import { allPublicProjectSlugs } from './fixtures/all-public-project-slugs.ts';
 import { hrInterviewEightTurnChain } from './fixtures/hr-interview-eight-turn-chain.ts';
 import {
   createDisposablePostgresDatabase,
@@ -1552,7 +1551,7 @@ test('production Vibe Coding question keeps every public project source and audi
     }>;
     assert.deepEqual(
       new Set(evidence.filter((item) => item.projectSlug).map((item) => item.projectSlug)),
-      new Set(allPublicProjectSlugs),
+      new Set(hrQaMvpChain.expectedProjectSlugs),
     );
     const resumeEvidence = evidence.find((item) => item.documentId === 'resume-facts');
     assert.ok(resumeEvidence);

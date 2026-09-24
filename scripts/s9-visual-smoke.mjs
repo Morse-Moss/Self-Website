@@ -79,6 +79,7 @@ const SAFE_SLUGS = new Set([
   'ai-leadgen',
   'deep-research',
   'digital-morse',
+  'ecommerce-operations',
 ]);
 const SAFE_HARNESS_ROUTES = new Set([
   '/',
@@ -432,13 +433,7 @@ const viewports = [
   { name: 'mobile-reduced', width: 390, height: 844, reducedMotion: true },
 ];
 const routes = ['/', '/works'];
-const slugs = [
-  'content-agent',
-  'auto-operations',
-  'ai-leadgen',
-  'deep-research',
-  'digital-morse',
-];
+const slugs = [...SAFE_SLUGS];
 const failures = [];
 const screenshotByName = new Map();
 const routeStatuses = [];

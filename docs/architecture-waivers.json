@@ -1,13 +1,1 @@
-[
-  {
-    "id": "portfolio-ecommerce-legacy-line-limit",
-    "rule": "line_limit",
-    "paths": [
-      "scripts/chat-eval.mjs",
-      "tests/chat-controlled-context-integration.test.ts"
-    ],
-    "reason": "本次只增加电商项目公开证据覆盖；文件为既有评测主入口，拆分整个评测运行时超出本次作品集发布范围。",
-    "owner": "Morse",
-    "expires": "2026-10-24"
-  }
-]
+[]

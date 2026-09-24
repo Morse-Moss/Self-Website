@@ -342,10 +342,12 @@ test('zero-tolerance review cases cover wrong RAG, fabricated facts and missing 
 });
 
 test('S10 source contract retains the exact S9 project Hash destinations', () => {
-  const source = fs.readFileSync(runnerPath, 'utf8');
+  const source = fs.readFileSync(path.join(process.cwd(), 'scripts', 'chat-eval-project-sources.mjs'), 'utf8');
   for (const slug of [
     'content-agent',
     'auto-operations',
+    'ai-leadgen',
+    'ecommerce-operations',
     'deep-research',
     'digital-morse',
   ]) {

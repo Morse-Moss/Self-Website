@@ -36,7 +36,7 @@ import {
   siteContent,
 } from '../lib/site-content.ts';
 import { hrQaMvpChain } from '../tests/fixtures/hr-qa-mvp-chain.ts';
-import { ecommerceOperationsSource } from './chat-eval-project-sources.mjs';
+import { projectSources } from './chat-eval-project-sources.mjs';
 
 const dataset = JSON.parse(await fs.readFile('content/chat-eval.json', 'utf8'));
 const capabilityLedger = compiledChatEvidenceCatalog;
@@ -48,64 +48,6 @@ function executeSafetyBoundary(reason) {
   throw new Error('SAFETY_BOUNDARY_REASON_UNSUPPORTED');
 }
 
-const projectSources = {
-  'content-agent': {
-    chunkId: 'eval-content-agent',
-    documentId: 'project-content-agent',
-    title: '内容创作 Agent 系统',
-    sourcePath: 'content/site-content.json#projects.content-agent',
-    href: '/works#content-agent',
-    content: '内容创作 Agent 系统覆盖内容任务拆解、生成流程与人工验收边界。',
-    score: 1,
-    projectSlug: 'content-agent',
-    topicIds: ['content-agent', 'agent-orchestration'],
-  },
-  'auto-operations': {
-    chunkId: 'eval-auto-operations',
-    documentId: 'project-auto-operations',
-    title: '自动运营 Agent 系统',
-    sourcePath: 'content/site-content.json#projects.auto-operations',
-    href: '/works#auto-operations',
-    content: '自动运营 Agent 系统把数据发现、内容资产、AI 内容生产、任务编排和受控发布连接为统一运营工作流。',
-    score: 1,
-    projectSlug: 'auto-operations',
-    topicIds: ['auto-operations', 'agent-orchestration'],
-  },
-  'ai-leadgen': {
-    chunkId: 'eval-ai-leadgen',
-    documentId: 'project-ai-leadgen',
-    title: 'AI 外贸获客系统',
-    sourcePath: 'content/site-content.json#projects.ai-leadgen',
-    href: '/works#ai-leadgen',
-    content: 'AI 外贸获客系统连接线索获取、官网富化、AI 评分、飞书协同、邮件触达与回信跟进。当前为本地 MVP，尚未生产部署，也尚未取得规模化获客成果。',
-    score: 1,
-    projectSlug: 'ai-leadgen',
-    topicIds: ['ai-leadgen'],
-  },
-  'deep-research': {
-    chunkId: 'eval-deep-research',
-    documentId: 'project-deep-research',
-    title: '深度研究 Agent 系统',
-    sourcePath: 'content/site-content.json#projects.deep-research',
-    href: '/works#deep-research',
-    content: '深度研究报告使用证据工件、质量门和人工发布审批。',
-    score: 1,
-    projectSlug: 'deep-research',
-    topicIds: ['deep-research', 'rag'],
-  },
-  'digital-morse': {
-    chunkId: 'eval-digital-morse',
-    documentId: 'project-digital-morse',
-    title: '数字摩斯',
-    sourcePath: 'content/site-content.json#projects.digital-morse',
-    href: '/works#digital-morse',
-    content: '数字摩斯是当前作品集与实时文字客服项目，语音和数字人视频仍是后续边界。',
-    score: 1,
-    projectSlug: 'digital-morse',
-    topicIds: ['digital-morse', 'rag', 'docker-compose'],
-  },
-  'ecommerce-operations': ecommerceOperationsSource,
-};
 
 const approvedSource = projectSources['deep-research'];
 const injectedSource = {

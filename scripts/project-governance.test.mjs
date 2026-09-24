@@ -45,8 +45,7 @@ test('tripwire configuration blocks foreign-system changes and ratchets legacy h
   assert.equal(config.legacy?.existing_over_limit, 'warn');
   assert.equal(config.legacy?.block_growth, true);
   assert.equal(config.waiver_file, 'docs/architecture-waivers.json');
-  const waivers = JSON.parse(await read(config.waiver_file));
-  assert.ok(Array.isArray(waivers));
+  assert.deepEqual(JSON.parse(await read(config.waiver_file)), []);
 });
 
 test('foreign systems stay outside Git additions, compilation, lint, images, and release archives', async () => {
@@ -67,12 +66,12 @@ test('foreign systems stay outside Git additions, compilation, lint, images, and
   }
 });
 
-test('local governance entrypoints do not depend on an unapproved architecture workflow', async () => {
-  const [packageJson, hook, checker, standards] = await Promise.all([
+test('local and CI entrypoints execute the project governance checks', async () => {
+  const [packageJson, hook, workflow, checker] = await Promise.all([
     read('package.json').then(JSON.parse),
     read('.githooks/pre-commit'),
+    read('.github/workflows/architecture.yml'),
     read('tools/check_tripwire.mjs'),
-    read('docs/engineering-standards.md'),
   ]);
 
   assert.equal(packageJson.scripts['check:architecture'], 'node --test scripts/architecture-contract.test.mjs scripts/project-governance.test.mjs');
@@ -81,9 +80,8 @@ test('local governance entrypoints do not depend on an unapproved architecture w
   assert.match(hook, /tools\/check_tripwire\.mjs" --staged/u);
   assert.match(hook, /未在 PATH 找到 node[\s\S]*exit 1/u);
   assert.match(hook, /git cat-file -e ":\.vibe-tripwire\.json"/u);
-  assert.doesNotMatch(hook, /\bCI\b/u);
-  await assert.rejects(fs.access(path.join(repositoryRoot, '.github', 'workflows', 'architecture.yml')));
-  assert.match(standards, /当前治理不依赖仓库内 CI workflow/u);
-  assert.match(standards, /远端 CI[\s\S]*显式批准/u);
+  assert.match(workflow, /npm ci/u);
+  assert.match(workflow, /npm run check:architecture/u);
+  assert.match(workflow, /npm run check:tripwire:changed/u);
   assert.match(checker, /cat-file/u);
 });

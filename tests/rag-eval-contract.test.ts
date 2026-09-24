@@ -263,7 +263,7 @@ test('S8 chat evaluation covers answer safety, runtime errors, and source naviga
 
 test('chat evaluation source fixtures use exact S9 project Hash hrefs', () => {
   const runner = fs.readFileSync(
-    path.join(process.cwd(), 'scripts', 'chat-eval.mjs'),
+    path.join(process.cwd(), 'scripts', 'chat-eval-project-sources.mjs'),
     'utf8',
   );
 
