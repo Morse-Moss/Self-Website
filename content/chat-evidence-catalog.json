@@ -20,6 +20,10 @@
     {
       "slug": "digital-morse",
       "aliases": ["数字摩斯", "digital-morse", "数字morse", "digitalmorse"]
+    },
+    {
+      "slug": "ecommerce-operations",
+      "aliases": ["电商运营自动化与分析系统", "电商运营系统", "电商运营自动化", "日报与周报", "关键词周报", "竞品周报", "ecommerce-operations"]
     }
   ],
   "capabilities": [

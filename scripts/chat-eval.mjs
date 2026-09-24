@@ -36,6 +36,7 @@ import {
   siteContent,
 } from '../lib/site-content.ts';
 import { hrQaMvpChain } from '../tests/fixtures/hr-qa-mvp-chain.ts';
+import { ecommerceOperationsSource } from './chat-eval-project-sources.mjs';
 
 const dataset = JSON.parse(await fs.readFile('content/chat-eval.json', 'utf8'));
 const capabilityLedger = compiledChatEvidenceCatalog;
@@ -103,6 +104,7 @@ const projectSources = {
     projectSlug: 'digital-morse',
     topicIds: ['digital-morse', 'rag', 'docker-compose'],
   },
+  'ecommerce-operations': ecommerceOperationsSource,
 };
 
 const approvedSource = projectSources['deep-research'];
@@ -245,7 +247,7 @@ class AdversarialDeterministicProvider {
         : /RAG/iu.test(userMessage)
         ? `数字 Morse 的 RAG 会先检索当前问题相关的公开知识，再按证据边界生成回答。${citations}`
         : /有哪些项目|哪些项目|项目有哪些/iu.test(userMessage)
-          ? `我目前公开展示的项目包括内容创作 Agent 系统、自动运营 Agent 系统、AI 外贸获客系统、深度研究 Agent 系统和数字 Morse。${citations}`
+          ? `我目前公开展示的项目包括${projectSlugs.map((slug) => projectSources[slug].title).join('、')}。${citations}`
           : `这个项目的设计取舍由当前目标、失败边界和可验证结果共同决定。${citations}`;
     } else {
       answer = sourceIndexes.length > 0

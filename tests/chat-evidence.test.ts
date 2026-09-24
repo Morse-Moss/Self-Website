@@ -220,6 +220,8 @@ test('project collection evidence returns the full catalog without semantic depe
     result.knowledge.map((source) => source.projectSlug),
     siteContent.projects.map((project) => project.slug),
   );
+  assert.equal(result.knowledge.length, 6);
+  assert.ok(result.knowledge.some((source) => source.projectSlug === 'ecommerce-operations'));
   assert.deepEqual(calls.counts(), { embed: 0, retrieve: 0, search: 0 });
 });
 

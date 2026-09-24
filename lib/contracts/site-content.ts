@@ -4,6 +4,7 @@ export const projectSlugs = [
   'ai-leadgen',
   'deep-research',
   'digital-morse',
+  'ecommerce-operations',
 ] as const;
 
 export type ProjectSlug = (typeof projectSlugs)[number];

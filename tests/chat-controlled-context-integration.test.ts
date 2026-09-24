@@ -34,6 +34,7 @@ import {
 import { encodeTurnMessage } from '../lib/server/turn-codec.ts';
 import { controlledContextFailureChain } from './fixtures/controlled-context-failure-chain.ts';
 import { hrQaMvpChain } from './fixtures/hr-qa-mvp-chain.ts';
+import { allPublicProjectSlugs } from './fixtures/all-public-project-slugs.ts';
 import { hrInterviewEightTurnChain } from './fixtures/hr-interview-eight-turn-chain.ts';
 import {
   createDisposablePostgresDatabase,
@@ -1514,7 +1515,7 @@ test('recruiter-chat JD projects audited Claude Code evidence into V2.2', async 
   }
 });
 
-test('production Vibe Coding question keeps five project sources and audited AI programming evidence', async () => {
+test('production Vibe Coding question keeps every public project source and audited AI programming evidence', async () => {
   const fixture = await createFixture('HR interview');
   const provider = new ControlledAnswerProvider();
   try {
@@ -1551,7 +1552,7 @@ test('production Vibe Coding question keeps five project sources and audited AI 
     }>;
     assert.deepEqual(
       new Set(evidence.filter((item) => item.projectSlug).map((item) => item.projectSlug)),
-      new Set(['ai-leadgen', 'auto-operations', 'content-agent', 'digital-morse', 'deep-research']),
+      new Set(allPublicProjectSlugs),
     );
     const resumeEvidence = evidence.find((item) => item.documentId === 'resume-facts');
     assert.ok(resumeEvidence);

@@ -177,7 +177,7 @@ test('home sections render two public projects, reusable capability cards, and n
   assert.doesNotMatch(sections, /\?\?\s*0|\|\|\s*0|职业|时间线|FAQ|高频问题/);
 });
 
-test('works index is an unfiltered five-project gallery driven by the public content helper', () => {
+test('works index is an unfiltered project gallery driven by the public content helper', () => {
   const source = readSource(files.works);
   const content = JSON.parse(readSource(files.siteContent)) as {
     projects: Array<{ slug: string }>;
@@ -190,7 +190,14 @@ test('works index is an unfiltered five-project gallery driven by the public con
   assert.doesNotMatch(source, /filter|search|sort/i);
   assert.deepEqual(
     content.projects.map((project) => project.slug),
-    ['content-agent', 'auto-operations', 'ai-leadgen', 'deep-research', 'digital-morse'],
+    [
+      'content-agent',
+      'auto-operations',
+      'ai-leadgen',
+      'deep-research',
+      'digital-morse',
+      'ecommerce-operations',
+    ],
   );
 });
 

@@ -98,6 +98,16 @@ test('extractPublicKnowledge produces the approved site-content and project topi
         sourcePath: `content/site-content.json#projects.digital-morse.knowledge.${topic}`,
         href: '/works#digital-morse',
       })),
+      {
+        id: 'project-ecommerce-operations',
+        sourcePath: 'content/site-content.json#projects.ecommerce-operations',
+        href: '/works#ecommerce-operations',
+      },
+      ...['overview', 'daily-report', 'weekly-analysis', 'data-collaboration', 'architecture', 'role'].map((topic) => ({
+        id: `project-ecommerce-operations-${topic}`,
+        sourcePath: `content/site-content.json#projects.ecommerce-operations.knowledge.${topic}`,
+        href: '/works#ecommerce-operations',
+      })),
       { id: 'faq-1', sourcePath: 'content/site-content.json#faq.1', href: '/' },
       { id: 'faq-2', sourcePath: 'content/site-content.json#faq.2', href: '/' },
       { id: 'faq-3', sourcePath: 'content/site-content.json#faq.3', href: '/' },

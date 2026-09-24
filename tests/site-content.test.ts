@@ -17,6 +17,7 @@ const expectedSlugs = [
   "ai-leadgen",
   "deep-research",
   "digital-morse",
+  "ecommerce-operations",
 ] as const;
 
 const expectedProjects = {
@@ -56,6 +57,11 @@ const expectedProjects = {
         href: "https://github.com/Morse-Moss/Self-Website",
       },
     ],
+  },
+  "ecommerce-operations": {
+    name: "电商运营自动化与分析系统",
+    status: "项目负责人 · 多店日报、关键词周报与竞品周报已完整跑通",
+    actions: [],
   },
 } as const;
 
@@ -400,12 +406,31 @@ test("provides six case-study fields for every project", () => {
   }
 });
 
-test("publishes only the five separately approved project media assets", () => {
+test("ecommerce project is presented as a complete, specific portfolio system", () => {
+  const ecommerce = getAllProjects().find((project) => project.slug === "ecommerce-operations");
+
+  assert.ok(ecommerce);
+  assert.match(ecommerce.status, /多店日报.*关键词周报.*竞品周报已完整跑通/);
+  assert.match(ecommerce.summary, /多店经营日报、关键词周报和竞品周报/);
+  assert.match(ecommerce.details?.architecture.flow ?? "", /多店经营日报 \+ 关键词周报 \+ 竞品周报/);
+  assert.match(ecommerce.caseStudy.role, /负责整个项目的开发.*独立完成全部技术实现/);
+  assert.doesNotMatch(`${ecommerce.summary} ${ecommerce.status}`, /部分环节|仍在完善|待完善/);
+  assert.ok(ecommerce.media?.src);
+});
+
+test("publishes only the separately approved project media assets", () => {
   const mediaProjects = getAllProjects().filter((project) => project.media);
 
   assert.deepEqual(
     mediaProjects.map((project) => project.slug),
-    ["content-agent", "auto-operations", "ai-leadgen", "deep-research", "digital-morse"],
+    [
+      "content-agent",
+      "auto-operations",
+      "ai-leadgen",
+      "deep-research",
+      "digital-morse",
+      "ecommerce-operations",
+    ],
   );
   assert.equal(mediaProjects[0]?.media?.width, 1280);
   assert.equal(mediaProjects[0]?.media?.height, 1486);
@@ -575,5 +600,5 @@ test("keeps all public JSON free of placeholders and private-source leakage", ()
   for (const pattern of banned) {
     assert.doesNotMatch(source, pattern);
   }
-  assert.equal(siteContent.projects.length, 5);
+  assert.equal(siteContent.projects.length, 6);
 });

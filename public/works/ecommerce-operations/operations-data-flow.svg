@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="960" viewBox="0 0 1440 960" fill="none">
+  <rect width="1440" height="960" fill="#101717"/>
+  <path d="M0 116H1440M0 844H1440" stroke="#334342" stroke-width="2"/>
+  <text x="88" y="82" fill="#F4F0E5" font-family="Arial, sans-serif" font-size="34" font-weight="700">E-COMMERCE OPERATIONS</text>
+  <text x="88" y="150" fill="#AFC1B9" font-family="Arial, sans-serif" font-size="22">Daily store reporting and weekly market analysis, connected by one verified workflow</text>
+  <rect x="88" y="214" width="1264" height="548" rx="18" fill="#172221" stroke="#445653" stroke-width="2"/>
+  <text x="132" y="274" fill="#E8E4D7" font-family="Arial, sans-serif" font-size="20" font-weight="700">REPORTING CADENCE</text>
+  <rect x="132" y="314" width="290" height="116" rx="10" fill="#233431" stroke="#76B6A1" stroke-width="2"/>
+  <text x="164" y="360" fill="#83D0B5" font-family="Arial, sans-serif" font-size="19" font-weight="700">DAILY</text>
+  <text x="164" y="397" fill="#F4F0E5" font-family="Arial, sans-serif" font-size="25" font-weight="700">Multi-store report</text>
+  <rect x="132" y="462" width="290" height="116" rx="10" fill="#233431" stroke="#76B6A1" stroke-width="2"/>
+  <text x="164" y="508" fill="#83D0B5" font-family="Arial, sans-serif" font-size="19" font-weight="700">WEEKLY 01</text>
+  <text x="164" y="545" fill="#F4F0E5" font-family="Arial, sans-serif" font-size="25" font-weight="700">Keyword report</text>
+  <rect x="132" y="610" width="290" height="116" rx="10" fill="#233431" stroke="#76B6A1" stroke-width="2"/>
+  <text x="164" y="656" fill="#83D0B5" font-family="Arial, sans-serif" font-size="19" font-weight="700">WEEKLY 02</text>
+  <text x="164" y="693" fill="#F4F0E5" font-family="Arial, sans-serif" font-size="25" font-weight="700">Competitor report</text>
+  <path d="M454 372H522M454 520H522M454 668H522M522 372V668M522 520H570" stroke="#83D0B5" stroke-width="3"/>
+  <circle cx="522" cy="520" r="7" fill="#83D0B5"/>
+  <rect x="570" y="378" width="334" height="284" rx="12" fill="#202D2B" stroke="#6C827A" stroke-width="2"/>
+  <text x="610" y="428" fill="#F4F0E5" font-family="Arial, sans-serif" font-size="24" font-weight="700">Shared data workflow</text>
+  <text x="610" y="484" fill="#BCD1C6" font-family="Arial, sans-serif" font-size="19">01  Platform collection</text>
+  <text x="610" y="532" fill="#BCD1C6" font-family="Arial, sans-serif" font-size="19">02  Period and file checks</text>
+  <text x="610" y="580" fill="#BCD1C6" font-family="Arial, sans-serif" font-size="19">03  Analysis and reconciliation</text>
+  <text x="610" y="628" fill="#BCD1C6" font-family="Arial, sans-serif" font-size="19">04  Run receipts</text>
+  <path d="M904 520H982" stroke="#83D0B5" stroke-width="3"/>
+  <path d="M970 510L982 520L970 530" stroke="#83D0B5" stroke-width="3"/>
+  <rect x="982" y="378" width="326" height="284" rx="12" fill="#283A37" stroke="#76B6A1" stroke-width="2"/>
+  <text x="1024" y="428" fill="#F4F0E5" font-family="Arial, sans-serif" font-size="24" font-weight="700">Feishu operations</text>
+  <text x="1024" y="484" fill="#BCD1C6" font-family="Arial, sans-serif" font-size="19">Period-specific tables</text>
+  <text x="1024" y="532" fill="#BCD1C6" font-family="Arial, sans-serif" font-size="19">Idempotent publishing</text>
+  <text x="1024" y="580" fill="#BCD1C6" font-family="Arial, sans-serif" font-size="19">Independent readback</text>
+  <text x="1024" y="628" fill="#BCD1C6" font-family="Arial, sans-serif" font-size="19">Reviewable results</text>
+  <text x="88" y="900" fill="#91A39B" font-family="Arial, sans-serif" font-size="16">SYSTEM FLOW · REDACTED ARCHITECTURE OVERVIEW</text>
+</svg>

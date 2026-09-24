@@ -1,3 +1,5 @@
+import { projectSlugs } from '../contracts/site-content.ts';
+
 export interface PublicKnowledgeDocument {
   id: string;
   title: string;
@@ -7,14 +9,6 @@ export interface PublicKnowledgeDocument {
   projectSlug: string | null;
   topicIds: string[];
 }
-
-const publicProjectSlugs = [
-  'content-agent',
-  'auto-operations',
-  'ai-leadgen',
-  'deep-research',
-  'digital-morse',
-] as const;
 
 interface SiteContent {
   profile?: {
@@ -131,7 +125,7 @@ export function publicKnowledgeHref(documentId: string): string {
   if (documentId === 'about' || documentId === 'resume-facts' || documentId.startsWith('faq-')) return '/';
   if (documentId.startsWith('project-')) {
     const projectId = documentId.slice('project-'.length);
-    const slug = publicProjectSlugs.find(
+    const slug = projectSlugs.find(
       (candidate) => projectId === candidate || projectId.startsWith(`${candidate}-`),
     );
     return `/works#${slug ?? projectId}`;

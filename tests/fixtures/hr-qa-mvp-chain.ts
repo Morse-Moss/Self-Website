@@ -23,6 +23,7 @@ export const hrQaMvpChain = {
     'ai-leadgen',
     'deep-research',
     'digital-morse',
+    'ecommerce-operations',
   ],
   expectedResumeFactIds: [
     'ai-application-role',

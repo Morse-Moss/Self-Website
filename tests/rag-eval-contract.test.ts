@@ -44,6 +44,12 @@ test('RAG gold set covers every approved public document', () => {
       'project-digital-morse-reliability',
       'project-digital-morse-role',
       'project-digital-morse-roadmap',
+      'project-ecommerce-operations',
+      'project-ecommerce-operations-daily-report',
+      'project-ecommerce-operations-weekly-analysis',
+      'project-ecommerce-operations-data-collaboration',
+      'project-ecommerce-operations-architecture',
+      'project-ecommerce-operations-role',
       'faq-1',
       'faq-2',
       'faq-3',
@@ -72,6 +78,14 @@ test('RAG gold set covers every approved public document', () => {
     'project-digital-morse-overview',
   );
   assert.ok(cases.some((item) => item.expectedDocumentId === 'project-auto-operations'));
+  assert.equal(
+    expectedByQuery.get('电商运营自动化与分析系统覆盖哪些日报和周报？'),
+    'project-ecommerce-operations-weekly-analysis',
+  );
+  assert.equal(
+    expectedByQuery.get('电商运营自动化与分析系统解决了哪些日常运营问题？'),
+    'project-ecommerce-operations',
+  );
   assert.equal(
     expectedByQuery.get('AI 外贸获客系统采用 React、TypeScript、FastAPI、SQLAlchemy、OpenAI、飞书和阿里邮箱实现了什么？'),
     'project-ai-leadgen',

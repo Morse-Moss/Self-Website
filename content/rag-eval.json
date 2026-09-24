@@ -182,5 +182,33 @@
   {
     "query": "想做电商内容生产，摩斯有哪些系统经验？",
     "expectedDocumentId": "project-content-agent-role"
+  },
+  {
+    "query": "电商运营自动化与分析系统覆盖哪些日报和周报？",
+    "expectedDocumentId": "project-ecommerce-operations-weekly-analysis"
+  },
+  {
+    "query": "电商运营自动化与分析系统解决了哪些日常运营问题？",
+    "expectedDocumentId": "project-ecommerce-operations"
+  },
+  {
+    "query": "多店经营日报从哪些平台采集数据，如何回填结果？",
+    "expectedDocumentId": "project-ecommerce-operations-daily-report"
+  },
+  {
+    "query": "关键词周报怎样校验七天排行并完成内容热度和历史决策同步？",
+    "expectedDocumentId": "project-ecommerce-operations-weekly-analysis"
+  },
+  {
+    "query": "电商日报和周报如何安全地发布到飞书并核对结果？",
+    "expectedDocumentId": "project-ecommerce-operations-data-collaboration"
+  },
+  {
+    "query": "电商运营日报、关键词周报和竞品周报共用什么任务编排架构？",
+    "expectedDocumentId": "project-ecommerce-operations-architecture"
+  },
+  {
+    "query": "电商运营自动化项目由谁负责，摩斯完成了哪些技术工作？",
+    "expectedDocumentId": "project-ecommerce-operations-role"
   }
 ]
